@@ -1,0 +1,8 @@
+{
+  "name": "Pampero Gran Mendoza - Catálogo Digital",
+  "description": "Catálogo digital oficial y seccionado de indumentaria de trabajo, calzado y aventura Pampero Gran Mendoza para consumidor final y empresas con panel de control.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

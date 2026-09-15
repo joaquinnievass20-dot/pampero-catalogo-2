@@ -1,0 +1,23 @@
+{
+  "primaryColor": "#18231C",
+  "accentColor": "#FDB813",
+  "hoverAccentColor": "#E0A310",
+  "secondaryColor": "#DCD4C9",
+  "backgroundColor": "#F5F2EC",
+  "textColor": "#18231C",
+  "headerBgColor": "#18231C",
+  "headerTextColor": "#F5F2EC",
+  "seasonBadgeBg": "#18231C",
+  "seasonBadgeText": "#F5F2EC",
+  "discountBadgeBg": "#FDB813",
+  "discountBadgeText": "#18231C",
+  "cardBgColor": "#ECE5DC",
+  "cardBorderColor": "#DCD4C9",
+  "fontFamily": "Montserrat",
+  "customLogoUrl": "/logo-oficial.png.png",
+  "logoUrl": "/logo-oficial.png.png",
+  "brandTagline": "Catálogo digital de exhibición · Gran Mendoza",
+  "whatsappNumber": "5492615276713",
+  "instagramHandle": "pamperogranmendoza",
+  "emailContact": "pamperogranmendoza@gmail.com"
+}

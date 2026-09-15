@@ -1,0 +1,881 @@
+import React, { useState, useEffect } from 'react';
+import { 
+  Product, 
+  Promotion, 
+  ThemeConfig, 
+  BranchLocation, 
+  UserSession, 
+  CartItem, 
+  MainCategory,
+  DiscountCoupon,
+  LookbookItem
+} from './types';
+import { 
+  INITIAL_PRODUCTS, 
+  INITIAL_PROMOTIONS, 
+  INITIAL_THEME, 
+  INITIAL_BRANCHES,
+  INITIAL_COUPONS
+} from './data/initialData';
+import { INITIAL_LOOKBOOK } from './data/initialLookbook';
+import { 
+  saveCatalogBackup, 
+  loadCatalogBackup, 
+  isServerCatalogReset, 
+  syncBackupToServer 
+} from './utils/backupManager';
+import { ensureMasterAdminInitialized } from './utils/authInit';
+import { LandingHero } from './components/LandingHero';
+import { CatalogView } from './components/CatalogView';
+import { ProductDetailView } from './components/ProductDetailView';
+import { LookbookView } from './components/LookbookView';
+import { AuthView } from './components/AuthView';
+import { AdminPanel } from './components/AdminPanel';
+import { QuoteDrawer } from './components/QuoteDrawer';
+import { UserProfileModal } from './components/UserProfileModal';
+import { Footer } from './components/Footer';
+import { PamperoLogo } from './components/PamperoLogo';
+import { CategoryMenuNav } from './components/CategoryMenuNav';
+import { UserNavMenu } from './components/UserNavMenu';
+import { 
+  Settings, 
+  ShoppingBag, 
+  MessageCircle, 
+  LogOut, 
+  User as UserIcon,
+  Tag,
+  Search,
+  Sparkles
+} from 'lucide-react';
+
+export default function App() {
+  // Category sanitizer to ensure newly added products are never miscategorized
+  const sanitizeCategory = (rawCat: any): MainCategory => {
+    if (rawCat === 'Mujer' || rawCat === '1' || rawCat === 1) return 'Mujer';
+    if (rawCat === 'Infantil' || rawCat === '2' || rawCat === 2) return 'Infantil';
+    if (rawCat === 'Venta Corporativa' || rawCat === '3' || rawCat === 3) return 'Venta Corporativa';
+    const s = String(rawCat || '').toLowerCase();
+    if (s.includes('mujer')) return 'Mujer';
+    if (s.includes('infan') || s.includes('niñ')) return 'Infantil';
+    if (s.includes('corp') || s.includes('venta')) return 'Venta Corporativa';
+    return 'Hombre';
+  };
+
+  // 1. Theme Configuration
+  const [theme, setTheme] = useState<ThemeConfig>(() => {
+    try {
+      const saved = localStorage.getItem('pampero_theme_config');
+      return saved ? JSON.parse(saved) : INITIAL_THEME;
+    } catch {
+      return INITIAL_THEME;
+    }
+  });
+
+  // Sync theme CSS variables and global font to document and :root
+  useEffect(() => {
+    const selectedFont = theme.fontFamily || 'Montserrat';
+
+    // 1. Set font-family directly on body and document
+    document.body.style.fontFamily = `'${selectedFont}', sans-serif`;
+    document.documentElement.style.fontFamily = `'${selectedFont}', sans-serif`;
+    document.documentElement.style.setProperty('--font-family', `'${selectedFont}', sans-serif`);
+    document.documentElement.style.setProperty('--font-display', `'${selectedFont}', sans-serif`);
+
+    // 2. Ensure Google Font stylesheet is loaded dynamically
+    const fontLinkId = 'pampero-dynamic-font';
+    let linkEl = document.getElementById(fontLinkId) as HTMLLinkElement | null;
+    if (!linkEl) {
+      linkEl = document.createElement('link');
+      linkEl.id = fontLinkId;
+      linkEl.rel = 'stylesheet';
+      document.head.appendChild(linkEl);
+    }
+    const fontQuery = encodeURIComponent(selectedFont).replace(/%20/g, '+');
+    linkEl.href = `https://fonts.googleapis.com/css2?family=${fontQuery}:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,400;1,700&display=swap`;
+
+    if (theme.backgroundColor) {
+      document.documentElement.style.setProperty('--background', theme.backgroundColor);
+    }
+    if (theme.textColor) {
+      document.documentElement.style.setProperty('--foreground', theme.textColor);
+    }
+    if (theme.accentColor) {
+      document.documentElement.style.setProperty('--accent', theme.accentColor);
+    }
+    if (theme.headerBgColor) {
+      document.documentElement.style.setProperty('--primary', theme.headerBgColor);
+    }
+    if (theme.seasonBadgeBg) {
+      document.documentElement.style.setProperty('--season-badge-bg', theme.seasonBadgeBg);
+    }
+    if (theme.seasonBadgeText) {
+      document.documentElement.style.setProperty('--season-badge-text', theme.seasonBadgeText);
+    }
+    if (theme.discountBadgeBg) {
+      document.documentElement.style.setProperty('--discount-badge-bg', theme.discountBadgeBg);
+    }
+    if (theme.discountBadgeText) {
+      document.documentElement.style.setProperty('--discount-badge-text', theme.discountBadgeText);
+    }
+  }, [theme]);
+
+  // 2. Catalog Products State (initialized from indestructible local backup or defaults)
+  const [products, setProducts] = useState<Product[]>(() => {
+    const backup = loadCatalogBackup();
+    if (backup && backup.length > 0) {
+      return backup;
+    }
+    return INITIAL_PRODUCTS;
+  });
+
+  // Global search query
+  const [searchQuery, setSearchQuery] = useState<string>('');
+
+  // Real-time catalog & store synchronization function
+  const syncFromServer = async () => {
+    try {
+      const res = await fetch(`/api/catalog/sync?_t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache, no-store',
+          Pragma: 'no-cache',
+        },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (!data || !data.success) return;
+
+      // 1. Authoritative Products Catalog with Resilience & Hybrid Auto-Recovery
+      const localBackup = loadCatalogBackup();
+      const serverProds: Product[] = Array.isArray(data.products) ? data.products : [];
+
+      if (isServerCatalogReset(serverProds, localBackup) && localBackup && localBackup.length > 0) {
+        console.warn(`[PAMPERO PERSISTENCE] Backend vacío o reseteado detectado (${serverProds.length} productos en servidor vs ${localBackup.length} en respaldo local). Restaurando catálogo desde localStorage...`);
+        setProducts(localBackup);
+        // Rescatar inmediatamente el servidor para re-grabar el archivo data_storage/products.json
+        syncBackupToServer(localBackup);
+      } else if (serverProds.length > 0) {
+        const sanitized = serverProds.map((p: Product) => ({
+          ...p,
+          category: sanitizeCategory(p.category),
+          section: p.section || 'Urbano',
+          subCategory: p.subCategory || 'General',
+        }));
+        setProducts(sanitized);
+        saveCatalogBackup(sanitized);
+      }
+
+      // 2. Authoritative Theme Config
+      if (data.theme && typeof data.theme === 'object') {
+        setTheme(data.theme);
+        try {
+          localStorage.setItem('pampero_theme_config', JSON.stringify(data.theme));
+          localStorage.setItem('pampero_catalog_theme', JSON.stringify(data.theme));
+        } catch {}
+      }
+
+      // 3. Authoritative Promotions
+      if (Array.isArray(data.promotions) && data.promotions.length > 0) {
+        setPromotions(data.promotions);
+        try {
+          localStorage.setItem('pampero_catalog_promos', JSON.stringify(data.promotions));
+        } catch {}
+      }
+
+      // 4. Authoritative Branches
+      if (Array.isArray(data.branches) && data.branches.length > 0) {
+        setBranches(data.branches);
+        try {
+          localStorage.setItem('pampero_catalog_branches', JSON.stringify(data.branches));
+        } catch {}
+      }
+
+      // 5. Authoritative Coupons
+      if (Array.isArray(data.coupons)) {
+        setCoupons(data.coupons);
+        try {
+          localStorage.setItem('pampero_discount_coupons', JSON.stringify(data.coupons));
+        } catch {}
+      }
+
+      // 6. Authoritative Lookbook
+      try {
+        const lbRes = await fetch(`/api/lookbook?_t=${Date.now()}`, {
+          cache: 'no-store',
+          headers: {
+            'Cache-Control': 'no-cache, no-store',
+            Pragma: 'no-cache',
+          },
+        });
+        if (lbRes.ok) {
+          const lbData = await lbRes.json();
+          if (lbData && lbData.success && Array.isArray(lbData.lookbook) && lbData.lookbook.length > 0) {
+            setLookbook(lbData.lookbook);
+            try {
+              localStorage.setItem('pampero_catalog_lookbook', JSON.stringify(lbData.lookbook));
+            } catch {}
+          }
+        }
+      } catch (err) {
+        console.warn('[PAMPERO SYNC] Error synchronizing lookbook:', err);
+      }
+    } catch (err) {
+      console.warn('[PAMPERO SYNC] Error synchronizing from server:', err);
+    }
+  };
+
+  // Sync products and store configuration in real-time across all devices and tabs
+  useEffect(() => {
+    // 0. Ensure Master Admin Account ALWAYS exists (even on clean state / Vercel deployment)
+    ensureMasterAdminInitialized();
+
+    // Initial sync
+    syncFromServer();
+
+    // Revalidate on window focus (e.g. when user returns to tab or opens browser)
+    const handleFocus = () => {
+      syncFromServer();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        syncFromServer();
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Periodic background sync every 10 seconds so clients see changes live
+    const interval = setInterval(syncFromServer, 10000);
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      clearInterval(interval);
+    };
+  }, []);
+
+  // 3. Promotions State
+  const [promotions, setPromotions] = useState<Promotion[]>(() => {
+    try {
+      const saved = localStorage.getItem('pampero_catalog_promos');
+      return saved ? JSON.parse(saved) : INITIAL_PROMOTIONS;
+    } catch {
+      return INITIAL_PROMOTIONS;
+    }
+  });
+
+  // 4. Mendoza Branches State
+  const [branches, setBranches] = useState<BranchLocation[]>(() => {
+    try {
+      const saved = localStorage.getItem('pampero_catalog_branches');
+      return saved ? JSON.parse(saved) : INITIAL_BRANCHES;
+    } catch {
+      return INITIAL_BRANCHES;
+    }
+  });
+
+  // 5. Discount Coupons State
+  const [coupons, setCoupons] = useState<DiscountCoupon[]>(() => {
+    try {
+      const saved = localStorage.getItem('pampero_discount_coupons');
+      return saved ? JSON.parse(saved) : INITIAL_COUPONS;
+    } catch {
+      return INITIAL_COUPONS;
+    }
+  });
+
+  // 6. User Session - strictly null at initial start as requested
+  const [userSession, setUserSession] = useState<UserSession | null>(null);
+
+  // 7. Quotation Cart
+  const [cart, setCart] = useState<CartItem[]>(() => {
+    try {
+      const saved = localStorage.getItem('pampero_quote_cart');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+
+  // Lookbook State
+  const [lookbook, setLookbook] = useState<LookbookItem[]>(() => {
+    try {
+      const saved = localStorage.getItem('pampero_catalog_lookbook');
+      return saved ? JSON.parse(saved) : INITIAL_LOOKBOOK;
+    } catch {
+      return INITIAL_LOOKBOOK;
+    }
+  });
+
+  // 8. Navigation State
+  // View Modes:
+  // 'landing' -> Hero with sliding covers & category cards (Screenshot 2)
+  // 'auth'    -> Login / Register / Admin Login (Screenshot 1)
+  // 'catalog' -> Full catalog with sidebar lines, colors, sort & grid (Screenshot 3)
+  // 'product_detail' -> Product detail (Screenshot 4)
+  // 'admin'   -> Admin panel (requires admin authentication)
+  // 'lookbook' -> Interactive campaign lookbook with hotspots
+  const [viewMode, setViewMode] = useState<'landing' | 'auth' | 'catalog' | 'product_detail' | 'admin' | 'lookbook'>('landing');
+  const [authInitialTab, setAuthInitialTab] = useState<'login' | 'register' | 'admin'>('register');
+  const [authInitialType, setAuthInitialType] = useState<'consumidor' | 'empresa'>('consumidor');
+
+  // Filtering & Selected Product
+  const [currentCategory, setCurrentCategory] = useState<MainCategory>('Hombre');
+  const [currentSection, setCurrentSection] = useState<string>('Todos');
+  const [currentSubCategory, setCurrentSubCategory] = useState<string>('Todos');
+  const [activePromoFilter, setActivePromoFilter] = useState<string | null>(null);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+
+  // Quote Drawer
+  const [isCartOpen, setIsCartOpen] = useState(false);
+
+  // Persist handlers - Writes directly to centralized backend & updates local state
+  const handleUpdateProducts = async (newProducts: Product[]) => {
+    const sanitized = newProducts.map((p) => ({
+      ...p,
+      category: sanitizeCategory(p.category),
+    }));
+    setProducts(sanitized);
+    saveCatalogBackup(sanitized);
+
+    try {
+      const res = await fetch('/api/products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ products: sanitized }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.products) && data.products.length > 0) {
+          const fresh = data.products.map((p: Product) => ({
+            ...p,
+            category: sanitizeCategory(p.category),
+          }));
+          setProducts(fresh);
+          saveCatalogBackup(fresh);
+        }
+      }
+    } catch (err) {
+      console.error('[PAMPERO PERSIST] Error saving products to server:', err);
+    }
+  };
+
+  const handleUpdatePromotions = async (newPromos: Promotion[]) => {
+    setPromotions(newPromos);
+    try {
+      localStorage.setItem('pampero_catalog_promos', JSON.stringify(newPromos));
+    } catch {}
+
+    try {
+      await fetch('/api/promotions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ promotions: newPromos }),
+      });
+    } catch (err) {
+      console.error('[PAMPERO PERSIST] Error saving promotions to server:', err);
+    }
+  };
+
+  const handleUpdateTheme = async (newTheme: ThemeConfig) => {
+    setTheme(newTheme);
+    try {
+      localStorage.setItem('pampero_theme_config', JSON.stringify(newTheme));
+      localStorage.setItem('pampero_catalog_theme', JSON.stringify(newTheme));
+      if (newTheme.customLogoUrl) {
+        localStorage.setItem('pampero_custom_logo', newTheme.customLogoUrl);
+      }
+      if (newTheme.logoHeight) {
+        localStorage.setItem('pampero_logo_height', newTheme.logoHeight.toString());
+      }
+    } catch {}
+
+    try {
+      await fetch('/api/theme', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ theme: newTheme }),
+      });
+    } catch (err) {
+      console.error('[PAMPERO PERSIST] Error saving theme to server:', err);
+    }
+  };
+
+  const handleUpdateBranches = async (newBranches: BranchLocation[]) => {
+    setBranches(newBranches);
+    try {
+      localStorage.setItem('pampero_catalog_branches', JSON.stringify(newBranches));
+    } catch {}
+
+    try {
+      await fetch('/api/branches', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ branches: newBranches }),
+      });
+    } catch (err) {
+      console.error('[PAMPERO PERSIST] Error saving branches to server:', err);
+    }
+  };
+
+  const handleUpdateCoupons = async (newCoupons: DiscountCoupon[]) => {
+    setCoupons(newCoupons);
+    try {
+      localStorage.setItem('pampero_discount_coupons', JSON.stringify(newCoupons));
+    } catch {}
+
+    try {
+      await fetch('/api/coupons', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ coupons: newCoupons }),
+      });
+    } catch (err) {
+      console.error('[PAMPERO PERSIST] Error saving coupons to server:', err);
+    }
+  };
+
+  const handleUpdateLookbook = async (newLookbook: LookbookItem[]) => {
+    setLookbook(newLookbook);
+    try {
+      localStorage.setItem('pampero_catalog_lookbook', JSON.stringify(newLookbook));
+    } catch {}
+
+    try {
+      await fetch('/api/lookbook', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lookbook: newLookbook }),
+      });
+    } catch (err) {
+      console.error('[PAMPERO PERSIST] Error saving lookbook to server:', err);
+    }
+  };
+
+  const handleLogin = (session: UserSession) => {
+    setUserSession(session);
+    localStorage.setItem('pampero_user_session', JSON.stringify(session));
+    if (session.role === 'admin') {
+      setViewMode('admin');
+    } else {
+      setViewMode('catalog');
+    }
+  };
+
+  const handleLogout = () => {
+    setUserSession(null);
+    localStorage.removeItem('pampero_user_session');
+    setViewMode('landing');
+  };
+
+  // Cart operations
+  const handleAddToCart = (product: Product, quantity = 1, color?: string, size?: string) => {
+    setCart((prev) => {
+      const idx = prev.findIndex(
+        (it) => it.product.id === product.id && it.selectedColor === color && it.selectedSize === size
+      );
+      let updated: CartItem[];
+      if (idx >= 0) {
+        updated = [...prev];
+        updated[idx].quantity += quantity;
+      } else {
+        updated = [
+          ...prev,
+          {
+            product,
+            quantity,
+            selectedColor: color || product.availableColors?.[0] || 'Estándar',
+            selectedSize: size || product.availableSizes?.[0] || 'Único',
+          },
+        ];
+      }
+      localStorage.setItem('pampero_quote_cart', JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  const handleUpdateCartQuantity = (productId: string, delta: number) => {
+    setCart((prev) => {
+      const updated = prev
+        .map((it) => {
+          if (it.product.id === productId) {
+            const newQ = it.quantity + delta;
+            return newQ > 0 ? { ...it, quantity: newQ } : null;
+          }
+          return it;
+        })
+        .filter(Boolean) as CartItem[];
+      localStorage.setItem('pampero_quote_cart', JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  const handleRemoveFromCart = (productId: string) => {
+    setCart((prev) => {
+      const updated = prev.filter((it) => it.product.id !== productId);
+      localStorage.setItem('pampero_quote_cart', JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  const handleClearCart = () => {
+    setCart([]);
+    localStorage.removeItem('pampero_quote_cart');
+  };
+
+  // Navigation: Open Auth with specific config
+  const openAuthScreen = (tab: 'login' | 'register' | 'admin' = 'register', type: 'consumidor' | 'empresa' = 'consumidor') => {
+    setAuthInitialTab(tab);
+    setAuthInitialType(type);
+    setViewMode('auth');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Navigation: Open Catalog
+  const openCatalogScreen = (promoFilter?: string | null, categoryFilter?: MainCategory | null) => {
+    if (!userSession) {
+      openAuthScreen('register', categoryFilter === 'Venta Corporativa' ? 'empresa' : 'consumidor');
+      return;
+    }
+    if (categoryFilter) {
+      setCurrentCategory(categoryFilter);
+    }
+    if (promoFilter) {
+      setActivePromoFilter(promoFilter);
+    } else {
+      setActivePromoFilter(null);
+    }
+    setCurrentSection('Todos');
+    setCurrentSubCategory('Todos');
+    setViewMode('catalog');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Open Product Detail
+  const handleSelectProduct = (product: Product) => {
+    setSelectedProduct(product);
+    setViewMode('product_detail');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const totalCartCount = cart.reduce((acc, it) => acc + it.quantity, 0);
+
+  const categoriesList: MainCategory[] = ['Hombre', 'Mujer', 'Infantil', 'Venta Corporativa'];
+
+  return (
+    <div className="min-h-screen flex flex-col bg-[#F5F2EC] text-[#22201D] font-sans antialiased selection:bg-[#FDB813] selection:text-black">
+      
+      {/* Admin Floating Bar if logged in as Admin */}
+      {userSession?.role === 'admin' && (
+        <div className="bg-[#18231C] text-[#F5F2EC] px-4 py-2 text-xs flex flex-wrap items-center justify-between gap-2 border-b border-amber-500/40 z-50">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="font-bold text-amber-300">Modo Administrador Activo</span>
+            <span className="text-neutral-300 hidden sm:inline">
+              · Podés agregar productos, editar imágenes, gestionar promociones y sucursales.
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setViewMode('admin')}
+              style={{
+                backgroundColor: theme.accentColor || '#FDB813',
+                color: theme.buttonTextColor || '#18231C',
+              }}
+              className="px-3 py-1 rounded-xs hover:opacity-90 font-bold flex items-center gap-1.5 uppercase tracking-wider text-[10px] transition-opacity"
+            >
+              <Settings className="w-3.5 h-3.5" />
+              Panel de Control
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('catalog')}
+              className="px-2.5 py-1 rounded-xs bg-white/10 hover:bg-white/20 text-white text-[10px] uppercase tracking-wider font-semibold"
+            >
+              Ver Catálogo
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Top Header shown on Catalog and Product Detail (Screenshot 3 & 4) */}
+      {(viewMode === 'catalog' || viewMode === 'product_detail') && (
+        <header className="sticky top-0 z-50 bg-white border-b border-[#DCD4C9] shadow-xs">
+          {/* Top Micro Announcement */}
+          <div 
+            style={{ 
+              backgroundColor: theme.primaryColor || '#18231C',
+              color: theme.primaryTextColor || '#F5F2EC'
+            }}
+            className="text-[10px] sm:text-[11px] py-1.5 px-4 flex items-center justify-center gap-3 uppercase tracking-[0.25em] font-medium select-none"
+          >
+            <span>CATÁLOGO DIGITAL · EXHIBICIÓN DE PRODUCTO</span>
+          </div>
+
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex items-center justify-between gap-4">
+            {/* Logo con tamaño bloqueado estrictamente por CSS */}
+            <div
+              className="cursor-pointer shrink-0"
+              onClick={() => setViewMode('landing')}
+              title="Volver a la portada principal"
+            >
+              <img 
+                src="/logo-oficial.png.png" 
+                alt="Pampero Oficial" 
+                className="h-14 w-auto object-contain shrink-0" 
+                onError={(e) => {
+                  if (e.currentTarget.src !== window.location.origin + '/logo.png') {
+                    e.currentTarget.src = '/logo.png';
+                  }
+                }}
+              />
+            </div>
+
+            {/* Center Category Navigation with persistent mega-menu dropdown */}
+            <div className="hidden lg:flex items-center gap-4">
+              <CategoryMenuNav
+                currentCategory={currentCategory}
+                activePromoFilter={activePromoFilter}
+                onSelectCategoryItem={(cat, sec, sub) => {
+                  setCurrentCategory(cat);
+                  setCurrentSection(sec || 'Todos');
+                  setCurrentSubCategory(sub || 'Todos');
+                  setActivePromoFilter(null);
+                  setViewMode('catalog');
+                }}
+                onSelectPromo={(tag) => {
+                  setActivePromoFilter(tag);
+                  setViewMode('catalog');
+                }}
+                theme={theme}
+              />
+              <button
+                type="button"
+                onClick={() => setViewMode('lookbook')}
+                className="px-3.5 py-1.5 rounded-xs border border-[#18231C]/30 hover:border-[#18231C] text-[11px] font-bold uppercase tracking-wider text-[#18231C] hover:bg-[#18231C] hover:text-[#F5F2EC] transition-all cursor-pointer select-none"
+                title="Catálogo Interactivo"
+              >
+                Catálogo Interactivo
+              </button>
+            </div>
+
+            {/* Quick Product Search in Header */}
+            <div className="relative hidden md:flex items-center flex-1 max-w-xs mx-2">
+              <Search className="w-3.5 h-3.5 text-[#8C827A] absolute left-3 pointer-events-none" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  if (viewMode !== 'catalog') setViewMode('catalog');
+                }}
+                placeholder="Buscar artículos..."
+                className="w-full pl-8.5 pr-7 py-1.5 bg-white border border-[#DCD4C9] rounded-xs text-xs text-[#18231C] placeholder-[#8C827A] focus:outline-none focus:border-[#FDB813] transition-all font-medium"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2 text-[#8C827A] hover:text-[#18231C] text-xs font-bold p-0.5 cursor-pointer"
+                  title="Borrar búsqueda"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+
+            {/* Right User & Quote Actions - Harmonized Dropdown Menu */}
+            <UserNavMenu
+              userSession={userSession}
+              cartCount={totalCartCount}
+              onOpenCart={() => setIsCartOpen(true)}
+              onOpenAuth={() => openAuthScreen('login', 'consumidor')}
+              onLogout={handleLogout}
+              onOpenAdmin={() => setViewMode('admin')}
+              onOpenProfile={() => setIsProfileOpen(true)}
+              theme={theme}
+            />
+          </div>
+        </header>
+      )}
+
+      {/* Main View Router */}
+      <main className="flex-1">
+        {/* VIEW 1: LANDING PAGE (Screenshot 2: Hero with sliding covers) */}
+        {viewMode === 'landing' && (
+          <LandingHero
+            userSession={userSession}
+            theme={theme}
+            promotions={promotions}
+            onOpenAuth={openAuthScreen}
+            onSelectCategory={(cat) => openCatalogScreen(null, cat)}
+            onOpenCatalog={(promo, cat) => openCatalogScreen(promo, cat)}
+            cartCount={totalCartCount}
+            onOpenCart={() => setIsCartOpen(true)}
+            onLogout={handleLogout}
+            onOpenAdmin={() => setViewMode('admin')}
+            onOpenProfile={() => setIsProfileOpen(true)}
+            onOpenLookbook={() => setViewMode('lookbook')}
+          />
+        )}
+
+        {/* VIEW 2: AUTH SCREEN (Screenshot 1: Pixel match, Consumer/Company tabs + Admin login) */}
+        {viewMode === 'auth' && (
+          <AuthView
+            initialMode={authInitialTab}
+            initialType={authInitialType}
+            theme={theme}
+            onLogin={handleLogin}
+            onBackToHome={() => setViewMode('landing')}
+          />
+        )}
+
+        {/* VIEW 3: CATALOG VIEW (Screenshot 3: Lines sidebar, colors, sort, 4-col products) */}
+        {viewMode === 'catalog' && (
+          <CatalogView
+            currentCategory={currentCategory}
+            onSelectCategory={setCurrentCategory}
+            currentSection={currentSection}
+            onSelectSection={setCurrentSection}
+            currentSubCategory={currentSubCategory}
+            onSelectSubCategory={setCurrentSubCategory}
+            products={products}
+            userSession={userSession}
+            theme={theme}
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            onViewProduct={handleSelectProduct}
+            onViewProductDetail={handleSelectProduct}
+            onQuickAdd={(prod) => handleAddToCart(prod, 1)}
+            onBackToHome={() => setViewMode('landing')}
+            activePromoFilter={activePromoFilter}
+            onClearPromoFilter={() => setActivePromoFilter(null)}
+            onOpenPromos={() => setActivePromoFilter('Promoción')}
+          />
+        )}
+
+        {/* VIEW 4: PRODUCT DETAIL VIEW (Screenshot 4: Back button, square photo, colors, sizes, WhatsApp) */}
+        {viewMode === 'product_detail' && selectedProduct && (
+          <ProductDetailView
+            product={selectedProduct}
+            userSession={userSession}
+            theme={theme}
+            onBackToCatalog={() => setViewMode('catalog')}
+            onAddToCart={(prod, col, sz) => handleAddToCart(prod, 1, col, sz)}
+          />
+        )}
+
+        {/* VIEW 5: LOOKBOOK INTERACTIVE VIEW */}
+        {viewMode === 'lookbook' && (
+          <LookbookView
+            lookbook={lookbook}
+            products={products}
+            theme={theme}
+            onBackToStore={() => setViewMode('catalog')}
+            onSelectProduct={handleSelectProduct}
+            onAddToCart={(prod) => handleAddToCart(prod, 1)}
+          />
+        )}
+
+        {/* VIEW 6: ADMIN PANEL (Protected with password) */}
+        {viewMode === 'admin' && (
+          <AdminPanel
+            isOpen={true}
+            products={products}
+            promotions={promotions}
+            theme={theme}
+            branches={branches}
+            coupons={coupons}
+            lookbook={lookbook}
+            onUpdateProducts={handleUpdateProducts}
+            onUpdatePromotions={handleUpdatePromotions}
+            onUpdateTheme={handleUpdateTheme}
+            onUpdateBranches={handleUpdateBranches}
+            onUpdateCoupons={handleUpdateCoupons}
+            onUpdateLookbook={handleUpdateLookbook}
+            userSession={userSession}
+            onClose={() => setViewMode('catalog')}
+            onSelectPromoFilter={(promo) => {
+              setActivePromoFilter(promo.tagFilter || promo.title);
+              setViewMode('catalog');
+            }}
+          />
+        )}
+      </main>
+
+      {/* Footer (with exact Mendoza and Luján de Cuyo addresses) */}
+      <Footer
+        theme={theme}
+        branches={branches}
+        onOpenAdmin={() => {
+          if (userSession?.role === 'admin') {
+            setViewMode('admin');
+          } else {
+            openAuthScreen('admin', 'empresa');
+          }
+        }}
+        onSelectCategory={(cat) => openCatalogScreen(null, cat as MainCategory)}
+        onOpenLookbook={() => setViewMode('lookbook')}
+      />
+
+      {/* Admin Floating Quick Access Button */}
+      {userSession?.role === 'admin' && viewMode !== 'admin' && (
+        <button
+          id="btn-admin-floating-quick"
+          type="button"
+          onClick={() => setViewMode('admin')}
+          className="fixed bottom-6 left-6 z-40 px-4 py-2.5 rounded-xs bg-[#18231C] text-[#F5F2EC] border-2 shadow-2xl hover:bg-black transition-all flex items-center gap-2 text-xs font-bold uppercase tracking-wider group"
+          style={{ borderColor: theme.accentColor || '#FDB813' }}
+          title="Panel de Control de Administrador"
+        >
+          <Settings 
+            className="w-4 h-4 group-hover:rotate-45 transition-transform" 
+            style={{ color: theme.accentColor || '#FDB813' }} 
+          />
+          <span>Panel de Control</span>
+        </button>
+      )}
+
+      {/* Floating WhatsApp Contact Button */}
+      <a
+        href={`https://wa.me/5492615276713?text=Hola%20Pampero%20Gran%20Mendoza,%20quisiera%20hacer%20una%20consulta%20directa%20sobre%20su%20cat%C3%A1logo.`}
+        target="_blank"
+        rel="noreferrer"
+        className="fixed bottom-5 right-5 z-40 w-13 h-13 rounded-full bg-[#25D366] hover:bg-[#20ba59] text-white flex items-center justify-center shadow-lg hover:scale-105 transition-all"
+        title="Consultar por WhatsApp a Pampero Gran Mendoza"
+      >
+        <MessageCircle className="w-7 h-7 fill-current" />
+      </a>
+
+      {/* Quote Drawer Modal */}
+      <QuoteDrawer
+        isOpen={isCartOpen}
+        onClose={() => setIsCartOpen(false)}
+        items={cart}
+        onUpdateQuantity={handleUpdateCartQuantity}
+        onRemoveItem={handleRemoveFromCart}
+        onClear={handleClearCart}
+        userSession={userSession}
+        theme={theme}
+        coupons={coupons}
+      />
+
+      {/* User Profile / Address Editing Modal */}
+      <UserProfileModal
+        isOpen={isProfileOpen}
+        onClose={() => setIsProfileOpen(false)}
+        userSession={userSession}
+        onUpdateSession={(updatedSession) => {
+          setUserSession(updatedSession);
+        }}
+        theme={theme}
+      />
+
+    </div>
+  );
+}

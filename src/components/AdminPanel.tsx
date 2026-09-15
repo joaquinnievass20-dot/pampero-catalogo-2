@@ -1,0 +1,1636 @@
+import React, { useState, useEffect } from 'react';
+import { 
+  Product, 
+  Promotion, 
+  ThemeConfig, 
+  BranchLocation,
+  MainCategory,
+  DiscountCoupon,
+  UserSession,
+  LookbookItem
+} from '../types';
+import { CATEGORY_HIERARCHY } from '../data/categories';
+import { AdminThemeTab } from './admin/AdminThemeTab';
+import { AdminLookbookTab } from './admin/AdminLookbookTab';
+import { AdminPromosTab } from './admin/AdminPromosTab';
+import { AdminMassImagesTab } from './admin/AdminMassImagesTab';
+import { AdminPricesTab } from './admin/AdminPricesTab';
+import { AdminCouponsTab } from './admin/AdminCouponsTab';
+import { AdminUsersTab } from './admin/AdminUsersTab';
+import { AdminSecurityTab } from './admin/AdminSecurityTab';
+import { AdminAnalyticsTab } from './admin/AdminAnalyticsTab';
+import { AdminVariantsTab } from './admin/AdminVariantsTab';
+import { AdminEmployeesTab } from './admin/AdminEmployeesTab';
+import { AdminQuotesTab } from './admin/AdminQuotesTab';
+import { AdminBulkExcelImportModal } from './admin/AdminBulkExcelImportModal';
+import { PamperoLogo } from './PamperoLogo';
+import { saveCatalogBackup } from '../utils/backupManager';
+import { 
+  Palette, 
+  Tag, 
+  Package, 
+  FileSpreadsheet, 
+  Building2, 
+  X, 
+  Plus, 
+  Trash2, 
+  Edit3, 
+  Save, 
+  Check, 
+  Search, 
+  Ticket, 
+  Images,
+  MapPin,
+  Clock,
+  Phone,
+  Users,
+  ShieldCheck,
+  BarChart3,
+  ExternalLink,
+  MessageCircle,
+  Layers,
+  ShoppingBag,
+  UserCheck,
+  Upload,
+  ArrowLeft,
+  ArrowRight,
+  Star,
+  Sparkles
+} from 'lucide-react';
+
+export type AdminTabKey = 
+  | 'promos' 
+  | 'mass_images' 
+  | 'prices' 
+  | 'coupons' 
+  | 'theme' 
+  | 'lookbook'
+  | 'products' 
+  | 'variants' 
+  | 'branches' 
+  | 'quotes' 
+  | 'employees' 
+  | 'users' 
+  | 'security' 
+  | 'analytics';
+
+interface AdminPanelProps {
+  isOpen?: boolean;
+  onClose: () => void;
+  products: Product[];
+  onUpdateProducts: (newProducts: Product[]) => void;
+  promotions: Promotion[];
+  onUpdatePromotions: (newPromos: Promotion[]) => void;
+  theme: ThemeConfig;
+  onUpdateTheme: (newTheme: ThemeConfig) => void;
+  branches: BranchLocation[];
+  onUpdateBranches: (newBranches: BranchLocation[]) => void;
+  coupons?: DiscountCoupon[];
+  onUpdateCoupons: (coupons: DiscountCoupon[]) => void;
+  lookbook?: LookbookItem[];
+  onUpdateLookbook?: (newLookbook: LookbookItem[]) => Promise<void> | void;
+  onSelectPromoFilter?: (promo: Promotion) => void;
+  userSession?: UserSession | null;
+}
+
+export const AdminPanel: React.FC<AdminPanelProps> = ({
+  isOpen = true,
+  onClose,
+  products,
+  onUpdateProducts,
+  promotions,
+  onUpdatePromotions,
+  theme,
+  onUpdateTheme,
+  branches,
+  onUpdateBranches,
+  coupons = [],
+  onUpdateCoupons,
+  lookbook = [],
+  onUpdateLookbook,
+  onSelectPromoFilter = () => {},
+  userSession,
+}) => {
+  const isEmployee = userSession?.role === 'employee';
+
+  const employeePermissions: string[] = (() => {
+    if (!isEmployee) return [];
+    try {
+      const saved = localStorage.getItem('pampero_employees');
+      if (saved) {
+        const list = JSON.parse(saved);
+        const emp = list.find((e: any) => 
+          e.email?.toLowerCase() === userSession?.email?.toLowerCase() || e.id === userSession?.id
+        );
+        if (emp && emp.allowedTabs) return emp.allowedTabs;
+      }
+    } catch {}
+    return ['products', 'variants', 'prices', 'mass_images', 'quotes'];
+  })();
+
+  const isTabVisible = (tabKey: AdminTabKey) => {
+    if (!isEmployee) return true;
+    if (tabKey === 'security' || tabKey === 'employees') return false;
+    return employeePermissions.includes(tabKey);
+  };
+
+  const initialTab: AdminTabKey = isEmployee 
+    ? ((employeePermissions[0] as AdminTabKey) || 'products') 
+    : 'promos';
+
+  const [activeTab, setActiveTab] = useState<AdminTabKey>(initialTab);
+  const [savedNotice, setSavedNotice] = useState(false);
+
+  useEffect(() => {
+    if (!isTabVisible(activeTab)) {
+      const firstAllowed = employeePermissions[0] as AdminTabKey;
+      if (firstAllowed) setActiveTab(firstAllowed);
+    }
+  }, [userSession]);
+
+  // Products Tab internal state
+  const [productSearch, setProductSearch] = useState('');
+  const [isCreatingProduct, setIsCreatingProduct] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
+  const [newPhotoUrl, setNewPhotoUrl] = useState('');
+  const [productForm, setProductForm] = useState<Partial<Product>>({
+    code: '',
+    name: '',
+    category: 'Hombre',
+    section: 'Urbano',
+    subCategory: 'Abrigos',
+    description: '',
+    features: ['Calidad Pampero Garantizada', '100% Algodón Reforzado'],
+    price: 55000,
+    corporatePrice: 46000,
+    discountPercentage: 0,
+    promotionTag: 'Temporada 2026',
+    image: 'https://images.unsplash.com/photo-1544923246-77307dd654cb?auto=format&fit=crop&w=800&q=80',
+    availableColors: ['Negro', 'Azul'],
+    availableSizes: ['S', 'M', 'L', 'XL'],
+    inStock: true,
+  });
+
+  // Branches Tab internal state
+  const [isCreatingBranch, setIsCreatingBranch] = useState(false);
+  const [editingBranch, setEditingBranch] = useState<BranchLocation | null>(null);
+  const [branchForm, setBranchForm] = useState<Partial<BranchLocation>>({
+    name: '',
+    address: '',
+    city: 'Gran Mendoza',
+    phone: '',
+    whatsappNumber: '',
+    openingHours: 'Lunes a Viernes de 08:30 a 13:00 y 16:30 a 20:30, Sábados 09:00 a 13:30',
+    mapUrl: '',
+    isPrimary: false,
+  });
+
+  if (!isOpen) return null;
+
+  const triggerSaveNotice = () => {
+    setSavedNotice(true);
+    setTimeout(() => setSavedNotice(false), 2500);
+  };
+
+  // Helper to normalize category
+  const sanitizeCategory = (rawCat: any): MainCategory => {
+    if (rawCat === 'Mujer' || rawCat === '1' || rawCat === 1) return 'Mujer';
+    if (rawCat === 'Infantil' || rawCat === '2' || rawCat === 2) return 'Infantil';
+    if (rawCat === 'Venta Corporativa' || rawCat === '3' || rawCat === 3) return 'Venta Corporativa';
+    const s = String(rawCat || '').toLowerCase();
+    if (s.includes('mujer')) return 'Mujer';
+    if (s.includes('infan') || s.includes('niñ')) return 'Infantil';
+    if (s.includes('corp') || s.includes('venta')) return 'Venta Corporativa';
+    return 'Hombre';
+  };
+
+  // Product Handlers
+  const handleSaveProduct = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!productForm.name?.trim()) return;
+
+    const cleanCategory = sanitizeCategory(productForm.category);
+    const cleanSection = (productForm.section || '').trim() || 'Urbano';
+    const cleanSubCategory = (productForm.subCategory || '').trim() || 'Abrigos';
+
+    const rawImages = Array.isArray(productForm.images) && productForm.images.length > 0
+      ? productForm.images
+      : [productForm.image || 'https://images.unsplash.com/photo-1544923246-77307dd654cb?auto=format&fit=crop&w=800&q=80'];
+    const primaryImage = rawImages[0] || productForm.image || 'https://images.unsplash.com/photo-1544923246-77307dd654cb?auto=format&fit=crop&w=800&q=80';
+
+    if (editingProduct) {
+      const updated = products.map((p) =>
+        p.id === editingProduct.id
+          ? ({
+              ...p,
+              ...productForm,
+              category: cleanCategory,
+              section: cleanSection,
+              subCategory: cleanSubCategory,
+              images: rawImages,
+              image: primaryImage,
+            } as Product)
+          : p
+      );
+      onUpdateProducts(updated);
+      saveCatalogBackup(updated);
+    } else {
+      const newProd: Product = {
+        id: 'prod-' + Date.now(),
+        code: (productForm.code || '').trim() || 'PAM-' + Math.floor(Math.random() * 900 + 100),
+        name: (productForm.name || '').trim(),
+        category: cleanCategory,
+        section: cleanSection,
+        subCategory: cleanSubCategory,
+        description: productForm.description || '',
+        features: productForm.features || ['Resistente', 'Pampero Oficial'],
+        price: Number(productForm.price) || 0,
+        corporatePrice: Number(productForm.corporatePrice) || Math.round((Number(productForm.price) || 0) * 0.85),
+        discountPercentage: Number(productForm.discountPercentage) || 0,
+        promotionTag: productForm.promotionTag || 'Temporada 2026',
+        image: primaryImage,
+        images: rawImages,
+        availableColors: productForm.availableColors || ['Negro', 'Azul'],
+        availableSizes: productForm.availableSizes || ['S', 'M', 'L', 'XL'],
+        inStock: productForm.inStock ?? true,
+      };
+      const updatedList = [newProd, ...products];
+      onUpdateProducts(updatedList);
+      saveCatalogBackup(updatedList);
+    }
+
+    setEditingProduct(null);
+    setIsCreatingProduct(false);
+    triggerSaveNotice();
+  };
+
+  const handleDeleteProduct = (id: string) => {
+    if (confirm('¿Desea eliminar este producto del catálogo?')) {
+      onUpdateProducts(products.filter((p) => p.id !== id));
+      triggerSaveNotice();
+    }
+  };
+
+  // Branch Handlers
+  const handleSaveBranch = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!branchForm.name?.trim()) return;
+
+    let updated: BranchLocation[];
+    if (editingBranch) {
+      updated = branches.map((b) =>
+        b.id === editingBranch.id ? ({ ...b, ...branchForm } as BranchLocation) : b
+      );
+    } else {
+      const newBranch: BranchLocation = {
+        id: 'branch-' + Date.now(),
+        name: branchForm.name.trim(),
+        address: branchForm.address?.trim() || '',
+        city: branchForm.city?.trim() || 'Gran Mendoza',
+        phone: branchForm.phone?.trim() || '',
+        whatsappNumber: branchForm.whatsappNumber?.trim() || '',
+        openingHours: branchForm.openingHours?.trim() || 'Lunes a Viernes de 08:30 a 13:00 y 16:30 a 20:30, Sábados 09:00 a 13:30',
+        mapUrl: branchForm.mapUrl?.trim() || '',
+        isPrimary: Boolean(branchForm.isPrimary),
+      };
+      updated = [...branches, newBranch];
+    }
+
+    onUpdateBranches(updated);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('pampero_catalog_branches', JSON.stringify(updated));
+    }
+    setEditingBranch(null);
+    setIsCreatingBranch(false);
+    triggerSaveNotice();
+  };
+
+  const handleDeleteBranch = (id: string) => {
+    if (confirm('¿Estás seguro de que deseás eliminar esta sucursal?')) {
+      const updated = branches.filter((b) => b.id !== id);
+      onUpdateBranches(updated);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('pampero_catalog_branches', JSON.stringify(updated));
+      }
+      triggerSaveNotice();
+    }
+  };
+
+  const handleGlobalSave = () => {
+    onUpdateTheme(theme);
+    onUpdateProducts(products);
+    saveCatalogBackup(products);
+    onUpdatePromotions(promotions);
+    onUpdateBranches(branches);
+    onUpdateCoupons(coupons);
+
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('pampero_catalog_theme', JSON.stringify(theme));
+      localStorage.setItem('pampero_theme_config', JSON.stringify(theme));
+      localStorage.setItem('pampero_catalog_products', JSON.stringify(products));
+      localStorage.setItem('pampero_catalog_promos', JSON.stringify(promotions));
+      localStorage.setItem('pampero_catalog_branches', JSON.stringify(branches));
+      localStorage.setItem('pampero_discount_coupons', JSON.stringify(coupons));
+      if (theme.customLogoUrl) {
+        localStorage.setItem('pampero_custom_logo', theme.customLogoUrl);
+      }
+      if (theme.logoHeight) {
+        localStorage.setItem('pampero_logo_height', theme.logoHeight.toString());
+      }
+    }
+    triggerSaveNotice();
+  };
+
+  const filteredProducts = products.filter(
+    (p) =>
+      p.name.toLowerCase().includes(productSearch.toLowerCase()) ||
+      p.code.toLowerCase().includes(productSearch.toLowerCase()) ||
+      p.category.toLowerCase().includes(productSearch.toLowerCase()) ||
+      p.subCategory.toLowerCase().includes(productSearch.toLowerCase())
+  );
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 md:p-6 bg-black/80 backdrop-blur-xs animate-fadeIn">
+      <div 
+        id="pampero-admin-modal"
+        style={{
+          borderColor: theme.cardBorderColor || '#DCD4C9',
+          backgroundColor: theme.panelBgColor || '#FFFFFF'
+        }}
+        className="w-full max-w-6xl h-[92vh] max-h-[900px] rounded-xs shadow-2xl flex flex-col overflow-hidden border"
+      >
+        {/* Top Header matching Pampero brand colors and dynamic theme */}
+        <div 
+          style={{ 
+            backgroundColor: theme.primaryColor || '#18231C',
+            color: theme.headerTextColor || '#F5F2EC'
+          }}
+          className="px-5 sm:px-6 py-3.5 flex items-center justify-between border-b border-black/40 transition-colors"
+        >
+          <div className="flex items-center gap-3">
+            <PamperoLogo 
+              customUrl={theme.customLogoUrl || theme.logoUrl}
+              height={theme.logoHeight ? Math.min(theme.logoHeight, 38) : 32}
+              size="sm"
+            />
+            <div>
+              <h2 className="font-display text-lg sm:text-xl uppercase tracking-wider flex items-center gap-2 leading-none">
+                PANEL DE ADMINISTRACIÓN GENERAL · GRAN MENDOZA
+                {savedNotice && (
+                  <span className="text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2 py-0.5 rounded-xs flex items-center gap-1 font-sans font-semibold">
+                    <Check className="w-3 h-3" /> Cambios Guardados
+                  </span>
+                )}
+              </h2>
+              <p className="text-[11px] opacity-75 mt-0.5 font-sans">
+                Gestión oficial de promociones, imágenes masivas, lista de precios, códigos y estilos de marca.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2.5">
+            <button
+              id="btn-global-save-admin"
+              type="button"
+              onClick={handleGlobalSave}
+              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xs text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+              title="Guardar todos los cambios en el sistema"
+            >
+              <Save className="w-3.5 h-3.5" />
+              Guardar Cambios
+            </button>
+            <button
+              id="btn-close-admin-panel"
+              onClick={onClose}
+              className="opacity-75 hover:opacity-100 p-1.5 rounded-xs hover:bg-white/10 transition-colors"
+              title="Cerrar panel de control y volver al catálogo"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Navigation Tabs */}
+        {(() => {
+          const iconColor = theme.iconColor || theme.accentColor || '#FDB813';
+          const activeBorderColor = theme.accentColor || '#FDB813';
+          return (
+            <div className="flex border-b border-[#DCD4C9] bg-[#ECE5DC] px-4 pt-2 gap-1.5 overflow-x-auto text-xs font-bold uppercase tracking-wider">
+              
+              {/* Promociones */}
+              {isTabVisible('promos') && (
+                <button
+                  id="admin-tab-promos"
+                  onClick={() => setActiveTab('promos')}
+                  style={{
+                    borderTopColor: activeTab === 'promos' ? activeBorderColor : 'transparent',
+                  }}
+                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                    activeTab === 'promos'
+                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
+                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
+                  }`}
+                >
+                  <Tag className="w-4 h-4" style={{ color: iconColor }} />
+                  Promociones ({promotions.length})
+                </button>
+              )}
+
+              {/* Carga Masiva de Imágenes */}
+              {isTabVisible('mass_images') && (
+                <button
+                  id="admin-tab-mass-images"
+                  onClick={() => setActiveTab('mass_images')}
+                  style={{
+                    borderTopColor: activeTab === 'mass_images' ? activeBorderColor : 'transparent',
+                  }}
+                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                    activeTab === 'mass_images'
+                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
+                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
+                  }`}
+                >
+                  <Images className="w-4 h-4" style={{ color: iconColor }} />
+                  Carga Masiva de Imágenes
+                </button>
+              )}
+
+              {/* Sincronización de Precios & Excel */}
+              {isTabVisible('prices') && (
+                <button
+                  id="admin-tab-prices"
+                  onClick={() => setActiveTab('prices')}
+                  style={{
+                    borderTopColor: activeTab === 'prices' ? activeBorderColor : 'transparent',
+                  }}
+                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                    activeTab === 'prices'
+                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
+                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
+                  }`}
+                >
+                  <FileSpreadsheet className="w-4 h-4" style={{ color: iconColor }} />
+                  Precios & Planillas ({products.length})
+                </button>
+              )}
+
+              {/* Códigos de Descuento */}
+              {isTabVisible('coupons') && (
+                <button
+                  id="admin-tab-coupons"
+                  onClick={() => setActiveTab('coupons')}
+                  style={{
+                    borderTopColor: activeTab === 'coupons' ? activeBorderColor : 'transparent',
+                  }}
+                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                    activeTab === 'coupons'
+                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
+                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
+                  }`}
+                >
+                  <Ticket className="w-4 h-4" style={{ color: iconColor }} />
+                  Cupones ({coupons.length})
+                </button>
+              )}
+
+              {/* Logo, Colores & Fuentes */}
+              {isTabVisible('theme') && (
+                <button
+                  id="admin-tab-theme"
+                  onClick={() => setActiveTab('theme')}
+                  style={{
+                    borderTopColor: activeTab === 'theme' ? activeBorderColor : 'transparent',
+                  }}
+                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                    activeTab === 'theme'
+                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
+                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
+                  }`}
+                >
+                  <Palette className="w-4 h-4" style={{ color: iconColor }} />
+                  Logo & Estilos
+                </button>
+              )}
+
+              {/* Lookbook Interactivo */}
+              {isTabVisible('lookbook') && (
+                <button
+                  id="admin-tab-lookbook"
+                  onClick={() => setActiveTab('lookbook')}
+                  style={{
+                    borderTopColor: activeTab === 'lookbook' ? activeBorderColor : 'transparent',
+                  }}
+                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                    activeTab === 'lookbook'
+                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
+                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
+                  }`}
+                >
+                  <Sparkles className="w-4 h-4" style={{ color: iconColor }} />
+                  Lookbook Interactivo
+                </button>
+              )}
+
+              {/* Productos */}
+              {isTabVisible('products') && (
+                <button
+                  id="admin-tab-products"
+                  onClick={() => setActiveTab('products')}
+                  style={{
+                    borderTopColor: activeTab === 'products' ? activeBorderColor : 'transparent',
+                  }}
+                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                    activeTab === 'products'
+                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
+                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
+                  }`}
+                >
+                  <Package className="w-4 h-4" style={{ color: iconColor }} />
+                  Productos ({products.length})
+                </button>
+              )}
+
+              {/* Colores y Talles por Artículo */}
+              {isTabVisible('variants') && (
+                <button
+                  id="admin-tab-variants"
+                  onClick={() => setActiveTab('variants')}
+                  style={{
+                    borderTopColor: activeTab === 'variants' ? activeBorderColor : 'transparent',
+                  }}
+                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                    activeTab === 'variants'
+                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
+                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
+                  }`}
+                >
+                  <Layers className="w-4 h-4" style={{ color: iconColor }} />
+                  Colores & Talles
+                </button>
+              )}
+
+              {/* Cotizaciones Recibidas */}
+              {isTabVisible('quotes') && (
+                <button
+                  id="admin-tab-quotes"
+                  onClick={() => setActiveTab('quotes')}
+                  style={{
+                    borderTopColor: activeTab === 'quotes' ? activeBorderColor : 'transparent',
+                  }}
+                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                    activeTab === 'quotes'
+                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
+                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
+                  }`}
+                >
+                  <ShoppingBag className="w-4 h-4" style={{ color: iconColor }} />
+                  Cotizaciones
+                </button>
+              )}
+
+              {/* Sucursales */}
+              {isTabVisible('branches') && (
+                <button
+                  id="admin-tab-branches"
+                  onClick={() => setActiveTab('branches')}
+                  style={{
+                    borderTopColor: activeTab === 'branches' ? activeBorderColor : 'transparent',
+                  }}
+                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                    activeTab === 'branches'
+                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
+                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
+                  }`}
+                >
+                  <Building2 className="w-4 h-4" style={{ color: iconColor }} />
+                  Sucursales ({branches.length})
+                </button>
+              )}
+
+              {/* Métricas & Búsquedas */}
+              {isTabVisible('analytics') && (
+                <button
+                  id="admin-tab-analytics"
+                  onClick={() => setActiveTab('analytics')}
+                  style={{
+                    borderTopColor: activeTab === 'analytics' ? activeBorderColor : 'transparent',
+                  }}
+                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                    activeTab === 'analytics'
+                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
+                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
+                  }`}
+                >
+                  <BarChart3 className="w-4 h-4" style={{ color: iconColor }} />
+                  Métricas
+                </button>
+              )}
+
+              {/* Gestión de Empleados (Solo Administrador) */}
+              {isTabVisible('employees') && (
+                <button
+                  id="admin-tab-employees"
+                  onClick={() => setActiveTab('employees')}
+                  style={{
+                    borderTopColor: activeTab === 'employees' ? activeBorderColor : 'transparent',
+                  }}
+                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                    activeTab === 'employees'
+                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
+                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
+                  }`}
+                >
+                  <UserCheck className="w-4 h-4" style={{ color: iconColor }} />
+                  Empleados & Permisos
+                </button>
+              )}
+
+              {/* Cuentas Creadas */}
+              {isTabVisible('users') && (
+                <button
+                  id="admin-tab-users"
+                  onClick={() => setActiveTab('users')}
+                  style={{
+                    borderTopColor: activeTab === 'users' ? activeBorderColor : 'transparent',
+                  }}
+                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                    activeTab === 'users'
+                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
+                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
+                  }`}
+                >
+                  <Users className="w-4 h-4" style={{ color: iconColor }} />
+                  Cuentas Creadas
+                </button>
+              )}
+
+              {/* Seguridad & Claves */}
+              {isTabVisible('security') && (
+                <button
+                  id="admin-tab-security"
+                  onClick={() => setActiveTab('security')}
+                  style={{
+                    borderTopColor: activeTab === 'security' ? activeBorderColor : 'transparent',
+                  }}
+                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                    activeTab === 'security'
+                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
+                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
+                  }`}
+                >
+                  <ShieldCheck className="w-4 h-4" style={{ color: iconColor }} />
+                  Seguridad
+                </button>
+              )}
+
+            </div>
+          );
+        })()}
+
+        {/* Tab Content Body */}
+        <div className="flex-1 overflow-y-auto bg-neutral-50/50">
+          
+          {/* TAB 1: PROMOCIONES */}
+          {activeTab === 'promos' && (
+            <AdminPromosTab
+              promotions={promotions}
+              products={products}
+              onUpdatePromotions={onUpdatePromotions}
+              triggerSaveNotice={triggerSaveNotice}
+            />
+          )}
+
+          {/* TAB 2: CARGA MASIVA DE IMÁGENES & GOOGLE DRIVE */}
+          {activeTab === 'mass_images' && (
+            <AdminMassImagesTab
+              products={products}
+              onUpdateProducts={onUpdateProducts}
+              triggerSaveNotice={triggerSaveNotice}
+            />
+          )}
+
+          {/* TAB 3: PRECIOS & PLANILLAS */}
+          {activeTab === 'prices' && (
+            <AdminPricesTab
+              products={products}
+              onUpdateProducts={onUpdateProducts}
+              triggerSaveNotice={triggerSaveNotice}
+            />
+          )}
+
+          {/* TAB 4: CÓDIGOS DE DESCUENTO */}
+          {activeTab === 'coupons' && (
+            <AdminCouponsTab
+              coupons={coupons}
+              onUpdateCoupons={onUpdateCoupons}
+              triggerSaveNotice={triggerSaveNotice}
+            />
+          )}
+
+          {/* TAB 5: LOGO, COLORES & FUENTES */}
+          {activeTab === 'theme' && (
+            <AdminThemeTab
+              theme={theme}
+              onUpdateTheme={onUpdateTheme}
+              triggerSaveNotice={triggerSaveNotice}
+            />
+          )}
+
+          {/* TAB: LOOKBOOK INTERACTIVO */}
+          {activeTab === 'lookbook' && (
+            <AdminLookbookTab
+              lookbook={lookbook || []}
+              products={products}
+              theme={theme}
+              onUpdateLookbook={onUpdateLookbook || (() => {})}
+              triggerSaveNotice={triggerSaveNotice}
+            />
+          )}
+
+          {/* TAB 6: PRODUCTOS */}
+          {activeTab === 'products' && (
+            <div className="p-4 sm:p-6 space-y-4">
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white p-3 rounded-xs border border-[#DCD4C9]">
+                <div className="relative w-full sm:w-80">
+                  <Search className="w-4 h-4 text-[#6F6860] absolute left-3 top-2.5" />
+                  <input
+                    type="text"
+                    value={productSearch}
+                    onChange={(e) => setProductSearch(e.target.value)}
+                    placeholder="Buscar producto por nombre o código..."
+                    className="w-full pl-9 pr-3 py-2 text-xs rounded-xs border border-[#DCD4C9] text-[#18231C] focus:border-[#FDB813] outline-none"
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsBulkImportOpen(true)}
+                  className="w-full sm:w-auto px-4 py-2 rounded-xs bg-emerald-800 hover:bg-emerald-900 text-white text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+                  title="Importar catálogo masivamente desde Excel o Google Sheets"
+                >
+                  <FileSpreadsheet className="w-4 h-4 text-emerald-300" />
+                  Carga Masiva (Excel / Sheets)
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingProduct(null);
+                    setProductForm({
+                      code: 'PAM-' + Math.floor(Math.random() * 900 + 100),
+                      name: '',
+                      category: 'Hombre',
+                      section: 'Urbano',
+                      subCategory: 'Abrigos',
+                      description: '',
+                      features: ['Calidad Pampero Garantizada', '100% Algodón Reforzado'],
+                      price: 55000,
+                      corporatePrice: 46000,
+                      discountPercentage: 0,
+                      promotionTag: 'Temporada 2026',
+                      image: 'https://images.unsplash.com/photo-1544923246-77307dd654cb?auto=format&fit=crop&w=800&q=80',
+                      images: ['https://images.unsplash.com/photo-1544923246-77307dd654cb?auto=format&fit=crop&w=800&q=80'],
+                      availableColors: ['Negro', 'Azul'],
+                      availableSizes: ['S', 'M', 'L', 'XL'],
+                      inStock: true,
+                    });
+                    setIsCreatingProduct(true);
+                  }}
+                  className="w-full sm:w-auto px-4 py-2 rounded-xs bg-[#18231C] hover:bg-black text-[#F5F2EC] text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" style={{ color: theme.accentColor || '#FDB813' }} />
+                  Nuevo Producto
+                </button>
+              </div>
+
+              {/* Product Form Modal/Inline */}
+              {(isCreatingProduct || editingProduct) && (
+                <form
+                  onSubmit={handleSaveProduct}
+                  className="bg-white p-5 rounded-xs border-2 border-[#18231C] shadow-lg space-y-4 animate-fadeIn"
+                >
+                  <div className="flex items-center justify-between border-b border-[#DCD4C9] pb-2">
+                    <h4 className="font-bold text-sm text-[#18231C] uppercase tracking-wider">
+                      {editingProduct ? `Editar: ${editingProduct.name}` : 'Crear Nuevo Producto'}
+                    </h4>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsCreatingProduct(false);
+                        setEditingProduct(null);
+                      }}
+                      className="text-[#6F6860] hover:text-[#18231C] text-xs font-semibold"
+                    >
+                      ✕ Cancelar
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-[#4A453F] mb-1">Código / SKU *</label>
+                      <input
+                        type="text"
+                        required
+                        value={productForm.code}
+                        onChange={(e) => setProductForm({ ...productForm, code: e.target.value })}
+                        className="w-full px-3 py-1.5 border border-[#DCD4C9] rounded-xs text-xs font-mono"
+                      />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-bold text-[#4A453F] mb-1">Nombre del Producto *</label>
+                      <input
+                        type="text"
+                        required
+                        value={productForm.name}
+                        onChange={(e) => setProductForm({ ...productForm, name: e.target.value })}
+                        className="w-full px-3 py-1.5 border border-[#DCD4C9] rounded-xs text-xs font-medium"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-[#4A453F] mb-1">Categoría Principal *</label>
+                      <select
+                        value={productForm.category || 'Hombre'}
+                        onChange={(e) => {
+                          const newCatName = e.target.value as MainCategory;
+                          const foundCat = CATEGORY_HIERARCHY.find((c) => c.name === newCatName) || CATEGORY_HIERARCHY[0];
+                          const defaultSec = foundCat.sections[0]?.name || 'Urbano';
+                          const defaultSub = foundCat.sections[0]?.subCategories[0] || 'Abrigos';
+                          setProductForm({
+                            ...productForm,
+                            category: newCatName,
+                            section: defaultSec,
+                            subCategory: defaultSub,
+                          });
+                        }}
+                        className="w-full px-3 py-1.5 border border-[#DCD4C9] rounded-xs text-xs font-semibold"
+                      >
+                        {CATEGORY_HIERARCHY.map((cat) => (
+                          <option key={cat.name} value={cat.name}>
+                            {cat.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-[#4A453F] mb-1">Sección *</label>
+                      {(() => {
+                        const currentCat = CATEGORY_HIERARCHY.find((c) => c.name === productForm.category) || CATEGORY_HIERARCHY[0];
+                        return (
+                          <select
+                            value={productForm.section || currentCat.sections[0]?.name || 'Urbano'}
+                            onChange={(e) => {
+                              const newSec = e.target.value;
+                              const foundSec = currentCat.sections.find((s) => s.name === newSec);
+                              setProductForm({
+                                ...productForm,
+                                section: newSec,
+                                subCategory: foundSec?.subCategories[0] || 'General',
+                              });
+                            }}
+                            className="w-full px-3 py-1.5 border border-[#DCD4C9] rounded-xs text-xs font-semibold"
+                          >
+                            {currentCat.sections.map((s) => (
+                              <option key={s.name} value={s.name}>
+                                {s.name}
+                              </option>
+                            ))}
+                          </select>
+                        );
+                      })()}
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-[#4A453F] mb-1">Subcategoría *</label>
+                      {(() => {
+                        const currentCat = CATEGORY_HIERARCHY.find((c) => c.name === productForm.category) || CATEGORY_HIERARCHY[0];
+                        const currentSec = currentCat.sections.find((s) => s.name === productForm.section) || currentCat.sections[0];
+                        return (
+                          <select
+                            value={productForm.subCategory || currentSec?.subCategories[0] || 'Abrigos'}
+                            onChange={(e) => setProductForm({ ...productForm, subCategory: e.target.value })}
+                            className="w-full px-3 py-1.5 border border-[#DCD4C9] rounded-xs text-xs font-semibold"
+                          >
+                            {currentSec?.subCategories.map((sub) => (
+                              <option key={sub} value={sub}>
+                                {sub}
+                              </option>
+                            ))}
+                          </select>
+                        );
+                      })()}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-[#4A453F] mb-1">Precio Minorista ($) *</label>
+                      <input
+                        type="number"
+                        required
+                        value={productForm.price}
+                        onChange={(e) => setProductForm({ ...productForm, price: Number(e.target.value) })}
+                        className="w-full px-3 py-1.5 border border-[#DCD4C9] rounded-xs text-xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-[#4A453F] mb-1">Precio Empresa / Mayorista ($)</label>
+                      <input
+                        type="number"
+                        value={productForm.corporatePrice}
+                        onChange={(e) => setProductForm({ ...productForm, corporatePrice: Number(e.target.value) })}
+                        className="w-full px-3 py-1.5 border border-[#DCD4C9] rounded-xs text-xs text-blue-900 font-bold"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-[#4A453F] mb-1">Descuento (%)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="90"
+                        value={productForm.discountPercentage}
+                        onChange={(e) => setProductForm({ ...productForm, discountPercentage: Number(e.target.value) })}
+                        className="w-full px-3 py-1.5 border border-[#DCD4C9] rounded-xs text-xs font-bold"
+                        style={{ color: theme.accentColor || '#FDB813' }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Multi-Photo Manager & Reordering */}
+                  <div className="p-4 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-[#DCD4C9] pb-2">
+                      <div>
+                        <label className="block text-xs font-bold uppercase tracking-wider text-[#18231C]">
+                          Galería de Fotos del Producto (Subir y Ordenar)
+                        </label>
+                        <p className="text-[11px] text-[#6F6860]">
+                          Subí varias fotos por artículo y ordenalas. La foto <strong style={{ color: theme.accentColor || '#FDB813' }}>#1</strong> será la portada principal que se verá en el catálogo.
+                        </p>
+                      </div>
+                      <span className="text-xs font-mono font-bold text-[#6F6860]">
+                        {(productForm.images?.length || (productForm.image ? 1 : 0))} fotos
+                      </span>
+                    </div>
+
+                    {/* Upload Controls */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                      {/* From PC */}
+                      <label className="border-2 border-dashed border-[#DCD4C9] hover:border-[#18231C] bg-white p-3 rounded-xs flex flex-col items-center justify-center gap-1.5 cursor-pointer text-center group transition-colors">
+                        <Upload className="w-5 h-5 text-[#6F6860] group-hover:text-[#18231C]" />
+                        <span className="text-xs font-bold text-[#18231C]">
+                          Subir fotos desde la PC
+                        </span>
+                        <span className="text-[10px] text-[#6F6860]">
+                          Podés seleccionar varios archivos juntos (JPG, PNG, WebP)
+                        </span>
+                        <input
+                          type="file"
+                          multiple
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => {
+                            const files = e.target.files;
+                            if (!files || files.length === 0) return;
+                            const current = Array.isArray(productForm.images) && productForm.images.length > 0
+                              ? [...productForm.images]
+                              : (productForm.image ? [productForm.image] : []);
+
+                            Array.from(files).forEach((file: File) => {
+                              const reader = new FileReader();
+                              reader.onload = (event) => {
+                                const result = event.target?.result as string;
+                                if (result) {
+                                  current.push(result);
+                                  setProductForm(prev => ({
+                                    ...prev,
+                                    images: [...current],
+                                    image: current[0]
+                                  }));
+                                }
+                              };
+                              reader.readAsDataURL(file);
+                            });
+                          }}
+                        />
+                      </label>
+
+                      {/* By URL */}
+                      <div className="border border-[#DCD4C9] bg-white p-3 rounded-xs flex flex-col justify-between gap-2">
+                        <span className="text-xs font-bold text-[#18231C]">
+                          O agregar foto por enlace URL:
+                        </span>
+                        <div className="flex gap-1.5">
+                          <input
+                            type="text"
+                            placeholder="https://..."
+                            value={newPhotoUrl}
+                            onChange={(e) => setNewPhotoUrl(e.target.value)}
+                            className="flex-1 px-2.5 py-1.5 border border-[#DCD4C9] rounded-xs text-xs font-mono outline-none focus:border-[#FDB813]"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (!newPhotoUrl.trim()) return;
+                              const current = Array.isArray(productForm.images) && productForm.images.length > 0
+                                ? [...productForm.images]
+                                : (productForm.image ? [productForm.image] : []);
+                              const updated = [...current, newPhotoUrl.trim()];
+                              setProductForm(prev => ({
+                                ...prev,
+                                images: updated,
+                                image: updated[0]
+                              }));
+                              setNewPhotoUrl('');
+                            }}
+                            className="px-3 py-1.5 bg-[#18231C] hover:bg-black text-white text-xs font-bold rounded-xs cursor-pointer"
+                          >
+                            Agregar
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Photos Preview & Ordering Grid */}
+                    {(() => {
+                      const list = Array.isArray(productForm.images) && productForm.images.length > 0
+                        ? productForm.images
+                        : (productForm.image ? [productForm.image] : []);
+
+                      if (list.length === 0) {
+                        return (
+                          <div className="p-4 bg-white border border-[#DCD4C9] rounded-xs text-center text-xs text-[#6F6860]">
+                            No hay fotos cargadas todavía para este producto.
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="space-y-2 pt-2">
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-[#4A453F] block">
+                            Fotos del producto (utilizá las flechas para ordenar):
+                          </span>
+                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                            {list.map((imgUrl, idx) => (
+                              <div
+                                key={idx}
+                                className={`bg-white border rounded-xs p-2 flex flex-col justify-between space-y-2 relative transition-all ${
+                                  idx === 0
+                                    ? 'border-2 shadow-xs'
+                                    : 'border-[#DCD4C9]'
+                                }`}
+                                style={{
+                                  borderColor: idx === 0 ? (theme.accentColor || '#FDB813') : undefined,
+                                }}
+                              >
+                                {/* Thumbnail */}
+                                <div className="w-full h-28 rounded-xs overflow-hidden bg-neutral-100 relative">
+                                  <img
+                                    src={imgUrl}
+                                    alt={`Foto ${idx + 1}`}
+                                    className="w-full h-full object-cover"
+                                    referrerPolicy="no-referrer"
+                                  />
+                                  <span
+                                    className="absolute top-1 left-1 px-1.5 py-0.5 rounded-xs text-[10px] font-bold"
+                                    style={{
+                                      backgroundColor: idx === 0 ? (theme.accentColor || '#FDB813') : 'rgba(0,0,0,0.7)',
+                                      color: idx === 0 ? '#18231C' : '#FFFFFF',
+                                    }}
+                                  >
+                                    {idx === 0 ? '★ Portada' : `#${idx + 1}`}
+                                  </span>
+                                </div>
+
+                                {/* Controls */}
+                                <div className="flex items-center justify-between gap-1 pt-1 border-t border-[#ECE5DC]">
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      type="button"
+                                      disabled={idx === 0}
+                                      onClick={() => {
+                                        if (idx === 0) return;
+                                        const updated = [...list];
+                                        const temp = updated[idx];
+                                        updated[idx] = updated[idx - 1];
+                                        updated[idx - 1] = temp;
+                                        setProductForm(prev => ({
+                                          ...prev,
+                                          images: updated,
+                                          image: updated[0]
+                                        }));
+                                      }}
+                                      className={`p-1 rounded-xs border text-xs cursor-pointer ${
+                                        idx === 0
+                                          ? 'border-neutral-200 text-neutral-300 cursor-not-allowed'
+                                          : 'border-[#DCD4C9] text-[#18231C] hover:bg-[#ECE5DC]'
+                                      }`}
+                                      title="Mover a la izquierda (adelantar orden)"
+                                    >
+                                      <ArrowLeft className="w-3 h-3" />
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      disabled={idx === list.length - 1}
+                                      onClick={() => {
+                                        if (idx === list.length - 1) return;
+                                        const updated = [...list];
+                                        const temp = updated[idx];
+                                        updated[idx] = updated[idx + 1];
+                                        updated[idx + 1] = temp;
+                                        setProductForm(prev => ({
+                                          ...prev,
+                                          images: updated,
+                                          image: updated[0]
+                                        }));
+                                      }}
+                                      className={`p-1 rounded-xs border text-xs cursor-pointer ${
+                                        idx === list.length - 1
+                                          ? 'border-neutral-200 text-neutral-300 cursor-not-allowed'
+                                          : 'border-[#DCD4C9] text-[#18231C] hover:bg-[#ECE5DC]'
+                                      }`}
+                                      title="Mover a la derecha (postergar orden)"
+                                    >
+                                      <ArrowRight className="w-3 h-3" />
+                                    </button>
+
+                                    {idx !== 0 && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const updated = [...list];
+                                          const selected = updated.splice(idx, 1)[0];
+                                          updated.unshift(selected);
+                                          setProductForm(prev => ({
+                                            ...prev,
+                                            images: updated,
+                                            image: updated[0]
+                                          }));
+                                        }}
+                                        className="p-1 rounded-xs border border-[#DCD4C9] text-amber-600 hover:bg-amber-50 text-xs cursor-pointer"
+                                        title="Hacer Portada Principal"
+                                      >
+                                        <Star className="w-3 h-3 fill-amber-500 text-amber-500" />
+                                      </button>
+                                    )}
+                                  </div>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const updated = [...list];
+                                      updated.splice(idx, 1);
+                                      setProductForm(prev => ({
+                                        ...prev,
+                                        images: updated,
+                                        image: updated[0] || ''
+                                      }));
+                                    }}
+                                    className="p-1 rounded-xs border border-red-200 text-red-600 hover:bg-red-50 text-xs cursor-pointer"
+                                    title="Eliminar foto"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-2 border-t border-[#DCD4C9]">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsCreatingProduct(false);
+                        setEditingProduct(null);
+                      }}
+                      className="px-3 py-1.5 rounded-xs border border-[#DCD4C9] text-xs font-semibold hover:bg-neutral-50"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-5 py-1.5 rounded-xs bg-[#18231C] text-white text-xs font-bold uppercase tracking-wider hover:bg-black flex items-center gap-1.5"
+                    >
+                      <Save className="w-3.5 h-3.5 text-emerald-400" />
+                      Guardar Producto
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {/* Products Table */}
+              <div className="bg-white rounded-xs border border-[#DCD4C9] overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-[#18231C] text-[#F5F2EC] uppercase tracking-wider text-[10px]">
+                    <tr>
+                      <th className="p-3">Imagen</th>
+                      <th className="p-3">Código</th>
+                      <th className="p-3">Nombre</th>
+                      <th className="p-3">Categoría / Sección</th>
+                      <th className="p-3 text-right">Precio Lista</th>
+                      <th className="p-3 text-right">Precio Empresa</th>
+                      <th className="p-3 text-center">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#DCD4C9]">
+                    {filteredProducts.map((p) => (
+                      <tr key={p.id} className="hover:bg-[#FAF8F5]">
+                        <td className="p-3">
+                          <img
+                            src={p.image}
+                            alt={p.name}
+                            className="w-10 h-10 object-cover rounded-xs border border-[#DCD4C9]"
+                          />
+                        </td>
+                        <td className="p-3 font-mono text-[11px] text-[#6F6860]">{p.code}</td>
+                        <td className="p-3 font-bold text-[#18231C]">{p.name}</td>
+                        <td className="p-3 text-[#6F6860]">{p.category} · {p.section}</td>
+                        <td className="p-3 text-right font-bold text-[#18231C]">
+                          ${p.price.toLocaleString('es-AR')}
+                        </td>
+                        <td className="p-3 text-right font-bold text-blue-800">
+                          ${(p.corporatePrice || 0).toLocaleString('es-AR')}
+                        </td>
+                        <td className="p-3 text-center">
+                          <div className="inline-flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingProduct(p);
+                                setProductForm({
+                                  ...p,
+                                  images: Array.isArray(p.images) && p.images.length > 0 ? [...p.images] : (p.image ? [p.image] : [])
+                                });
+                                setIsCreatingProduct(false);
+                              }}
+                              className="p-1 text-[#6F6860] hover:text-[#18231C]"
+                              title="Editar producto"
+                            >
+                              <Edit3 className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteProduct(p.id)}
+                              className="p-1 text-[#6F6860] hover:text-red-600"
+                              title="Eliminar producto"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 7: SUCURSALES */}
+          {activeTab === 'branches' && (
+            <div className="p-4 sm:p-6 space-y-6">
+              {/* Header Action Bar */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#DCD4C9]">
+                <div>
+                  <h3 className="font-display text-base sm:text-lg uppercase tracking-wider text-[#18231C]">
+                    PUNTOS DE VENTA & SUCURSALES ({branches.length})
+                  </h3>
+                  <p className="text-xs text-[#6F6860] mt-0.5">
+                    Administrá locales en Gran Mendoza. Mostrados a los clientes en el pie de página y al cotizar por WhatsApp.
+                  </p>
+                </div>
+
+                <button
+                  id="btn-add-branch"
+                  type="button"
+                  onClick={() => {
+                    setEditingBranch(null);
+                    setBranchForm({
+                      name: '',
+                      address: '',
+                      city: 'Gran Mendoza',
+                      phone: '',
+                      whatsappNumber: '',
+                      openingHours: 'Lunes a Viernes de 08:30 a 13:00 y 16:30 a 20:30, Sábados 09:00 a 13:30',
+                      mapUrl: '',
+                      isPrimary: branches.length === 0,
+                    });
+                    setIsCreatingBranch(true);
+                  }}
+                  style={{
+                    backgroundColor: theme.accentColor || '#FDB813',
+                    color: theme.buttonTextColor || '#18231C'
+                  }}
+                  className="px-4 py-2 rounded-xs text-xs font-bold uppercase tracking-wider flex items-center gap-2 shadow-xs hover:brightness-110 transition-all cursor-pointer shrink-0"
+                >
+                  <Plus className="w-4 h-4" />
+                  Agregar Nueva Sucursal
+                </button>
+              </div>
+
+              {/* Add / Edit Branch Form Modal / Drawer */}
+              {(isCreatingBranch || editingBranch) && (
+                <form
+                  onSubmit={handleSaveBranch}
+                  className="bg-white p-5 sm:p-6 rounded-xs border-2 border-[#18231C] shadow-lg space-y-4 animate-fadeIn"
+                >
+                  <div className="flex items-center justify-between border-b border-[#DCD4C9] pb-3">
+                    <h4 className="font-bold text-sm text-[#18231C] uppercase tracking-wider flex items-center gap-2">
+                      <Building2 className="w-4 h-4" style={{ color: theme.accentColor || '#FDB813' }} />
+                      {editingBranch ? `Editar Sucursal: ${editingBranch.name}` : 'Nueva Sucursal en Gran Mendoza'}
+                    </h4>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingBranch(null);
+                        setIsCreatingBranch(false);
+                      }}
+                      className="text-neutral-400 hover:text-neutral-700 p-1"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                    <div className="md:col-span-2">
+                      <label className="block text-xs font-bold text-[#4A453F] mb-1 uppercase tracking-wider">
+                        Nombre del Local *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="ej: Pampero Luján de Cuyo / Pampero San Martín"
+                        value={branchForm.name || ''}
+                        onChange={(e) => setBranchForm({ ...branchForm, name: e.target.value })}
+                        className="w-full px-3 py-2 border border-[#DCD4C9] rounded-xs text-xs text-[#18231C] focus:outline-none focus:border-[#FDB813]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-[#4A453F] mb-1 uppercase tracking-wider">
+                        Ciudad / Departamento *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="ej: Luján de Cuyo, Mendoza"
+                        value={branchForm.city || ''}
+                        onChange={(e) => setBranchForm({ ...branchForm, city: e.target.value })}
+                        className="w-full px-3 py-2 border border-[#DCD4C9] rounded-xs text-xs text-[#18231C] focus:outline-none focus:border-[#FDB813]"
+                      />
+                    </div>
+
+                    <div className="md:col-span-2">
+                      <label className="block text-xs font-bold text-[#4A453F] mb-1 uppercase tracking-wider">
+                        Dirección Completa *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="ej: San Martín 850"
+                        value={branchForm.address || ''}
+                        onChange={(e) => setBranchForm({ ...branchForm, address: e.target.value })}
+                        className="w-full px-3 py-2 border border-[#DCD4C9] rounded-xs text-xs text-[#18231C] focus:outline-none focus:border-[#FDB813]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-[#4A453F] mb-1 uppercase tracking-wider">
+                        Teléfono de Atención
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="ej: 261 498-1234"
+                        value={branchForm.phone || ''}
+                        onChange={(e) => setBranchForm({ ...branchForm, phone: e.target.value })}
+                        className="w-full px-3 py-2 border border-[#DCD4C9] rounded-xs text-xs text-[#18231C] focus:outline-none focus:border-[#FDB813]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-[#4A453F] mb-1 uppercase tracking-wider">
+                        WhatsApp de Ventas
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="ej: +54 9 261 527-6713"
+                        value={branchForm.whatsappNumber || ''}
+                        onChange={(e) => setBranchForm({ ...branchForm, whatsappNumber: e.target.value })}
+                        className="w-full px-3 py-2 border border-[#DCD4C9] rounded-xs text-xs text-[#18231C] focus:outline-none focus:border-[#FDB813]"
+                      />
+                    </div>
+
+                    <div className="md:col-span-2">
+                      <label className="block text-xs font-bold text-[#4A453F] mb-1 uppercase tracking-wider">
+                        Horarios de Atención
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="ej: Lunes a Viernes 08:30 a 13:00 y 16:30 a 20:30, Sábados 09:00 a 13:30"
+                        value={branchForm.openingHours || ''}
+                        onChange={(e) => setBranchForm({ ...branchForm, openingHours: e.target.value })}
+                        className="w-full px-3 py-2 border border-[#DCD4C9] rounded-xs text-xs text-[#18231C] focus:outline-none focus:border-[#FDB813]"
+                      />
+                    </div>
+
+                    <div className="md:col-span-2">
+                      <label className="block text-xs font-bold text-[#4A453F] mb-1 uppercase tracking-wider">
+                        Enlace a Google Maps (URL)
+                      </label>
+                      <input
+                        type="url"
+                        placeholder="ej: https://maps.google.com/?q=..."
+                        value={branchForm.mapUrl || ''}
+                        onChange={(e) => setBranchForm({ ...branchForm, mapUrl: e.target.value })}
+                        className="w-full px-3 py-2 border border-[#DCD4C9] rounded-xs text-xs text-[#18231C] focus:outline-none focus:border-[#FDB813]"
+                      />
+                    </div>
+
+                    <div className="flex items-center pt-5">
+                      <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-[#18231C]">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(branchForm.isPrimary)}
+                          onChange={(e) => setBranchForm({ ...branchForm, isPrimary: e.target.checked })}
+                          className="w-4 h-4 rounded"
+                          style={{ accentColor: theme.accentColor || '#FDB813' }}
+                        />
+                        <span>¿Es Casa Central / Sucursal Principal?</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-4 border-t border-[#DCD4C9]">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingBranch(null);
+                        setIsCreatingBranch(false);
+                      }}
+                      className="px-4 py-2 rounded-xs border border-[#DCD4C9] text-xs font-semibold text-[#6F6860] hover:bg-neutral-100"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      style={{
+                        backgroundColor: theme.primaryColor || '#18231C',
+                        color: '#FFFFFF'
+                      }}
+                      className="px-6 py-2 rounded-xs text-xs font-bold uppercase tracking-wider hover:brightness-110 shadow-xs"
+                    >
+                      {editingBranch ? 'Actualizar Sucursal' : 'Guardar Sucursal'}
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {/* Branches Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {branches.map((b) => (
+                  <div 
+                    key={b.id} 
+                    style={{ borderColor: theme.cardBorderColor || '#DCD4C9' }}
+                    className="bg-white p-5 rounded-xs border space-y-3 shadow-xs hover:shadow-md transition-shadow"
+                  >
+                    <div className="flex items-center justify-between border-b border-[#DCD4C9] pb-2.5">
+                      <div className="flex items-center gap-2">
+                        <Building2 className="w-4 h-4" style={{ color: theme.iconColor || theme.accentColor || '#FDB813' }} />
+                        <h4 className="font-bold text-sm text-[#18231C] uppercase tracking-wider">{b.name}</h4>
+                      </div>
+                      {b.isPrimary && (
+                        <span 
+                          style={{ backgroundColor: theme.primaryColor || '#18231C' }}
+                          className="text-[10px] uppercase font-bold text-[#F5F2EC] px-2.5 py-0.5 rounded-xs tracking-wider"
+                        >
+                          Casa Central
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="space-y-2 text-xs text-[#6F6860]">
+                      <p className="flex items-center gap-2 text-[#18231C] font-semibold">
+                        <MapPin className="w-3.5 h-3.5 shrink-0" style={{ color: theme.iconColor || theme.accentColor || '#FDB813' }} />
+                        {b.address}, {b.city}
+                      </p>
+                      {b.phone && (
+                        <p className="flex items-center gap-2">
+                          <Phone className="w-3.5 h-3.5 text-[#6F6860] shrink-0" />
+                          Tel: <strong>{b.phone}</strong>
+                        </p>
+                      )}
+                      {b.whatsappNumber && (
+                        <p className="flex items-center gap-2">
+                          <MessageCircle className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                          WhatsApp: <strong>{b.whatsappNumber}</strong>
+                        </p>
+                      )}
+                      <p className="flex items-start gap-2">
+                        <Clock className="w-3.5 h-3.5 text-[#6F6860] shrink-0 mt-0.5" />
+                        <span>Horario: {b.openingHours}</span>
+                      </p>
+                    </div>
+
+                    <div className="pt-3 border-t border-[#DCD4C9] flex items-center justify-between">
+                      {b.mapUrl ? (
+                        <a
+                          href={b.mapUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-[11px] font-bold text-neutral-600 hover:text-neutral-900 flex items-center gap-1 uppercase tracking-wider underline"
+                        >
+                          <ExternalLink className="w-3 h-3" /> Ver Mapa
+                        </a>
+                      ) : <span />}
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingBranch(b);
+                            setBranchForm(b);
+                            setIsCreatingBranch(false);
+                          }}
+                          className="px-3 py-1.5 bg-[#FAF8F5] hover:bg-[#ECE5DC] text-[#18231C] text-xs font-bold uppercase tracking-wider rounded-xs flex items-center gap-1 cursor-pointer border border-[#DCD4C9]"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" style={{ color: theme.accentColor || '#FDB813' }} />
+                          Editar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteBranch(b.id)}
+                          className="px-2.5 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 text-xs font-bold uppercase tracking-wider rounded-xs flex items-center gap-1 cursor-pointer border border-red-200"
+                          title="Eliminar sucursal"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 8: CUENTAS CREADAS */}
+          {activeTab === 'users' && (
+            <AdminUsersTab
+              triggerSaveNotice={triggerSaveNotice}
+            />
+          )}
+
+          {/* TAB 9: GESTIÓN DE COLORES & TALLES */}
+          {activeTab === 'variants' && (
+            <AdminVariantsTab
+              products={products}
+              onUpdateProducts={onUpdateProducts}
+              triggerSaveNotice={triggerSaveNotice}
+            />
+          )}
+
+          {/* TAB 10: BANDEJA DE COTIZACIONES */}
+          {activeTab === 'quotes' && (
+            <AdminQuotesTab />
+          )}
+
+          {/* TAB 11: GESTIÓN DE EMPLEADOS & PERMISOS */}
+          {activeTab === 'employees' && (
+            <AdminEmployeesTab
+              triggerSaveNotice={triggerSaveNotice}
+            />
+          )}
+
+          {/* TAB 12: SEGURIDAD & CLAVES */}
+          {activeTab === 'security' && (
+            <AdminSecurityTab
+              triggerSaveNotice={triggerSaveNotice}
+            />
+          )}
+
+          {/* TAB 13: MÉTRICAS & BÚSQUEDAS */}
+          {activeTab === 'analytics' && (
+            <AdminAnalyticsTab />
+          )}
+
+        </div>
+      </div>
+
+      {/* Bulk Excel / Google Sheets Import Modal */}
+      <AdminBulkExcelImportModal
+        isOpen={isBulkImportOpen}
+        onClose={() => setIsBulkImportOpen(false)}
+        existingProducts={products}
+        onImportSuccess={(newCatalog) => {
+          onUpdateProducts(newCatalog);
+          triggerSaveNotice();
+        }}
+      />
+    </div>
+  );
+};

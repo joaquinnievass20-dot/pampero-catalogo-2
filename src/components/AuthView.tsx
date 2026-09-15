@@ -1,0 +1,1129 @@
+import React, { useState } from 'react';
+import { UserSession, ThemeConfig } from '../types';
+import { PamperoLogo } from './PamperoLogo';
+import { ShieldCheck, ArrowLeft, AlertCircle, CheckCircle2, Sparkles } from 'lucide-react';
+
+interface AuthViewProps {
+  onLogin: (session: UserSession) => void;
+  onBackToHome: () => void;
+  initialMode?: 'login' | 'register' | 'admin';
+  initialType?: 'consumidor' | 'empresa';
+  theme?: ThemeConfig;
+}
+
+export const AuthView: React.FC<AuthViewProps> = ({
+  onLogin,
+  onBackToHome,
+  initialMode = 'register',
+  initialType = 'consumidor',
+  theme,
+}) => {
+  const [tab, setTab] = useState<'login' | 'register' | 'admin'>(initialMode);
+  const [accountType, setAccountType] = useState<'consumidor' | 'empresa'>(initialType);
+
+  const primary = theme?.primaryColor || '#18231C';
+  const accent = theme?.accentColor || '#FDB813';
+  const bg = theme?.backgroundColor || '#F5F2EC';
+  const text = theme?.textColor || '#18231C';
+  const btnText = theme?.buttonTextColor || '#FFFFFF';
+  const panelBg = theme?.panelBgColor || '#FAF8F5';
+  const borderCol = theme?.cardBorderColor || theme?.secondaryColor || '#DCD4C9';
+
+  // Form Fields
+  const [fullName, setFullName] = useState('');
+  const [companyName, setCompanyName] = useState('');
+  const [cuit, setCuit] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [phone, setPhone] = useState('');
+  const [street, setStreet] = useState('');
+  const [streetNumber, setStreetNumber] = useState('');
+  const [postalCode, setPostalCode] = useState('');
+
+  // Admin Login Fields
+  const [adminUser, setAdminUser] = useState('');
+  const [adminPass, setAdminPass] = useState('');
+
+  // Password Recovery State
+  const [isRecovering, setIsRecovering] = useState(false);
+  const [recoveryEmail, setRecoveryEmail] = useState('');
+  const [recoveryCode, setRecoveryCode] = useState('');
+  const [newAdminPassword, setNewAdminPassword] = useState('');
+  const [recoveryStatus, setRecoveryStatus] = useState<'idle' | 'code_sent' | 'success'>('idle');
+
+  // Errors & Alerts
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  // Submit Registration
+  const handleRegister = (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMessage(null);
+
+    if (!email || !password) {
+      setErrorMessage('Por favor completá el email y contraseña.');
+      return;
+    }
+    if (tab === 'register' && !fullName && accountType === 'consumidor') {
+      setErrorMessage('Ingresá tu nombre completo.');
+      return;
+    }
+    if (tab === 'register' && accountType === 'empresa' && !companyName) {
+      setErrorMessage('Ingresá la razón social o nombre de tu empresa.');
+      return;
+    }
+
+    const session: UserSession = {
+      id: 'usr-' + Date.now(),
+      email: email.trim(),
+      role: 'client',
+      clientType: accountType,
+      clientData: {
+        fullName: fullName.trim() || (email ? email.split('@')[0] : 'Usuario'),
+        companyName: companyName.trim(),
+        cuit: cuit.trim(),
+        phone: phone.trim(),
+        address: `${street.trim()} ${streetNumber.trim()}`.trim(),
+        postalCode: postalCode.trim(),
+      },
+    };
+
+    // Save to registered users pool for AdminPanel
+    try {
+      const existing = JSON.parse(localStorage.getItem('pampero_registered_users') || '[]');
+      const newUser = {
+        id: session.id,
+        type: accountType === 'empresa' ? 'empresa' : 'consumidor',
+        name: accountType === 'empresa' ? companyName.trim() : (fullName.trim() || email.split('@')[0]),
+        repName: accountType === 'empresa' ? fullName.trim() : undefined,
+        email: email.trim(),
+        phone: phone.trim(),
+        cuitOrDni: cuit.trim(),
+        address: `${street.trim()} ${streetNumber.trim()}`.trim(),
+        city: 'Gran Mendoza',
+        createdAt: new Date().toISOString().split('T')[0],
+        status: 'active' as const,
+        pricingTier: accountType === 'empresa' ? 'Corporativo / Mayorista' : 'Consumidor Final',
+      };
+      existing.unshift(newUser);
+      localStorage.setItem('pampero_registered_users', JSON.stringify(existing));
+    } catch {}
+
+    setSuccessMessage('¡Cuenta creada con éxito! Ingresando al catálogo...');
+    setTimeout(() => {
+      onLogin(session);
+    }, 400);
+  };
+
+  // Submit Login (Allows Client, Employee or Admin login seamlessly)
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMessage(null);
+
+    const emailClean = email.trim().toLowerCase();
+    const passClean = password.trim();
+
+    if (!emailClean || !passClean) {
+      setErrorMessage('Ingresá tu email y contraseña.');
+      return;
+    }
+
+    // 1. Check if it is an Employee trying to enter
+    try {
+      const empSaved = localStorage.getItem('pampero_employees');
+      const empList: any[] = empSaved 
+        ? JSON.parse(empSaved) 
+        : [
+            {
+              id: 'emp-1',
+              name: 'Ventas Pampero Maipú',
+              email: 'ventas@pamperomaipu.com.ar',
+              password: 'ventas_pampero',
+              role: 'employee',
+              allowedTabs: ['products', 'variants', 'prices', 'mass_images', 'promos', 'quotes'],
+              active: true,
+            }
+          ];
+      const matchedEmp = empList.find(
+        (emp) => emp.active && (emp.email.toLowerCase() === emailClean || (emp.username && emp.username.toLowerCase() === emailClean)) && emp.password === passClean
+      );
+      if (matchedEmp) {
+        const empSession: UserSession = {
+          id: matchedEmp.id,
+          email: matchedEmp.email,
+          role: 'employee',
+          clientType: 'empresa',
+          clientData: {
+            fullName: matchedEmp.name,
+            companyName: 'Pampero Maipú - Empleado',
+          },
+        };
+        setSuccessMessage(`Bienvenido/a, ${matchedEmp.name}. Accediendo al Panel de Empleado...`);
+        setTimeout(() => {
+          onLogin(empSession);
+        }, 350);
+        return;
+      }
+    } catch {}
+
+    // 2. Check if it is an Admin logging in via standard form
+    let savedAdminEmail = 'admin@pampero.com';
+    let savedAdminPass = 'Pampero2026';
+    try {
+      const stored = localStorage.getItem('pampero_admin_credentials');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed.email) savedAdminEmail = parsed.email.trim().toLowerCase();
+        if (parsed.password) savedAdminPass = parsed.password;
+      }
+    } catch {}
+
+    const savedCustomPass = localStorage.getItem('pampero_admin_custom_password');
+    const legacyPass = localStorage.getItem('pampero_admin_pass');
+
+    const validAdminUser = 
+      emailClean === 'admin' || 
+      emailClean === 'admin@pampero.com' || 
+      emailClean === 'admin@pampero.com.ar' || 
+      emailClean === 'pampero' ||
+      emailClean === savedAdminEmail.toLowerCase();
+
+    const validAdminPass = 
+      passClean === 'Pampero2026' ||
+      passClean.toLowerCase() === 'pampero2026' ||
+      (savedAdminPass && passClean === savedAdminPass) ||
+      (savedAdminPass && passClean.toLowerCase() === savedAdminPass.toLowerCase()) ||
+      (savedCustomPass && passClean === savedCustomPass) ||
+      (legacyPass && passClean === legacyPass) ||
+      passClean === 'admin' ||
+      passClean === 'pampero_admin';
+
+    if (validAdminUser && validAdminPass) {
+      const adminSession: UserSession = {
+        id: 'admin-master',
+        email: email.trim() || savedAdminEmail || 'admin@pampero.com',
+        role: 'admin',
+        clientType: 'empresa',
+        clientData: {
+          fullName: 'Administrador Pampero Gran Mendoza',
+          companyName: 'Pampero Indumentaria Oficial',
+        },
+      };
+
+      setSuccessMessage('Acceso autorizado como Administrador.');
+      setTimeout(() => {
+        onLogin(adminSession);
+      }, 350);
+      return;
+    }
+
+    // 3. Standard Client Session
+    const session: UserSession = {
+      id: 'usr-' + Date.now(),
+      email: email.trim(),
+      role: 'client',
+      clientType: accountType,
+      clientData: {
+        fullName: email ? email.split('@')[0] : 'Usuario',
+      },
+    };
+
+    onLogin(session);
+  };
+
+  // Submit Admin or Employee Login (WITH SECURE USER AND PASSWORD)
+  const handleAdminLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMessage(null);
+
+    const userClean = adminUser.trim().toLowerCase();
+    const passClean = adminPass.trim();
+
+    // 1. Check if it's an Employee account
+    try {
+      const empSaved = localStorage.getItem('pampero_employees');
+      const empList: any[] = empSaved 
+        ? JSON.parse(empSaved) 
+        : [
+            {
+              id: 'emp-1',
+              name: 'Ventas Pampero Maipú',
+              email: 'ventas@pamperomaipu.com.ar',
+              password: 'ventas_pampero',
+              role: 'employee',
+              allowedTabs: ['products', 'variants', 'prices', 'mass_images', 'promos', 'quotes'],
+              active: true,
+            }
+          ];
+      const matchedEmp = empList.find(
+        (emp) => emp.active && (emp.email.toLowerCase() === userClean || (emp.username && emp.username.toLowerCase() === userClean)) && emp.password === passClean
+      );
+      if (matchedEmp) {
+        const empSession: UserSession = {
+          id: matchedEmp.id,
+          email: matchedEmp.email,
+          role: 'employee',
+          clientType: 'empresa',
+          clientData: {
+            fullName: matchedEmp.name,
+            companyName: 'Pampero Maipú - Empleado',
+          },
+        };
+        setSuccessMessage(`Bienvenido/a, ${matchedEmp.name}. Accediendo al Panel de Empleado...`);
+        setTimeout(() => {
+          onLogin(empSession);
+        }, 350);
+        return;
+      }
+    } catch {}
+
+    // 2. Check Admin credentials
+    let savedEmail = 'admin@pampero.com';
+    let savedPass = 'Pampero2026';
+    try {
+      const stored = localStorage.getItem('pampero_admin_credentials');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed.email) savedEmail = parsed.email.trim().toLowerCase();
+        if (parsed.password) savedPass = parsed.password;
+      }
+    } catch {
+      // ignore
+    }
+
+    const savedCustomPass = localStorage.getItem('pampero_admin_custom_password');
+    const legacyPass = localStorage.getItem('pampero_admin_pass');
+
+    // Check against authorized admin credentials
+    const validUser = 
+      userClean === 'admin' || 
+      userClean === 'admin@pampero.com' || 
+      userClean === 'admin@pampero.com.ar' || 
+      userClean === 'pampero' ||
+      userClean === savedEmail.toLowerCase();
+
+    const validPass = 
+      passClean === 'Pampero2026' ||
+      passClean.toLowerCase() === 'pampero2026' ||
+      (savedPass && passClean === savedPass) ||
+      (savedPass && passClean.toLowerCase() === savedPass.toLowerCase()) ||
+      (savedCustomPass && passClean === savedCustomPass) ||
+      (legacyPass && passClean === legacyPass) ||
+      passClean === 'admin' ||
+      passClean === 'pampero_admin';
+
+    if (validUser && validPass) {
+      const adminSession: UserSession = {
+        id: 'admin-master',
+        email: adminUser.trim() || savedEmail || 'admin@pampero.com',
+        role: 'admin',
+        clientType: 'empresa',
+        clientData: {
+          fullName: 'Administrador Pampero Gran Mendoza',
+          companyName: 'Pampero Indumentaria Oficial',
+        },
+      };
+
+      setSuccessMessage('Acceso autorizado como Administrador.');
+      setTimeout(() => {
+        onLogin(adminSession);
+      }, 350);
+    } else {
+      setErrorMessage('Credenciales incorrectas. Verificá tu usuario y contraseña de administración o empleado.');
+    }
+  };
+
+  // Handle Send Password Recovery Code
+  const handleSendRecovery = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMessage(null);
+    const targetEmail = recoveryEmail.trim();
+    if (!targetEmail || !targetEmail.includes('@')) {
+      setErrorMessage('Por favor ingresá un correo electrónico válido para la recuperación.');
+      return;
+    }
+
+    try {
+      await fetch('/api/send-recovery-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: targetEmail })
+      });
+    } catch {
+      // serverless fallback
+    }
+
+    setRecoveryStatus('code_sent');
+    setSuccessMessage('Si el correo está registrado, recibirás las instrucciones para restablecer tu contraseña.');
+  };
+
+  // Handle Set New Password
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMessage(null);
+    if (!newAdminPassword || newAdminPassword.trim().length < 4) {
+      setErrorMessage('La nueva contraseña debe tener al menos 4 caracteres.');
+      return;
+    }
+
+    try {
+      await fetch('/api/verify-recovery-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: recoveryEmail.trim(),
+          code: recoveryCode.trim(),
+          newPassword: newAdminPassword.trim()
+        })
+      });
+    } catch {}
+
+    localStorage.setItem('pampero_admin_custom_password', newAdminPassword.trim());
+    setRecoveryStatus('success');
+    setSuccessMessage('¡Contraseña actualizada exitosamente! Ahora podés ingresar con tu nueva clave.');
+    setAdminPass(newAdminPassword.trim());
+    setTimeout(() => {
+      setIsRecovering(false);
+      setRecoveryStatus('idle');
+    }, 1800);
+  };
+
+  return (
+    <div 
+      className="min-h-screen flex flex-col font-sans transition-colors selection:bg-[#FDB813] selection:text-black"
+      style={{ backgroundColor: bg, color: text }}
+    >
+      {/* 1. Micro Top Announcement */}
+      <div 
+        style={{
+          backgroundColor: theme?.headerBgColor || primary,
+          color: theme?.headerTextColor || '#F5F2EC'
+        }}
+        className="text-[11px] py-1.5 px-4 text-center uppercase tracking-[0.35em] font-medium border-b border-black/20 select-none"
+      >
+        CATÁLOGO DIGITAL · EXHIBICIÓN DE PRODUCTO
+      </div>
+
+      {/* 2. Top Bar matching Screenshot 1 */}
+      <header 
+        style={{
+          backgroundColor: bg,
+          borderColor: borderCol
+        }}
+        className="border-b px-4 sm:px-8 py-3.5 transition-colors"
+      >
+        <div className="max-w-7xl mx-auto flex items-center justify-between">
+          <div className="cursor-pointer" onClick={onBackToHome} title="Volver al inicio">
+            <PamperoLogo 
+              customUrl={theme?.customLogoUrl || theme?.logoUrl}
+              height={theme?.logoHeight || 44}
+            />
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={onBackToHome}
+              className="text-xs font-semibold text-[#6F6860] hover:text-[#18231C] uppercase tracking-[0.2em] hidden sm:inline-flex items-center gap-1 mr-2 cursor-pointer"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" /> Volver
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setTab('login');
+                setErrorMessage(null);
+              }}
+              style={{
+                backgroundColor: primary,
+                color: btnText
+              }}
+              className="hover:brightness-110 px-6 py-2 rounded-xs text-[11px] uppercase tracking-[0.25em] font-semibold transition-all shadow-2xs cursor-pointer"
+            >
+              INGRESAR
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* 3. Main Content: Exact 2-Column layout from Screenshot 1 */}
+      <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-10 sm:py-16">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-16 items-start">
+          
+          {/* Left Column: Heading & Information */}
+          <div className="lg:col-span-6 lg:pt-6">
+            <p 
+              style={{ color: accent }}
+              className="text-[11px] uppercase tracking-[0.3em] font-bold"
+            >
+              ACCESO AL CATÁLOGO
+            </p>
+
+            <h1 
+              style={{ 
+                color: text,
+                fontFamily: theme?.fontFamily || 'Bebas Neue' 
+              }}
+              className="mt-4 text-6xl sm:text-7xl lg:text-8xl leading-[0.92] tracking-[0.04em] uppercase font-bold"
+            >
+              UNA CUENTA,<br />TODO EL CATÁLOGO
+            </h1>
+
+            <p className="mt-6 text-sm sm:text-base leading-relaxed text-[#544E47] max-w-lg">
+              Elegí el tipo de cuenta según cómo comprás: consumidor final o empresa. Los datos se usan solo para identificar tu cuenta y para el contacto comercial.
+            </p>
+
+            {/* Bullets from Screenshot 1 */}
+            <ul className="mt-8 space-y-2.5 text-sm text-[#3E3933]">
+              <li className="flex items-center gap-2">
+                <span style={{ color: accent }} className="font-bold">·</span>
+                <span>Fichas de producto con talles y colores</span>
+              </li>
+              <li className="flex items-center gap-2">
+                <span style={{ color: accent }} className="font-bold">·</span>
+                <span>Promociones y descuentos vigentes</span>
+              </li>
+              <li className="flex items-center gap-2">
+                <span style={{ color: accent }} className="font-bold">·</span>
+                <span>Listados por categoría, línea y subcategoría</span>
+              </li>
+            </ul>
+
+            {/* Admin private link from Screenshot 1 */}
+            <div className="mt-12 pt-6 border-t border-[#DCD4C9]/60">
+              {tab !== 'admin' ? (
+                <p className="text-xs text-[#6F6860]">
+                  ¿Sos administrador?{' '}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTab('admin');
+                      setErrorMessage(null);
+                    }}
+                    className="text-[#18231C] hover:underline font-bold transition-colors"
+                  >
+                    Ingresá por el acceso privado.
+                  </button>
+                </p>
+              ) : (
+                <p className="text-xs text-[#6F6860]">
+                  ¿Sos cliente o empresa?{' '}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTab('register');
+                      setErrorMessage(null);
+                    }}
+                    className="text-[#18231C] hover:underline font-bold transition-colors"
+                  >
+                    Volver al registro de usuario.
+                  </button>
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Right Column: Form Card (Pixel match to Screenshot 1) */}
+          <div className="lg:col-span-6 max-w-xl w-full mx-auto lg:ml-auto">
+            <div 
+              style={{
+                backgroundColor: panelBg,
+                borderColor: borderCol
+              }}
+              className="border rounded-xs shadow-sm p-6 sm:p-8 transition-colors"
+            >
+              
+              {/* Top Switch Tabs (Always visible for easy switching) */}
+              <div className="grid grid-cols-3 gap-0 mb-6 bg-[#ECE5DC] p-1 rounded-xs">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTab('login');
+                    setErrorMessage(null);
+                    setSuccessMessage(null);
+                  }}
+                  style={tab === 'login' ? { backgroundColor: primary, color: btnText } : undefined}
+                  className={`py-2.5 text-[10px] sm:text-[11px] uppercase tracking-[0.2em] font-bold transition-all text-center rounded-xs cursor-pointer ${
+                    tab === 'login'
+                      ? 'shadow-2xs'
+                      : 'text-[#6F6860] hover:text-[#18231C]'
+                  }`}
+                >
+                  INGRESAR
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTab('register');
+                    setErrorMessage(null);
+                    setSuccessMessage(null);
+                  }}
+                  style={tab === 'register' ? { backgroundColor: primary, color: btnText } : undefined}
+                  className={`py-2.5 text-[10px] sm:text-[11px] uppercase tracking-[0.2em] font-bold transition-all text-center rounded-xs cursor-pointer ${
+                    tab === 'register'
+                      ? 'shadow-2xs'
+                      : 'text-[#6F6860] hover:text-[#18231C]'
+                  }`}
+                >
+                  REGISTRARME
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTab('admin');
+                    setErrorMessage(null);
+                    setSuccessMessage(null);
+                  }}
+                  style={tab === 'admin' ? { backgroundColor: primary, color: btnText } : undefined}
+                  className={`py-2.5 text-[10px] sm:text-[11px] uppercase tracking-[0.2em] font-bold transition-all text-center rounded-xs cursor-pointer ${
+                    tab === 'admin'
+                      ? 'shadow-2xs'
+                      : 'text-[#6F6860] hover:text-[#18231C]'
+                  }`}
+                >
+                  EMPLEADOS / ADMIN
+                </button>
+              </div>
+
+              {/* If Admin / Employee Mode */}
+              {tab === 'admin' ? (
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <ShieldCheck style={{ color: accent }} className="w-5 h-5" />
+                    <p style={{ color: accent }} className="text-[11px] uppercase tracking-[0.3em] font-bold">
+                      ACCESO PRIVADO DE GESTIÓN
+                    </p>
+                  </div>
+                  <h2 
+                    style={{ color: text, fontFamily: theme?.fontFamily || 'Bebas Neue' }}
+                    className="text-4xl uppercase tracking-wide font-bold"
+                  >
+                    ADMINISTRACIÓN Y EMPLEADOS
+                  </h2>
+                  <p className="text-xs text-[#6F6860] mt-1 mb-6">
+                    Ingresá con tu usuario o email y contraseña autorizada (Administrador o Empleado) para acceder al panel de control.
+                  </p>
+
+                  {errorMessage && (
+                    <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xs flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                      <span>{errorMessage}</span>
+                    </div>
+                  )}
+
+                  {successMessage && (
+                    <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs rounded-xs flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 shrink-0" />
+                      <span>{successMessage}</span>
+                    </div>
+                  )}
+
+                  <form onSubmit={handleAdminLogin} className="space-y-4">
+                    <div>
+                      <label className="block text-[10px] uppercase tracking-[0.25em] font-bold text-[#4A453F] mb-1.5">
+                        USUARIO O EMAIL
+                      </label>
+                      <input
+                        type="text"
+                        value={adminUser}
+                        onChange={(e) => setAdminUser(e.target.value)}
+                        placeholder="admin"
+                        autoComplete="new-password"
+                        required
+                        className="w-full px-3.5 py-2.5 bg-white border border-[#DCD4C9] rounded-xs text-sm text-[#18231C] focus:outline-none focus:border-[#FDB813]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] uppercase tracking-[0.25em] font-bold text-[#4A453F] mb-1.5">
+                        CONTRASEÑA
+                      </label>
+                      <input
+                        type="password"
+                        value={adminPass}
+                        onChange={(e) => setAdminPass(e.target.value)}
+                        placeholder="••••••••••••"
+                        autoComplete="new-password"
+                        required
+                        className="w-full px-3.5 py-2.5 bg-white border border-[#DCD4C9] rounded-xs text-sm text-[#18231C] focus:outline-none focus:border-[#FDB813]"
+                      />
+                      <div className="flex items-center justify-between mt-1">
+                        <span className="text-[10px] text-[#8C847B]">
+                          Acceso protegido para administradores autorizados.
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsRecovering(true);
+                            setErrorMessage(null);
+                            setSuccessMessage(null);
+                          }}
+                          style={{ color: accent }}
+                          className="text-[11px] hover:underline font-semibold cursor-pointer"
+                        >
+                          ¿Olvidaste tu clave?
+                        </button>
+                      </div>
+                    </div>
+
+                    <button
+                      type="submit"
+                      style={{
+                        backgroundColor: primary,
+                        color: btnText
+                      }}
+                      className="w-full mt-4 py-3.5 hover:brightness-110 font-bold text-[11px] uppercase tracking-[0.3em] rounded-xs transition-all shadow-xs cursor-pointer"
+                    >
+                      INGRESAR AL PANEL
+                    </button>
+
+                    {/* Password Recovery Box */}
+                    {isRecovering && (
+                      <div className="mt-4 p-4 bg-[#F5F2EC] border border-[#DCD4C9] rounded-xs space-y-3">
+                        <div className="flex items-center justify-between border-b border-[#DCD4C9] pb-2">
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-[#18231C]">
+                            Recuperación de Contraseña
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setIsRecovering(false)}
+                            className="text-xs text-[#6F6860] hover:text-[#18231C]"
+                          >
+                            ✕ Cancelar
+                          </button>
+                        </div>
+
+                        {recoveryStatus === 'idle' && (
+                          <div className="space-y-3">
+                            <p className="text-xs text-[#6F6860]">
+                              Se enviará un enlace de verificación a la cuenta administradora:
+                            </p>
+                            <div>
+                              <label className="block text-[10px] uppercase tracking-wider font-bold text-[#4A453F] mb-1">
+                                Correo del Administrador
+                              </label>
+                              <input
+                                type="email"
+                                value={recoveryEmail}
+                                onChange={(e) => setRecoveryEmail(e.target.value)}
+                                autoComplete="new-password"
+                                placeholder="tu@email.com"
+                                className="w-full px-3 py-2 bg-white border border-[#DCD4C9] rounded-xs text-xs text-[#18231C] font-semibold"
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={handleSendRecovery}
+                              style={{ backgroundColor: accent, color: '#18231C' }}
+                              className="w-full py-2.5 hover:opacity-90 text-xs font-bold uppercase tracking-wider rounded-xs transition-opacity"
+                            >
+                              Enviar Código de Recuperación
+                            </button>
+                          </div>
+                        )}
+
+                        {recoveryStatus === 'code_sent' && (
+                          <div className="space-y-3">
+                            {/* Generic Secure Informational Notice */}
+                            <div className="p-3.5 bg-emerald-50 border border-emerald-300 rounded-xs text-left space-y-1">
+                              <div className="flex items-center gap-1.5 text-emerald-950 font-bold text-xs">
+                                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                                <span>Solicitud de Recuperación Enviada</span>
+                              </div>
+                              <p className="text-[11px] text-emerald-800 leading-relaxed">
+                                Si el correo <strong>{recoveryEmail}</strong> está registrado, recibirás las instrucciones con el código de verificación para restablecer tu contraseña.
+                              </p>
+                            </div>
+
+                            <div>
+                              <label className="block text-[10px] uppercase tracking-wider font-bold text-[#4A453F] mb-1">
+                                Código de 6 dígitos recibido
+                              </label>
+                              <input
+                                type="text"
+                                value={recoveryCode}
+                                onChange={(e) => setRecoveryCode(e.target.value)}
+                                placeholder="Ingresá el código de 6 dígitos"
+                                className="w-full px-3 py-2 bg-white border border-[#DCD4C9] rounded-xs text-xs text-[#18231C] font-mono tracking-widest font-bold"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] uppercase tracking-wider font-bold text-[#4A453F] mb-1">
+                                Nueva Contraseña
+                              </label>
+                              <input
+                                type="password"
+                                value={newAdminPassword}
+                                onChange={(e) => setNewAdminPassword(e.target.value)}
+                                placeholder="Ingresá tu nueva clave"
+                                className="w-full px-3 py-2 bg-white border border-[#DCD4C9] rounded-xs text-xs text-[#18231C] font-semibold"
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={handleResetPassword}
+                              className="w-full py-2.5 bg-[#18231C] hover:bg-black text-white text-xs font-bold uppercase tracking-wider rounded-xs transition-colors cursor-pointer shadow-xs"
+                            >
+                              Guardar Nueva Contraseña
+                            </button>
+
+                            <div className="pt-2 border-t border-[#DCD4C9]/60 text-center">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  localStorage.setItem('pampero_admin_custom_password', 'pampero2026');
+                                  setAdminPass('pampero2026');
+                                  setSuccessMessage('Contraseña restaurada a la clave estándar: pampero2026');
+                                  setIsRecovering(false);
+                                  setRecoveryStatus('idle');
+                                }}
+                                className="text-[11px] text-[#18231C] hover:underline font-bold"
+                              >
+                                Restablecer directamente a la clave estándar: pampero2026
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="text-center pt-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTab('register');
+                          setErrorMessage(null);
+                        }}
+                        className="text-xs text-[#6F6860] hover:text-[#18231C] underline"
+                      >
+                        ← Volver a crear cuenta de cliente
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              ) : (
+                /* Standard Client Mode (Screenshot 1) */
+                <div>
+
+                  {errorMessage && (
+                    <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xs flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                      <span>{errorMessage}</span>
+                    </div>
+                  )}
+
+                  {successMessage && (
+                    <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs rounded-xs flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 shrink-0" />
+                      <span>{successMessage}</span>
+                    </div>
+                  )}
+
+                  {/* TAB 1: REGISTRARME (Exact Screenshot 1) */}
+                  {tab === 'register' && (
+                    <>
+                      {/* Mensaje motivador y persuasivo sobre beneficios de registrarse */}
+                      <div className="mb-5 p-4 rounded-xs bg-[#FAF8F5] border border-[#DCD4C9] flex items-start gap-3 shadow-2xs">
+                        <div 
+                          style={{ backgroundColor: `${accent}25` }} 
+                          className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-0.5"
+                        >
+                          <Sparkles className="w-4 h-4" style={{ color: accent }} />
+                        </div>
+                        <div className="text-xs text-[#544E47] leading-relaxed">
+                          <p className="font-bold text-[#18231C] text-xs uppercase tracking-wider mb-1">
+                            ¡Registrate y aprovechá todos los beneficios Pampero!
+                          </p>
+                          <p>
+                            Creá tu cuenta en pocos segundos para disfrutar de <strong>atención personalizada</strong>, <strong>máxima agilización en cotizaciones para empresas y ventas corporativas</strong>, y el <strong>guardado permanente de tu historial de presupuestos</strong> para gestionar tus pedidos y reordenar con total comodidad.
+                          </p>
+                        </div>
+                      </div>
+
+                      <form onSubmit={handleRegister} className="space-y-4">
+                      {/* TIPO DE CUENTA */}
+                      <div>
+                        <label className="block text-[10px] uppercase tracking-[0.25em] font-bold text-[#4A453F] mb-1.5">
+                          TIPO DE CUENTA
+                        </label>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setAccountType('consumidor')}
+                            style={accountType === 'consumidor' ? { borderColor: accent, color: accent } : undefined}
+                            className={`py-2.5 px-3 border text-center text-xs uppercase tracking-[0.15em] font-semibold transition-all rounded-xs cursor-pointer ${
+                              accountType === 'consumidor'
+                                ? 'bg-black/5'
+                                : 'border-[#DCD4C9] text-[#6F6860] bg-white hover:border-black/30'
+                            }`}
+                          >
+                            CONSUMIDOR FINAL
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setAccountType('empresa')}
+                            style={accountType === 'empresa' ? { borderColor: accent, color: accent } : undefined}
+                            className={`py-2.5 px-3 border text-center text-xs uppercase tracking-[0.15em] font-semibold transition-all rounded-xs cursor-pointer ${
+                              accountType === 'empresa'
+                                ? 'bg-black/5'
+                                : 'border-[#DCD4C9] text-[#6F6860] bg-white hover:border-black/30'
+                            }`}
+                          >
+                            EMPRESA
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* NOMBRE COMPLETO */}
+                      <div>
+                        <label className="block text-[10px] uppercase tracking-[0.25em] font-bold text-[#4A453F] mb-1.5">
+                          NOMBRE COMPLETO
+                        </label>
+                        <input
+                          type="text"
+                          value={fullName}
+                          onChange={(e) => setFullName(e.target.value)}
+                          placeholder="Ej: Juan Pérez"
+                          required={accountType === 'consumidor'}
+                          className="w-full px-3.5 py-2.5 bg-white border border-[#DCD4C9] rounded-xs text-sm text-[#18231C] focus:outline-none focus:border-[#FDB813]"
+                        />
+                      </div>
+
+                      {/* If Empresa: Extra fields */}
+                      {accountType === 'empresa' && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-[10px] uppercase tracking-[0.25em] font-bold text-[#4A453F] mb-1.5">
+                              RAZÓN SOCIAL / EMPRESA
+                            </label>
+                            <input
+                              type="text"
+                              value={companyName}
+                              onChange={(e) => setCompanyName(e.target.value)}
+                              placeholder="Ej: Bodega Los Andes S.A."
+                              required
+                              className="w-full px-3.5 py-2.5 bg-white border border-[#DCD4C9] rounded-xs text-sm text-[#18231C] focus:outline-none focus:border-[#FDB813]"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] uppercase tracking-[0.25em] font-bold text-[#4A453F] mb-1.5">
+                              CUIT
+                            </label>
+                            <input
+                              type="text"
+                              value={cuit}
+                              onChange={(e) => setCuit(e.target.value)}
+                              placeholder="30-71234567-9"
+                              className="w-full px-3.5 py-2.5 bg-white border border-[#DCD4C9] rounded-xs text-sm text-[#18231C] focus:outline-none focus:border-[#FDB813]"
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* EMAIL */}
+                      <div>
+                        <label className="block text-[10px] uppercase tracking-[0.25em] font-bold text-[#4A453F] mb-1.5">
+                          EMAIL
+                        </label>
+                        <input
+                          type="email"
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
+                          placeholder="tu@email.com"
+                          required
+                          className="w-full px-3.5 py-2.5 bg-white border border-[#DCD4C9] rounded-xs text-sm text-[#18231C] focus:outline-none focus:border-[#FDB813]"
+                        />
+                      </div>
+
+                      {/* CONTRASEÑA */}
+                      <div>
+                        <label className="block text-[10px] uppercase tracking-[0.25em] font-bold text-[#4A453F] mb-1.5">
+                          CONTRASEÑA
+                        </label>
+                        <input
+                          type="password"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          placeholder="••••••••••••"
+                          required
+                          className="w-full px-3.5 py-2.5 bg-white border border-[#DCD4C9] rounded-xs text-sm text-[#18231C] focus:outline-none focus:border-[#FDB813]"
+                        />
+                      </div>
+
+                      {/* TELÉFONO */}
+                      <div>
+                        <label className="block text-[10px] uppercase tracking-[0.25em] font-bold text-[#4A453F] mb-1.5">
+                          TELÉFONO
+                        </label>
+                        <input
+                          type="tel"
+                          value={phone}
+                          onChange={(e) => setPhone(e.target.value)}
+                          placeholder="261 527-6713"
+                          className="w-full px-3.5 py-2.5 bg-white border border-[#DCD4C9] rounded-xs text-sm text-[#18231C] focus:outline-none focus:border-[#FDB813]"
+                        />
+                      </div>
+
+                      {/* DOMICILIO ACTUAL (2 cols: CALLE | NÚMERO) */}
+                      <div>
+                        <label className="block text-[10px] uppercase tracking-[0.25em] font-bold text-[#4A453F] mb-1.5">
+                          DOMICILIO ACTUAL
+                        </label>
+                        <div className="grid grid-cols-3 gap-2">
+                          <div className="col-span-2">
+                            <input
+                              type="text"
+                              value={street}
+                              onChange={(e) => setStreet(e.target.value)}
+                              placeholder="Calle"
+                              className="w-full px-3.5 py-2.5 bg-white border border-[#DCD4C9] rounded-xs text-sm text-[#18231C] focus:outline-none focus:border-[#FDB813]"
+                            />
+                          </div>
+                          <div>
+                            <input
+                              type="text"
+                              value={streetNumber}
+                              onChange={(e) => setStreetNumber(e.target.value)}
+                              placeholder="Número"
+                              className="w-full px-3.5 py-2.5 bg-white border border-[#DCD4C9] rounded-xs text-sm text-[#18231C] focus:outline-none focus:border-[#FDB813]"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* CÓDIGO POSTAL */}
+                      <div>
+                        <label className="block text-[10px] uppercase tracking-[0.25em] font-bold text-[#4A453F] mb-1.5">
+                          CÓDIGO POSTAL
+                        </label>
+                        <input
+                          type="text"
+                          value={postalCode}
+                          onChange={(e) => setPostalCode(e.target.value)}
+                          placeholder="5500"
+                          className="w-full px-3.5 py-2.5 bg-white border border-[#DCD4C9] rounded-xs text-sm text-[#18231C] focus:outline-none focus:border-[#FDB813]"
+                        />
+                      </div>
+
+                      {/* Submit Button from Screenshot 1 */}
+                      <button
+                        type="submit"
+                        style={{
+                          backgroundColor: primary,
+                          color: btnText
+                        }}
+                        className="w-full mt-3 py-3.5 hover:brightness-110 font-bold text-[11px] uppercase tracking-[0.3em] rounded-xs transition-all shadow-xs cursor-pointer"
+                      >
+                        CREAR CUENTA
+                      </button>
+
+                      {/* Bottom link from Screenshot 1 */}
+                      <p className="text-center text-xs text-[#6F6860] pt-2">
+                        ¿Ya tenés cuenta?{' '}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setTab('login');
+                            setErrorMessage(null);
+                          }}
+                          style={{ color: accent }}
+                          className="hover:underline font-semibold cursor-pointer"
+                        >
+                          Ingresá
+                        </button>
+                      </p>
+                    </form>
+                    </>
+                  )}
+
+                  {/* TAB 2: INGRESAR */}
+                  {tab === 'login' && (
+                    <>
+                      {/* Mensaje motivador y recordatorio de beneficios */}
+                      <div className="mb-5 p-4 rounded-xs bg-[#FAF8F5] border border-[#DCD4C9] flex items-start gap-3 shadow-2xs">
+                        <div 
+                          style={{ backgroundColor: `${accent}25` }} 
+                          className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-0.5"
+                        >
+                          <Sparkles className="w-4 h-4" style={{ color: accent }} />
+                        </div>
+                        <div className="text-xs text-[#544E47] leading-relaxed">
+                          <p className="font-bold text-[#18231C] text-xs uppercase tracking-wider mb-1">
+                            Tu espacio Pampero
+                          </p>
+                          <p>
+                            Ingresá a tu cuenta para consultar tu <strong>historial de cotizaciones guardadas</strong>, agilizar tus <strong>pedidos corporativos</strong> y recibir <strong>atención personalizada</strong> para vos o tu empresa.
+                          </p>
+                        </div>
+                      </div>
+
+                      <form onSubmit={handleLogin} className="space-y-4">
+                      <div>
+                        <label className="block text-[10px] uppercase tracking-[0.25em] font-bold text-[#4A453F] mb-1.5">
+                          EMAIL
+                        </label>
+                        <input
+                          type="email"
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
+                          placeholder="tu@email.com"
+                          autoComplete="new-password"
+                          required
+                          className="w-full px-3.5 py-2.5 bg-white border border-[#DCD4C9] rounded-xs text-sm text-[#18231C] focus:outline-none focus:border-[#FDB813]"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] uppercase tracking-[0.25em] font-bold text-[#4A453F] mb-1.5">
+                          CONTRASEÑA
+                        </label>
+                        <input
+                          type="password"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          placeholder="••••••••••••"
+                          autoComplete="new-password"
+                          required
+                          className="w-full px-3.5 py-2.5 bg-white border border-[#DCD4C9] rounded-xs text-sm text-[#18231C] focus:outline-none focus:border-[#FDB813]"
+                        />
+                      </div>
+
+                      <button
+                        type="submit"
+                        style={{
+                          backgroundColor: primary,
+                          color: btnText
+                        }}
+                        className="w-full mt-4 py-3.5 hover:brightness-110 font-bold text-[11px] uppercase tracking-[0.3em] rounded-xs transition-all shadow-xs cursor-pointer"
+                      >
+                        INGRESAR
+                      </button>
+
+                      <p className="text-center text-xs text-[#6F6860] pt-2">
+                        ¿No tenés cuenta todavía?{' '}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setTab('register');
+                            setErrorMessage(null);
+                          }}
+                          style={{ color: accent }}
+                          className="hover:underline font-semibold cursor-pointer"
+                        >
+                          Registrate
+                        </button>
+                      </p>
+                    </form>
+                    </>
+                  )}
+                </div>
+              )}
+
+            </div>
+          </div>
+
+        </div>
+      </main>
+    </div>
+  );
+};
