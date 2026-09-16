@@ -1,4 +1,4 @@
-import { Product, Promotion, BranchLocation, ThemeConfig, DiscountCoupon } from '../types';
+import { Product, Promotion, BranchLocation, ThemeConfig, DiscountCoupon, QuantityDiscountRule } from '../types';
 
 export const INITIAL_PROMOTIONS: Promotion[] = [
   {
@@ -9,6 +9,7 @@ export const INITIAL_PROMOTIONS: Promotion[] = [
     bannerImage: '/hero.jpg',
     tagFilter: 'Temporada 2026',
     active: true,
+    associatedProductCodes: ['PAM-URB-01', 'PAM-URB-02', 'PAM-BOM-001', 'PAM-MUJ-01'],
     textColor: '#FFFFFF',
     fontSize: '72px',
     subtitleColor: '#DCD4C9',
@@ -25,6 +26,7 @@ export const INITIAL_PROMOTIONS: Promotion[] = [
     tagFilter: 'Venta Corporativa',
     discountOnly: false,
     active: true,
+    associatedProductCodes: ['PAM-IND-01', 'PAM-IND-03', 'PAM-IND-04', 'PAM-CAL-001'],
     textColor: '#FFFFFF',
     fontSize: '64px',
     subtitleColor: '#DCD4C9',
@@ -41,6 +43,7 @@ export const INITIAL_PROMOTIONS: Promotion[] = [
     discountOnly: true,
     discountPercentage: 15,
     active: true,
+    associatedProductCodes: ['PAM-BOM-002', 'PAM-MUJ-02', 'PMP-10007'],
     textColor: '#FFFFFF',
     fontSize: '64px',
     subtitleColor: '#DCD4C9',
@@ -129,6 +132,39 @@ export const INITIAL_COUPONS: DiscountCoupon[] = [
   },
 ];
 
+export const INITIAL_VOLUME_DISCOUNTS: QuantityDiscountRule[] = [
+  {
+    id: 'rule-corp-10',
+    name: 'Venta Corporativa (+10 unidades)',
+    minQuantity: 10,
+    discountPercentage: 15,
+    category: 'Venta Corporativa',
+    subCategory: 'Todas',
+    active: true,
+    description: '15% OFF a partir de 10 unidades en compras de la línea corporativa e industrial',
+  },
+  {
+    id: 'rule-general-20',
+    name: 'Mayorista General (+20 unidades)',
+    minQuantity: 20,
+    discountPercentage: 20,
+    category: 'Todas',
+    subCategory: 'Todas',
+    active: true,
+    description: '20% de descuento directo en el pedido superando las 20 unidades totales',
+  },
+  {
+    id: 'rule-bombachas-5',
+    name: 'Especial Bombachas de Campo (5+ unid)',
+    minQuantity: 5,
+    discountPercentage: 10,
+    category: 'Hombre',
+    subCategory: 'Bombachas',
+    active: true,
+    description: '10% OFF automático llevando 5 o más bombachas tradicionales',
+  },
+];
+
 export const INITIAL_PRODUCTS: Product[] = [
   // --- 10 PRODUCTOS OFICIALES PAMPERO CON MÚLTIPLES FOTOS ---
   {
@@ -157,8 +193,18 @@ export const INITIAL_PRODUCTS: Product[] = [
       "https://images.unsplash.com/photo-1473966968600-fa801b869a1a?q=80&w=1000&auto=format&fit=crop"
     ],
     availableColors: ["Beige", "Verde Oliva", "Azul Marino", "Negro"],
-    availableSizes: ["38", "40", "42", "44", "46", "48", "50", "52", "54"],
+    availableSizes: ["38", "40", "42", "44", "46", "48"],
     sizeType: "numbers",
+    specialSizeRanges: [
+      {
+        id: 'spec-bom-1',
+        suffix: '-1',
+        rangeLabel: 'Talles Especiales 50 al 60',
+        sizes: ['50', '52', '54', '56', '58', '60'],
+        price: 54900,
+        corporatePrice: 46665,
+      }
+    ],
     inStock: true,
     isFeatured: true
   },
@@ -187,8 +233,18 @@ export const INITIAL_PRODUCTS: Product[] = [
       "https://images.unsplash.com/photo-1576995853123-5a10305d93c0?q=80&w=1000&auto=format&fit=crop"
     ],
     availableColors: ["Azul Índigo", "Azul Oscuro", "Negro Lavado"],
-    availableSizes: ["38", "40", "42", "44", "46", "48", "50", "52"],
+    availableSizes: ["38", "40", "42", "44", "46", "48"],
     sizeType: "numbers",
+    specialSizeRanges: [
+      {
+        id: 'spec-bom2-1',
+        suffix: '-1',
+        rangeLabel: 'Talles Especiales 50 al 58',
+        sizes: ['50', '52', '54', '56', '58'],
+        price: 59900,
+        corporatePrice: 50900,
+      }
+    ],
     inStock: true,
     isFeatured: true
   },
@@ -199,6 +255,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     category: "Venta Corporativa",
     section: "Industria",
     subCategory: "Calzado de Seguridad",
+    isCorporateOnly: true,
     description: "Botín de seguridad para faena pesada e industria. Fabricado con cuero vacuno flor seleccionado, puntera de acero certificada IRAM 3610 y suela de poliuretano bidensidad inyectada directamente al corte.",
     features: [
       "Puntera de acero templado resistente a impactos de 200 Joules",
@@ -351,6 +408,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     category: "Hombre",
     section: "Urbano",
     subCategory: "Camisas",
+    isUnisex: true,
     description: "Camisa confeccionada en tela denim liviana de 6.5 oz con lavado stone wash suave. Diseñada para personal de campo, atención comercial técnica y uniforme corporativo moderno.",
     features: [
       "Denim 100% algodón 6.5 oz suavizado al tacto",
@@ -369,7 +427,7 @@ export const INITIAL_PRODUCTS: Product[] = [
       "https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?q=80&w=1000&auto=format&fit=crop"
     ],
     availableColors: ["Azul Índigo Lavado", "Azul Oscuro"],
-    availableSizes: ["S", "M", "L", "XL", "XXL", "XXXL"],
+    availableSizes: ["CH", "M", "G", "MG", "XG", "XXG"],
     sizeType: "letters",
     inStock: true,
     isFeatured: false
@@ -430,7 +488,7 @@ export const INITIAL_PRODUCTS: Product[] = [
       "https://images.unsplash.com/photo-1548883354-7622d03aca27?q=80&w=1000&auto=format&fit=crop"
     ],
     availableColors: ["Negro", "Azul Marino", "Verde Militar", "Bordeaux"],
-    availableSizes: ["S", "M", "L", "XL", "XXL", "XXXL"],
+    availableSizes: ["CH", "M", "G", "MG", "XG", "XXG"],
     sizeType: "letters",
     inStock: true,
     isFeatured: true
@@ -448,10 +506,9 @@ export const INITIAL_PRODUCTS: Product[] = [
     price: 36000,
     corporatePrice: 30600,
     discountPercentage: 15,
-    promotionTag: 'Temporada 2026',
     image: '/ph-1.jpg',
     availableColors: ['Arena', 'Negro', 'Azul trabajo'],
-    availableSizes: ['S', 'M', 'L', 'XL', 'XXL'],
+    availableSizes: ['Único'],
     inStock: true,
     isFeatured: true,
   },
@@ -467,10 +524,9 @@ export const INITIAL_PRODUCTS: Product[] = [
     price: 37500,
     corporatePrice: 31875,
     discountPercentage: 15,
-    promotionTag: 'Temporada 2026',
     image: '/ph-2.jpg',
     availableColors: ['Arena', 'Gris piedra', 'Negro'],
-    availableSizes: ['S', 'M', 'L', 'XL', 'XXL'],
+    availableSizes: ['Único'],
     inStock: true,
     isFeatured: true,
   },
@@ -489,7 +545,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     promotionTag: 'Especial Campo',
     image: '/ph-3.jpg',
     availableColors: ['Terracota', 'Verde oliva', 'Negro'],
-    availableSizes: ['S', 'M', 'L', 'XL', 'XXL'],
+    availableSizes: ['Único'],
     inStock: true,
     isFeatured: true,
   },
@@ -505,10 +561,9 @@ export const INITIAL_PRODUCTS: Product[] = [
     price: 40500,
     corporatePrice: 34425,
     discountPercentage: 15,
-    promotionTag: 'Temporada 2026',
     image: '/ph-4.jpg',
     availableColors: ['Terracota', 'Azul trabajo', 'Arena'],
-    availableSizes: ['S', 'M', 'L', 'XL', 'XXL'],
+    availableSizes: ['Único'],
     inStock: true,
     isFeatured: true,
   },
@@ -528,7 +583,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     promotionTag: 'Temporada 2026',
     image: 'https://images.unsplash.com/photo-1544923246-77307dd654cb?auto=format&fit=crop&w=800&q=80',
     availableColors: ['Negro', 'Azul Marino', 'Verde Oliva'],
-    availableSizes: ['S', 'M', 'L', 'XL', 'XXL'],
+    availableSizes: ['CH', 'M', 'G', 'MG', 'XG'],
     inStock: true,
     isFeatured: true,
   },
@@ -566,7 +621,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     promotionTag: 'Temporada 2026',
     image: 'https://images.unsplash.com/photo-1596755094514-f87e34085b2c?auto=format&fit=crop&w=800&q=80',
     availableColors: ['Rojo y Negro', 'Azul y Ocre', 'Verde y Tabaco'],
-    availableSizes: ['M', 'L', 'XL', 'XXL'],
+    availableSizes: ['M', 'G', 'MG', 'XG'],
     inStock: true,
     isFeatured: false,
   },
@@ -582,10 +637,9 @@ export const INITIAL_PRODUCTS: Product[] = [
     price: 28900,
     corporatePrice: 24000,
     discountPercentage: 0,
-    promotionTag: 'Temporada 2026',
     image: 'https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&w=800&q=80',
     availableColors: ['Blanco', 'Gris Melange', 'Azul Petróleo', 'Negro'],
-    availableSizes: ['S', 'M', 'L', 'XL', 'XXL', '3XL'],
+    availableSizes: ['CH', 'M', 'G', 'MG', 'XG', 'XXG'],
     inStock: true,
   },
   {
@@ -662,7 +716,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     promotionTag: 'Venta Corporativa',
     image: 'https://images.unsplash.com/photo-1544022613-e87ca75a784a?auto=format&fit=crop&w=800&q=80',
     availableColors: ['Amarillo Vial', 'Azul Oscuro'],
-    availableSizes: ['M', 'L', 'XL', 'XXL', '3XL'],
+    availableSizes: ['M', 'G', 'MG', 'XG', 'XXG'],
     inStock: true,
   },
   {
@@ -680,7 +734,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     promotionTag: 'Venta Corporativa',
     image: 'https://images.unsplash.com/photo-1504307651254-35680f356dfd?auto=format&fit=crop&w=800&q=80',
     availableColors: ['Naranja Flúor', 'Amarillo Flúor'],
-    availableSizes: ['L', 'XL', 'XXL'],
+    availableSizes: ['G', 'MG', 'XG'],
     inStock: true,
   },
 
@@ -796,7 +850,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     promotionTag: 'Temporada 2026',
     image: 'https://images.unsplash.com/photo-1539533018447-63fcce667883?auto=format&fit=crop&w=800&q=80',
     availableColors: ['Bordeaux', 'Negro', 'Verde Musgo'],
-    availableSizes: ['XS', 'S', 'M', 'L', 'XL'],
+    availableSizes: ['XCH', 'CH', 'M', 'G', 'MG'],
     inStock: true,
     isFeatured: true,
   },
@@ -969,7 +1023,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     promotionTag: 'Venta Corporativa',
     image: 'https://images.unsplash.com/photo-1548883354-7622d03aca27?auto=format&fit=crop&w=800&q=80',
     availableColors: ['Azul Marino con Flúor', 'Rojo con Bandas 3M'],
-    availableSizes: ['S', 'M', 'L', 'XL', 'XXL', '3XL', '4XL'],
+    availableSizes: ['CH', 'M', 'G', 'MG', 'XG', 'XXG', 'XXXG'],
     inStock: true,
     isFeatured: true,
   },

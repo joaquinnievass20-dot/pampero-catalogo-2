@@ -67,7 +67,22 @@ export interface ReceivedQuote {
   rawText: string;
 }
 
-export type MainCategory = 'Hombre' | 'Mujer' | 'Infantil' | 'Venta Corporativa';
+export type MainCategory = 'Hombre' | 'Mujer' | 'Infantil' | 'Venta Corporativa' | string;
+
+export interface SpecialSizeRange {
+  id: string;
+  suffix?: string; // e.g. "-1", "-2"
+  rangeLabel: string; // e.g. "Talles Especiales 50 al 60", "XXL a 4XL"
+  sizes: string[]; // e.g. ["50", "52", "54", "56", "58", "60"]
+  price: number; // Adjusted Retail Price
+  corporatePrice?: number; // Adjusted Corporate Price
+  fromSize?: string;
+  toSize?: string;
+  sizeRangeLabel?: string;
+  minSize?: string;
+  maxSize?: string;
+  label?: string;
+}
 
 export interface Product {
   id: string;
@@ -89,6 +104,9 @@ export interface Product {
   availableColors: string[];
   availableSizes: string[];
   sizeType?: 'letters' | 'numbers'; // Letras (S, M, L, XL...) o Números (38, 40, 42... / 39, 40, 41...)
+  specialSizeRanges?: SpecialSizeRange[]; // Variantes o rangos de talles especiales diferenciados con sufijos (-1, -2) y precios ajustados
+  isUnisex?: boolean; // Si es Unisex, se muestra automáticamente tanto en Hombre como en Mujer
+  isCorporateOnly?: boolean; // Si es exclusivo de Venta Corporativa / Línea Industrial
   inStock: boolean;
   isFeatured?: boolean;
 }
@@ -110,6 +128,14 @@ export interface ProductMetric {
   lastInteracted: string;
 }
 
+export interface PromotionButton {
+  id: string;
+  label: string; // e.g., "VER ESPECIAL CAMPO", "CUENTA EMPRESA"
+  actionType: 'catalog' | 'category' | 'whatsapp' | 'url' | 'auth';
+  actionValue?: string; // Tag, category name, URL or message
+  style?: 'primary' | 'secondary' | 'outline';
+}
+
 export interface Promotion {
   id: string;
   title: string;
@@ -127,6 +153,7 @@ export interface Promotion {
   subtitleColor?: string; // Color de la fuente del subtítulo (ej. #DCD4C9)
   subtitleFontSize?: string; // Tamaño de la fuente del subtítulo (ej. 16px, 18px)
   primaryBtnText?: string;
+  buttons?: PromotionButton[]; // Botones configurables dinámicos
 }
 
 export interface RegisteredUser {
@@ -253,4 +280,32 @@ export interface CartItem {
   quantity: number;
   selectedColor?: string;
   selectedSize?: string;
+  specialSizeRange?: SpecialSizeRange;
+  unitPriceAdjusted?: number;
+  codeWithSuffix?: string;
 }
+
+export interface QuantityDiscountRule {
+  id: string;
+  name: string; // e.g., "Mayorista Corporativo +20 unid."
+  minQuantity: number; // e.g. 5, 10, 20, 50
+  discountPercentage: number; // e.g. 10, 15, 20
+  category?: string; // 'Todas' | 'Hombre' | 'Mujer' | 'Infantil' | 'Venta Corporativa'
+  subCategory?: string; // 'Todas' or specific subcategory name
+  applicableCategory?: string;
+  applicableSubCategory?: string;
+  active?: boolean;
+  isActive?: boolean;
+  description?: string;
+}
+
+export type VolumeDiscountRule = QuantityDiscountRule;
+export type CategoryHierarchyItem = {
+  name: MainCategory;
+  description: string;
+  sections: Array<{
+    name: string;
+    subCategories: string[];
+  }>;
+};
+

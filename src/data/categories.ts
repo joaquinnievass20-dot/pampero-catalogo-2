@@ -11,7 +11,7 @@ export interface CategoryStructure {
   sections: SectionDef[];
 }
 
-export const CATEGORY_HIERARCHY: CategoryStructure[] = [
+export const INITIAL_CATEGORY_HIERARCHY: CategoryStructure[] = [
   {
     name: 'Hombre',
     description: 'Línea masculina: resistencia Pampero para el trabajo rudo, el campo y la ciudad.',
@@ -108,6 +108,41 @@ export const CATEGORY_HIERARCHY: CategoryStructure[] = [
     ],
   },
 ];
+
+export const CATEGORY_HIERARCHY: CategoryStructure[] = INITIAL_CATEGORY_HIERARCHY;
+
+export function loadStoredCategoryHierarchy(): CategoryStructure[] {
+  if (typeof window === 'undefined') return INITIAL_CATEGORY_HIERARCHY;
+  try {
+    const raw = localStorage.getItem('pampero_category_hierarchy');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch (e) {
+    console.error('Error loading stored category hierarchy', e);
+  }
+  return INITIAL_CATEGORY_HIERARCHY;
+}
+
+export function saveStoredCategoryHierarchy(newHierarchy: CategoryStructure[]): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem('pampero_category_hierarchy', JSON.stringify(newHierarchy));
+    window.dispatchEvent(new CustomEvent('pampero_categories_updated', { detail: newHierarchy }));
+    // Asynchronous background sync with server
+    fetch('/api/categories', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ categories: newHierarchy }),
+    }).catch((err) => console.warn('Categories server sync error (ignored):', err));
+  } catch (e) {
+    console.error('Error saving stored category hierarchy', e);
+  }
+}
+
 
 export function sanitizeCategory(rawCat: any): MainCategory {
   if (rawCat === 'Mujer' || rawCat === '1' || rawCat === 1) return 'Mujer';

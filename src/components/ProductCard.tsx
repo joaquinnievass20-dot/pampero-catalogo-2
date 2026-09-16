@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
-import { Product, UserSession, ThemeConfig } from '../types';
+import { Product, UserSession, ThemeConfig, Promotion } from '../types';
 import { Building2 } from 'lucide-react';
 import { getColorHex, getProductImageForColor, recordProductInteraction } from '../utils/colorUtils';
+import { getProductActivePromotion } from '../utils/promoUtils';
 
 interface ProductCardProps {
   product: Product;
   userSession: UserSession | null;
   theme: ThemeConfig;
+  promotions?: Promotion[];
   onViewDetail: (product: Product) => void;
   onQuickAdd?: (product: Product) => void;
 }
@@ -15,6 +17,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   product,
   userSession,
   theme,
+  promotions,
   onViewDetail,
 }) => {
   const isCompany = userSession?.clientType === 'empresa';
@@ -33,6 +36,10 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   const iconColor = theme.iconColor || accent;
   const hoverAccent = theme.hoverAccentColor || accent;
   const cardBorder = theme.cardBorderColor || '#DCD4C9';
+
+  // Check if product is actually linked to an active promotion
+  const activePromo = getProductActivePromotion(product, promotions);
+  const promoBadgeLabel = activePromo ? (activePromo.badge || product.promotionTag || activePromo.tagFilter) : null;
 
   const handleClick = () => {
     recordProductInteraction(product, 'click');
@@ -58,8 +65,8 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           referrerPolicy="no-referrer"
         />
 
-        {/* Top left badge if present */}
-        {product.promotionTag && (
+        {/* Top left badge if present and linked to an active promotion */}
+        {promoBadgeLabel && (
           <span 
             style={{ 
               backgroundColor: theme.seasonBadgeBg || '#18231C',
@@ -67,7 +74,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             }}
             className="absolute left-2.5 top-2.5 rounded-xs px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.2em] shadow-2xs"
           >
-            {product.promotionTag}
+            {promoBadgeLabel}
           </span>
         )}
 
@@ -127,9 +134,21 @@ export const ProductCard: React.FC<ProductCardProps> = ({
 
       {/* Product metadata */}
       <div className="mt-2 min-w-0" onClick={handleClick}>
-        <p className="text-[10px] uppercase tracking-[0.2em] text-[#6F6860] truncate font-medium">
-          {product.section} · {product.subCategory}
-        </p>
+        <div className="flex items-center gap-1 flex-wrap">
+          <p className="text-[10px] uppercase tracking-[0.2em] text-[#6F6860] truncate font-medium">
+            {product.section} · {product.subCategory}
+          </p>
+          {product.isUnisex && (
+            <span className="text-[9px] font-bold text-emerald-800 bg-emerald-50 px-1 rounded-xs border border-emerald-200 uppercase tracking-wider">
+              Unisex
+            </span>
+          )}
+          {product.specialSizeRanges && product.specialSizeRanges.length > 0 && (
+            <span className="text-[9px] font-bold text-amber-800 bg-amber-50 px-1 rounded-xs border border-amber-200 uppercase tracking-wider">
+              Talles Esp. (-1)
+            </span>
+          )}
+        </div>
 
         <h3 
           className="mt-0.5 truncate text-sm font-medium text-[#22201D] transition-colors cursor-pointer"

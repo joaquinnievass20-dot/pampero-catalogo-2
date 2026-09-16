@@ -8,7 +8,9 @@ import {
   CartItem, 
   MainCategory,
   DiscountCoupon,
-  LookbookItem
+  LookbookItem,
+  CategoryHierarchyItem,
+  VolumeDiscountRule
 } from './types';
 import { 
   INITIAL_PRODUCTS, 
@@ -18,6 +20,7 @@ import {
   INITIAL_COUPONS
 } from './data/initialData';
 import { INITIAL_LOOKBOOK } from './data/initialLookbook';
+import { INITIAL_CATEGORY_HIERARCHY } from './data/categories';
 import { 
   saveCatalogBackup, 
   loadCatalogBackup, 
@@ -219,6 +222,22 @@ export default function App() {
       } catch (err) {
         console.warn('[PAMPERO SYNC] Error synchronizing lookbook:', err);
       }
+
+      // 7. Authoritative Categories & Hierarchy
+      if (Array.isArray(data.categories) && data.categories.length > 0) {
+        setCategories(data.categories);
+        try {
+          localStorage.setItem('pampero_catalog_categories', JSON.stringify(data.categories));
+        } catch {}
+      }
+
+      // 8. Authoritative Volume Discounts
+      if (Array.isArray(data.volumeDiscounts) && data.volumeDiscounts.length > 0) {
+        setVolumeDiscounts(data.volumeDiscounts);
+        try {
+          localStorage.setItem('pampero_volume_discounts', JSON.stringify(data.volumeDiscounts));
+        } catch {}
+      }
     } catch (err) {
       console.warn('[PAMPERO SYNC] Error synchronizing from server:', err);
     }
@@ -309,6 +328,51 @@ export default function App() {
     } catch {
       return INITIAL_LOOKBOOK;
     }
+  });
+
+  // Dynamic Categories & Hierarchy State
+  const [categories, setCategories] = useState<CategoryHierarchyItem[]>(() => {
+    try {
+      const saved = localStorage.getItem('pampero_catalog_categories');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return INITIAL_CATEGORY_HIERARCHY;
+  });
+
+  // Volume Discounts Rules State
+  const [volumeDiscounts, setVolumeDiscounts] = useState<VolumeDiscountRule[]>(() => {
+    try {
+      const saved = localStorage.getItem('pampero_volume_discounts');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return [
+      {
+        id: 'vol-1',
+        name: 'Mayorista +10 Unidades',
+        minQuantity: 10,
+        discountPercentage: 10,
+        category: 'Todas',
+        applicableCategory: 'ALL',
+        active: true,
+        isActive: true,
+      },
+      {
+        id: 'vol-2',
+        name: 'Corporativo Industrial +20 Unid.',
+        minQuantity: 20,
+        discountPercentage: 15,
+        category: 'Venta Corporativa',
+        applicableCategory: 'Venta Corporativa',
+        active: true,
+        isActive: true,
+      }
+    ];
   });
 
   // 8. Navigation State
@@ -456,6 +520,40 @@ export default function App() {
     }
   };
 
+  const handleUpdateCategories = async (newCategories: CategoryHierarchyItem[]) => {
+    setCategories(newCategories);
+    try {
+      localStorage.setItem('pampero_catalog_categories', JSON.stringify(newCategories));
+    } catch {}
+
+    try {
+      await fetch('/api/categories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ categories: newCategories }),
+      });
+    } catch (err) {
+      console.error('[PAMPERO PERSIST] Error saving categories to server:', err);
+    }
+  };
+
+  const handleUpdateVolumeDiscounts = async (newDiscounts: VolumeDiscountRule[]) => {
+    setVolumeDiscounts(newDiscounts);
+    try {
+      localStorage.setItem('pampero_volume_discounts', JSON.stringify(newDiscounts));
+    } catch {}
+
+    try {
+      await fetch('/api/volume-discounts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ volumeDiscounts: newDiscounts }),
+      });
+    } catch (err) {
+      console.error('[PAMPERO PERSIST] Error saving volume discounts to server:', err);
+    }
+  };
+
   const handleLogin = (session: UserSession) => {
     setUserSession(session);
     localStorage.setItem('pampero_user_session', JSON.stringify(session));
@@ -473,10 +571,22 @@ export default function App() {
   };
 
   // Cart operations
-  const handleAddToCart = (product: Product, quantity = 1, color?: string, size?: string) => {
+  const handleAddToCart = (
+    product: Product,
+    quantity = 1,
+    color?: string,
+    size?: string,
+    specialSizeRange?: any,
+    unitPriceAdjusted?: number,
+    codeWithSuffix?: string
+  ) => {
     setCart((prev) => {
+      const targetCode = codeWithSuffix || (specialSizeRange?.suffix ? `${product.code}${specialSizeRange.suffix}` : product.code);
       const idx = prev.findIndex(
-        (it) => it.product.id === product.id && it.selectedColor === color && it.selectedSize === size
+        (it) => it.product.id === product.id && 
+                it.selectedColor === color && 
+                it.selectedSize === size && 
+                (it.codeWithSuffix || it.product.code) === targetCode
       );
       let updated: CartItem[];
       if (idx >= 0) {
@@ -490,6 +600,9 @@ export default function App() {
             quantity,
             selectedColor: color || product.availableColors?.[0] || 'Estándar',
             selectedSize: size || product.availableSizes?.[0] || 'Único',
+            specialSizeRange,
+            unitPriceAdjusted,
+            codeWithSuffix: targetCode,
           },
         ];
       }
@@ -498,11 +611,21 @@ export default function App() {
     });
   };
 
-  const handleUpdateCartQuantity = (productId: string, delta: number) => {
+  const handleUpdateCartQuantity = (
+    productId: string,
+    delta: number,
+    color?: string,
+    size?: string,
+    codeWithSuffix?: string
+  ) => {
     setCart((prev) => {
       const updated = prev
         .map((it) => {
-          if (it.product.id === productId) {
+          const matchProduct = it.product.id === productId;
+          const matchColor = !color || it.selectedColor === color;
+          const matchSize = !size || it.selectedSize === size;
+          const matchCode = !codeWithSuffix || (it.codeWithSuffix || it.product.code) === codeWithSuffix;
+          if (matchProduct && matchColor && matchSize && matchCode) {
             const newQ = it.quantity + delta;
             return newQ > 0 ? { ...it, quantity: newQ } : null;
           }
@@ -514,9 +637,20 @@ export default function App() {
     });
   };
 
-  const handleRemoveFromCart = (productId: string) => {
+  const handleRemoveFromCart = (
+    productId: string,
+    color?: string,
+    size?: string,
+    codeWithSuffix?: string
+  ) => {
     setCart((prev) => {
-      const updated = prev.filter((it) => it.product.id !== productId);
+      const updated = prev.filter((it) => {
+        const matchProduct = it.product.id === productId;
+        const matchColor = !color || it.selectedColor === color;
+        const matchSize = !size || it.selectedSize === size;
+        const matchCode = !codeWithSuffix || (it.codeWithSuffix || it.product.code) === codeWithSuffix;
+        return !(matchProduct && matchColor && matchSize && matchCode);
+      });
       localStorage.setItem('pampero_quote_cart', JSON.stringify(updated));
       return updated;
     });

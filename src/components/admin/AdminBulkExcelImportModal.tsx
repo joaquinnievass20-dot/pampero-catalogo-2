@@ -48,6 +48,9 @@ export const AdminBulkExcelImportModal: React.FC<AdminBulkExcelImportModalProps>
       'Precio': 48000,
       'Precio Mayorista': 41000,
       'Descuento %': 10,
+      'Unisex (SI/NO)': 'NO',
+      'Venta Corporativa Exclusiva (SI/NO)': 'SI',
+      'Talles Especiales (de-hasta:precio:sufijo)': '50-58:56000:-1',
       'Colores': 'Azul Francia, Beige, Verde Oliva',
       'Talles': 'S, M, L, XL, XXL',
       'Imagen URL': 'https://images.unsplash.com/photo-1544923246-77307dd654cb?auto=format&fit=crop&w=800&q=80',
@@ -62,6 +65,9 @@ export const AdminBulkExcelImportModal: React.FC<AdminBulkExcelImportModalProps>
       'Precio': 56000,
       'Precio Mayorista': 49000,
       'Descuento %': 0,
+      'Unisex (SI/NO)': 'SI',
+      'Venta Corporativa Exclusiva (SI/NO)': 'NO',
+      'Talles Especiales (de-hasta:precio:sufijo)': '52-60:64000:-1;62-68:72000:-2',
       'Colores': 'Negro, Arena, Verde Oliva',
       'Talles': '38, 40, 42, 44, 46, 48',
       'Imagen URL': 'https://images.unsplash.com/photo-1473966968600-fa801b869a1a?auto=format&fit=crop&w=800&q=80',
@@ -77,8 +83,8 @@ export const AdminBulkExcelImportModal: React.FC<AdminBulkExcelImportModalProps>
   };
 
   const handleCopyTemplateHeader = () => {
-    const header = 'Código\tNombre\tCategoría\tSección\tSubcategoría\tPrecio\tPrecio Mayorista\tDescuento %\tColores\tTalles\tImagen URL\tDescripción';
-    const sample = 'PAM-901\tCamisa Pampero Oficial\tHombre\tUrbano\tCamisas y remeras\t45000\t39000\t0\tNegro, Azul\tS, M, L\thttps://images.unsplash.com/photo-1544923246-77307dd654cb\tPrenda original';
+    const header = 'Código\tNombre\tCategoría\tSección\tSubcategoría\tPrecio\tPrecio Mayorista\tDescuento %\tUnisex (SI/NO)\tCorporativo Exclusivo (SI/NO)\tTalles Especiales\tColores\tTalles\tImagen URL\tDescripción';
+    const sample = 'PAM-901\tCamisa Pampero Oficial\tHombre\tUrbano\tCamisas y remeras\t45000\t39000\t0\tSI\tNO\t50-58:52000:-1\tNegro, Azul\tS, M, L\thttps://images.unsplash.com/photo-1544923246-77307dd654cb\tPrenda original';
     navigator.clipboard.writeText(`${header}\n${sample}`);
     setCopiedTemplate(true);
     setTimeout(() => setCopiedTemplate(false), 2500);
@@ -129,6 +135,60 @@ export const AdminBulkExcelImportModal: React.FC<AdminBulkExcelImportModalProps>
       const rawDesc = getVal(['descuento', 'descuentoporcentaje', 'promo']);
       const discountPercentage = Number(String(rawDesc || '0').replace(/[^0-9.]/g, '')) || 0;
 
+      // Extract Unisex flag
+      const rawUnisex = String(getVal(['unisex', 'esunisex', 'genero', 'sexo']) || '').trim().toLowerCase();
+      const isUnisex = rawUnisex === 'si' || rawUnisex === 'sí' || rawUnisex === 'true' || rawUnisex === '1' || rawUnisex === 'unisex';
+
+      // Extract Corporate Only / Industrial flag
+      const rawCorpOnly = String(getVal(['corporativo', 'solocorporativo', 'exclusivocorporativo', 'industrial', 'lineaindustrial']) || '').trim().toLowerCase();
+      const isCorporateOnly = rawCorpOnly === 'si' || rawCorpOnly === 'sí' || rawCorpOnly === 'true' || rawCorpOnly === '1' || section.toLowerCase().includes('industria') || category === 'Venta Corporativa';
+
+      // Extract Special Size Ranges: "50-58:56000:-1;60-66:64000:-2"
+      const rawSpecialSizes = String(getVal(['tallesespeciales', 'rangotalles', 'variantesprecio', 'talles_especiales', 'preciosdiferenciados']) || '').trim();
+      const specialSizeRanges = (() => {
+        if (!rawSpecialSizes) return undefined;
+        try {
+          const parts = rawSpecialSizes.split(/[;,]/).map((s) => s.trim()).filter(Boolean);
+          const ranges = parts.map((part, pIdx) => {
+            // format: from-to:price:suffix or label:price:suffix
+            const segments = part.split(':').map((s) => s.trim());
+            const rangeStr = segments[0] || '50-58';
+            const rangePrice = Number(String(segments[1] || '0').replace(/[^0-9.]/g, '')) || Math.round(price * 1.15);
+            const rangeSuffix = segments[2] || '-1';
+            const [fromS, toS] = rangeStr.includes('-') ? rangeStr.split('-').map((s) => s.trim()) : [rangeStr, rangeStr];
+            const sizeList: string[] = [];
+            const n1 = parseInt(fromS, 10);
+            const n2 = parseInt(toS, 10);
+            if (!isNaN(n1) && !isNaN(n2) && n2 >= n1) {
+              const step = (n2 - n1) >= 2 && n1 % 2 === 0 ? 2 : 1;
+              for (let s = n1; s <= n2; s += step) {
+                sizeList.push(String(s));
+              }
+            } else {
+              sizeList.push(fromS);
+              if (toS !== fromS) sizeList.push(toS);
+            }
+            return {
+              id: `range-${Date.now()}-${pIdx}`,
+              suffix: rangeSuffix.startsWith('-') ? rangeSuffix : `-${rangeSuffix}`,
+              rangeLabel: `Talles ${fromS} a ${toS}`,
+              label: `Talles ${fromS} a ${toS}`,
+              sizeRangeLabel: `Talles ${fromS} a ${toS}`,
+              fromSize: fromS,
+              toSize: toS,
+              minSize: fromS,
+              maxSize: toS,
+              sizes: sizeList,
+              price: rangePrice,
+              corporatePrice: Math.round(rangePrice * 0.85),
+            };
+          });
+          return ranges.length > 0 ? ranges : undefined;
+        } catch {
+          return undefined;
+        }
+      })();
+
       const rawColors = getVal(['colores', 'color', 'variantes']);
       const availableColors = rawColors 
         ? String(rawColors).split(/[,;/]/).map((c) => c.trim()).filter(Boolean)
@@ -154,6 +214,9 @@ export const AdminBulkExcelImportModal: React.FC<AdminBulkExcelImportModalProps>
         price,
         corporatePrice,
         discountPercentage,
+        isUnisex,
+        isCorporateOnly,
+        specialSizeRanges,
         availableColors,
         availableSizes,
         image,
@@ -478,7 +541,26 @@ export const AdminBulkExcelImportModal: React.FC<AdminBulkExcelImportModalProps>
                     {parsedRows.map((r, i) => (
                       <tr key={i} className="hover:bg-amber-50/40">
                         <td className="p-2 font-mono font-bold text-[#18231C]">{r.code}</td>
-                        <td className="p-2 font-medium text-[#18231C]">{r.name}</td>
+                        <td className="p-2 font-medium text-[#18231C]">
+                          <div>{r.name}</div>
+                          <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                            {r.isUnisex && (
+                              <span className="text-[9px] font-bold text-blue-800 bg-blue-50 px-1 rounded-xs border border-blue-200">
+                                Unisex
+                              </span>
+                            )}
+                            {r.isCorporateOnly && (
+                              <span className="text-[9px] font-bold text-purple-800 bg-purple-50 px-1 rounded-xs border border-purple-200">
+                                Corp Exclusivo
+                              </span>
+                            )}
+                            {r.specialSizeRanges && r.specialSizeRanges.length > 0 && (
+                              <span className="text-[9px] font-bold text-amber-800 bg-amber-50 px-1 rounded-xs border border-amber-200">
+                                {r.specialSizeRanges.length} Talles Esp.
+                              </span>
+                            )}
+                          </div>
+                        </td>
                         <td className="p-2">
                           <span className="px-1.5 py-0.5 bg-[#ECE5DC] rounded-xs text-[10px] font-semibold">
                             {r.category}

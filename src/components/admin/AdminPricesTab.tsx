@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Product } from '../../types';
+import { Product, QuantityDiscountRule, CategoryHierarchyItem, MainCategory } from '../../types';
 import { 
   DollarSign, 
   FileSpreadsheet, 
@@ -14,13 +14,23 @@ import {
   HelpCircle,
   Sparkles,
   ArrowRight,
-  ClipboardCopy
+  ClipboardCopy,
+  Plus,
+  Trash2,
+  Tag,
+  Percent,
+  Layers,
+  Power
 } from 'lucide-react';
 
 interface AdminPricesTabProps {
   products: Product[];
   onUpdateProducts: (products: Product[]) => void;
   triggerSaveNotice: () => void;
+  volumeDiscounts?: QuantityDiscountRule[];
+  onUpdateVolumeDiscounts?: (rules: QuantityDiscountRule[]) => void;
+  categories?: CategoryHierarchyItem[];
+  initialSubTab?: 'instructions' | 'paste_sheet' | 'manual_table' | 'volume_discounts';
 }
 
 // Clean Argentine peso currency strings: "$ 18.791,50" or "18.791" or "18791" -> 18791
@@ -55,12 +65,67 @@ export const AdminPricesTab: React.FC<AdminPricesTabProps> = ({
   products,
   onUpdateProducts,
   triggerSaveNotice,
+  volumeDiscounts = [],
+  onUpdateVolumeDiscounts = (_rules: QuantityDiscountRule[]) => {},
+  categories = [],
+  initialSubTab,
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'instructions' | 'paste_sheet' | 'manual_table'>('instructions');
+  const [activeSubTab, setActiveSubTab] = useState<'instructions' | 'paste_sheet' | 'manual_table' | 'volume_discounts'>(initialSubTab || 'instructions');
   const [searchQuery, setSearchQuery] = useState('');
   const [pasteData, setPasteData] = useState('');
   const [matchedPreview, setMatchedPreview] = useState<Array<{ product: Product; oldPrice: number; newPrice: number; oldCorp: number; newCorp: number }>>([]);
   
+  // Volume Discount Rule Form State
+  const [isCreatingRule, setIsCreatingRule] = useState(false);
+  const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
+  const [ruleForm, setRuleForm] = useState<Omit<QuantityDiscountRule, 'id'>>({
+    name: 'Descuento Mayorista 10+',
+    minQuantity: 10,
+    discountPercentage: 15,
+    applicableCategory: 'ALL',
+    applicableSubCategory: 'ALL',
+    isActive: true,
+  });
+
+  const handleSaveRule = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!ruleForm.name?.trim() || ruleForm.minQuantity <= 0 || ruleForm.discountPercentage <= 0) return;
+
+    let updated: QuantityDiscountRule[];
+    if (editingRuleId) {
+      updated = volumeDiscounts.map((r) =>
+        r.id === editingRuleId ? { ...r, ...ruleForm } : r
+      );
+    } else {
+      const newRule: QuantityDiscountRule = {
+        id: 'rule-' + Date.now(),
+        ...ruleForm,
+      };
+      updated = [...volumeDiscounts, newRule];
+    }
+
+    onUpdateVolumeDiscounts(updated);
+    setIsCreatingRule(false);
+    setEditingRuleId(null);
+    triggerSaveNotice();
+  };
+
+  const handleDeleteRule = (id: string) => {
+    if (window.confirm('¿Deseás eliminar esta regla de descuento por volumen?')) {
+      const updated = volumeDiscounts.filter((r) => r.id !== id);
+      onUpdateVolumeDiscounts(updated);
+      triggerSaveNotice();
+    }
+  };
+
+  const handleToggleRuleActive = (id: string) => {
+    const updated = volumeDiscounts.map((r) =>
+      r.id === id ? { ...r, isActive: !r.isActive } : r
+    );
+    onUpdateVolumeDiscounts(updated);
+    triggerSaveNotice();
+  };
+
   // Local edit state for the manual table
   const [editablePrices, setEditablePrices] = useState<Record<string, { price: number; corporatePrice: number; discount: number }>>(() => {
     const init: Record<string, { price: number; corporatePrice: number; discount: number }> = {};
@@ -274,6 +339,20 @@ export const AdminPricesTab: React.FC<AdminPricesTabProps> = ({
         >
           <Edit3 className="w-4 h-4 text-blue-600" />
           Edición en Tabla Directa ({products.length} productos)
+        </button>
+
+        <button
+          type="button"
+          id="tab-volume-discounts"
+          onClick={() => setActiveSubTab('volume_discounts')}
+          className={`py-2.5 px-4 border-b-2 transition-all flex items-center gap-1.5 ${
+            activeSubTab === 'volume_discounts'
+              ? 'border-[#B9522F] text-[#B9522F] bg-white shadow-2xs'
+              : 'border-transparent text-[#6F6860] hover:text-[#18231C]'
+          }`}
+        >
+          <Percent className="w-4 h-4 text-amber-600" />
+          Descuentos por Volumen / Escala ({volumeDiscounts.length})
         </button>
       </div>
 
@@ -561,6 +640,315 @@ export const AdminPricesTab: React.FC<AdminPricesTabProps> = ({
                   })}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* 4. CONTROL Y ASIGNACIÓN DE DESCUENTOS POR VOLUMEN / ESCALA */}
+      {activeSubTab === 'volume_discounts' && (
+        <div className="space-y-6 animate-fadeIn">
+          {/* Top description banner */}
+          <div className="bg-white p-5 rounded-xs border border-[#DCD4C9] shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h4 className="text-sm font-bold uppercase tracking-wider text-[#18231C] flex items-center gap-2">
+                <Percent className="w-5 h-5 text-amber-600" />
+                Descuentos por Cantidad / Volumen de Prendas
+              </h4>
+              <p className="text-xs text-[#6F6860] mt-1 max-w-2xl">
+                Configurá descuentos automáticos aplicables al alcanzar determinada escala de unidades (ej: 10+, 20+, 50+ unidades).
+                Podés aplicarlo a todo el catálogo o restringirlo a una categoría o subcategoría particular.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setEditingRuleId(null);
+                setRuleForm({
+                  name: '',
+                  minQuantity: 10,
+                  discountPercentage: 15,
+                  applicableCategory: 'ALL',
+                  applicableSubCategory: 'ALL',
+                  isActive: true,
+                });
+                setIsCreatingRule(true);
+              }}
+              className="px-4 py-2 bg-[#18231C] hover:bg-black text-white text-xs font-bold uppercase tracking-wider rounded-xs flex items-center justify-center gap-1.5 shadow-xs cursor-pointer whitespace-nowrap"
+            >
+              <Plus className="w-4 h-4 text-[#FDB813]" />
+              Nueva Regla por Volumen
+            </button>
+          </div>
+
+          {/* Form to create / edit rule */}
+          {isCreatingRule && (
+            <form
+              onSubmit={handleSaveRule}
+              className="bg-white p-5 rounded-xs border-2 border-[#18231C] shadow-md space-y-4 animate-fadeIn"
+            >
+              <div className="flex items-center justify-between border-b border-[#DCD4C9] pb-2">
+                <h5 className="font-bold text-xs uppercase tracking-wider text-[#18231C]">
+                  {editingRuleId ? 'Editar Regla de Descuento' : 'Crear Regla de Descuento por Volumen'}
+                </h5>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCreatingRule(false);
+                    setEditingRuleId(null);
+                  }}
+                  className="text-xs text-[#6F6860] hover:text-[#18231C]"
+                >
+                  ✕ Cancelar
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="sm:col-span-3">
+                  <label className="block text-xs font-bold text-[#4A453F] mb-1">
+                    Nombre o Etiqueta de la Regla *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ej: Mayorista Escala 10+ prendas (15% OFF)"
+                    value={ruleForm.name}
+                    onChange={(e) => setRuleForm({ ...ruleForm, name: e.target.value })}
+                    className="w-full px-3 py-1.5 border border-[#DCD4C9] rounded-xs text-xs font-medium"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#4A453F] mb-1">
+                    Cantidad Mínima de Unidades *
+                  </label>
+                  <input
+                    type="number"
+                    min="2"
+                    required
+                    value={ruleForm.minQuantity}
+                    onChange={(e) => setRuleForm({ ...ruleForm, minQuantity: Math.max(1, Number(e.target.value)) })}
+                    className="w-full px-3 py-1.5 border border-[#DCD4C9] rounded-xs text-xs font-bold"
+                  />
+                  <span className="text-[10px] text-[#6F6860]">A partir de cuántas prendas aplica</span>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#4A453F] mb-1">
+                    Porcentaje de Descuento (%) *
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="100"
+                    required
+                    value={ruleForm.discountPercentage}
+                    onChange={(e) => setRuleForm({ ...ruleForm, discountPercentage: Math.max(1, Math.min(100, Number(e.target.value))) })}
+                    className="w-full px-3 py-1.5 border border-[#DCD4C9] rounded-xs text-xs font-bold text-amber-700"
+                  />
+                  <span className="text-[10px] text-[#6F6860]">Descuento que se deducirá</span>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#4A453F] mb-1">
+                    Categoría Aplicable
+                  </label>
+                  <select
+                    value={ruleForm.applicableCategory || 'ALL'}
+                    onChange={(e) => {
+                      const newCat = e.target.value as any;
+                      setRuleForm({
+                        ...ruleForm,
+                        applicableCategory: newCat,
+                        applicableSubCategory: 'ALL',
+                      });
+                    }}
+                    className="w-full px-3 py-1.5 border border-[#DCD4C9] rounded-xs text-xs font-semibold"
+                  >
+                    <option value="ALL">Todas las Categorías</option>
+                    <option value="Hombre">Hombre</option>
+                    <option value="Mujer">Mujer</option>
+                    <option value="Infantil">Infantil</option>
+                    <option value="Venta Corporativa">Venta Corporativa</option>
+                  </select>
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-bold text-[#4A453F] mb-1">
+                    Subcategoría Específica (Opcional)
+                  </label>
+                  <select
+                    value={ruleForm.applicableSubCategory || 'ALL'}
+                    onChange={(e) => setRuleForm({ ...ruleForm, applicableSubCategory: e.target.value })}
+                    className="w-full px-3 py-1.5 border border-[#DCD4C9] rounded-xs text-xs font-semibold"
+                  >
+                    <option value="ALL">Todas las Subcategorías</option>
+                    {(() => {
+                      if (!ruleForm.applicableCategory || ruleForm.applicableCategory === 'ALL') {
+                        // Gather all unique subcategories across all categories
+                        const allSubs = new Set<string>();
+                        categories.forEach((c) => c.sections.forEach((s) => s.subCategories.forEach((sub) => allSubs.add(sub))));
+                        return Array.from(allSubs).map((sub) => (
+                          <option key={sub} value={sub}>{sub}</option>
+                        ));
+                      }
+                      const catFound = categories.find((c) => c.name === ruleForm.applicableCategory);
+                      const catSubs = new Set<string>();
+                      catFound?.sections.forEach((s) => s.subCategories.forEach((sub) => catSubs.add(sub)));
+                      return Array.from(catSubs).map((sub) => (
+                        <option key={sub} value={sub}>{sub}</option>
+                      ));
+                    })()}
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-2 pt-6">
+                  <label className="flex items-center gap-2 text-xs font-bold text-[#18231C] cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={ruleForm.isActive}
+                      onChange={(e) => setRuleForm({ ...ruleForm, isActive: e.target.checked })}
+                      className="w-4 h-4 text-[#18231C] rounded-xs"
+                    />
+                    <span>Regla Activa en Cotizador</span>
+                  </label>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-[#DCD4C9]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCreatingRule(false);
+                    setEditingRuleId(null);
+                  }}
+                  className="px-4 py-2 border border-[#DCD4C9] text-xs font-bold text-[#6F6860] hover:text-[#18231C] rounded-xs cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-[#18231C] hover:bg-black text-white text-xs font-bold uppercase tracking-wider rounded-xs cursor-pointer"
+                >
+                  {editingRuleId ? 'Guardar Cambios' : 'Crear Regla'}
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* Rules List */}
+          <div className="bg-white rounded-xs border border-[#DCD4C9] shadow-2xs overflow-hidden">
+            <div className="p-4 border-b border-[#DCD4C9] bg-[#FAF8F5] flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wider text-[#18231C]">
+                Reglas de Descuento por Volumen Configuradas ({volumeDiscounts.length})
+              </span>
+              <span className="text-[11px] text-[#6F6860]">
+                Se evalúan automáticamente al sumar prendas al carrito
+              </span>
+            </div>
+
+            {volumeDiscounts.length === 0 ? (
+              <div className="p-8 text-center text-[#6F6860]">
+                <Percent className="w-10 h-10 mx-auto mb-2 opacity-30 text-[#18231C]" />
+                <p className="font-bold text-xs uppercase tracking-wider text-[#18231C]">
+                  No hay reglas de descuento por volumen configuradas
+                </p>
+                <p className="text-xs mt-1">
+                  Hacé clic en "Nueva Regla por Volumen" para otorgar descuentos automáticos a clientes por escala.
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-[#FAF8F5] border-b border-[#DCD4C9] text-[#6F6860] font-bold uppercase tracking-wider text-[10px]">
+                    <tr>
+                      <th className="p-3">Estado</th>
+                      <th className="p-3">Nombre de la Regla</th>
+                      <th className="p-3">Escala Mínima</th>
+                      <th className="p-3">Descuento</th>
+                      <th className="p-3">Categoría / Subcategoría</th>
+                      <th className="p-3 text-right">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#DCD4C9]">
+                    {volumeDiscounts.map((rule) => (
+                      <tr key={rule.id} className="hover:bg-[#FAF8F5] transition-colors">
+                        <td className="p-3">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleRuleActive(rule.id)}
+                            className={`px-2 py-0.5 rounded-xs text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer ${
+                              rule.isActive
+                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                : 'bg-neutral-100 text-neutral-600 border border-neutral-300'
+                            }`}
+                          >
+                            <Power className="w-3 h-3" />
+                            {rule.isActive ? 'Activo' : 'Inactivo'}
+                          </button>
+                        </td>
+                        <td className="p-3 font-semibold text-[#18231C]">
+                          {rule.name}
+                        </td>
+                        <td className="p-3">
+                          <span className="font-bold text-[#18231C]">
+                            {rule.minQuantity}+ unidades
+                          </span>
+                        </td>
+                        <td className="p-3">
+                          <span className="font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-xs border border-amber-200">
+                            {rule.discountPercentage}% OFF
+                          </span>
+                        </td>
+                        <td className="p-3 text-[#6F6860]">
+                          <div>
+                            <span className="font-semibold text-[#18231C]">
+                              {rule.applicableCategory === 'ALL' || !rule.applicableCategory ? 'Todas las categorías' : rule.applicableCategory}
+                            </span>
+                            {rule.applicableSubCategory && rule.applicableSubCategory !== 'ALL' && (
+                              <span className="text-[11px] text-[#6F6860] block">
+                                Subcat: {rule.applicableSubCategory}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="p-3 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingRuleId(rule.id);
+                                setRuleForm({
+                                  name: rule.name,
+                                  minQuantity: rule.minQuantity,
+                                  discountPercentage: rule.discountPercentage,
+                                  applicableCategory: rule.applicableCategory || 'ALL',
+                                  applicableSubCategory: rule.applicableSubCategory || 'ALL',
+                                  isActive: rule.isActive ?? true,
+                                });
+                                setIsCreatingRule(true);
+                              }}
+                              className="p-1 text-[#6F6860] hover:text-[#18231C] cursor-pointer"
+                              title="Editar regla"
+                            >
+                              <Edit3 className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteRule(rule.id)}
+                              className="p-1 text-[#6F6860] hover:text-red-600 cursor-pointer"
+                              title="Eliminar regla"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       )}

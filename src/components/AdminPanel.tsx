@@ -7,7 +7,10 @@ import {
   MainCategory,
   DiscountCoupon,
   UserSession,
-  LookbookItem
+  LookbookItem,
+  CategoryHierarchyItem,
+  QuantityDiscountRule,
+  SpecialSizeRange
 } from '../types';
 import { CATEGORY_HIERARCHY } from '../data/categories';
 import { AdminThemeTab } from './admin/AdminThemeTab';
@@ -15,6 +18,7 @@ import { AdminLookbookTab } from './admin/AdminLookbookTab';
 import { AdminPromosTab } from './admin/AdminPromosTab';
 import { AdminMassImagesTab } from './admin/AdminMassImagesTab';
 import { AdminPricesTab } from './admin/AdminPricesTab';
+import { AdminCategoriesTab } from './admin/AdminCategoriesTab';
 import { AdminCouponsTab } from './admin/AdminCouponsTab';
 import { AdminUsersTab } from './admin/AdminUsersTab';
 import { AdminSecurityTab } from './admin/AdminSecurityTab';
@@ -55,13 +59,19 @@ import {
   ArrowLeft,
   ArrowRight,
   Star,
-  Sparkles
+  Sparkles,
+  FolderTree,
+  Sliders,
+  Scale,
+  Percent
 } from 'lucide-react';
 
 export type AdminTabKey = 
   | 'promos' 
   | 'mass_images' 
   | 'prices' 
+  | 'volume_discounts'
+  | 'categories'
   | 'coupons' 
   | 'theme' 
   | 'lookbook'
@@ -91,6 +101,10 @@ interface AdminPanelProps {
   onUpdateLookbook?: (newLookbook: LookbookItem[]) => Promise<void> | void;
   onSelectPromoFilter?: (promo: Promotion) => void;
   userSession?: UserSession | null;
+  categories?: CategoryHierarchyItem[];
+  onUpdateCategories?: (newCats: CategoryHierarchyItem[]) => void;
+  volumeDiscounts?: QuantityDiscountRule[];
+  onUpdateVolumeDiscounts?: (newRules: QuantityDiscountRule[]) => void;
 }
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({
@@ -110,6 +124,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   onUpdateLookbook,
   onSelectPromoFilter = () => {},
   userSession,
+  categories = [],
+  onUpdateCategories = () => {},
+  volumeDiscounts = [],
+  onUpdateVolumeDiscounts = () => {},
 }) => {
   const isEmployee = userSession?.role === 'employee';
 
@@ -131,6 +149,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const isTabVisible = (tabKey: AdminTabKey) => {
     if (!isEmployee) return true;
     if (tabKey === 'security' || tabKey === 'employees') return false;
+    if (tabKey === 'volume_discounts') {
+      return employeePermissions.includes('volume_discounts') || employeePermissions.includes('prices');
+    }
     return employeePermissions.includes(tabKey);
   };
 
@@ -148,12 +169,29 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   }, [userSession]);
 
+  const currentHierarchy: CategoryHierarchyItem[] = (categories && categories.length > 0) ? categories : CATEGORY_HIERARCHY;
+
   // Products Tab internal state
   const [productSearch, setProductSearch] = useState('');
   const [isCreatingProduct, setIsCreatingProduct] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
   const [newPhotoUrl, setNewPhotoUrl] = useState('');
+  const [newRangeForm, setNewRangeForm] = useState<{
+    suffix: string;
+    sizeRangeLabel: string;
+    minSize: string;
+    maxSize: string;
+    price: number | '';
+    corporatePrice: number | '';
+  }>({
+    suffix: '-1',
+    sizeRangeLabel: 'Talles 50 al 58',
+    minSize: '50',
+    maxSize: '58',
+    price: '',
+    corporatePrice: '',
+  });
   const [productForm, setProductForm] = useState<Partial<Product>>({
     code: '',
     name: '',
@@ -165,10 +203,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     price: 55000,
     corporatePrice: 46000,
     discountPercentage: 0,
-    promotionTag: 'Temporada 2026',
+    promotionTag: '',
+    isUnisex: false,
+    isCorporateOnly: false,
+    specialSizeRanges: [],
     image: 'https://images.unsplash.com/photo-1544923246-77307dd654cb?auto=format&fit=crop&w=800&q=80',
-    availableColors: ['Negro', 'Azul'],
-    availableSizes: ['S', 'M', 'L', 'XL'],
+    availableColors: [],
+    availableSizes: ['CH', 'M', 'G', 'MG'],
     inStock: true,
   });
 
@@ -210,8 +251,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     e.preventDefault();
     if (!productForm.name?.trim()) return;
 
-    const cleanCategory = sanitizeCategory(productForm.category);
-    const cleanSection = (productForm.section || '').trim() || 'Urbano';
+    const cleanCategory = productForm.isCorporateOnly 
+      ? 'Venta Corporativa' 
+      : sanitizeCategory(productForm.category);
+    const cleanSection = productForm.isCorporateOnly && !productForm.section
+      ? 'Industria'
+      : ((productForm.section || '').trim() || 'Urbano');
     const cleanSubCategory = (productForm.subCategory || '').trim() || 'Abrigos';
 
     const rawImages = Array.isArray(productForm.images) && productForm.images.length > 0
@@ -228,6 +273,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               category: cleanCategory,
               section: cleanSection,
               subCategory: cleanSubCategory,
+              isUnisex: Boolean(productForm.isUnisex),
+              isCorporateOnly: Boolean(productForm.isCorporateOnly),
+              specialSizeRanges: productForm.specialSizeRanges || [],
               images: rawImages,
               image: primaryImage,
             } as Product)
@@ -248,11 +296,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         price: Number(productForm.price) || 0,
         corporatePrice: Number(productForm.corporatePrice) || Math.round((Number(productForm.price) || 0) * 0.85),
         discountPercentage: Number(productForm.discountPercentage) || 0,
-        promotionTag: productForm.promotionTag || 'Temporada 2026',
+        promotionTag: productForm.promotionTag || '',
+        isUnisex: Boolean(productForm.isUnisex),
+        isCorporateOnly: Boolean(productForm.isCorporateOnly),
+        specialSizeRanges: productForm.specialSizeRanges || [],
         image: primaryImage,
         images: rawImages,
-        availableColors: productForm.availableColors || ['Negro', 'Azul'],
-        availableSizes: productForm.availableSizes || ['S', 'M', 'L', 'XL'],
+        availableColors: productForm.availableColors || [],
+        availableSizes: productForm.availableSizes && productForm.availableSizes.length > 0 ? productForm.availableSizes : ['CH', 'M', 'G', 'MG'],
         inStock: productForm.inStock ?? true,
       };
       const updatedList = [newProd, ...products];
@@ -472,6 +523,44 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 >
                   <FileSpreadsheet className="w-4 h-4" style={{ color: iconColor }} />
                   Precios & Planillas ({products.length})
+                </button>
+              )}
+
+              {/* Descuentos Automáticos por Volumen */}
+              {isTabVisible('volume_discounts') && (
+                <button
+                  id="admin-tab-volume-discounts"
+                  onClick={() => setActiveTab('volume_discounts')}
+                  style={{
+                    borderTopColor: activeTab === 'volume_discounts' ? activeBorderColor : 'transparent',
+                  }}
+                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                    activeTab === 'volume_discounts'
+                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
+                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
+                  }`}
+                >
+                  <Percent className="w-4 h-4" style={{ color: iconColor }} />
+                  Descuentos Automáticos ({volumeDiscounts.length})
+                </button>
+              )}
+
+              {/* Categorías & Rubros (Subcategorías dinámicas) */}
+              {isTabVisible('categories') && (
+                <button
+                  id="admin-tab-categories"
+                  onClick={() => setActiveTab('categories')}
+                  style={{
+                    borderTopColor: activeTab === 'categories' ? activeBorderColor : 'transparent',
+                  }}
+                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                    activeTab === 'categories'
+                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
+                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
+                  }`}
+                >
+                  <FolderTree className="w-4 h-4" style={{ color: iconColor }} />
+                  Categorías & Rubros
                 </button>
               )}
 
@@ -697,6 +786,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               promotions={promotions}
               products={products}
               onUpdatePromotions={onUpdatePromotions}
+              onUpdateProducts={onUpdateProducts}
               triggerSaveNotice={triggerSaveNotice}
             />
           )}
@@ -715,6 +805,32 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             <AdminPricesTab
               products={products}
               onUpdateProducts={onUpdateProducts}
+              triggerSaveNotice={triggerSaveNotice}
+              volumeDiscounts={volumeDiscounts}
+              onUpdateVolumeDiscounts={onUpdateVolumeDiscounts}
+              categories={currentHierarchy}
+            />
+          )}
+
+          {/* TAB: PANEL DE DESCUENTOS AUTOMÁTICOS POR VOLUMEN */}
+          {activeTab === 'volume_discounts' && (
+            <AdminPricesTab
+              products={products}
+              onUpdateProducts={onUpdateProducts}
+              triggerSaveNotice={triggerSaveNotice}
+              volumeDiscounts={volumeDiscounts}
+              onUpdateVolumeDiscounts={onUpdateVolumeDiscounts}
+              categories={currentHierarchy}
+              initialSubTab="volume_discounts"
+            />
+          )}
+
+          {/* TAB: SUBCATEGORÍAS & RUBROS */}
+          {activeTab === 'categories' && (
+            <AdminCategoriesTab
+              categories={currentHierarchy}
+              onUpdateCategories={onUpdateCategories}
+              products={products}
               triggerSaveNotice={triggerSaveNotice}
             />
           )}
@@ -788,11 +904,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       price: 55000,
                       corporatePrice: 46000,
                       discountPercentage: 0,
-                      promotionTag: 'Temporada 2026',
+                      promotionTag: '',
+                      isUnisex: false,
+                      isCorporateOnly: false,
+                      specialSizeRanges: [],
                       image: 'https://images.unsplash.com/photo-1544923246-77307dd654cb?auto=format&fit=crop&w=800&q=80',
                       images: ['https://images.unsplash.com/photo-1544923246-77307dd654cb?auto=format&fit=crop&w=800&q=80'],
-                      availableColors: ['Negro', 'Azul'],
-                      availableSizes: ['S', 'M', 'L', 'XL'],
+                      availableColors: [],
+                      availableSizes: ['CH', 'M', 'G', 'MG'],
                       inStock: true,
                     });
                     setIsCreatingProduct(true);
@@ -853,10 +972,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     <div>
                       <label className="block text-xs font-bold text-[#4A453F] mb-1">Categoría Principal *</label>
                       <select
-                        value={productForm.category || 'Hombre'}
+                        value={productForm.isCorporateOnly ? 'Venta Corporativa' : (productForm.category || 'Hombre')}
+                        disabled={productForm.isCorporateOnly}
                         onChange={(e) => {
                           const newCatName = e.target.value as MainCategory;
-                          const foundCat = CATEGORY_HIERARCHY.find((c) => c.name === newCatName) || CATEGORY_HIERARCHY[0];
+                          const foundCat = currentHierarchy.find((c) => c.name === newCatName) || currentHierarchy[0];
                           const defaultSec = foundCat.sections[0]?.name || 'Urbano';
                           const defaultSub = foundCat.sections[0]?.subCategories[0] || 'Abrigos';
                           setProductForm({
@@ -866,19 +986,27 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                             subCategory: defaultSub,
                           });
                         }}
-                        className="w-full px-3 py-1.5 border border-[#DCD4C9] rounded-xs text-xs font-semibold"
+                        className={`w-full px-3 py-1.5 border border-[#DCD4C9] rounded-xs text-xs font-semibold ${
+                          productForm.isCorporateOnly ? 'bg-amber-50 text-amber-900 cursor-not-allowed' : ''
+                        }`}
                       >
-                        {CATEGORY_HIERARCHY.map((cat) => (
+                        {currentHierarchy.map((cat) => (
                           <option key={cat.name} value={cat.name}>
                             {cat.name}
                           </option>
                         ))}
                       </select>
+                      {productForm.isCorporateOnly && (
+                        <span className="text-[10px] text-amber-700 font-bold block mt-0.5">
+                          🔒 Fijado a Venta Corporativa por Línea Industrial
+                        </span>
+                      )}
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-[#4A453F] mb-1">Sección *</label>
                       {(() => {
-                        const currentCat = CATEGORY_HIERARCHY.find((c) => c.name === productForm.category) || CATEGORY_HIERARCHY[0];
+                        const targetCatName = productForm.isCorporateOnly ? 'Venta Corporativa' : (productForm.category || 'Hombre');
+                        const currentCat = currentHierarchy.find((c) => c.name === targetCatName) || currentHierarchy[0];
                         return (
                           <select
                             value={productForm.section || currentCat.sections[0]?.name || 'Urbano'}
@@ -905,7 +1033,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     <div>
                       <label className="block text-xs font-bold text-[#4A453F] mb-1">Subcategoría *</label>
                       {(() => {
-                        const currentCat = CATEGORY_HIERARCHY.find((c) => c.name === productForm.category) || CATEGORY_HIERARCHY[0];
+                        const targetCatName = productForm.isCorporateOnly ? 'Venta Corporativa' : (productForm.category || 'Hombre');
+                        const currentCat = currentHierarchy.find((c) => c.name === targetCatName) || currentHierarchy[0];
                         const currentSec = currentCat.sections.find((s) => s.name === productForm.section) || currentCat.sections[0];
                         return (
                           <select
@@ -955,6 +1084,277 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         className="w-full px-3 py-1.5 border border-[#DCD4C9] rounded-xs text-xs font-bold"
                         style={{ color: theme.accentColor || '#FDB813' }}
                       />
+                    </div>
+                  </div>
+
+                  {/* Clasificación: Unisex e Industria / Corporativo */}
+                  <div className="p-3.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs space-y-2.5">
+                    <label className="block text-xs font-bold uppercase tracking-wider text-[#18231C]">
+                      Clasificación de Catálogo (Unisex & Corporativo)
+                    </label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <label className="flex items-start gap-2 p-2.5 bg-white border border-[#DCD4C9] rounded-xs cursor-pointer hover:border-[#18231C] transition-colors">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(productForm.isUnisex)}
+                          onChange={(e) => setProductForm({ ...productForm, isUnisex: e.target.checked })}
+                          className="mt-0.5 rounded text-[#18231C] focus:ring-[#FDB813]"
+                        />
+                        <div>
+                          <span className="text-xs font-bold text-[#18231C] block">
+                            Artículo Unisex
+                          </span>
+                          <span className="text-[11px] text-[#6F6860] block leading-tight mt-0.5">
+                            Se mostrará automáticamente en ambas categorías de Hombre y Mujer.
+                          </span>
+                        </div>
+                      </label>
+
+                      <label className="flex items-start gap-2 p-2.5 bg-white border border-[#DCD4C9] rounded-xs cursor-pointer hover:border-[#18231C] transition-colors">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(productForm.isCorporateOnly)}
+                          onChange={(e) => {
+                            const isCorp = e.target.checked;
+                            setProductForm({
+                              ...productForm,
+                              isCorporateOnly: isCorp,
+                              category: isCorp ? 'Venta Corporativa' : productForm.category,
+                              section: isCorp ? 'Industria' : productForm.section,
+                            });
+                          }}
+                          className="mt-0.5 rounded text-amber-600 focus:ring-[#FDB813]"
+                        />
+                        <div>
+                          <span className="text-xs font-bold text-amber-900 block">
+                            Exclusivo Venta Corporativa (Línea Industrial)
+                          </span>
+                          <span className="text-[11px] text-[#6F6860] block leading-tight mt-0.5">
+                            Asigna este artículo únicamente a la sección de Venta Corporativa / Industria.
+                          </span>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Talles Especiales y Precios Diferenciados */}
+                  <div className="p-3.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-[#DCD4C9] pb-2">
+                      <div>
+                        <label className="block text-xs font-bold uppercase tracking-wider text-[#18231C] flex items-center gap-1.5">
+                          <Sliders className="w-3.5 h-3.5 text-[#FDB813]" />
+                          Talles Especiales y Precios Diferenciados (Sufijos: -1, -2, etc.)
+                        </label>
+                        <p className="text-[11px] text-[#6F6860]">
+                          Permite que un mismo producto maneje variantes de talles grandes con precio distinto y código sufijo en la cotización.
+                        </p>
+                      </div>
+                      <span className="text-xs font-mono font-bold text-[#6F6860]">
+                        {(productForm.specialSizeRanges || []).length} rangos activos
+                      </span>
+                    </div>
+
+                    {/* Active Special Size Ranges List */}
+                    {(productForm.specialSizeRanges && productForm.specialSizeRanges.length > 0) && (
+                      <div className="space-y-1.5">
+                        {productForm.specialSizeRanges.map((range, rIdx) => (
+                          <div
+                            key={rIdx}
+                            className="flex flex-wrap items-center justify-between gap-2 p-2 bg-white border border-[#DCD4C9] rounded-xs text-xs"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono font-bold bg-[#18231C] text-white px-2 py-0.5 rounded-xs">
+                                {range.suffix}
+                              </span>
+                              <span className="font-semibold text-[#18231C]">
+                                {range.sizeRangeLabel}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <span className="text-neutral-700">
+                                Minorista: <strong className="text-[#18231C]">${range.price.toLocaleString('es-AR')}</strong>
+                              </span>
+                              {range.corporatePrice ? (
+                                <span className="text-blue-800">
+                                  Mayorista: <strong>${range.corporatePrice.toLocaleString('es-AR')}</strong>
+                                </span>
+                              ) : null}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const updated = (productForm.specialSizeRanges || []).filter((_, idx) => idx !== rIdx);
+                                  setProductForm({ ...productForm, specialSizeRanges: updated });
+                                }}
+                                className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-xs cursor-pointer"
+                                title="Eliminar este rango especial"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Add Range Inline Form */}
+                    <div className="p-2.5 bg-white border border-dashed border-[#DCD4C9] rounded-xs space-y-2">
+                      <span className="text-[11px] font-bold text-[#4A453F] uppercase tracking-wider block">
+                        + Añadir Rango de Talles Especiales
+                      </span>
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                        <div>
+                          <label className="block text-[10px] font-bold text-[#6F6860] mb-0.5">Sufijo Código</label>
+                          <input
+                            type="text"
+                            placeholder="-1"
+                            value={newRangeForm.suffix}
+                            onChange={(e) => setNewRangeForm({ ...newRangeForm, suffix: e.target.value })}
+                            className="w-full px-2 py-1 border border-[#DCD4C9] rounded-xs text-xs font-mono font-bold"
+                          />
+                        </div>
+                        <div className="col-span-2 sm:col-span-2">
+                          <label className="block text-[10px] font-bold text-[#6F6860] mb-0.5">Rango / Descripción</label>
+                          <input
+                            type="text"
+                            placeholder="ej: Talles 50 al 58"
+                            value={newRangeForm.sizeRangeLabel}
+                            onChange={(e) => setNewRangeForm({ ...newRangeForm, sizeRangeLabel: e.target.value })}
+                            className="w-full px-2 py-1 border border-[#DCD4C9] rounded-xs text-xs font-semibold"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-[#6F6860] mb-0.5">Precio Minorista ($)</label>
+                          <input
+                            type="number"
+                            placeholder="58000"
+                            value={newRangeForm.price}
+                            onChange={(e) => setNewRangeForm({ ...newRangeForm, price: e.target.value ? Number(e.target.value) : '' })}
+                            className="w-full px-2 py-1 border border-[#DCD4C9] rounded-xs text-xs font-bold"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-[#6F6860] mb-0.5">Precio Mayorista ($)</label>
+                          <input
+                            type="number"
+                            placeholder="49000"
+                            value={newRangeForm.corporatePrice}
+                            onChange={(e) => setNewRangeForm({ ...newRangeForm, corporatePrice: e.target.value ? Number(e.target.value) : '' })}
+                            className="w-full px-2 py-1 border border-[#DCD4C9] rounded-xs text-xs text-blue-900 font-bold"
+                          />
+                        </div>
+                      </div>
+                      <div className="flex justify-end pt-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!newRangeForm.suffix.trim() || !newRangeForm.sizeRangeLabel.trim() || !newRangeForm.price) {
+                              alert('Por favor completá el sufijo, la descripción del rango y el precio.');
+                              return;
+                            }
+                            const newRange: SpecialSizeRange = {
+                              id: `range-${Date.now()}`,
+                              suffix: newRangeForm.suffix.trim(),
+                              rangeLabel: newRangeForm.sizeRangeLabel.trim(),
+                              sizeRangeLabel: newRangeForm.sizeRangeLabel.trim(),
+                              minSize: newRangeForm.minSize || undefined,
+                              maxSize: newRangeForm.maxSize || undefined,
+                              sizes: [],
+                              price: Number(newRangeForm.price),
+                              corporatePrice: newRangeForm.corporatePrice ? Number(newRangeForm.corporatePrice) : undefined,
+                            };
+                            setProductForm({
+                              ...productForm,
+                              specialSizeRanges: [...(productForm.specialSizeRanges || []), newRange],
+                            });
+                            // Reset form to next suffix
+                            const nextSuffixNum = parseInt(newRangeForm.suffix.replace(/\D/g, ''), 10) || 1;
+                            setNewRangeForm({
+                              suffix: `-${nextSuffixNum + 1}`,
+                              sizeRangeLabel: 'Talles 60 al 66',
+                              minSize: '60',
+                              maxSize: '66',
+                              price: '',
+                              corporatePrice: '',
+                            });
+                          }}
+                          className="px-3 py-1.5 bg-[#18231C] hover:bg-black text-[#F5F2EC] rounded-xs text-xs font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer shadow-xs"
+                        >
+                          <Plus className="w-3.5 h-3.5 text-[#FDB813]" />
+                          Guardar Rango Especial
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Colores, Talles Base y Etiqueta Promocional */}
+                  <div className="p-3.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs space-y-3">
+                    <label className="block text-xs font-bold uppercase tracking-wider text-[#18231C] flex items-center gap-1.5">
+                      <Palette className="w-3.5 h-3.5 text-[#B9522F]" />
+                      Colores, Talles y Etiqueta de Promoción
+                    </label>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-xs font-bold text-[#4A453F] mb-1">
+                          Colores Asignados (opcional)
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="Ej: Azul Marino, Beige, Verde (vacío si no tiene)"
+                          value={(productForm.availableColors || []).join(', ')}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            const colors = val
+                              .split(',')
+                              .map((c) => c.trim())
+                              .filter(Boolean);
+                            setProductForm({ ...productForm, availableColors: colors });
+                          }}
+                          className="w-full px-3 py-1.5 border border-[#DCD4C9] rounded-xs text-xs bg-white"
+                        />
+                        <span className="text-[10px] text-[#6F6860] block mt-0.5">
+                          Sin colores por defecto. Dejar vacío si no aplica selección de color.
+                        </span>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-[#4A453F] mb-1">
+                          Talles Estándar (separados por coma)
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="Ej: CH, M, G, MG, XG o 38, 40, 42"
+                          value={(productForm.availableSizes || []).join(', ')}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            const sizes = val
+                              .split(',')
+                              .map((s) => s.trim())
+                              .filter(Boolean);
+                            setProductForm({ ...productForm, availableSizes: sizes });
+                          }}
+                          className="w-full px-3 py-1.5 border border-[#DCD4C9] rounded-xs text-xs bg-white"
+                        />
+                        <span className="text-[10px] text-[#6F6860] block mt-0.5">
+                          Escala localizada en español (CH, M, G, MG...).
+                        </span>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-[#4A453F] mb-1">
+                          Etiqueta de Promoción
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="Dejar vacío si no aplica promo"
+                          value={productForm.promotionTag || ''}
+                          onChange={(e) => setProductForm({ ...productForm, promotionTag: e.target.value })}
+                          className="w-full px-3 py-1.5 border border-[#DCD4C9] rounded-xs text-xs bg-white"
+                        />
+                        <span className="text-[10px] text-[#6F6860] block mt-0.5">
+                          Vacío = sin etiqueta fija en la tarjeta.
+                        </span>
+                      </div>
                     </div>
                   </div>
 
@@ -1249,7 +1649,26 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           />
                         </td>
                         <td className="p-3 font-mono text-[11px] text-[#6F6860]">{p.code}</td>
-                        <td className="p-3 font-bold text-[#18231C]">{p.name}</td>
+                        <td className="p-3">
+                          <div className="font-bold text-[#18231C]">{p.name}</div>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {p.isUnisex && (
+                              <span className="text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200 px-1.5 py-0.2 rounded-xs">
+                                Unisex
+                              </span>
+                            )}
+                            {p.isCorporateOnly && (
+                              <span className="text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-200 px-1.5 py-0.2 rounded-xs">
+                                Línea Industrial (Corp)
+                              </span>
+                            )}
+                            {Boolean(p.specialSizeRanges && p.specialSizeRanges.length > 0) && (
+                              <span className="text-[10px] font-bold bg-blue-100 text-blue-900 border border-blue-200 px-1.5 py-0.2 rounded-xs">
+                                {p.specialSizeRanges?.length} Talles Especiales
+                              </span>
+                            )}
+                          </div>
+                        </td>
                         <td className="p-3 text-[#6F6860]">{p.category} · {p.section}</td>
                         <td className="p-3 text-right font-bold text-[#18231C]">
                           ${p.price.toLocaleString('es-AR')}
@@ -1265,6 +1684,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                 setEditingProduct(p);
                                 setProductForm({
                                   ...p,
+                                  availableColors: Array.isArray(p.availableColors) ? [...p.availableColors] : [],
+                                  availableSizes: Array.isArray(p.availableSizes) && p.availableSizes.length > 0 ? [...p.availableSizes] : ['CH', 'M', 'G', 'MG'],
+                                  promotionTag: p.promotionTag || '',
+                                  isUnisex: Boolean(p.isUnisex),
+                                  isCorporateOnly: Boolean(p.isCorporateOnly),
+                                  specialSizeRanges: p.specialSizeRanges ? JSON.parse(JSON.stringify(p.specialSizeRanges)) : [],
                                   images: Array.isArray(p.images) && p.images.length > 0 ? [...p.images] : (p.image ? [p.image] : [])
                                 });
                                 setIsCreatingProduct(false);

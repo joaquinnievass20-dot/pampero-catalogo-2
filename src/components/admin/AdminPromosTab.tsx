@@ -1,11 +1,12 @@
 import React, { useState, useRef } from 'react';
-import { Promotion, Product } from '../../types';
-import { Tag, Plus, Edit2, Trash2, Check, Upload, Image, Eye, EyeOff, Search, Layers, Palette, Type } from 'lucide-react';
+import { Promotion, Product, PromotionButton } from '../../types';
+import { Tag, Plus, Edit2, Trash2, Check, Upload, Image, Eye, EyeOff, Search, Layers, Palette, Type, MousePointer, ExternalLink, ArrowRight } from 'lucide-react';
 
 interface AdminPromosTabProps {
   promotions: Promotion[];
   products: Product[];
   onUpdatePromotions: (promos: Promotion[]) => void;
+  onUpdateProducts?: (products: Product[]) => void;
   triggerSaveNotice: () => void;
 }
 
@@ -13,6 +14,7 @@ export const AdminPromosTab: React.FC<AdminPromosTabProps> = ({
   promotions,
   products,
   onUpdatePromotions,
+  onUpdateProducts,
   triggerSaveNotice,
 }) => {
   const [editingPromo, setEditingPromo] = useState<Promotion | null>(null);
@@ -35,6 +37,10 @@ export const AdminPromosTab: React.FC<AdminPromosTabProps> = ({
     subtitleColor: '#DCD4C9',
     subtitleFontSize: '16px',
     primaryBtnText: 'VER CATÁLOGO',
+    buttons: [
+      { id: 'btn-1', label: 'VER ESPECIAL CAMPO', actionType: 'catalog', style: 'primary' },
+      { id: 'btn-2', label: 'CUENTA EMPRESA', actionType: 'auth', actionValue: 'empresa', style: 'outline' },
+    ],
   });
 
   const handleOpenCreate = () => {
@@ -46,12 +52,16 @@ export const AdminPromosTab: React.FC<AdminPromosTabProps> = ({
       tagFilter: 'Temporada 2026',
       active: true,
       discountPercentage: 15,
-      associatedProductCodes: products.slice(0, 3).map((p) => p.code),
+      associatedProductCodes: [],
       textColor: '#FFFFFF',
       fontSize: '72px',
       subtitleColor: '#DCD4C9',
       subtitleFontSize: '16px',
       primaryBtnText: 'VER CATÁLOGO',
+      buttons: [
+        { id: 'btn-' + Date.now() + '-1', label: 'VER ESPECIAL CAMPO', actionType: 'catalog', style: 'primary' },
+        { id: 'btn-' + Date.now() + '-2', label: 'CUENTA EMPRESA', actionType: 'auth', actionValue: 'empresa', style: 'outline' },
+      ],
     });
     setEditingPromo(null);
     setIsCreating(true);
@@ -59,15 +69,65 @@ export const AdminPromosTab: React.FC<AdminPromosTabProps> = ({
 
   const handleOpenEdit = (promo: Promotion) => {
     setEditingPromo(promo);
+    const existingButtons = promo.buttons && promo.buttons.length > 0 
+      ? promo.buttons 
+      : [
+          { id: 'btn-1', label: promo.primaryBtnText || 'VER CATÁLOGO', actionType: 'catalog' as const, style: 'primary' as const },
+          { id: 'btn-2', label: 'CUENTA EMPRESA', actionType: 'auth' as const, actionValue: 'empresa', style: 'outline' as const },
+        ];
+
+    // Find all products that are currently associated with this promo:
+    // Either directly by associatedProductCodes OR by matching tagFilter/badge/title
+    const linkedCodes = new Set<string>(promo.associatedProductCodes || []);
+    products.forEach((p) => {
+      if (
+        p.promotionTag &&
+        (p.promotionTag === promo.tagFilter ||
+         p.promotionTag === promo.badge ||
+         p.promotionTag === promo.title)
+      ) {
+        linkedCodes.add(p.code);
+      }
+    });
+
     setForm({
       ...promo,
       textColor: promo.textColor || '#FFFFFF',
       fontSize: promo.fontSize || '72px',
       subtitleColor: promo.subtitleColor || '#DCD4C9',
       subtitleFontSize: promo.subtitleFontSize || '16px',
-      associatedProductCodes: promo.associatedProductCodes || [],
+      associatedProductCodes: Array.from(linkedCodes),
+      buttons: existingButtons,
     });
     setIsCreating(true);
+  };
+
+  const handleAddButton = () => {
+    const newBtn: PromotionButton = {
+      id: 'btn-' + Date.now(),
+      label: 'NUEVO BOTÓN',
+      actionType: 'catalog',
+      actionValue: '',
+      style: (form.buttons?.length || 0) === 0 ? 'primary' : 'outline',
+    };
+    setForm((prev) => ({
+      ...prev,
+      buttons: [...(prev.buttons || []), newBtn],
+    }));
+  };
+
+  const handleUpdateButton = (id: string, updates: Partial<PromotionButton>) => {
+    setForm((prev) => ({
+      ...prev,
+      buttons: (prev.buttons || []).map((b) => (b.id === id ? { ...b, ...updates } : b)),
+    }));
+  };
+
+  const handleRemoveButton = (id: string) => {
+    setForm((prev) => ({
+      ...prev,
+      buttons: (prev.buttons || []).filter((b) => b.id !== id),
+    }));
   };
 
   const handleFileImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -122,11 +182,38 @@ export const AdminPromosTab: React.FC<AdminPromosTabProps> = ({
       return;
     }
 
+    const primaryLabel = form.buttons?.[0]?.label || form.primaryBtnText || 'VER CATÁLOGO';
+    const selectedCodes = form.associatedProductCodes || [];
+    const targetTag = form.tagFilter || form.badge || form.title || 'Promoción';
+
     if (editingPromo) {
       const updated = promotions.map((p) =>
-        p.id === editingPromo.id ? ({ ...p, ...form } as Promotion) : p
+        p.id === editingPromo.id ? ({ ...p, ...form, primaryBtnText: primaryLabel } as Promotion) : p
       );
       onUpdatePromotions(updated);
+
+      // Synchronize product promotion tags
+      if (onUpdateProducts) {
+        const updatedProducts = products.map((p) => {
+          const isSelected = selectedCodes.includes(p.code);
+          const wasTaggedWithThisPromo = p.promotionTag && (
+            p.promotionTag === editingPromo.tagFilter ||
+            p.promotionTag === editingPromo.badge ||
+            p.promotionTag === editingPromo.title ||
+            p.promotionTag === form.tagFilter ||
+            p.promotionTag === form.badge
+          );
+
+          if (isSelected) {
+            return { ...p, promotionTag: targetTag };
+          } else if (wasTaggedWithThisPromo) {
+            // Unchecked: clear promotion tag so it's not stuck
+            return { ...p, promotionTag: '' };
+          }
+          return p;
+        });
+        onUpdateProducts(updatedProducts);
+      }
     } else {
       const newPromo: Promotion = {
         id: 'promo-' + Date.now(),
@@ -140,14 +227,25 @@ export const AdminPromosTab: React.FC<AdminPromosTabProps> = ({
         active: form.active ?? true,
         discountOnly: false,
         discountPercentage: form.discountPercentage || 0,
-        associatedProductCodes: form.associatedProductCodes || [],
+        associatedProductCodes: selectedCodes,
         textColor: form.textColor || '#FFFFFF',
         fontSize: form.fontSize || '72px',
         subtitleColor: form.subtitleColor || '#DCD4C9',
         subtitleFontSize: form.subtitleFontSize || '16px',
-        primaryBtnText: form.primaryBtnText || 'VER CATÁLOGO',
+        primaryBtnText: primaryLabel,
+        buttons: form.buttons || [],
       };
       onUpdatePromotions([newPromo, ...promotions]);
+
+      if (onUpdateProducts && selectedCodes.length > 0) {
+        const updatedProducts = products.map((p) => {
+          if (selectedCodes.includes(p.code)) {
+            return { ...p, promotionTag: targetTag };
+          }
+          return p;
+        });
+        onUpdateProducts(updatedProducts);
+      }
     }
 
     setIsCreating(false);
@@ -157,7 +255,25 @@ export const AdminPromosTab: React.FC<AdminPromosTabProps> = ({
 
   const handleDelete = (id: string) => {
     if (confirm('¿Desea eliminar esta promoción?')) {
+      const promoToDelete = promotions.find((p) => p.id === id);
       onUpdatePromotions(promotions.filter((p) => p.id !== id));
+
+      if (promoToDelete && onUpdateProducts) {
+        const updatedProducts = products.map((p) => {
+          const wasTagged = p.promotionTag && (
+            p.promotionTag === promoToDelete.tagFilter ||
+            p.promotionTag === promoToDelete.badge ||
+            p.promotionTag === promoToDelete.title ||
+            promoToDelete.associatedProductCodes?.includes(p.code)
+          );
+          if (wasTagged) {
+            return { ...p, promotionTag: '' };
+          }
+          return p;
+        });
+        onUpdateProducts(updatedProducts);
+      }
+
       triggerSaveNotice();
     }
   };
@@ -264,6 +380,26 @@ export const AdminPromosTab: React.FC<AdminPromosTabProps> = ({
                       Descuento exclusivo: {form.discountPercentage}% OFF
                     </span>
                   )}
+
+                  {/* Buttons Preview inside Live Banner */}
+                  <div className="mt-3 flex flex-wrap items-center gap-2 pt-1">
+                    {(form.buttons && form.buttons.length > 0
+                      ? form.buttons
+                      : [{ id: 'b-default', label: form.primaryBtnText || 'VER CATÁLOGO', style: 'primary' as const }]
+                    ).map((btn) => (
+                      <span
+                        key={btn.id}
+                        className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-xs text-[10px] font-bold uppercase tracking-wider ${
+                          btn.style === 'primary'
+                            ? 'bg-[#FDB813] text-[#18231C]'
+                            : 'border border-white/70 text-white bg-black/40'
+                        }`}
+                      >
+                        {btn.label}
+                        {btn.style === 'primary' && <ArrowRight className="w-2.5 h-2.5" />}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
@@ -530,6 +666,181 @@ export const AdminPromosTab: React.FC<AdminPromosTabProps> = ({
               />
             </div>
 
+            {/* BOTONES DE ACCIÓN DEL BANNER (PERSONALIZACIÓN COMPLETA DE BOTONES) */}
+            <div className="space-y-4 p-4 bg-[#FAF8F5] rounded-xs border border-[#DCD4C9]">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#DCD4C9]/80 pb-3">
+                <div>
+                  <h5 className="font-bold text-xs uppercase tracking-wider text-[#18231C] flex items-center gap-2">
+                    <MousePointer className="w-4 h-4 text-[#B9522F]" />
+                    Botones de Acción del Banner ({form.buttons?.length || 0})
+                  </h5>
+                  <p className="text-xs text-[#6F6860] mt-0.5">
+                    Personalizá dinámicamente cada botón del slider: editá su texto (ej: "VER ESPECIAL CAMPO"), su enlace/acción y su estilo visual.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleAddButton}
+                    className="px-3 py-1.5 bg-[#18231C] hover:bg-black text-[#F5F2EC] rounded-xs text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5 text-amber-400" />
+                    + Agregar Botón
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setForm((prev) => ({
+                        ...prev,
+                        buttons: [
+                          { id: 'btn-' + Date.now() + '-1', label: 'VER ESPECIAL CAMPO', actionType: 'catalog', style: 'primary' },
+                          { id: 'btn-' + Date.now() + '-2', label: 'CUENTA EMPRESA', actionType: 'auth', actionValue: 'empresa', style: 'outline' },
+                        ],
+                      }));
+                    }}
+                    className="px-2.5 py-1.5 bg-white hover:bg-neutral-100 border border-[#DCD4C9] text-[#4A453F] rounded-xs text-[10px] font-bold uppercase tracking-wider transition-colors cursor-pointer"
+                    title="Cargar botones estándar Pampero"
+                  >
+                    Cargar Predeterminados
+                  </button>
+                </div>
+              </div>
+
+              {(!form.buttons || form.buttons.length === 0) ? (
+                <div className="p-4 text-center bg-white rounded-xs border border-dashed border-[#DCD4C9]">
+                  <p className="text-xs text-[#6F6860]">
+                    Este banner no tiene botones personalizados. Se utilizará el botón por defecto ("{form.primaryBtnText || 'VER CATÁLOGO'}").
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleAddButton}
+                    className="mt-2 inline-flex items-center gap-1.5 text-xs text-[#B9522F] font-bold hover:underline cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Agregar el primer botón
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {form.buttons.map((btn, index) => (
+                    <div
+                      key={btn.id}
+                      className="p-3.5 bg-white rounded-xs border border-[#DCD4C9] shadow-2xs space-y-3"
+                    >
+                      <div className="flex items-center justify-between gap-2 border-b border-[#DCD4C9]/40 pb-2">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-[#18231C] flex items-center gap-1.5">
+                          <span className="w-4 h-4 rounded-full bg-[#18231C] text-white text-[9px] flex items-center justify-center font-mono">
+                            {index + 1}
+                          </span>
+                          Botón {index + 1}: "{btn.label}"
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveButton(btn.id)}
+                          className="text-[11px] text-red-600 hover:text-red-800 font-semibold flex items-center gap-1 cursor-pointer"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          Quitar botón
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                        {/* 1. Texto del Botón */}
+                        <div className="space-y-1">
+                          <label className="block text-[10px] uppercase tracking-wider font-bold text-[#4A453F]">
+                            Texto / Etiqueta del Botón *
+                          </label>
+                          <input
+                            type="text"
+                            value={btn.label}
+                            onChange={(e) => handleUpdateButton(btn.id, { label: e.target.value })}
+                            placeholder="Ej: VER ESPECIAL CAMPO"
+                            required
+                            className="w-full px-2.5 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs font-bold text-[#18231C]"
+                          />
+                        </div>
+
+                        {/* 2. Tipo de Acción */}
+                        <div className="space-y-1">
+                          <label className="block text-[10px] uppercase tracking-wider font-bold text-[#4A453F]">
+                            Acción al hacer clic
+                          </label>
+                          <select
+                            value={btn.actionType}
+                            onChange={(e) => handleUpdateButton(btn.id, { actionType: e.target.value as any })}
+                            className="w-full px-2.5 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs font-bold text-[#18231C]"
+                          >
+                            <option value="catalog">Abrir Catálogo (con filtro)</option>
+                            <option value="category">Ir a Categoría del Catálogo</option>
+                            <option value="whatsapp">Abrir WhatsApp de Consulta</option>
+                            <option value="auth">Abrir Registro Empresa / Login</option>
+                            <option value="url">Abrir Enlace Web / URL Externa</option>
+                          </select>
+                        </div>
+
+                        {/* 3. Parámetro o Valor de la Acción */}
+                        <div className="space-y-1">
+                          <label className="block text-[10px] uppercase tracking-wider font-bold text-[#4A453F]">
+                            {btn.actionType === 'category'
+                              ? 'Categoría Destino'
+                              : btn.actionType === 'whatsapp'
+                              ? 'Mensaje WhatsApp predeterminado'
+                              : btn.actionType === 'url'
+                              ? 'URL de destino'
+                              : 'Filtro / Etiqueta (opcional)'}
+                          </label>
+                          {btn.actionType === 'category' ? (
+                            <select
+                              value={btn.actionValue || 'Hombre'}
+                              onChange={(e) => handleUpdateButton(btn.id, { actionValue: e.target.value })}
+                              className="w-full px-2.5 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs text-[#18231C]"
+                            >
+                              <option value="Hombre">Hombre</option>
+                              <option value="Mujer">Mujer</option>
+                              <option value="Venta Corporativa">Venta Corporativa</option>
+                              <option value="Calzado">Calzado</option>
+                              <option value="Infantil">Infantil</option>
+                            </select>
+                          ) : (
+                            <input
+                              type="text"
+                              value={btn.actionValue || ''}
+                              onChange={(e) => handleUpdateButton(btn.id, { actionValue: e.target.value })}
+                              placeholder={
+                                btn.actionType === 'whatsapp'
+                                  ? 'Ej: Hola, quiero consultar por la promo...'
+                                  : btn.actionType === 'url'
+                                  ? 'https://... o #seccion'
+                                  : 'Ej: Campo, Calzado, Invierno...'
+                              }
+                              className="w-full px-2.5 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs text-[#18231C]"
+                            />
+                          )}
+                        </div>
+
+                        {/* 4. Estilo Visual */}
+                        <div className="space-y-1">
+                          <label className="block text-[10px] uppercase tracking-wider font-bold text-[#4A453F]">
+                            Estilo Visual
+                          </label>
+                          <select
+                            value={btn.style || 'primary'}
+                            onChange={(e) => handleUpdateButton(btn.id, { style: e.target.value as any })}
+                            className="w-full px-2.5 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs font-bold text-[#18231C]"
+                          >
+                            <option value="primary">Principal (Amarillo Pampero)</option>
+                            <option value="outline">Secundario (Borde Blanco)</option>
+                            <option value="secondary">Blanco Opaco con Sombra</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             {/* ARTÍCULOS ASOCIADOS A LA PROMOCIÓN */}
             <div className="space-y-3 p-4 bg-white rounded-xs border border-[#DCD4C9]">
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#DCD4C9] pb-3">
@@ -725,6 +1036,36 @@ export const AdminPromosTab: React.FC<AdminPromosTabProps> = ({
                     <span className="font-mono text-[11px] font-bold text-[#18231C]">
                       {promo.subtitleColor || '#DCD4C9'} · {promo.subtitleFontSize || '16px'}
                     </span>
+                  </div>
+                </div>
+
+                {/* Botones configurados en la tarjeta */}
+                <div className="pt-2 border-t border-[#DCD4C9]/50">
+                  <div className="flex items-center justify-between text-[11px] mb-1.5">
+                    <span className="font-bold text-[#4A453F] flex items-center gap-1">
+                      <MousePointer className="w-3 h-3 text-[#B9522F]" />
+                      Botones del Banner ({promo.buttons?.length || (promo.primaryBtnText ? 1 : 0)}):
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {promo.buttons && promo.buttons.length > 0 ? (
+                      promo.buttons.map((btn) => (
+                        <span
+                          key={btn.id}
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-xs uppercase tracking-wider ${
+                            btn.style === 'primary'
+                              ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                              : 'bg-neutral-100 text-neutral-800 border border-neutral-300'
+                          }`}
+                        >
+                          {btn.label} ({btn.actionType})
+                        </span>
+                      ))
+                    ) : (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-xs bg-amber-100 text-amber-900 border border-amber-300 uppercase tracking-wider">
+                        {promo.primaryBtnText || 'VER CATÁLOGO'} (default)
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>

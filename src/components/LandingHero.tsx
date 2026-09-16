@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { MainCategory, UserSession, ThemeConfig, Promotion } from '../types';
+import { MainCategory, UserSession, ThemeConfig, Promotion, PromotionButton } from '../types';
 import { PamperoLogo } from './PamperoLogo';
 import { CategoryMenuNav } from './CategoryMenuNav';
 import { UserNavMenu } from './UserNavMenu';
@@ -45,6 +45,7 @@ interface SlideItem {
   fontSize?: string;
   subtitleColor?: string;
   subtitleFontSize?: string;
+  buttons?: PromotionButton[];
 }
 
 export const LandingHero: React.FC<LandingHeroProps> = ({
@@ -113,6 +114,7 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
           fontSize: p.fontSize,
           subtitleColor: p.subtitleColor,
           subtitleFontSize: p.subtitleFontSize,
+          buttons: p.buttons && p.buttons.length > 0 ? p.buttons : undefined,
         };
       })
     : [
@@ -208,6 +210,49 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
       onOpenAuth('register', activeSlide.showEmpresaBtn ? 'consumidor' : 'empresa');
     } else {
       onOpenCatalog(activeSlide.promoFilter, activeSlide.categoryFilter);
+    }
+  };
+
+  const handleButtonClick = (btn: PromotionButton) => {
+    switch (btn.actionType) {
+      case 'catalog':
+        if (!userSession) {
+          onOpenAuth('register', 'consumidor');
+        } else {
+          onOpenCatalog(btn.actionValue || activeSlide.promoFilter, activeSlide.categoryFilter);
+        }
+        break;
+      case 'category':
+        if (!userSession) {
+          onOpenAuth('register', btn.actionValue === 'Venta Corporativa' ? 'empresa' : 'consumidor');
+        } else {
+          onSelectCategory((btn.actionValue as MainCategory) || 'Hombre');
+        }
+        break;
+      case 'whatsapp': {
+        const text = btn.actionValue || `Hola Pampero Gran Mendoza! Quisiera consultar sobre: ${activeSlide.titleLine1} ${activeSlide.titleLine2}`;
+        window.open(`https://wa.me/${theme?.whatsappNumber || '5492612128105'}?text=${encodeURIComponent(text)}`, '_blank');
+        break;
+      }
+      case 'url':
+        if (btn.actionValue) {
+          if (btn.actionValue.startsWith('http')) {
+            window.open(btn.actionValue, '_blank');
+          } else {
+            window.location.href = btn.actionValue;
+          }
+        }
+        break;
+      case 'auth':
+        if (!userSession) {
+          onOpenAuth('register', btn.actionValue === 'consumidor' ? 'consumidor' : 'empresa');
+        } else {
+          onSelectCategory('Venta Corporativa');
+        }
+        break;
+      default:
+        handleSlideClick();
+        break;
     }
   };
 
@@ -377,34 +422,76 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
                 {activeSlide.description}
               </p>
 
-              {/* Buttons */}
+              {/* Buttons: Fully customizable dynamic buttons or fallback default buttons */}
               <div className="mt-8 flex flex-wrap items-center gap-3">
-                <button
-                  id="btn-hero-primary"
-                  type="button"
-                  onClick={handleSlideClick}
-                  style={{ backgroundColor: accent }}
-                  className="inline-flex items-center gap-2 rounded-xs px-7 py-3.5 text-[11px] uppercase tracking-[0.3em] text-white font-bold transition-all shadow-md cursor-pointer hover:brightness-110 hover:scale-[1.02] active:scale-[0.98]"
-                >
-                  <span>{activeSlide.primaryBtnText}</span>
-                  <ArrowRight className="w-4 h-4" />
-                </button>
+                {activeSlide.buttons && activeSlide.buttons.length > 0 ? (
+                  activeSlide.buttons.map((btn) => {
+                    const isSecondary = btn.style === 'secondary';
+                    const isOutline = btn.style === 'outline' || !btn.style || btn.style === 'secondary';
+                    const isPrimary = btn.style === 'primary';
 
-                {activeSlide.showEmpresaBtn && (
-                  <button
-                    id="btn-hero-empresa"
-                    type="button"
-                    onClick={() => {
-                      if (!userSession) {
-                        onOpenAuth('register', 'empresa');
-                      } else {
-                        onSelectCategory('Venta Corporativa');
-                      }
-                    }}
-                    className="inline-flex items-center gap-2 rounded-xs border border-white/50 hover:border-white hover:bg-white/10 px-6 py-3.5 text-[11px] uppercase tracking-[0.3em] text-white font-bold transition-all cursor-pointer"
-                  >
-                    CUENTA EMPRESA
-                  </button>
+                    if (isPrimary) {
+                      return (
+                        <button
+                          key={btn.id}
+                          id={`btn-hero-custom-${btn.id}`}
+                          type="button"
+                          onClick={() => handleButtonClick(btn)}
+                          style={{ backgroundColor: accent }}
+                          className="inline-flex items-center gap-2 rounded-xs px-7 py-3.5 text-[11px] uppercase tracking-[0.3em] text-white font-bold transition-all shadow-md cursor-pointer hover:brightness-110 hover:scale-[1.02] active:scale-[0.98]"
+                        >
+                          <span>{btn.label}</span>
+                          <ArrowRight className="w-4 h-4" />
+                        </button>
+                      );
+                    }
+
+                    return (
+                      <button
+                        key={btn.id}
+                        id={`btn-hero-custom-${btn.id}`}
+                        type="button"
+                        onClick={() => handleButtonClick(btn)}
+                        className={`inline-flex items-center gap-2 rounded-xs px-6 py-3.5 text-[11px] uppercase tracking-[0.3em] font-bold transition-all cursor-pointer ${
+                          isOutline
+                            ? 'border border-white/60 hover:border-white text-white hover:bg-white/10'
+                            : 'bg-white/90 hover:bg-white text-[#18231C] shadow-sm'
+                        }`}
+                      >
+                        <span>{btn.label}</span>
+                      </button>
+                    );
+                  })
+                ) : (
+                  <>
+                    <button
+                      id="btn-hero-primary"
+                      type="button"
+                      onClick={handleSlideClick}
+                      style={{ backgroundColor: accent }}
+                      className="inline-flex items-center gap-2 rounded-xs px-7 py-3.5 text-[11px] uppercase tracking-[0.3em] text-white font-bold transition-all shadow-md cursor-pointer hover:brightness-110 hover:scale-[1.02] active:scale-[0.98]"
+                    >
+                      <span>{activeSlide.primaryBtnText}</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
+
+                    {activeSlide.showEmpresaBtn && (
+                      <button
+                        id="btn-hero-empresa"
+                        type="button"
+                        onClick={() => {
+                          if (!userSession) {
+                            onOpenAuth('register', 'empresa');
+                          } else {
+                            onSelectCategory('Venta Corporativa');
+                          }
+                        }}
+                        className="inline-flex items-center gap-2 rounded-xs border border-white/50 hover:border-white hover:bg-white/10 px-6 py-3.5 text-[11px] uppercase tracking-[0.3em] text-white font-bold transition-all cursor-pointer"
+                      >
+                        CUENTA EMPRESA
+                      </button>
+                    )}
+                  </>
                 )}
               </div>
             </div>

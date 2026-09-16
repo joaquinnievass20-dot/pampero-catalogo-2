@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Product, UserSession, ThemeConfig } from '../types';
+import { Product, UserSession, ThemeConfig, Promotion } from '../types';
 import { 
   X, 
   Check, 
@@ -16,12 +16,14 @@ import {
   ChevronRight
 } from 'lucide-react';
 import { getProductImageForColor, getColorHex, getColorCode } from '../utils/colorUtils';
+import { getProductActivePromotion } from '../utils/promoUtils';
 
 interface ProductDetailModalProps {
   product: Product | null;
   onClose: () => void;
   userSession: UserSession | null;
   theme: ThemeConfig;
+  promotions?: Promotion[];
   onAddToCart: (product: Product, quantity: number, color?: string, size?: string) => void;
 }
 
@@ -30,6 +32,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   onClose,
   userSession,
   theme,
+  promotions,
   onAddToCart,
 }) => {
   const [selectedSize, setSelectedSize] = useState<string>('');
@@ -47,8 +50,11 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
     ? Math.round(effectivePrice * (1 - (product.discountPercentage || 0) / 100))
     : effectivePrice;
 
-  const currentSize = selectedSize || product.availableSizes[0] || '';
-  const currentColor = selectedColor || product.availableColors[0] || '';
+  const currentSize = selectedSize || (product.availableSizes && product.availableSizes.length > 0 ? product.availableSizes[0] : '');
+  const currentColor = selectedColor || (product.availableColors && product.availableColors.length > 0 ? product.availableColors[0] : '');
+
+  const activePromo = getProductActivePromotion(product, promotions);
+  const promoBadgeLabel = activePromo ? (activePromo.badge || product.promotionTag || activePromo.tagFilter) : null;
 
   const handleAdd = () => {
     onAddToCart(product, quantity, currentColor, currentSize);
@@ -142,13 +148,13 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               >
                 {product.category} · {product.section}
               </span>
-              {product.promotionTag && (
+              {promoBadgeLabel && (
                 <span 
                   style={{ backgroundColor: theme.seasonBadgeBg || '#18231C' }}
                   className="px-2.5 py-1 rounded-xs text-white text-[10px] font-black tracking-wider uppercase flex items-center gap-1 shadow-sm"
                 >
                   <Tag className="w-3 h-3" />
-                  {product.promotionTag}
+                  {promoBadgeLabel}
                 </span>
               )}
               {hasDiscount && (

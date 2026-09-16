@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
-import { Product, UserSession, ThemeConfig, MainCategory } from '../types';
+import { Product, UserSession, ThemeConfig, MainCategory, Promotion } from '../types';
 import { ProductCard } from './ProductCard';
-import { CATEGORY_HIERARCHY } from '../data/categories';
+import { CATEGORY_HIERARCHY, CategoryStructure, loadStoredCategoryHierarchy } from '../data/categories';
 import { getColorHex, getColorCode } from '../utils/colorUtils';
 import { ChevronDown, ChevronRight, SlidersHorizontal, X, ArrowLeft, History, Search } from 'lucide-react';
 
@@ -10,6 +10,7 @@ interface CatalogViewProps {
   currentCategory: MainCategory;
   userSession: UserSession | null;
   theme: ThemeConfig;
+  promotions?: Promotion[];
   activePromoFilter: string | null;
   searchQuery?: string;
   onSearchChange?: (q: string) => void;
@@ -24,6 +25,7 @@ interface CatalogViewProps {
   onSelectSection?: (s: string) => void;
   currentSubCategory?: string;
   onSelectSubCategory?: (sub: string) => void;
+  categoryHierarchy?: CategoryStructure[];
 }
 
 export const CatalogView: React.FC<CatalogViewProps> = ({
@@ -31,6 +33,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
   currentCategory,
   userSession,
   theme,
+  promotions,
   activePromoFilter,
   searchQuery = '',
   onSearchChange,
@@ -41,6 +44,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
   onQuickAddProduct,
   onOpenPromos,
   onBackToHome,
+  categoryHierarchy,
 }) => {
   const [localSearch, setLocalSearch] = useState('');
   const activeSearch = searchQuery !== undefined && searchQuery !== '' ? searchQuery : localSearch;
@@ -73,16 +77,37 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
     return 'Hombre';
   };
 
-  // Get current category definition from CATEGORY_HIERARCHY
+  const activeHierarchy = useMemo(() => {
+    return categoryHierarchy && categoryHierarchy.length > 0 ? categoryHierarchy : loadStoredCategoryHierarchy();
+  }, [categoryHierarchy]);
+
+  // Get current category definition from activeHierarchy
   const currentCategoryDef = useMemo(() => {
-    return CATEGORY_HIERARCHY.find((c) => c.name === currentCategory) || CATEGORY_HIERARCHY[0];
-  }, [currentCategory]);
+    return activeHierarchy.find((c) => c.name === currentCategory) || activeHierarchy[0] || CATEGORY_HIERARCHY[0];
+  }, [currentCategory, activeHierarchy]);
+
+  // Helper to check if a product is industrial or corporate
+  const isIndustrialProduct = (p: Product) => {
+    return Boolean(
+      p.isCorporateOnly ||
+      p.category === 'Venta Corporativa' ||
+      (p.section && p.section.toLowerCase() === 'industria') ||
+      (p.subCategory && p.subCategory.toLowerCase().includes('industria'))
+    );
+  };
 
   // Extract all unique colors from products for this category
   const availableColors = useMemo(() => {
     const set = new Set<string>();
     products
-      .filter((p) => sanitizeCategory(p.category) === currentCategory)
+      .filter((p) => {
+        const isInd = isIndustrialProduct(p);
+        if (isInd) return currentCategory === 'Venta Corporativa';
+        if (currentCategory === 'Venta Corporativa') return false;
+        if (currentCategory === 'Hombre') return sanitizeCategory(p.category) === 'Hombre' || Boolean(p.isUnisex);
+        if (currentCategory === 'Mujer') return sanitizeCategory(p.category) === 'Mujer' || Boolean(p.isUnisex);
+        return sanitizeCategory(p.category) === currentCategory;
+      })
       .forEach((p) => {
         p.availableColors?.forEach((c) => set.add(c));
       });
@@ -140,10 +165,24 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
           (p.subCategory && p.subCategory.toLowerCase().includes(promoLower)) ||
           (promoLower.includes('promo') && p.discountPercentage && p.discountPercentage > 0);
         if (!matchesPromo) return false;
-      } else {
-        // If not searching across all items, respect category filter
-        if (!q && prodCategory !== currentCategory && currentCategory !== 'Venta Corporativa') {
-          return false;
+      } else if (!q) {
+        // Respect category filter with Unisex and Industrial rules
+        const isInd = isIndustrialProduct(p);
+        if (isInd) {
+          // Industrial products go directly and exclusively to Venta Corporativa
+          if (currentCategory !== 'Venta Corporativa') return false;
+        } else {
+          // Non-industrial items do not belong to Venta Corporativa
+          if (currentCategory === 'Venta Corporativa') return false;
+          if (currentCategory === 'Hombre') {
+            // Appears in Hombre if category is Hombre or if marked Unisex
+            if (prodCategory !== 'Hombre' && !p.isUnisex) return false;
+          } else if (currentCategory === 'Mujer') {
+            // Appears in Mujer if category is Mujer or if marked Unisex
+            if (prodCategory !== 'Mujer' && !p.isUnisex) return false;
+          } else if (currentCategory === 'Infantil') {
+            if (prodCategory !== 'Infantil') return false;
+          }
         }
       }
 
@@ -217,7 +256,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
 
           {/* Quick main category pills */}
           <div className="flex items-center gap-2 overflow-x-auto pb-1">
-            {CATEGORY_HIERARCHY.map((cat) => {
+            {activeHierarchy.map((cat) => {
               const isSelected = currentCategory === cat.name && !activePromoFilter;
               return (
                 <button
@@ -524,6 +563,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                     product={product}
                     userSession={userSession}
                     theme={theme}
+                    promotions={promotions}
                     onViewDetail={handleOpenProduct}
                     onQuickAdd={onQuickAddProduct}
                   />

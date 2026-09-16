@@ -93,7 +93,7 @@ export const LookbookView: React.FC<LookbookViewProps> = ({
       <div 
         className="border-b border-[#DCD4C9] bg-white py-4 px-4 sm:px-8 shadow-xs"
       >
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <button
               id="btn-lookbook-back-store"
@@ -121,32 +121,6 @@ export const LookbookView: React.FC<LookbookViewProps> = ({
                 Hacé clic en los puntos interactivos sobre el equipo para ver cada prenda en detalle.
               </p>
             </div>
-          </div>
-
-          {/* Look Switcher Carousel Tabs */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 md:pb-0">
-            {lookbook.map((look, idx) => (
-              <button
-                key={look.id}
-                type="button"
-                onClick={() => {
-                  setActiveHotspotId(null);
-                  setActiveLookIndex(idx);
-                }}
-                className={`px-3 py-1.5 rounded-xs text-xs font-bold uppercase tracking-wider transition-all whitespace-nowrap cursor-pointer border ${
-                  idx === activeLookIndex
-                    ? 'shadow-xs'
-                    : 'bg-white text-neutral-600 border-neutral-200 hover:border-neutral-400'
-                }`}
-                style={{
-                  backgroundColor: idx === activeLookIndex ? (theme.primaryColor || '#18231C') : undefined,
-                  color: idx === activeLookIndex ? (theme.headerTextColor || '#F5F2EC') : undefined,
-                  borderColor: idx === activeLookIndex ? accent : undefined,
-                }}
-              >
-                Look #{idx + 1}: {look.title.split('·')[0].trim()}
-              </button>
-            ))}
           </div>
         </div>
       </div>
