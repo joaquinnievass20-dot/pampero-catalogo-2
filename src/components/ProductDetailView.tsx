@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Product, UserSession, ThemeConfig, SpecialSizeRange, Promotion } from '../types';
-import { ArrowLeft, MessageCircle, ShoppingBag, Check, Building2, Info, ChevronLeft, ChevronRight, Layers, Tag } from 'lucide-react';
+import { ArrowLeft, MessageCircle, ShoppingBag, Check, Building2, Info, ChevronLeft, ChevronRight, Layers, Tag, ZoomIn } from 'lucide-react';
 import { getColorHex, getColorCode, getProductImageForColor, recordProductInteraction } from '../utils/colorUtils';
 import { getProductActivePromotion } from '../utils/promoUtils';
+import { ImageLightboxModal } from './ImageLightboxModal';
+import { trackProductClick, trackAddToCart } from '../utils/analytics';
 
 interface ProductDetailViewProps {
   product: Product;
@@ -32,14 +34,13 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
 }) => {
   const handleBack = onBackToCatalog || onBack || (() => {});
   const colors = product.availableColors || [];
-  const baseSizes = (product.availableSizes && product.availableSizes.length > 0)
-    ? product.availableSizes
-    : ['CH', 'M', 'G', 'MG'];
+  const baseSizes = product.availableSizes || [];
 
   const [selectedColor, setSelectedColor] = useState<string>((colors && colors.length > 0) ? colors[0] : '');
   const [selectedSize, setSelectedSize] = useState<string>(baseSizes[0] || '');
   const [addedAnimation, setAddedAnimation] = useState(false);
   const [activeImageIndex, setActiveImageIndex] = useState<number>(0);
+  const [isLightboxOpen, setIsLightboxOpen] = useState(false);
 
   // Active promotion check
   const activePromo = getProductActivePromotion(product, promotions);
@@ -60,11 +61,30 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
     }
   };
 
-  // Collect all product images for gallery/carousel
-  const allImages: string[] = [
-    ...(Array.isArray(product.images) && product.images.length > 0 ? product.images : []),
-    product.image
-  ].filter((url, index, self): url is string => Boolean(url) && self.indexOf(url) === index);
+  const [unisexModelView, setUnisexModelView] = useState<'all' | 'men' | 'women'>('all');
+
+  // Collect all product images for gallery/carousel with unisex model support
+  const allImages: string[] = (() => {
+    if (product.isUnisex) {
+      if (unisexModelView === 'men' && Array.isArray(product.imagesMen) && product.imagesMen.length > 0) {
+        return product.imagesMen.filter(Boolean);
+      }
+      if (unisexModelView === 'women' && Array.isArray(product.imagesWomen) && product.imagesWomen.length > 0) {
+        return product.imagesWomen.filter(Boolean);
+      }
+      // If 'all', merge men and women then fallback
+      const menList = Array.isArray(product.imagesMen) ? product.imagesMen.filter(Boolean) : [];
+      const womenList = Array.isArray(product.imagesWomen) ? product.imagesWomen.filter(Boolean) : [];
+      if (menList.length > 0 || womenList.length > 0) {
+        const combined = [...menList, ...womenList];
+        return combined.filter((url, index, self) => self.indexOf(url) === index);
+      }
+    }
+    return [
+      ...(Array.isArray(product.images) && product.images.length > 0 ? product.images : []),
+      product.image
+    ].filter((url, index, self): url is string => Boolean(url) && self.indexOf(url) === index);
+  })();
 
   // Update active image if color changes and matches a color-specific image
   useEffect(() => {
@@ -102,6 +122,14 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
   const displayedImage = allImages[activeImageIndex] || getProductImageForColor(product, selectedColor);
 
   const handleAddToCart = () => {
+    trackAddToCart({
+      product,
+      quantity: 1,
+      size: selectedSize,
+      color: selectedColor,
+      unitPrice: discountedPrice,
+    });
+
     onAddToCart(
       product,
       selectedColor,
@@ -145,13 +173,30 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
           
           {/* Left Column: Big Product Image & Carousel Gallery */}
           <div className="lg:col-span-6 space-y-3">
-            <div className="relative aspect-square w-full rounded-xs bg-[#ECE5DC] border border-[#DCD4C9] overflow-hidden shadow-xs group">
+            <div 
+              onClick={() => setIsLightboxOpen(true)}
+              className="relative aspect-square w-full rounded-xs bg-[#ECE5DC] border border-[#DCD4C9] overflow-hidden shadow-xs group cursor-pointer"
+            >
               <img
                 src={displayedImage}
                 alt={`${product.name} - ${selectedColor}`}
-                className="w-full h-full object-cover transition-opacity duration-300"
+                className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
                 referrerPolicy="no-referrer"
               />
+
+              {/* Floating Zoom Button */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsLightboxOpen(true);
+                }}
+                className="absolute top-4 left-4 z-10 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xs bg-black/70 hover:bg-black text-white text-[11px] font-bold uppercase tracking-wider backdrop-blur-xs transition-all shadow-md cursor-pointer"
+                title="Ampliar foto y hacer zoom"
+              >
+                <ZoomIn className="w-3.5 h-3.5 text-[#FDB813]" />
+                <span>Ampliar</span>
+              </button>
 
               {/* Carousel navigation arrows */}
               {allImages.length > 1 && (
@@ -225,6 +270,63 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
                 </div>
               )}
             </div>
+
+            {/* Unisex Model Selector Buttons (if product has dual galleries) */}
+            {product.isUnisex && ((product.imagesMen && product.imagesMen.length > 0) || (product.imagesWomen && product.imagesWomen.length > 0)) && (
+              <div className="flex items-center gap-2 p-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs">
+                <span className="text-[11px] font-bold text-[#6F6860] uppercase tracking-wider pl-1">
+                  Ver Fotos:
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUnisexModelView('all');
+                    setActiveImageIndex(0);
+                  }}
+                  className={`px-2.5 py-1 rounded-xs font-bold text-[11px] transition-all cursor-pointer ${
+                    unisexModelView === 'all'
+                      ? 'bg-[#18231C] text-white shadow-xs'
+                      : 'bg-white text-[#18231C] border border-[#DCD4C9] hover:bg-neutral-100'
+                  }`}
+                >
+                  Todas ({((product.imagesMen?.length || 0) + (product.imagesWomen?.length || 0))})
+                </button>
+                {product.imagesMen && product.imagesMen.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUnisexModelView('men');
+                      setActiveImageIndex(0);
+                    }}
+                    className={`px-2.5 py-1 rounded-xs font-bold text-[11px] transition-all cursor-pointer flex items-center gap-1 ${
+                      unisexModelView === 'men'
+                        ? 'bg-blue-700 text-white shadow-xs'
+                        : 'bg-white text-blue-900 border border-blue-200 hover:bg-blue-50'
+                    }`}
+                  >
+                    <span className="w-2 h-2 rounded-full bg-blue-500 inline-block"></span>
+                    Hombre ({product.imagesMen.length})
+                  </button>
+                )}
+                {product.imagesWomen && product.imagesWomen.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUnisexModelView('women');
+                      setActiveImageIndex(0);
+                    }}
+                    className={`px-2.5 py-1 rounded-xs font-bold text-[11px] transition-all cursor-pointer flex items-center gap-1 ${
+                      unisexModelView === 'women'
+                        ? 'bg-rose-700 text-white shadow-xs'
+                        : 'bg-white text-rose-900 border border-rose-200 hover:bg-rose-50'
+                    }`}
+                  >
+                    <span className="w-2 h-2 rounded-full bg-rose-500 inline-block"></span>
+                    Mujer ({product.imagesWomen.length})
+                  </button>
+                )}
+              </div>
+            )}
 
             {/* Thumbnail Strip Gallery */}
             {allImages.length > 1 && (
@@ -385,38 +487,41 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
             )}
 
             {/* TALLE Selection (Standard & Special Size Ranges) */}
-            <div className="space-y-4">
-              {/* 1. Talles Estándar */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="block text-[10px] uppercase tracking-[0.25em] font-bold text-[#4A453F]">
-                    TALLES ESTÁNDAR
-                  </label>
-                  <span className="text-[11px] text-[#6F6860]">
-                    Precio base: ${(isCompany && product.corporatePrice ? product.corporatePrice : product.price).toLocaleString('es-AR')}
-                  </span>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {baseSizes.map((size) => {
-                    const isSelected = selectedSize === size && !activeSpecialRange;
-                    return (
-                      <button
-                        key={size}
-                        type="button"
-                        onClick={() => handleSelectSize(size, null)}
-                        style={{
-                          borderColor: isSelected ? (theme.primaryColor || '#18231C') : '#DCD4C9',
-                          backgroundColor: isSelected ? (theme.primaryColor || '#18231C') : '#FFFFFF',
-                          color: isSelected ? '#F5F2EC' : '#18231C',
-                        }}
-                        className="min-w-[44px] h-[40px] px-3 flex items-center justify-center text-xs uppercase tracking-[0.15em] font-bold rounded-xs border transition-all cursor-pointer shadow-2xs"
-                      >
-                        {size}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+            {(baseSizes.length > 0 || (product.specialSizeRanges && product.specialSizeRanges.length > 0)) && (
+              <div className="space-y-4">
+                {/* 1. Talles Estándar */}
+                {baseSizes.length > 0 && (
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block text-[10px] uppercase tracking-[0.25em] font-bold text-[#4A453F]">
+                        TALLES ESTÁNDAR
+                      </label>
+                      <span className="text-[11px] text-[#6F6860]">
+                        Precio base: ${(isCompany && product.corporatePrice ? product.corporatePrice : product.price).toLocaleString('es-AR')}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {baseSizes.map((size) => {
+                        const isSelected = selectedSize === size && !activeSpecialRange;
+                        return (
+                          <button
+                            key={size}
+                            type="button"
+                            onClick={() => handleSelectSize(size, null)}
+                            style={{
+                              borderColor: isSelected ? (theme.primaryColor || '#18231C') : '#DCD4C9',
+                              backgroundColor: isSelected ? (theme.primaryColor || '#18231C') : '#FFFFFF',
+                              color: isSelected ? '#F5F2EC' : '#18231C',
+                            }}
+                            className="min-w-[44px] h-[40px] px-3 flex items-center justify-center text-xs uppercase tracking-[0.15em] font-bold rounded-xs border transition-all cursor-pointer shadow-2xs"
+                          >
+                            {size}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
               {/* 2. Talles Especiales y Precios Diferenciados */}
               {product.specialSizeRanges && product.specialSizeRanges.length > 0 && (
@@ -480,6 +585,7 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
                 </div>
               )}
             </div>
+          )}
 
             {/* Description */}
             <div className="text-xs sm:text-sm text-[#544E47] leading-relaxed pt-2">
@@ -534,6 +640,18 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Product Image Lightbox Modal */}
+      <ImageLightboxModal
+        isOpen={isLightboxOpen}
+        onClose={() => setIsLightboxOpen(false)}
+        images={allImages}
+        initialIndex={activeImageIndex}
+        productTitle={product.name}
+        productCode={activeProductCode}
+        productPrice={discountedPrice}
+      />
     </div>
   );
 };
+

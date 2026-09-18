@@ -27,7 +27,16 @@ import {
   isServerCatalogReset, 
   syncBackupToServer 
 } from './utils/backupManager';
+import {
+  isFirebaseReady,
+  fetchFirestoreProducts,
+  saveFirestoreProducts,
+  fetchFirestoreStoreConfig,
+  saveFirestoreStoreConfig,
+  subscribeToFirestoreStoreConfig,
+} from './services/firebase';
 import { ensureMasterAdminInitialized } from './utils/authInit';
+import { trackAddToCart } from './utils/analytics';
 import { LandingHero } from './components/LandingHero';
 import { CatalogView } from './components/CatalogView';
 import { ProductDetailView } from './components/ProductDetailView';
@@ -54,13 +63,16 @@ import {
 export default function App() {
   // Category sanitizer to ensure newly added products are never miscategorized
   const sanitizeCategory = (rawCat: any): MainCategory => {
-    if (rawCat === 'Mujer' || rawCat === '1' || rawCat === 1) return 'Mujer';
-    if (rawCat === 'Infantil' || rawCat === '2' || rawCat === 2) return 'Infantil';
-    if (rawCat === 'Venta Corporativa' || rawCat === '3' || rawCat === 3) return 'Venta Corporativa';
-    const s = String(rawCat || '').toLowerCase();
+    if (!rawCat) return 'Hombre';
+    const str = String(rawCat).trim();
+    if (str === 'Mujer' || str === '1') return 'Mujer';
+    if (str === 'Infantil' || str === '2') return 'Infantil';
+    if (str === 'Venta Corporativa' || str === '3') return 'Venta Corporativa';
+    const s = str.toLowerCase();
     if (s.includes('mujer')) return 'Mujer';
     if (s.includes('infan') || s.includes('niñ')) return 'Infantil';
     if (s.includes('corp') || s.includes('venta')) return 'Venta Corporativa';
+    if (str.length > 0) return str as MainCategory;
     return 'Hombre';
   };
 
@@ -134,8 +146,89 @@ export default function App() {
   // Global search query
   const [searchQuery, setSearchQuery] = useState<string>('');
 
-  // Real-time catalog & store synchronization function
+  // Real-time catalog & store synchronization function (Cloud Firestore + Express Server)
   const syncFromServer = async () => {
+    // 1. Cloud Firestore: Authoritative for persistent storage across Vercel & devices
+    if (isFirebaseReady()) {
+      try {
+        const firestoreProds = await fetchFirestoreProducts();
+        if (firestoreProds && firestoreProds.length > 0) {
+          const sanitized = firestoreProds.map((p: Product) => ({
+            ...p,
+            category: sanitizeCategory(p.category),
+            section: p.section || 'Urbano',
+            subCategory: p.subCategory || 'General',
+          }));
+          setProducts(sanitized);
+          saveCatalogBackup(sanitized);
+        } else {
+          // If Firestore is empty on the first run, seed it with default products
+          console.log('[FIREBASE] Cloud Firestore vacío detectado. Sembrando catálogo inicial en la nube...');
+          const initialCatalog = loadCatalogBackup() || INITIAL_PRODUCTS;
+          saveFirestoreProducts(initialCatalog);
+        }
+
+        const firestoreConfig = await fetchFirestoreStoreConfig();
+        if (firestoreConfig) {
+          if (firestoreConfig.theme) {
+            setTheme(firestoreConfig.theme);
+            try {
+              localStorage.setItem('pampero_theme_config', JSON.stringify(firestoreConfig.theme));
+            } catch {}
+          }
+          if (Array.isArray(firestoreConfig.promotions) && firestoreConfig.promotions.length > 0) {
+            setPromotions(firestoreConfig.promotions);
+            try {
+              localStorage.setItem('pampero_catalog_promos', JSON.stringify(firestoreConfig.promotions));
+            } catch {}
+          }
+          if (Array.isArray(firestoreConfig.branches) && firestoreConfig.branches.length > 0) {
+            setBranches(firestoreConfig.branches);
+            try {
+              localStorage.setItem('pampero_catalog_branches', JSON.stringify(firestoreConfig.branches));
+            } catch {}
+          }
+          if (Array.isArray(firestoreConfig.coupons)) {
+            setCoupons(firestoreConfig.coupons);
+            try {
+              localStorage.setItem('pampero_discount_coupons', JSON.stringify(firestoreConfig.coupons));
+            } catch {}
+          }
+          if (Array.isArray(firestoreConfig.categories) && firestoreConfig.categories.length > 0) {
+            setCategories(firestoreConfig.categories);
+            try {
+              localStorage.setItem('pampero_catalog_categories', JSON.stringify(firestoreConfig.categories));
+            } catch {}
+          }
+          if (Array.isArray(firestoreConfig.volumeDiscounts) && firestoreConfig.volumeDiscounts.length > 0) {
+            setVolumeDiscounts(firestoreConfig.volumeDiscounts);
+            try {
+              localStorage.setItem('pampero_volume_discounts', JSON.stringify(firestoreConfig.volumeDiscounts));
+            } catch {}
+          }
+          if (Array.isArray(firestoreConfig.lookbook) && firestoreConfig.lookbook.length > 0) {
+            setLookbook(firestoreConfig.lookbook);
+            try {
+              localStorage.setItem('pampero_catalog_lookbook', JSON.stringify(firestoreConfig.lookbook));
+            } catch {}
+          }
+        } else {
+          // Seed store configuration to Cloud Firestore
+          saveFirestoreStoreConfig({
+            categories: INITIAL_CATEGORY_HIERARCHY,
+            promotions: INITIAL_PROMOTIONS,
+            theme: INITIAL_THEME,
+            branches: INITIAL_BRANCHES,
+            coupons: INITIAL_COUPONS,
+            lookbook: INITIAL_LOOKBOOK,
+          });
+        }
+      } catch (fErr) {
+        console.warn('[FIREBASE SYNC] Cloud sync warning:', fErr);
+      }
+    }
+
+    // 2. Local Express Server API (if running in full-stack Node container)
     try {
       const res = await fetch(`/api/catalog/sync?_t=${Date.now()}`, {
         cache: 'no-store',
@@ -148,16 +241,14 @@ export default function App() {
       const data = await res.json();
       if (!data || !data.success) return;
 
-      // 1. Authoritative Products Catalog with Resilience & Hybrid Auto-Recovery
+      // Authoritative Products Catalog with Resilience & Hybrid Auto-Recovery
       const localBackup = loadCatalogBackup();
       const serverProds: Product[] = Array.isArray(data.products) ? data.products : [];
 
       if (isServerCatalogReset(serverProds, localBackup) && localBackup && localBackup.length > 0) {
-        console.warn(`[PAMPERO PERSISTENCE] Backend vacío o reseteado detectado (${serverProds.length} productos en servidor vs ${localBackup.length} en respaldo local). Restaurando catálogo desde localStorage...`);
         setProducts(localBackup);
-        // Rescatar inmediatamente el servidor para re-grabar el archivo data_storage/products.json
         syncBackupToServer(localBackup);
-      } else if (serverProds.length > 0) {
+      } else if (serverProds.length > 0 && !isFirebaseReady()) {
         const sanitized = serverProds.map((p: Product) => ({
           ...p,
           category: sanitizeCategory(p.category),
@@ -168,78 +259,28 @@ export default function App() {
         saveCatalogBackup(sanitized);
       }
 
-      // 2. Authoritative Theme Config
-      if (data.theme && typeof data.theme === 'object') {
-        setTheme(data.theme);
-        try {
-          localStorage.setItem('pampero_theme_config', JSON.stringify(data.theme));
-          localStorage.setItem('pampero_catalog_theme', JSON.stringify(data.theme));
-        } catch {}
-      }
-
-      // 3. Authoritative Promotions
-      if (Array.isArray(data.promotions) && data.promotions.length > 0) {
-        setPromotions(data.promotions);
-        try {
-          localStorage.setItem('pampero_catalog_promos', JSON.stringify(data.promotions));
-        } catch {}
-      }
-
-      // 4. Authoritative Branches
-      if (Array.isArray(data.branches) && data.branches.length > 0) {
-        setBranches(data.branches);
-        try {
-          localStorage.setItem('pampero_catalog_branches', JSON.stringify(data.branches));
-        } catch {}
-      }
-
-      // 5. Authoritative Coupons
-      if (Array.isArray(data.coupons)) {
-        setCoupons(data.coupons);
-        try {
-          localStorage.setItem('pampero_discount_coupons', JSON.stringify(data.coupons));
-        } catch {}
-      }
-
-      // 6. Authoritative Lookbook
-      try {
-        const lbRes = await fetch(`/api/lookbook?_t=${Date.now()}`, {
-          cache: 'no-store',
-          headers: {
-            'Cache-Control': 'no-cache, no-store',
-            Pragma: 'no-cache',
-          },
-        });
-        if (lbRes.ok) {
-          const lbData = await lbRes.json();
-          if (lbData && lbData.success && Array.isArray(lbData.lookbook) && lbData.lookbook.length > 0) {
-            setLookbook(lbData.lookbook);
-            try {
-              localStorage.setItem('pampero_catalog_lookbook', JSON.stringify(lbData.lookbook));
-            } catch {}
-          }
+      if (!isFirebaseReady()) {
+        if (data.theme && typeof data.theme === 'object') {
+          setTheme(data.theme);
         }
-      } catch (err) {
-        console.warn('[PAMPERO SYNC] Error synchronizing lookbook:', err);
+        if (Array.isArray(data.promotions) && data.promotions.length > 0) {
+          setPromotions(data.promotions);
+        }
+        if (Array.isArray(data.branches) && data.branches.length > 0) {
+          setBranches(data.branches);
+        }
+        if (Array.isArray(data.coupons)) {
+          setCoupons(data.coupons);
+        }
+        if (Array.isArray(data.categories) && data.categories.length > 0) {
+          setCategories(data.categories);
+        }
+        if (Array.isArray(data.volumeDiscounts) && data.volumeDiscounts.length > 0) {
+          setVolumeDiscounts(data.volumeDiscounts);
+        }
       }
-
-      // 7. Authoritative Categories & Hierarchy
-      if (Array.isArray(data.categories) && data.categories.length > 0) {
-        setCategories(data.categories);
-        try {
-          localStorage.setItem('pampero_catalog_categories', JSON.stringify(data.categories));
-        } catch {}
-      }
-
-      // 8. Authoritative Volume Discounts
-      if (Array.isArray(data.volumeDiscounts) && data.volumeDiscounts.length > 0) {
-        setVolumeDiscounts(data.volumeDiscounts);
-        try {
-          localStorage.setItem('pampero_volume_discounts', JSON.stringify(data.volumeDiscounts));
-        } catch {}
-      }
-    } catch (err) {
-      console.warn('[PAMPERO SYNC] Error synchronizing from server:', err);
+    } catch {
+      // Offline or serverless environment
     }
   };
 
@@ -250,6 +291,17 @@ export default function App() {
 
     // Initial sync
     syncFromServer();
+
+    // Real-time Firestore configuration updates listener
+    const unsubscribeFirestore = subscribeToFirestoreStoreConfig((remoteConfig) => {
+      if (remoteConfig.theme) setTheme(remoteConfig.theme);
+      if (Array.isArray(remoteConfig.promotions) && remoteConfig.promotions.length > 0) setPromotions(remoteConfig.promotions);
+      if (Array.isArray(remoteConfig.categories) && remoteConfig.categories.length > 0) setCategories(remoteConfig.categories);
+      if (Array.isArray(remoteConfig.volumeDiscounts) && remoteConfig.volumeDiscounts.length > 0) setVolumeDiscounts(remoteConfig.volumeDiscounts);
+      if (Array.isArray(remoteConfig.branches) && remoteConfig.branches.length > 0) setBranches(remoteConfig.branches);
+      if (Array.isArray(remoteConfig.coupons)) setCoupons(remoteConfig.coupons);
+      if (Array.isArray(remoteConfig.lookbook)) setLookbook(remoteConfig.lookbook);
+    });
 
     // Revalidate on window focus (e.g. when user returns to tab or opens browser)
     const handleFocus = () => {
@@ -265,10 +317,11 @@ export default function App() {
     window.addEventListener('focus', handleFocus);
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
-    // Periodic background sync every 10 seconds so clients see changes live
-    const interval = setInterval(syncFromServer, 10000);
+    // Periodic background sync every 15 seconds so clients see changes live
+    const interval = setInterval(syncFromServer, 15000);
 
     return () => {
+      unsubscribeFirestore();
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       clearInterval(interval);
@@ -406,6 +459,9 @@ export default function App() {
     setProducts(sanitized);
     saveCatalogBackup(sanitized);
 
+    // Persist to Cloud Firestore
+    saveFirestoreProducts(sanitized);
+
     try {
       const res = await fetch('/api/products', {
         method: 'POST',
@@ -434,6 +490,9 @@ export default function App() {
       localStorage.setItem('pampero_catalog_promos', JSON.stringify(newPromos));
     } catch {}
 
+    // Persist to Cloud Firestore
+    saveFirestoreStoreConfig({ promotions: newPromos });
+
     try {
       await fetch('/api/promotions', {
         method: 'POST',
@@ -458,6 +517,9 @@ export default function App() {
       }
     } catch {}
 
+    // Persist to Cloud Firestore
+    saveFirestoreStoreConfig({ theme: newTheme });
+
     try {
       await fetch('/api/theme', {
         method: 'POST',
@@ -474,6 +536,9 @@ export default function App() {
     try {
       localStorage.setItem('pampero_catalog_branches', JSON.stringify(newBranches));
     } catch {}
+
+    // Persist to Cloud Firestore
+    saveFirestoreStoreConfig({ branches: newBranches });
 
     try {
       await fetch('/api/branches', {
@@ -492,6 +557,9 @@ export default function App() {
       localStorage.setItem('pampero_discount_coupons', JSON.stringify(newCoupons));
     } catch {}
 
+    // Persist to Cloud Firestore
+    saveFirestoreStoreConfig({ coupons: newCoupons });
+
     try {
       await fetch('/api/coupons', {
         method: 'POST',
@@ -508,6 +576,9 @@ export default function App() {
     try {
       localStorage.setItem('pampero_catalog_lookbook', JSON.stringify(newLookbook));
     } catch {}
+
+    // Persist to Cloud Firestore
+    saveFirestoreStoreConfig({ lookbook: newLookbook });
 
     try {
       await fetch('/api/lookbook', {
@@ -526,6 +597,9 @@ export default function App() {
       localStorage.setItem('pampero_catalog_categories', JSON.stringify(newCategories));
     } catch {}
 
+    // Persist to Cloud Firestore
+    saveFirestoreStoreConfig({ categories: newCategories });
+
     try {
       await fetch('/api/categories', {
         method: 'POST',
@@ -543,6 +617,9 @@ export default function App() {
       localStorage.setItem('pampero_volume_discounts', JSON.stringify(newDiscounts));
     } catch {}
 
+    // Persist to Cloud Firestore
+    saveFirestoreStoreConfig({ volumeDiscounts: newDiscounts });
+
     try {
       await fetch('/api/volume-discounts', {
         method: 'POST',
@@ -557,7 +634,7 @@ export default function App() {
   const handleLogin = (session: UserSession) => {
     setUserSession(session);
     localStorage.setItem('pampero_user_session', JSON.stringify(session));
-    if (session.role === 'admin') {
+    if (session.role === 'admin' || session.role === 'employee' || session.email?.toLowerCase() === 'joaquinnievass20@gmail.com') {
       setViewMode('admin');
     } else {
       setViewMode('catalog');
@@ -580,6 +657,14 @@ export default function App() {
     unitPriceAdjusted?: number,
     codeWithSuffix?: string
   ) => {
+    trackAddToCart({
+      product,
+      quantity,
+      size,
+      color,
+      unitPrice: unitPriceAdjusted ?? product.price,
+    });
+
     setCart((prev) => {
       const targetCode = codeWithSuffix || (specialSizeRange?.suffix ? `${product.code}${specialSizeRange.suffix}` : product.code);
       const idx = prev.findIndex(
@@ -775,6 +860,7 @@ export default function App() {
               <CategoryMenuNav
                 currentCategory={currentCategory}
                 activePromoFilter={activePromoFilter}
+                categoriesHierarchy={categories}
                 onSelectCategoryItem={(cat, sec, sub) => {
                   setCurrentCategory(cat);
                   setCurrentSection(sec || 'Todos');
@@ -846,6 +932,7 @@ export default function App() {
             userSession={userSession}
             theme={theme}
             promotions={promotions}
+            categoriesHierarchy={categories}
             onOpenAuth={openAuthScreen}
             onSelectCategory={(cat) => openCatalogScreen(null, cat)}
             onOpenCatalog={(promo, cat) => openCatalogScreen(promo, cat)}
@@ -879,6 +966,7 @@ export default function App() {
             currentSubCategory={currentSubCategory}
             onSelectSubCategory={setCurrentSubCategory}
             products={products}
+            categoryHierarchy={categories}
             userSession={userSession}
             theme={theme}
             searchQuery={searchQuery}
@@ -926,6 +1014,8 @@ export default function App() {
             branches={branches}
             coupons={coupons}
             lookbook={lookbook}
+            categories={categories}
+            onUpdateCategories={handleUpdateCategories}
             onUpdateProducts={handleUpdateProducts}
             onUpdatePromotions={handleUpdatePromotions}
             onUpdateTheme={handleUpdateTheme}

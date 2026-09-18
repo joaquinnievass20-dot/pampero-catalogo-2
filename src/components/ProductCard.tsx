@@ -3,6 +3,7 @@ import { Product, UserSession, ThemeConfig, Promotion } from '../types';
 import { Building2 } from 'lucide-react';
 import { getColorHex, getProductImageForColor, recordProductInteraction } from '../utils/colorUtils';
 import { getProductActivePromotion } from '../utils/promoUtils';
+import { trackProductClick } from '../utils/analytics';
 
 interface ProductCardProps {
   product: Product;
@@ -41,8 +42,16 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   const activePromo = getProductActivePromotion(product, promotions);
   const promoBadgeLabel = activePromo ? (activePromo.badge || product.promotionTag || activePromo.tagFilter) : null;
 
-  const handleClick = () => {
+  const handleImageClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
     recordProductInteraction(product, 'click');
+    trackProductClick(product, 'catalog_grid_photo');
+    onViewDetail(product);
+  };
+
+  const handleDetailClick = () => {
+    recordProductInteraction(product, 'click');
+    trackProductClick(product, 'catalog_grid');
     onViewDetail(product);
   };
 
@@ -53,7 +62,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
     >
       {/* Product Image Box */}
       <div 
-        onClick={handleClick}
+        onClick={handleImageClick}
         style={{ borderColor: cardBorder }}
         className="relative overflow-hidden rounded-xs bg-[#ECE5DC] border cursor-pointer transition-colors"
       >
@@ -72,20 +81,20 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               backgroundColor: theme.seasonBadgeBg || '#18231C',
               color: theme.seasonBadgeText || '#F5F2EC'
             }}
-            className="absolute left-2.5 top-2.5 rounded-xs px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.2em] shadow-2xs"
+            className="absolute left-2.5 top-2.5 rounded-xs px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.2em] shadow-2xs z-10"
           >
             {promoBadgeLabel}
           </span>
         )}
 
-        {/* Top right discount badge */}
+        {/* Top right discount badge (shifted if zoom button) */}
         {hasDiscount && (
           <span 
             style={{ 
               backgroundColor: theme.discountBadgeBg || accent,
               color: theme.discountBadgeText || '#FFFFFF'
             }}
-            className="absolute right-2.5 top-2.5 rounded-xs px-2 py-1 text-[10px] font-bold uppercase tracking-[0.15em] shadow-2xs"
+            className="absolute right-2.5 top-2.5 group-hover:right-11 transition-all rounded-xs px-2 py-1 text-[10px] font-bold uppercase tracking-[0.15em] shadow-2xs z-10"
           >
             -{product.discountPercentage}%
           </span>
@@ -93,8 +102,12 @@ export const ProductCard: React.FC<ProductCardProps> = ({
 
         {/* Slide-up "Ver ficha" bar on hover */}
         <span 
+          onClick={(e) => {
+            e.stopPropagation();
+            handleDetailClick();
+          }}
           style={{ backgroundColor: theme.primaryColor || '#18231C' }}
-          className="absolute inset-x-0 bottom-0 translate-y-full py-2.5 text-center text-[10px] font-bold uppercase tracking-[0.25em] text-[#F5F2EC] transition-transform duration-300 group-hover:translate-y-0"
+          className="absolute inset-x-0 bottom-0 translate-y-full py-2.5 text-center text-[10px] font-bold uppercase tracking-[0.25em] text-[#F5F2EC] transition-transform duration-300 group-hover:translate-y-0 z-10 cursor-pointer hover:bg-black"
         >
           Ver ficha
         </span>
@@ -133,7 +146,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
       )}
 
       {/* Product metadata */}
-      <div className="mt-2 min-w-0" onClick={handleClick}>
+      <div className="mt-2 min-w-0" onClick={handleDetailClick}>
         <div className="flex items-center gap-1 flex-wrap">
           <p className="text-[10px] uppercase tracking-[0.2em] text-[#6F6860] truncate font-medium">
             {product.section} · {product.subCategory}
@@ -151,10 +164,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
         </div>
 
         <h3 
-          className="mt-0.5 truncate text-sm font-medium text-[#22201D] transition-colors cursor-pointer"
-          style={{
-            '--hover-color': accent
-          } as React.CSSProperties}
+          className="mt-0.5 truncate text-sm font-medium text-[#22201D] transition-colors cursor-pointer group-hover:text-[#FDB813]"
         >
           {product.name}
         </h3>
@@ -184,3 +194,4 @@ export const ProductCard: React.FC<ProductCardProps> = ({
     </div>
   );
 };
+

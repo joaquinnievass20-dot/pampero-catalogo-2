@@ -16,6 +16,7 @@ import {
   FileText,
   TrendingDown,
 } from 'lucide-react';
+import { trackWhatsAppQuote } from '../utils/analytics';
 
 interface QuoteDrawerProps {
   isOpen: boolean;
@@ -228,6 +229,16 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
 
   const handleSendWhatsAppQuote = () => {
     if (items.length === 0) return;
+
+    // Track Vercel Analytics event
+    trackWhatsAppQuote({
+      totalUnits,
+      totalEstimated: finalTotal,
+      itemCount: items.length,
+      clientType: userSession?.clientType || 'consumidor_final',
+      clientName: userSession?.clientData?.fullName || (userSession?.clientData as any)?.companyName,
+      hasCoupon: Boolean(appliedCoupon),
+    });
 
     // Build the formatted text
     const messageText = buildQuoteText();

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ProductMetric } from '../../types';
+import { getLocalFunnelMetrics, FunnelMetrics } from '../../utils/analytics';
 import { 
   BarChart3, 
   Search, 
@@ -10,7 +11,10 @@ import {
   Clock, 
   Eye,
   ShoppingBag,
-  Sparkles
+  Sparkles,
+  ArrowRight,
+  MessageSquare,
+  Activity
 } from 'lucide-react';
 
 interface SearchMetric {
@@ -22,11 +26,19 @@ interface SearchMetric {
 export const AdminAnalyticsTab: React.FC = () => {
   const [searchMetrics, setSearchMetrics] = useState<SearchMetric[]>([]);
   const [productMetrics, setProductMetrics] = useState<ProductMetric[]>([]);
+  const [funnel, setFunnel] = useState<FunnelMetrics>({
+    productClicks: 0,
+    cartAdditions: 0,
+    whatsappQuotes: 0,
+    lastUpdated: new Date().toISOString(),
+  });
   const [filterType, setFilterType] = useState<'all' | 'searches' | 'clicks'>('all');
 
   const loadMetrics = () => {
     if (typeof window === 'undefined') return;
     
+    setFunnel(getLocalFunnelMetrics());
+
     // Fetch from central server analytics API
     fetch('/api/analytics')
       .then((res) => res.json())
@@ -82,8 +94,15 @@ export const AdminAnalyticsTab: React.FC = () => {
       fetch('/api/analytics/reset', { method: 'POST' }).catch(() => {});
       localStorage.removeItem('pampero_search_analytics');
       localStorage.removeItem('pampero_product_metrics');
+      localStorage.removeItem('pampero_funnel_analytics');
       setSearchMetrics([]);
       setProductMetrics([]);
+      setFunnel({
+        productClicks: 0,
+        cartAdditions: 0,
+        whatsappQuotes: 0,
+        lastUpdated: new Date().toISOString(),
+      });
     }
   };
 
@@ -189,6 +208,93 @@ export const AdminAnalyticsTab: React.FC = () => {
             {searchMetrics[0] ? `${searchMetrics[0].count} búsquedas registradas` : 'Inicie búsquedas'}
           </p>
         </div>
+      </div>
+
+      {/* Vercel Analytics Funnel Banner */}
+      <div className="bg-[#18231C] text-[#F5F2EC] p-4 sm:p-5 rounded-xs border border-[#18231C] shadow-sm space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#2C382F] pb-3">
+          <div className="flex items-center gap-2">
+            <Activity className="w-4 h-4 text-emerald-400" />
+            <span className="text-xs font-bold uppercase tracking-wider text-white">
+              Embudo de Conversión & Rendimiento
+            </span>
+            <span className="text-[10px] bg-emerald-950 text-emerald-300 border border-emerald-800 px-2 py-0.5 rounded-xs font-mono">
+              Vercel Analytics Activo
+            </span>
+          </div>
+          <span className="text-[11px] text-[#A59F95]">
+            Métricas de intención de compra y conversión comercial
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {/* Paso 1 */}
+          <div className="bg-[#212E25] p-3.5 rounded-xs border border-[#2F4135]">
+            <span className="text-[10px] uppercase font-bold text-[#A59F95] block">
+              Paso 1 · Clics en Productos
+            </span>
+            <div className="flex items-baseline justify-between mt-1">
+              <span className="text-2xl font-bold font-display text-white">
+                {funnel.productClicks}
+              </span>
+              <Eye className="w-4 h-4 text-neutral-400" />
+            </div>
+            <span className="text-[10px] text-[#A59F95] mt-1 block">
+              Prendas exploradas en el catálogo
+            </span>
+          </div>
+
+          {/* Paso 2 */}
+          <div className="bg-[#212E25] p-3.5 rounded-xs border border-[#2F4135]">
+            <span className="text-[10px] uppercase font-bold text-[#A59F95] block">
+              Paso 2 · Agregados al Carrito
+            </span>
+            <div className="flex items-baseline justify-between mt-1">
+              <span className="text-2xl font-bold font-display text-amber-400">
+                {funnel.cartAdditions}
+              </span>
+              <ShoppingBag className="w-4 h-4 text-amber-400" />
+            </div>
+            <span className="text-[10px] text-amber-300/80 mt-1 block">
+              {funnel.productClicks > 0 
+                ? `${Math.round((funnel.cartAdditions / funnel.productClicks) * 100)}% de interés desde vistas`
+                : 'Tasa inicial'}
+            </span>
+          </div>
+
+          {/* Paso 3 */}
+          <div className="bg-[#212E25] p-3.5 rounded-xs border border-[#2F4135]">
+            <span className="text-[10px] uppercase font-bold text-[#A59F95] block">
+              Paso 3 · Cotización WhatsApp
+            </span>
+            <div className="flex items-baseline justify-between mt-1">
+              <span className="text-2xl font-bold font-display text-emerald-400">
+                {funnel.whatsappQuotes}
+              </span>
+              <MessageSquare className="w-4 h-4 text-emerald-400" />
+            </div>
+            <span className="text-[10px] text-emerald-300/80 mt-1 block">
+              {funnel.cartAdditions > 0
+                ? `${Math.round((funnel.whatsappQuotes / funnel.cartAdditions) * 100)}% concretadas a WhatsApp`
+                : 'Concretadas'}
+            </span>
+          </div>
+        </div>
+
+        {/* Abandonment Rate metric */}
+        {funnel.cartAdditions > 0 && (
+          <div className="text-[11px] text-[#DCD4C9] bg-[#141C16] p-2.5 rounded-xs flex flex-col sm:flex-row sm:items-center justify-between gap-1 border border-[#222E26]">
+            <span>
+              Tasa de carritos que aún no solicitaron WhatsApp:{' '}
+              <strong className="text-rose-400">
+                {Math.max(0, Math.round(((funnel.cartAdditions - funnel.whatsappQuotes) / funnel.cartAdditions) * 100))}%
+              </strong>
+            </span>
+            <span className="text-[10px] text-[#8C827A]">
+              Último registro: {new Date(funnel.lastUpdated).toLocaleTimeString('es-AR')}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Main Tables: Most Searched Terms & Most Clicked Products */}

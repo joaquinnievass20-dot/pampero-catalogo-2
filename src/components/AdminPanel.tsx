@@ -29,6 +29,7 @@ import { AdminQuotesTab } from './admin/AdminQuotesTab';
 import { AdminBulkExcelImportModal } from './admin/AdminBulkExcelImportModal';
 import { PamperoLogo } from './PamperoLogo';
 import { saveCatalogBackup } from '../utils/backupManager';
+import { saveSingleFirestoreProduct, deleteFirestoreProductDoc, isFirebaseReady } from '../services/firebase';
 import { 
   Palette, 
   Tag, 
@@ -63,14 +64,16 @@ import {
   FolderTree,
   Sliders,
   Scale,
-  Percent
+  Percent,
+  EyeOff,
+  AlertTriangle,
+  AlertCircle
 } from 'lucide-react';
 
 export type AdminTabKey = 
   | 'promos' 
   | 'mass_images' 
   | 'prices' 
-  | 'volume_discounts'
   | 'categories'
   | 'coupons' 
   | 'theme' 
@@ -149,9 +152,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const isTabVisible = (tabKey: AdminTabKey) => {
     if (!isEmployee) return true;
     if (tabKey === 'security' || tabKey === 'employees') return false;
-    if (tabKey === 'volume_discounts') {
-      return employeePermissions.includes('volume_discounts') || employeePermissions.includes('prices');
-    }
     return employeePermissions.includes(tabKey);
   };
 
@@ -176,19 +176,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [isCreatingProduct, setIsCreatingProduct] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
+  const [standardSizesInput, setStandardSizesInput] = useState('38, 40, 42, 44, 46, 48');
+  const [firebaseErrorNotice, setFirebaseErrorNotice] = useState<string | null>(null);
+  const [isSavingProduct, setIsSavingProduct] = useState(false);
   const [newPhotoUrl, setNewPhotoUrl] = useState('');
+  const [newPhotoUrlMen, setNewPhotoUrlMen] = useState('');
+  const [newPhotoUrlWomen, setNewPhotoUrlWomen] = useState('');
   const [newRangeForm, setNewRangeForm] = useState<{
     suffix: string;
     sizeRangeLabel: string;
-    minSize: string;
-    maxSize: string;
+    sizes: string;
     price: number | '';
     corporatePrice: number | '';
   }>({
     suffix: '-1',
     sizeRangeLabel: 'Talles 50 al 58',
-    minSize: '50',
-    maxSize: '58',
+    sizes: '50, 52, 54, 56, 58',
     price: '',
     corporatePrice: '',
   });
@@ -208,8 +211,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     isCorporateOnly: false,
     specialSizeRanges: [],
     image: 'https://images.unsplash.com/photo-1544923246-77307dd654cb?auto=format&fit=crop&w=800&q=80',
+    images: ['https://images.unsplash.com/photo-1544923246-77307dd654cb?auto=format&fit=crop&w=800&q=80'],
+    imagesMen: [],
+    imagesWomen: [],
     availableColors: [],
-    availableSizes: ['CH', 'M', 'G', 'MG'],
+    availableSizes: [],
+    standardSizes: '38, 40, 42, 44, 46, 48',
     inStock: true,
   });
 
@@ -236,88 +243,149 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   // Helper to normalize category
   const sanitizeCategory = (rawCat: any): MainCategory => {
-    if (rawCat === 'Mujer' || rawCat === '1' || rawCat === 1) return 'Mujer';
-    if (rawCat === 'Infantil' || rawCat === '2' || rawCat === 2) return 'Infantil';
-    if (rawCat === 'Venta Corporativa' || rawCat === '3' || rawCat === 3) return 'Venta Corporativa';
-    const s = String(rawCat || '').toLowerCase();
+    if (!rawCat) return 'Hombre';
+    const str = String(rawCat).trim();
+    if (str === 'Mujer' || str === '1') return 'Mujer';
+    if (str === 'Infantil' || str === '2') return 'Infantil';
+    if (str === 'Venta Corporativa' || str === '3') return 'Venta Corporativa';
+    const s = str.toLowerCase();
     if (s.includes('mujer')) return 'Mujer';
     if (s.includes('infan') || s.includes('niñ')) return 'Infantil';
     if (s.includes('corp') || s.includes('venta')) return 'Venta Corporativa';
+    if (str.length > 0) return str as MainCategory;
     return 'Hombre';
   };
 
   // Product Handlers
-  const handleSaveProduct = (e: React.FormEvent) => {
+  const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!productForm.name?.trim()) return;
 
-    const cleanCategory = productForm.isCorporateOnly 
-      ? 'Venta Corporativa' 
-      : sanitizeCategory(productForm.category);
-    const cleanSection = productForm.isCorporateOnly && !productForm.section
-      ? 'Industria'
-      : ((productForm.section || '').trim() || 'Urbano');
+    // Regla automática: si se le asigna la línea "Industria", clasificar automáticamente como Venta Corporativa
+    const isIndustrial = 
+      (productForm.section || '').trim().toLowerCase() === 'industria' ||
+      (productForm.subCategory || '').trim().toLowerCase().includes('industria');
+    
+    const isCorp = Boolean(productForm.isCorporateOnly) || isIndustrial || productForm.category === 'Venta Corporativa';
+
+    const cleanCategory = sanitizeCategory(productForm.category);
+    const cleanSection = ((productForm.section || '').trim()) || (isIndustrial ? 'Industria' : 'Urbano');
     const cleanSubCategory = (productForm.subCategory || '').trim() || 'Abrigos';
 
-    const rawImages = Array.isArray(productForm.images) && productForm.images.length > 0
-      ? productForm.images
-      : [productForm.image || 'https://images.unsplash.com/photo-1544923246-77307dd654cb?auto=format&fit=crop&w=800&q=80'];
+    // Talles Estándar: permitir texto con letras, números, comas y espacios
+    const parsedSizes = standardSizesInput
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const cleanSizes = parsedSizes.length > 0 
+      ? parsedSizes 
+      : (standardSizesInput.trim() ? [standardSizesInput.trim()] : ['Único']);
+
+    // Fotos duales para productos Unisex
+    const isUnisex = Boolean(productForm.isUnisex);
+    const imagesMen = Array.isArray(productForm.imagesMen) ? productForm.imagesMen.filter(Boolean) : [];
+    const imagesWomen = Array.isArray(productForm.imagesWomen) ? productForm.imagesWomen.filter(Boolean) : [];
+
+    const rawImages = isUnisex && imagesMen.length > 0
+      ? imagesMen
+      : (Array.isArray(productForm.images) && productForm.images.length > 0
+          ? productForm.images.filter(Boolean)
+          : [productForm.image || 'https://images.unsplash.com/photo-1544923246-77307dd654cb?auto=format&fit=crop&w=800&q=80']);
     const primaryImage = rawImages[0] || productForm.image || 'https://images.unsplash.com/photo-1544923246-77307dd654cb?auto=format&fit=crop&w=800&q=80';
 
-    if (editingProduct) {
-      const updated = products.map((p) =>
-        p.id === editingProduct.id
-          ? ({
-              ...p,
-              ...productForm,
-              category: cleanCategory,
-              section: cleanSection,
-              subCategory: cleanSubCategory,
-              isUnisex: Boolean(productForm.isUnisex),
-              isCorporateOnly: Boolean(productForm.isCorporateOnly),
-              specialSizeRanges: productForm.specialSizeRanges || [],
-              images: rawImages,
-              image: primaryImage,
-            } as Product)
-          : p
-      );
-      onUpdateProducts(updated);
-      saveCatalogBackup(updated);
-    } else {
-      const newProd: Product = {
-        id: 'prod-' + Date.now(),
-        code: (productForm.code || '').trim() || 'PAM-' + Math.floor(Math.random() * 900 + 100),
-        name: (productForm.name || '').trim(),
-        category: cleanCategory,
-        section: cleanSection,
-        subCategory: cleanSubCategory,
-        description: productForm.description || '',
-        features: productForm.features || ['Resistente', 'Pampero Oficial'],
-        price: Number(productForm.price) || 0,
-        corporatePrice: Number(productForm.corporatePrice) || Math.round((Number(productForm.price) || 0) * 0.85),
-        discountPercentage: Number(productForm.discountPercentage) || 0,
-        promotionTag: productForm.promotionTag || '',
-        isUnisex: Boolean(productForm.isUnisex),
-        isCorporateOnly: Boolean(productForm.isCorporateOnly),
-        specialSizeRanges: productForm.specialSizeRanges || [],
-        image: primaryImage,
-        images: rawImages,
-        availableColors: productForm.availableColors || [],
-        availableSizes: productForm.availableSizes && productForm.availableSizes.length > 0 ? productForm.availableSizes : ['CH', 'M', 'G', 'MG'],
-        inStock: productForm.inStock ?? true,
-      };
-      const updatedList = [newProd, ...products];
+    setIsSavingProduct(true);
+    setFirebaseErrorNotice(null);
+
+    try {
+      const prodToSave: Product = editingProduct
+        ? {
+            ...editingProduct,
+            ...productForm,
+            category: cleanCategory,
+            section: cleanSection,
+            subCategory: cleanSubCategory,
+            isUnisex,
+            isCorporateOnly: isCorp,
+            specialSizeRanges: Array.isArray(productForm.specialSizeRanges) ? productForm.specialSizeRanges : [],
+            availableSizes: cleanSizes,
+            standardSizes: standardSizesInput.trim(),
+            images: rawImages,
+            image: primaryImage,
+            imagesMen,
+            imagesWomen,
+            inStock: productForm.inStock !== false,
+          }
+        : {
+            id: 'prod-' + Date.now(),
+            code: (productForm.code || '').trim() || 'PAM-' + Math.floor(Math.random() * 900 + 100),
+            name: (productForm.name || '').trim(),
+            category: cleanCategory,
+            section: cleanSection,
+            subCategory: cleanSubCategory,
+            description: productForm.description || '',
+            features: productForm.features || ['Resistente', 'Pampero Oficial'],
+            price: Number(productForm.price) || 0,
+            corporatePrice: Number(productForm.corporatePrice) || Math.round((Number(productForm.price) || 0) * 0.85),
+            discountPercentage: Number(productForm.discountPercentage) || 0,
+            promotionTag: productForm.promotionTag || '',
+            isUnisex,
+            isCorporateOnly: isCorp,
+            specialSizeRanges: Array.isArray(productForm.specialSizeRanges) ? productForm.specialSizeRanges : [],
+            image: primaryImage,
+            images: rawImages,
+            imagesMen,
+            imagesWomen,
+            availableColors: productForm.availableColors || [],
+            availableSizes: cleanSizes,
+            standardSizes: standardSizesInput.trim(),
+            inStock: productForm.inStock !== false,
+          };
+
+      // 1. Guardado en Cloud Firestore si está listo
+      if (isFirebaseReady()) {
+        const fireResult = await saveSingleFirestoreProduct(prodToSave);
+        if (!fireResult.success) {
+          console.error('[FIREBASE ERROR CRÍTICO AL GUARDAR PRODUCTO]:', fireResult.error);
+          setFirebaseErrorNotice(`Error al guardar en Firebase: ${fireResult.error}. Verificá las reglas de seguridad de Firestore o la conexión a internet.`);
+          setIsSavingProduct(false);
+          return; // No cerramos el modal para que el usuario no pierda lo cargado
+        }
+      }
+
+      // 2. Actualizar estado local y backup
+      const updatedList = editingProduct
+        ? products.map((p) => (p.id === editingProduct.id ? prodToSave : p))
+        : [prodToSave, ...products];
+
       onUpdateProducts(updatedList);
       saveCatalogBackup(updatedList);
-    }
 
-    setEditingProduct(null);
-    setIsCreatingProduct(false);
+      setEditingProduct(null);
+      setIsCreatingProduct(false);
+      setFirebaseErrorNotice(null);
+      triggerSaveNotice();
+    } catch (err: any) {
+      console.error('[ERROR CRÍTICO AL GUARDAR PRODUCTO]:', err);
+      setFirebaseErrorNotice(`Error inesperado: ${err?.message || String(err)}`);
+    } finally {
+      setIsSavingProduct(false);
+    }
+  };
+
+  const handleToggleProductStock = (productId: string, currentStock: boolean) => {
+    const updated = products.map((p) =>
+      p.id === productId ? { ...p, inStock: !currentStock } : p
+    );
+    onUpdateProducts(updated);
+    saveCatalogBackup(updated);
     triggerSaveNotice();
   };
 
-  const handleDeleteProduct = (id: string) => {
+  const handleDeleteProduct = async (id: string) => {
     if (confirm('¿Desea eliminar este producto del catálogo?')) {
+      if (isFirebaseReady()) {
+        await deleteFirestoreProductDoc(id);
+      }
       onUpdateProducts(products.filter((p) => p.id !== id));
       triggerSaveNotice();
     }
@@ -523,25 +591,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 >
                   <FileSpreadsheet className="w-4 h-4" style={{ color: iconColor }} />
                   Precios & Planillas ({products.length})
-                </button>
-              )}
-
-              {/* Descuentos Automáticos por Volumen */}
-              {isTabVisible('volume_discounts') && (
-                <button
-                  id="admin-tab-volume-discounts"
-                  onClick={() => setActiveTab('volume_discounts')}
-                  style={{
-                    borderTopColor: activeTab === 'volume_discounts' ? activeBorderColor : 'transparent',
-                  }}
-                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                    activeTab === 'volume_discounts'
-                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
-                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
-                  }`}
-                >
-                  <Percent className="w-4 h-4" style={{ color: iconColor }} />
-                  Descuentos Automáticos ({volumeDiscounts.length})
                 </button>
               )}
 
@@ -812,25 +861,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             />
           )}
 
-          {/* TAB: PANEL DE DESCUENTOS AUTOMÁTICOS POR VOLUMEN */}
-          {activeTab === 'volume_discounts' && (
-            <AdminPricesTab
-              products={products}
-              onUpdateProducts={onUpdateProducts}
-              triggerSaveNotice={triggerSaveNotice}
-              volumeDiscounts={volumeDiscounts}
-              onUpdateVolumeDiscounts={onUpdateVolumeDiscounts}
-              categories={currentHierarchy}
-              initialSubTab="volume_discounts"
-            />
-          )}
-
           {/* TAB: SUBCATEGORÍAS & RUBROS */}
           {activeTab === 'categories' && (
             <AdminCategoriesTab
               categories={currentHierarchy}
               onUpdateCategories={onUpdateCategories}
               products={products}
+              onUpdateProducts={onUpdateProducts}
               triggerSaveNotice={triggerSaveNotice}
             />
           )}
@@ -893,6 +930,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   type="button"
                   onClick={() => {
                     setEditingProduct(null);
+                    setStandardSizesInput('38, 40, 42, 44, 46, 48');
+                    setFirebaseErrorNotice(null);
+                    setNewPhotoUrl('');
+                    setNewPhotoUrlMen('');
+                    setNewPhotoUrlWomen('');
                     setProductForm({
                       code: 'PAM-' + Math.floor(Math.random() * 900 + 100),
                       name: '',
@@ -910,8 +952,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       specialSizeRanges: [],
                       image: 'https://images.unsplash.com/photo-1544923246-77307dd654cb?auto=format&fit=crop&w=800&q=80',
                       images: ['https://images.unsplash.com/photo-1544923246-77307dd654cb?auto=format&fit=crop&w=800&q=80'],
+                      imagesMen: [],
+                      imagesWomen: [],
                       availableColors: [],
-                      availableSizes: ['CH', 'M', 'G', 'MG'],
+                      availableSizes: ['38', '40', '42', '44', '46', '48'],
+                      standardSizes: '38, 40, 42, 44, 46, 48',
                       inStock: true,
                     });
                     setIsCreatingProduct(true);
@@ -972,23 +1017,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     <div>
                       <label className="block text-xs font-bold text-[#4A453F] mb-1">Categoría Principal *</label>
                       <select
-                        value={productForm.isCorporateOnly ? 'Venta Corporativa' : (productForm.category || 'Hombre')}
-                        disabled={productForm.isCorporateOnly}
+                        value={productForm.category || 'Hombre'}
                         onChange={(e) => {
                           const newCatName = e.target.value as MainCategory;
                           const foundCat = currentHierarchy.find((c) => c.name === newCatName) || currentHierarchy[0];
                           const defaultSec = foundCat.sections[0]?.name || 'Urbano';
                           const defaultSub = foundCat.sections[0]?.subCategories[0] || 'Abrigos';
+                          const isIndustria = defaultSec.toLowerCase() === 'industria';
                           setProductForm({
                             ...productForm,
                             category: newCatName,
                             section: defaultSec,
                             subCategory: defaultSub,
+                            isCorporateOnly: isIndustria ? true : productForm.isCorporateOnly,
                           });
                         }}
-                        className={`w-full px-3 py-1.5 border border-[#DCD4C9] rounded-xs text-xs font-semibold ${
-                          productForm.isCorporateOnly ? 'bg-amber-50 text-amber-900 cursor-not-allowed' : ''
-                        }`}
+                        className="w-full px-3 py-1.5 border border-[#DCD4C9] rounded-xs text-xs font-semibold bg-white"
                       >
                         {currentHierarchy.map((cat) => (
                           <option key={cat.name} value={cat.name}>
@@ -996,16 +1040,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           </option>
                         ))}
                       </select>
-                      {productForm.isCorporateOnly && (
-                        <span className="text-[10px] text-amber-700 font-bold block mt-0.5">
-                          🔒 Fijado a Venta Corporativa por Línea Industrial
-                        </span>
-                      )}
                     </div>
                     <div>
-                      <label className="block text-xs font-bold text-[#4A453F] mb-1">Sección *</label>
+                      <label className="block text-xs font-bold text-[#4A453F] mb-1">Sección / Línea *</label>
                       {(() => {
-                        const targetCatName = productForm.isCorporateOnly ? 'Venta Corporativa' : (productForm.category || 'Hombre');
+                        const targetCatName = productForm.category || 'Hombre';
                         const currentCat = currentHierarchy.find((c) => c.name === targetCatName) || currentHierarchy[0];
                         return (
                           <select
@@ -1013,13 +1052,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                             onChange={(e) => {
                               const newSec = e.target.value;
                               const foundSec = currentCat.sections.find((s) => s.name === newSec);
+                              const isIndustria = newSec.trim().toLowerCase() === 'industria';
                               setProductForm({
                                 ...productForm,
                                 section: newSec,
                                 subCategory: foundSec?.subCategories[0] || 'General',
+                                isCorporateOnly: isIndustria ? true : (productForm.section?.toLowerCase() === 'industria' ? false : productForm.isCorporateOnly),
                               });
                             }}
-                            className="w-full px-3 py-1.5 border border-[#DCD4C9] rounded-xs text-xs font-semibold"
+                            className="w-full px-3 py-1.5 border border-[#DCD4C9] rounded-xs text-xs font-semibold bg-white"
                           >
                             {currentCat.sections.map((s) => (
                               <option key={s.name} value={s.name}>
@@ -1033,14 +1074,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     <div>
                       <label className="block text-xs font-bold text-[#4A453F] mb-1">Subcategoría *</label>
                       {(() => {
-                        const targetCatName = productForm.isCorporateOnly ? 'Venta Corporativa' : (productForm.category || 'Hombre');
+                        const targetCatName = productForm.category || 'Hombre';
                         const currentCat = currentHierarchy.find((c) => c.name === targetCatName) || currentHierarchy[0];
                         const currentSec = currentCat.sections.find((s) => s.name === productForm.section) || currentCat.sections[0];
                         return (
                           <select
                             value={productForm.subCategory || currentSec?.subCategories[0] || 'Abrigos'}
                             onChange={(e) => setProductForm({ ...productForm, subCategory: e.target.value })}
-                            className="w-full px-3 py-1.5 border border-[#DCD4C9] rounded-xs text-xs font-semibold"
+                            className="w-full px-3 py-1.5 border border-[#DCD4C9] rounded-xs text-xs font-semibold bg-white"
                           >
                             {currentSec?.subCategories.map((sub) => (
                               <option key={sub} value={sub}>
@@ -1110,27 +1151,105 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         </div>
                       </label>
 
-                      <label className="flex items-start gap-2 p-2.5 bg-white border border-[#DCD4C9] rounded-xs cursor-pointer hover:border-[#18231C] transition-colors">
+                      <label className={`flex items-start gap-2 p-2.5 rounded-xs border cursor-pointer transition-colors ${
+                        (productForm.isCorporateOnly || productForm.section?.toLowerCase() === 'industria')
+                          ? 'bg-amber-50/70 border-amber-300'
+                          : 'bg-white border-[#DCD4C9] hover:border-[#18231C]'
+                      }`}>
                         <input
                           type="checkbox"
-                          checked={Boolean(productForm.isCorporateOnly)}
+                          checked={Boolean(productForm.isCorporateOnly || productForm.section?.toLowerCase() === 'industria')}
                           onChange={(e) => {
                             const isCorp = e.target.checked;
                             setProductForm({
                               ...productForm,
                               isCorporateOnly: isCorp,
-                              category: isCorp ? 'Venta Corporativa' : productForm.category,
-                              section: isCorp ? 'Industria' : productForm.section,
                             });
                           }}
                           className="mt-0.5 rounded text-amber-600 focus:ring-[#FDB813]"
                         />
                         <div>
-                          <span className="text-xs font-bold text-amber-900 block">
-                            Exclusivo Venta Corporativa (Línea Industrial)
+                          <span className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+                            Exclusivo Venta Corporativa
+                            {productForm.section?.toLowerCase() === 'industria' && (
+                              <span className="bg-amber-200 text-amber-900 text-[10px] px-1.5 py-0.5 rounded-xs font-bold">
+                                Automático (Industria)
+                              </span>
+                            )}
                           </span>
                           <span className="text-[11px] text-[#6F6860] block leading-tight mt-0.5">
-                            Asigna este artículo únicamente a la sección de Venta Corporativa / Industria.
+                            {productForm.section?.toLowerCase() === 'industria'
+                              ? 'Clasificado automáticamente como Venta Corporativa por tener la línea "Industria".'
+                              : 'Asigna este artículo al catálogo de Venta Corporativa.'}
+                          </span>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Control de Stock (Ocultamiento automático) */}
+                  <div className="p-3.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <label className="block text-xs font-bold uppercase tracking-wider text-[#18231C] flex items-center gap-1.5">
+                        <Package className="w-3.5 h-3.5 text-[#18231C]" />
+                        Control de Stock y Disponibilidad
+                      </label>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-xs uppercase tracking-wider ${
+                        productForm.inStock !== false
+                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                          : 'bg-rose-100 text-rose-800 border border-rose-300'
+                      }`}>
+                        {productForm.inStock !== false ? '● En Stock (Visible)' : '○ Sin Stock (Oculto)'}
+                      </span>
+                    </div>
+
+                    <p className="text-[11px] text-[#6F6860]">
+                      Si se marca como <strong>Sin Stock</strong>, el producto dejará de ser visible automáticamente en la vista pública del catálogo de clientes para evitar consultas por prendas agotadas.
+                    </p>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                      <label className={`flex items-start gap-2.5 p-2.5 rounded-xs border cursor-pointer transition-all ${
+                        productForm.inStock !== false
+                          ? 'bg-emerald-50/70 border-emerald-500 ring-1 ring-emerald-500'
+                          : 'bg-white border-[#DCD4C9] opacity-70 hover:opacity-100'
+                      }`}>
+                        <input
+                          type="radio"
+                          name="adminProductInStock"
+                          checked={productForm.inStock !== false}
+                          onChange={() => setProductForm({ ...productForm, inStock: true })}
+                          className="mt-0.5 text-emerald-600 focus:ring-emerald-500"
+                        />
+                        <div>
+                          <span className="text-xs font-bold text-emerald-950 block flex items-center gap-1">
+                            <Check className="w-3.5 h-3.5 text-emerald-600" />
+                            En Stock (Disponible)
+                          </span>
+                          <span className="text-[11px] text-emerald-800/80 block leading-tight mt-0.5">
+                            Exhibir de manera normal en el catálogo público y cotizador.
+                          </span>
+                        </div>
+                      </label>
+
+                      <label className={`flex items-start gap-2.5 p-2.5 rounded-xs border cursor-pointer transition-all ${
+                        productForm.inStock === false
+                          ? 'bg-rose-50 border-rose-500 ring-1 ring-rose-500'
+                          : 'bg-white border-[#DCD4C9] opacity-70 hover:opacity-100'
+                      }`}>
+                        <input
+                          type="radio"
+                          name="adminProductInStock"
+                          checked={productForm.inStock === false}
+                          onChange={() => setProductForm({ ...productForm, inStock: false })}
+                          className="mt-0.5 text-rose-600 focus:ring-rose-500"
+                        />
+                        <div>
+                          <span className="text-xs font-bold text-rose-950 block flex items-center gap-1">
+                            <EyeOff className="w-3.5 h-3.5 text-rose-600" />
+                            Sin Stock (Agotado)
+                          </span>
+                          <span className="text-[11px] text-rose-800/80 block leading-tight mt-0.5">
+                            Ocultar automáticamente de la vista pública de clientes.
                           </span>
                         </div>
                       </label>
@@ -1318,26 +1437,95 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       </div>
 
                       <div>
-                        <label className="block text-xs font-bold text-[#4A453F] mb-1">
-                          Talles Estándar (separados por coma)
+                        <label className="block text-xs font-bold text-[#4A453F] mb-1 flex items-center justify-between">
+                          <span>Talles Estándares *</span>
+                          <span className="text-[10px] text-emerald-700 font-semibold bg-emerald-50 px-1 rounded-xs">Texto / String</span>
                         </label>
                         <input
                           type="text"
-                          placeholder="Ej: CH, M, G, MG, XG o 38, 40, 42"
-                          value={(productForm.availableSizes || []).join(', ')}
+                          placeholder="Ej: 38, 40, 42 o S, M, L, XL"
+                          value={standardSizesInput}
                           onChange={(e) => {
                             const val = e.target.value;
+                            setStandardSizesInput(val);
                             const sizes = val
                               .split(',')
                               .map((s) => s.trim())
                               .filter(Boolean);
-                            setProductForm({ ...productForm, availableSizes: sizes });
+                            setProductForm({
+                              ...productForm,
+                              standardSizes: val,
+                              availableSizes: sizes,
+                            });
                           }}
-                          className="w-full px-3 py-1.5 border border-[#DCD4C9] rounded-xs text-xs bg-white"
+                          className="w-full px-3 py-1.5 border border-[#DCD4C9] rounded-xs text-xs bg-white font-medium focus:border-[#18231C] outline-none"
                         />
                         <span className="text-[10px] text-[#6F6860] block mt-0.5">
-                          Escala localizada en español (CH, M, G, MG...).
+                          Permite letras, números, comas y espacios (ej: "38, 40, 42" o "S, M, L, XL").
                         </span>
+                        {/* Quick Presets */}
+                        <div className="flex flex-wrap gap-1 mt-1.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const v = '38, 40, 42, 44, 46, 48';
+                              setStandardSizesInput(v);
+                              setProductForm({
+                                ...productForm,
+                                standardSizes: v,
+                                availableSizes: v.split(',').map((s) => s.trim()),
+                              });
+                            }}
+                            className="text-[9px] px-1.5 py-0.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 rounded-xs font-medium cursor-pointer"
+                          >
+                            + Pantalones (38 a 48)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const v = 'S, M, L, XL, XXL';
+                              setStandardSizesInput(v);
+                              setProductForm({
+                                ...productForm,
+                                standardSizes: v,
+                                availableSizes: v.split(',').map((s) => s.trim()),
+                              });
+                            }}
+                            className="text-[9px] px-1.5 py-0.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 rounded-xs font-medium cursor-pointer"
+                          >
+                            + Letras (S a XXL)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const v = '39, 40, 41, 42, 43, 44, 45';
+                              setStandardSizesInput(v);
+                              setProductForm({
+                                ...productForm,
+                                standardSizes: v,
+                                availableSizes: v.split(',').map((s) => s.trim()),
+                              });
+                            }}
+                            className="text-[9px] px-1.5 py-0.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 rounded-xs font-medium cursor-pointer"
+                          >
+                            + Calzado (39 a 45)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const v = 'Talle Único';
+                              setStandardSizesInput(v);
+                              setProductForm({
+                                ...productForm,
+                                standardSizes: v,
+                                availableSizes: [v],
+                              });
+                            }}
+                            className="text-[9px] px-1.5 py-0.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 rounded-xs font-medium cursor-pointer"
+                          >
+                            + Único
+                          </button>
+                        </div>
                       </div>
 
                       <div>
@@ -1359,248 +1547,615 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   </div>
 
                   {/* Multi-Photo Manager & Reordering */}
-                  <div className="p-4 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs space-y-3">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-[#DCD4C9] pb-2">
-                      <div>
-                        <label className="block text-xs font-bold uppercase tracking-wider text-[#18231C]">
-                          Galería de Fotos del Producto (Subir y Ordenar)
-                        </label>
-                        <p className="text-[11px] text-[#6F6860]">
-                          Subí varias fotos por artículo y ordenalas. La foto <strong style={{ color: theme.accentColor || '#FDB813' }}>#1</strong> será la portada principal que se verá en el catálogo.
-                        </p>
+                  {productForm.isUnisex ? (
+                    <div className="space-y-4">
+                      {/* Banner explicativo Unisex */}
+                      <div className="p-3 bg-blue-50 border border-blue-200 rounded-xs flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Layers className="w-4 h-4 text-blue-700 shrink-0" />
+                          <div>
+                            <span className="text-xs font-bold text-blue-900 block">
+                              Producto Unisex: Galerías Duales Habilitadas
+                            </span>
+                            <span className="text-[11px] text-blue-700">
+                              Cargá las fotos para el modelo Hombre y el modelo Mujer por separado. Ambas se guardarán en el mismo producto en Firebase.
+                            </span>
+                          </div>
+                        </div>
+                        <span className="text-[10px] font-mono font-bold bg-blue-100 text-blue-800 px-2 py-0.5 rounded-xs">
+                          {(productForm.imagesMen?.length || 0)} H / {(productForm.imagesWomen?.length || 0)} M
+                        </span>
                       </div>
-                      <span className="text-xs font-mono font-bold text-[#6F6860]">
-                        {(productForm.images?.length || (productForm.image ? 1 : 0))} fotos
-                      </span>
-                    </div>
 
-                    {/* Upload Controls */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                      {/* From PC */}
-                      <label className="border-2 border-dashed border-[#DCD4C9] hover:border-[#18231C] bg-white p-3 rounded-xs flex flex-col items-center justify-center gap-1.5 cursor-pointer text-center group transition-colors">
-                        <Upload className="w-5 h-5 text-[#6F6860] group-hover:text-[#18231C]" />
-                        <span className="text-xs font-bold text-[#18231C]">
-                          Subir fotos desde la PC
-                        </span>
-                        <span className="text-[10px] text-[#6F6860]">
-                          Podés seleccionar varios archivos juntos (JPG, PNG, WebP)
-                        </span>
-                        <input
-                          type="file"
-                          multiple
-                          accept="image/*"
-                          className="hidden"
-                          onChange={(e) => {
-                            const files = e.target.files;
-                            if (!files || files.length === 0) return;
-                            const current = Array.isArray(productForm.images) && productForm.images.length > 0
-                              ? [...productForm.images]
-                              : (productForm.image ? [productForm.image] : []);
+                      {/* Galería 1: Hombre */}
+                      <div className="p-4 bg-[#FAF8F5] border-2 border-blue-300 rounded-xs space-y-3">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-[#DCD4C9] pb-2">
+                          <div>
+                            <label className="block text-xs font-bold uppercase tracking-wider text-blue-950 flex items-center gap-1.5">
+                              <span className="w-2.5 h-2.5 rounded-full bg-blue-600 inline-block"></span>
+                              Galería Hombre (Modelo Masculino)
+                            </label>
+                            <p className="text-[11px] text-[#6F6860]">
+                              Fotos que se mostrarán en la sección Hombre o cuando se elija modelo masculino.
+                            </p>
+                          </div>
+                          <span className="text-xs font-mono font-bold text-blue-800">
+                            {(productForm.imagesMen?.length || 0)} fotos
+                          </span>
+                        </div>
 
-                            Array.from(files).forEach((file: File) => {
-                              const reader = new FileReader();
-                              reader.onload = (event) => {
-                                const result = event.target?.result as string;
-                                if (result) {
-                                  current.push(result);
-                                  setProductForm(prev => ({
+                        {/* Upload Controls Hombre */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                          <label className="border-2 border-dashed border-blue-300 hover:border-blue-600 bg-white p-3 rounded-xs flex flex-col items-center justify-center gap-1.5 cursor-pointer text-center group transition-colors">
+                            <Upload className="w-5 h-5 text-blue-600 group-hover:scale-110 transition-transform" />
+                            <span className="text-xs font-bold text-blue-950">Subir fotos Hombre desde la PC</span>
+                            <span className="text-[10px] text-[#6F6860]">Múltiples archivos (JPG, PNG, WebP)</span>
+                            <input
+                              type="file"
+                              multiple
+                              accept="image/*"
+                              className="hidden"
+                              onChange={(e) => {
+                                const files = e.target.files;
+                                if (!files || files.length === 0) return;
+                                const current = Array.isArray(productForm.imagesMen) ? [...productForm.imagesMen] : [];
+                                Array.from(files).forEach((file: File) => {
+                                  const reader = new FileReader();
+                                  reader.onload = (ev) => {
+                                    const res = ev.target?.result as string;
+                                    if (res) {
+                                      current.push(res);
+                                      setProductForm((prev) => ({
+                                        ...prev,
+                                        imagesMen: [...current],
+                                        image: prev.image || current[0],
+                                      }));
+                                    }
+                                  };
+                                  reader.readAsDataURL(file);
+                                });
+                              }}
+                            />
+                          </label>
+
+                          <div className="border border-[#DCD4C9] bg-white p-3 rounded-xs flex flex-col justify-between gap-2">
+                            <span className="text-xs font-bold text-[#18231C]">O agregar por URL (Hombre):</span>
+                            <div className="flex gap-1.5">
+                              <input
+                                type="text"
+                                placeholder="https://..."
+                                value={newPhotoUrlMen}
+                                onChange={(e) => setNewPhotoUrlMen(e.target.value)}
+                                className="flex-1 px-2.5 py-1.5 border border-[#DCD4C9] rounded-xs text-xs font-mono outline-none focus:border-blue-500"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (!newPhotoUrlMen.trim()) return;
+                                  const current = Array.isArray(productForm.imagesMen) ? [...productForm.imagesMen] : [];
+                                  const updated = [...current, newPhotoUrlMen.trim()];
+                                  setProductForm((prev) => ({
                                     ...prev,
-                                    images: [...current],
-                                    image: current[0]
+                                    imagesMen: updated,
+                                    image: prev.image || updated[0],
                                   }));
-                                }
-                              };
-                              reader.readAsDataURL(file);
-                            });
-                          }}
-                        />
-                      </label>
+                                  setNewPhotoUrlMen('');
+                                }}
+                                className="px-3 py-1.5 bg-blue-900 hover:bg-blue-950 text-white text-xs font-bold rounded-xs cursor-pointer"
+                              >
+                                Agregar
+                              </button>
+                            </div>
+                          </div>
+                        </div>
 
-                      {/* By URL */}
-                      <div className="border border-[#DCD4C9] bg-white p-3 rounded-xs flex flex-col justify-between gap-2">
-                        <span className="text-xs font-bold text-[#18231C]">
-                          O agregar foto por enlace URL:
+                        {/* Preview Hombre */}
+                        {Array.isArray(productForm.imagesMen) && productForm.imagesMen.length > 0 ? (
+                          <div className="space-y-2 pt-2">
+                            <span className="text-[11px] font-bold uppercase tracking-wider text-blue-950 block">
+                              Fotos Hombre ({productForm.imagesMen.length}):
+                            </span>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                              {productForm.imagesMen.map((imgUrl, idx) => (
+                                <div
+                                  key={idx}
+                                  className={`bg-white border rounded-xs p-2 flex flex-col justify-between space-y-2 relative transition-all ${
+                                    idx === 0 ? 'border-2 border-blue-600 shadow-xs' : 'border-[#DCD4C9]'
+                                  }`}
+                                >
+                                  <div className="w-full h-28 rounded-xs overflow-hidden bg-neutral-100 relative">
+                                    <img src={imgUrl} alt={`Hombre ${idx + 1}`} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                    <span className="absolute top-1 left-1 px-1.5 py-0.5 rounded-xs text-[10px] font-bold bg-blue-600 text-white">
+                                      {idx === 0 ? '★ Portada Hombre' : `#${idx + 1}`}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center justify-between gap-1 pt-1 border-t border-[#ECE5DC]">
+                                    <div className="flex items-center gap-1">
+                                      <button
+                                        type="button"
+                                        disabled={idx === 0}
+                                        onClick={() => {
+                                          if (idx === 0) return;
+                                          const updated = [...(productForm.imagesMen || [])];
+                                          const temp = updated[idx];
+                                          updated[idx] = updated[idx - 1];
+                                          updated[idx - 1] = temp;
+                                          setProductForm((prev) => ({ ...prev, imagesMen: updated }));
+                                        }}
+                                        className={`p-1 rounded-xs border text-xs cursor-pointer ${
+                                          idx === 0 ? 'border-neutral-200 text-neutral-300 cursor-not-allowed' : 'border-[#DCD4C9] text-[#18231C] hover:bg-neutral-100'
+                                        }`}
+                                        title="Mover a la izquierda"
+                                      >
+                                        <ArrowLeft className="w-3 h-3" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        disabled={idx === (productForm.imagesMen?.length || 0) - 1}
+                                        onClick={() => {
+                                          if (idx === (productForm.imagesMen?.length || 0) - 1) return;
+                                          const updated = [...(productForm.imagesMen || [])];
+                                          const temp = updated[idx];
+                                          updated[idx] = updated[idx + 1];
+                                          updated[idx + 1] = temp;
+                                          setProductForm((prev) => ({ ...prev, imagesMen: updated }));
+                                        }}
+                                        className={`p-1 rounded-xs border text-xs cursor-pointer ${
+                                          idx === (productForm.imagesMen?.length || 0) - 1 ? 'border-neutral-200 text-neutral-300 cursor-not-allowed' : 'border-[#DCD4C9] text-[#18231C] hover:bg-neutral-100'
+                                        }`}
+                                        title="Mover a la derecha"
+                                      >
+                                        <ArrowRight className="w-3 h-3" />
+                                      </button>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const updated = [...(productForm.imagesMen || [])];
+                                        updated.splice(idx, 1);
+                                        setProductForm((prev) => ({ ...prev, imagesMen: updated }));
+                                      }}
+                                      className="p-1 rounded-xs border border-red-200 text-red-600 hover:bg-red-50 text-xs cursor-pointer"
+                                      title="Eliminar foto"
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="p-3 bg-white border border-[#DCD4C9] rounded-xs text-center text-xs text-[#6F6860]">
+                            No hay fotos cargadas aún para Hombre.
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Galería 2: Mujer */}
+                      <div className="p-4 bg-[#FAF8F5] border-2 border-rose-300 rounded-xs space-y-3">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-[#DCD4C9] pb-2">
+                          <div>
+                            <label className="block text-xs font-bold uppercase tracking-wider text-rose-950 flex items-center gap-1.5">
+                              <span className="w-2.5 h-2.5 rounded-full bg-rose-600 inline-block"></span>
+                              Galería Mujer (Modelo Femenino)
+                            </label>
+                            <p className="text-[11px] text-[#6F6860]">
+                              Fotos que se mostrarán en la sección Mujer o cuando se elija modelo femenino.
+                            </p>
+                          </div>
+                          <span className="text-xs font-mono font-bold text-rose-800">
+                            {(productForm.imagesWomen?.length || 0)} fotos
+                          </span>
+                        </div>
+
+                        {/* Upload Controls Mujer */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                          <label className="border-2 border-dashed border-rose-300 hover:border-rose-600 bg-white p-3 rounded-xs flex flex-col items-center justify-center gap-1.5 cursor-pointer text-center group transition-colors">
+                            <Upload className="w-5 h-5 text-rose-600 group-hover:scale-110 transition-transform" />
+                            <span className="text-xs font-bold text-rose-950">Subir fotos Mujer desde la PC</span>
+                            <span className="text-[10px] text-[#6F6860]">Múltiples archivos (JPG, PNG, WebP)</span>
+                            <input
+                              type="file"
+                              multiple
+                              accept="image/*"
+                              className="hidden"
+                              onChange={(e) => {
+                                const files = e.target.files;
+                                if (!files || files.length === 0) return;
+                                const current = Array.isArray(productForm.imagesWomen) ? [...productForm.imagesWomen] : [];
+                                Array.from(files).forEach((file: File) => {
+                                  const reader = new FileReader();
+                                  reader.onload = (ev) => {
+                                    const res = ev.target?.result as string;
+                                    if (res) {
+                                      current.push(res);
+                                      setProductForm((prev) => ({
+                                        ...prev,
+                                        imagesWomen: [...current],
+                                      }));
+                                    }
+                                  };
+                                  reader.readAsDataURL(file);
+                                });
+                              }}
+                            />
+                          </label>
+
+                          <div className="border border-[#DCD4C9] bg-white p-3 rounded-xs flex flex-col justify-between gap-2">
+                            <span className="text-xs font-bold text-[#18231C]">O agregar por URL (Mujer):</span>
+                            <div className="flex gap-1.5">
+                              <input
+                                type="text"
+                                placeholder="https://..."
+                                value={newPhotoUrlWomen}
+                                onChange={(e) => setNewPhotoUrlWomen(e.target.value)}
+                                className="flex-1 px-2.5 py-1.5 border border-[#DCD4C9] rounded-xs text-xs font-mono outline-none focus:border-rose-500"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (!newPhotoUrlWomen.trim()) return;
+                                  const current = Array.isArray(productForm.imagesWomen) ? [...productForm.imagesWomen] : [];
+                                  const updated = [...current, newPhotoUrlWomen.trim()];
+                                  setProductForm((prev) => ({
+                                    ...prev,
+                                    imagesWomen: updated,
+                                  }));
+                                  setNewPhotoUrlWomen('');
+                                }}
+                                className="px-3 py-1.5 bg-rose-800 hover:bg-rose-900 text-white text-xs font-bold rounded-xs cursor-pointer"
+                              >
+                                Agregar
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Preview Mujer */}
+                        {Array.isArray(productForm.imagesWomen) && productForm.imagesWomen.length > 0 ? (
+                          <div className="space-y-2 pt-2">
+                            <span className="text-[11px] font-bold uppercase tracking-wider text-rose-950 block">
+                              Fotos Mujer ({productForm.imagesWomen.length}):
+                            </span>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                              {productForm.imagesWomen.map((imgUrl, idx) => (
+                                <div
+                                  key={idx}
+                                  className={`bg-white border rounded-xs p-2 flex flex-col justify-between space-y-2 relative transition-all ${
+                                    idx === 0 ? 'border-2 border-rose-600 shadow-xs' : 'border-[#DCD4C9]'
+                                  }`}
+                                >
+                                  <div className="w-full h-28 rounded-xs overflow-hidden bg-neutral-100 relative">
+                                    <img src={imgUrl} alt={`Mujer ${idx + 1}`} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                    <span className="absolute top-1 left-1 px-1.5 py-0.5 rounded-xs text-[10px] font-bold bg-rose-600 text-white">
+                                      {idx === 0 ? '★ Portada Mujer' : `#${idx + 1}`}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center justify-between gap-1 pt-1 border-t border-[#ECE5DC]">
+                                    <div className="flex items-center gap-1">
+                                      <button
+                                        type="button"
+                                        disabled={idx === 0}
+                                        onClick={() => {
+                                          if (idx === 0) return;
+                                          const updated = [...(productForm.imagesWomen || [])];
+                                          const temp = updated[idx];
+                                          updated[idx] = updated[idx - 1];
+                                          updated[idx - 1] = temp;
+                                          setProductForm((prev) => ({ ...prev, imagesWomen: updated }));
+                                        }}
+                                        className={`p-1 rounded-xs border text-xs cursor-pointer ${
+                                          idx === 0 ? 'border-neutral-200 text-neutral-300 cursor-not-allowed' : 'border-[#DCD4C9] text-[#18231C] hover:bg-neutral-100'
+                                        }`}
+                                        title="Mover a la izquierda"
+                                      >
+                                        <ArrowLeft className="w-3 h-3" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        disabled={idx === (productForm.imagesWomen?.length || 0) - 1}
+                                        onClick={() => {
+                                          if (idx === (productForm.imagesWomen?.length || 0) - 1) return;
+                                          const updated = [...(productForm.imagesWomen || [])];
+                                          const temp = updated[idx];
+                                          updated[idx] = updated[idx + 1];
+                                          updated[idx + 1] = temp;
+                                          setProductForm((prev) => ({ ...prev, imagesWomen: updated }));
+                                        }}
+                                        className={`p-1 rounded-xs border text-xs cursor-pointer ${
+                                          idx === (productForm.imagesWomen?.length || 0) - 1 ? 'border-neutral-200 text-neutral-300 cursor-not-allowed' : 'border-[#DCD4C9] text-[#18231C] hover:bg-neutral-100'
+                                        }`}
+                                        title="Mover a la derecha"
+                                      >
+                                        <ArrowRight className="w-3 h-3" />
+                                      </button>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const updated = [...(productForm.imagesWomen || [])];
+                                        updated.splice(idx, 1);
+                                        setProductForm((prev) => ({ ...prev, imagesWomen: updated }));
+                                      }}
+                                      className="p-1 rounded-xs border border-red-200 text-red-600 hover:bg-red-50 text-xs cursor-pointer"
+                                      title="Eliminar foto"
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="p-3 bg-white border border-[#DCD4C9] rounded-xs text-center text-xs text-[#6F6860]">
+                            No hay fotos cargadas aún para Mujer.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-4 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs space-y-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-[#DCD4C9] pb-2">
+                        <div>
+                          <label className="block text-xs font-bold uppercase tracking-wider text-[#18231C]">
+                            Galería de Fotos del Producto (Subir y Ordenar)
+                          </label>
+                          <p className="text-[11px] text-[#6F6860]">
+                            Subí varias fotos por artículo y ordenalas. La foto <strong style={{ color: theme.accentColor || '#FDB813' }}>#1</strong> será la portada principal que se verá en el catálogo.
+                          </p>
+                        </div>
+                        <span className="text-xs font-mono font-bold text-[#6F6860]">
+                          {(productForm.images?.length || (productForm.image ? 1 : 0))} fotos
                         </span>
-                        <div className="flex gap-1.5">
+                      </div>
+
+                      {/* Upload Controls */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                        {/* From PC */}
+                        <label className="border-2 border-dashed border-[#DCD4C9] hover:border-[#18231C] bg-white p-3 rounded-xs flex flex-col items-center justify-center gap-1.5 cursor-pointer text-center group transition-colors">
+                          <Upload className="w-5 h-5 text-[#6F6860] group-hover:text-[#18231C]" />
+                          <span className="text-xs font-bold text-[#18231C]">
+                            Subir fotos desde la PC
+                          </span>
+                          <span className="text-[10px] text-[#6F6860]">
+                            Podés seleccionar varios archivos juntos (JPG, PNG, WebP)
+                          </span>
                           <input
-                            type="text"
-                            placeholder="https://..."
-                            value={newPhotoUrl}
-                            onChange={(e) => setNewPhotoUrl(e.target.value)}
-                            className="flex-1 px-2.5 py-1.5 border border-[#DCD4C9] rounded-xs text-xs font-mono outline-none focus:border-[#FDB813]"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (!newPhotoUrl.trim()) return;
+                            type="file"
+                            multiple
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => {
+                              const files = e.target.files;
+                              if (!files || files.length === 0) return;
                               const current = Array.isArray(productForm.images) && productForm.images.length > 0
                                 ? [...productForm.images]
                                 : (productForm.image ? [productForm.image] : []);
-                              const updated = [...current, newPhotoUrl.trim()];
-                              setProductForm(prev => ({
-                                ...prev,
-                                images: updated,
-                                image: updated[0]
-                              }));
-                              setNewPhotoUrl('');
+
+                              Array.from(files).forEach((file: File) => {
+                                const reader = new FileReader();
+                                reader.onload = (event) => {
+                                  const result = event.target?.result as string;
+                                  if (result) {
+                                    current.push(result);
+                                    setProductForm((prev) => ({
+                                      ...prev,
+                                      images: [...current],
+                                      image: current[0],
+                                    }));
+                                  }
+                                };
+                                reader.readAsDataURL(file);
+                              });
                             }}
-                            className="px-3 py-1.5 bg-[#18231C] hover:bg-black text-white text-xs font-bold rounded-xs cursor-pointer"
-                          >
-                            Agregar
-                          </button>
+                          />
+                        </label>
+
+                        {/* By URL */}
+                        <div className="border border-[#DCD4C9] bg-white p-3 rounded-xs flex flex-col justify-between gap-2">
+                          <span className="text-xs font-bold text-[#18231C]">
+                            O agregar foto por enlace URL:
+                          </span>
+                          <div className="flex gap-1.5">
+                            <input
+                              type="text"
+                              placeholder="https://..."
+                              value={newPhotoUrl}
+                              onChange={(e) => setNewPhotoUrl(e.target.value)}
+                              className="flex-1 px-2.5 py-1.5 border border-[#DCD4C9] rounded-xs text-xs font-mono outline-none focus:border-[#FDB813]"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (!newPhotoUrl.trim()) return;
+                                const current = Array.isArray(productForm.images) && productForm.images.length > 0
+                                  ? [...productForm.images]
+                                  : (productForm.image ? [productForm.image] : []);
+                                const updated = [...current, newPhotoUrl.trim()];
+                                setProductForm((prev) => ({
+                                  ...prev,
+                                  images: updated,
+                                  image: updated[0],
+                                }));
+                                setNewPhotoUrl('');
+                              }}
+                              className="px-3 py-1.5 bg-[#18231C] hover:bg-black text-white text-xs font-bold rounded-xs cursor-pointer"
+                            >
+                              Agregar
+                            </button>
+                          </div>
                         </div>
                       </div>
-                    </div>
 
-                    {/* Photos Preview & Ordering Grid */}
-                    {(() => {
-                      const list = Array.isArray(productForm.images) && productForm.images.length > 0
-                        ? productForm.images
-                        : (productForm.image ? [productForm.image] : []);
+                      {/* Photos Preview & Ordering Grid */}
+                      {(() => {
+                        const list = Array.isArray(productForm.images) && productForm.images.length > 0
+                          ? productForm.images
+                          : (productForm.image ? [productForm.image] : []);
 
-                      if (list.length === 0) {
+                        if (list.length === 0) {
+                          return (
+                            <div className="p-4 bg-white border border-[#DCD4C9] rounded-xs text-center text-xs text-[#6F6860]">
+                              No hay fotos cargadas todavía para este producto.
+                            </div>
+                          );
+                        }
+
                         return (
-                          <div className="p-4 bg-white border border-[#DCD4C9] rounded-xs text-center text-xs text-[#6F6860]">
-                            No hay fotos cargadas todavía para este producto.
-                          </div>
-                        );
-                      }
-
-                      return (
-                        <div className="space-y-2 pt-2">
-                          <span className="text-[11px] font-bold uppercase tracking-wider text-[#4A453F] block">
-                            Fotos del producto (utilizá las flechas para ordenar):
-                          </span>
-                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                            {list.map((imgUrl, idx) => (
-                              <div
-                                key={idx}
-                                className={`bg-white border rounded-xs p-2 flex flex-col justify-between space-y-2 relative transition-all ${
-                                  idx === 0
-                                    ? 'border-2 shadow-xs'
-                                    : 'border-[#DCD4C9]'
-                                }`}
-                                style={{
-                                  borderColor: idx === 0 ? (theme.accentColor || '#FDB813') : undefined,
-                                }}
-                              >
-                                {/* Thumbnail */}
-                                <div className="w-full h-28 rounded-xs overflow-hidden bg-neutral-100 relative">
-                                  <img
-                                    src={imgUrl}
-                                    alt={`Foto ${idx + 1}`}
-                                    className="w-full h-full object-cover"
-                                    referrerPolicy="no-referrer"
-                                  />
-                                  <span
-                                    className="absolute top-1 left-1 px-1.5 py-0.5 rounded-xs text-[10px] font-bold"
-                                    style={{
-                                      backgroundColor: idx === 0 ? (theme.accentColor || '#FDB813') : 'rgba(0,0,0,0.7)',
-                                      color: idx === 0 ? '#18231C' : '#FFFFFF',
-                                    }}
-                                  >
-                                    {idx === 0 ? '★ Portada' : `#${idx + 1}`}
-                                  </span>
-                                </div>
-
-                                {/* Controls */}
-                                <div className="flex items-center justify-between gap-1 pt-1 border-t border-[#ECE5DC]">
-                                  <div className="flex items-center gap-1">
-                                    <button
-                                      type="button"
-                                      disabled={idx === 0}
-                                      onClick={() => {
-                                        if (idx === 0) return;
-                                        const updated = [...list];
-                                        const temp = updated[idx];
-                                        updated[idx] = updated[idx - 1];
-                                        updated[idx - 1] = temp;
-                                        setProductForm(prev => ({
-                                          ...prev,
-                                          images: updated,
-                                          image: updated[0]
-                                        }));
+                          <div className="space-y-2 pt-2">
+                            <span className="text-[11px] font-bold uppercase tracking-wider text-[#4A453F] block">
+                              Fotos del producto (utilizá las flechas para ordenar):
+                            </span>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                              {list.map((imgUrl, idx) => (
+                                <div
+                                  key={idx}
+                                  className={`bg-white border rounded-xs p-2 flex flex-col justify-between space-y-2 relative transition-all ${
+                                    idx === 0
+                                      ? 'border-2 shadow-xs'
+                                      : 'border-[#DCD4C9]'
+                                  }`}
+                                  style={{
+                                    borderColor: idx === 0 ? (theme.accentColor || '#FDB813') : undefined,
+                                  }}
+                                >
+                                  {/* Thumbnail */}
+                                  <div className="w-full h-28 rounded-xs overflow-hidden bg-neutral-100 relative">
+                                    <img
+                                      src={imgUrl}
+                                      alt={`Foto ${idx + 1}`}
+                                      className="w-full h-full object-cover"
+                                      referrerPolicy="no-referrer"
+                                    />
+                                    <span
+                                      className="absolute top-1 left-1 px-1.5 py-0.5 rounded-xs text-[10px] font-bold"
+                                      style={{
+                                        backgroundColor: idx === 0 ? (theme.accentColor || '#FDB813') : 'rgba(0,0,0,0.7)',
+                                        color: idx === 0 ? '#18231C' : '#FFFFFF',
                                       }}
-                                      className={`p-1 rounded-xs border text-xs cursor-pointer ${
-                                        idx === 0
-                                          ? 'border-neutral-200 text-neutral-300 cursor-not-allowed'
-                                          : 'border-[#DCD4C9] text-[#18231C] hover:bg-[#ECE5DC]'
-                                      }`}
-                                      title="Mover a la izquierda (adelantar orden)"
                                     >
-                                      <ArrowLeft className="w-3 h-3" />
-                                    </button>
-
-                                    <button
-                                      type="button"
-                                      disabled={idx === list.length - 1}
-                                      onClick={() => {
-                                        if (idx === list.length - 1) return;
-                                        const updated = [...list];
-                                        const temp = updated[idx];
-                                        updated[idx] = updated[idx + 1];
-                                        updated[idx + 1] = temp;
-                                        setProductForm(prev => ({
-                                          ...prev,
-                                          images: updated,
-                                          image: updated[0]
-                                        }));
-                                      }}
-                                      className={`p-1 rounded-xs border text-xs cursor-pointer ${
-                                        idx === list.length - 1
-                                          ? 'border-neutral-200 text-neutral-300 cursor-not-allowed'
-                                          : 'border-[#DCD4C9] text-[#18231C] hover:bg-[#ECE5DC]'
-                                      }`}
-                                      title="Mover a la derecha (postergar orden)"
-                                    >
-                                      <ArrowRight className="w-3 h-3" />
-                                    </button>
-
-                                    {idx !== 0 && (
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          const updated = [...list];
-                                          const selected = updated.splice(idx, 1)[0];
-                                          updated.unshift(selected);
-                                          setProductForm(prev => ({
-                                            ...prev,
-                                            images: updated,
-                                            image: updated[0]
-                                          }));
-                                        }}
-                                        className="p-1 rounded-xs border border-[#DCD4C9] text-amber-600 hover:bg-amber-50 text-xs cursor-pointer"
-                                        title="Hacer Portada Principal"
-                                      >
-                                        <Star className="w-3 h-3 fill-amber-500 text-amber-500" />
-                                      </button>
-                                    )}
+                                      {idx === 0 ? '★ Portada' : `#${idx + 1}`}
+                                    </span>
                                   </div>
 
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      const updated = [...list];
-                                      updated.splice(idx, 1);
-                                      setProductForm(prev => ({
-                                        ...prev,
-                                        images: updated,
-                                        image: updated[0] || ''
-                                      }));
-                                    }}
-                                    className="p-1 rounded-xs border border-red-200 text-red-600 hover:bg-red-50 text-xs cursor-pointer"
-                                    title="Eliminar foto"
-                                  >
-                                    <Trash2 className="w-3 h-3" />
-                                  </button>
+                                  {/* Controls */}
+                                  <div className="flex items-center justify-between gap-1 pt-1 border-t border-[#ECE5DC]">
+                                    <div className="flex items-center gap-1">
+                                      <button
+                                        type="button"
+                                        disabled={idx === 0}
+                                        onClick={() => {
+                                          if (idx === 0) return;
+                                          const updated = [...list];
+                                          const temp = updated[idx];
+                                          updated[idx] = updated[idx - 1];
+                                          updated[idx - 1] = temp;
+                                          setProductForm((prev) => ({
+                                            ...prev,
+                                            images: updated,
+                                            image: updated[0],
+                                          }));
+                                        }}
+                                        className={`p-1 rounded-xs border text-xs cursor-pointer ${
+                                          idx === 0
+                                            ? 'border-neutral-200 text-neutral-300 cursor-not-allowed'
+                                            : 'border-[#DCD4C9] text-[#18231C] hover:bg-[#ECE5DC]'
+                                        }`}
+                                        title="Mover a la izquierda (adelantar orden)"
+                                      >
+                                        <ArrowLeft className="w-3 h-3" />
+                                      </button>
+
+                                      <button
+                                        type="button"
+                                        disabled={idx === list.length - 1}
+                                        onClick={() => {
+                                          if (idx === list.length - 1) return;
+                                          const updated = [...list];
+                                          const temp = updated[idx];
+                                          updated[idx] = updated[idx + 1];
+                                          updated[idx + 1] = temp;
+                                          setProductForm((prev) => ({
+                                            ...prev,
+                                            images: updated,
+                                            image: updated[0],
+                                          }));
+                                        }}
+                                        className={`p-1 rounded-xs border text-xs cursor-pointer ${
+                                          idx === list.length - 1
+                                            ? 'border-neutral-200 text-neutral-300 cursor-not-allowed'
+                                            : 'border-[#DCD4C9] text-[#18231C] hover:bg-[#ECE5DC]'
+                                        }`}
+                                        title="Mover a la derecha (postergar orden)"
+                                      >
+                                        <ArrowRight className="w-3 h-3" />
+                                      </button>
+
+                                      {idx !== 0 && (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const updated = [...list];
+                                            const selected = updated.splice(idx, 1)[0];
+                                            updated.unshift(selected);
+                                            setProductForm((prev) => ({
+                                              ...prev,
+                                              images: updated,
+                                              image: updated[0],
+                                            }));
+                                          }}
+                                          className="p-1 rounded-xs border border-[#DCD4C9] text-amber-600 hover:bg-amber-50 text-xs cursor-pointer"
+                                          title="Hacer Portada Principal"
+                                        >
+                                          <Star className="w-3 h-3 fill-amber-500 text-amber-500" />
+                                        </button>
+                                      )}
+                                    </div>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const updated = [...list];
+                                        updated.splice(idx, 1);
+                                        setProductForm((prev) => ({
+                                          ...prev,
+                                          images: updated,
+                                          image: updated[0] || '',
+                                        }));
+                                      }}
+                                      className="p-1 rounded-xs border border-red-200 text-red-600 hover:bg-red-50 text-xs cursor-pointer"
+                                      title="Eliminar foto"
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                    </button>
+                                  </div>
                                 </div>
-                              </div>
-                            ))}
+                              ))}
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })()}
-                  </div>
+                        );
+                      })()}
+                    </div>
+                  )}
+
+                  {/* Firebase Error Notice if present */}
+                  {firebaseErrorNotice && (
+                    <div className="p-3 bg-red-50 border border-red-300 text-red-800 text-xs rounded-xs flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+                        <span>{firebaseErrorNotice}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setFirebaseErrorNotice(null)}
+                        className="text-red-700 hover:text-red-900 font-bold text-xs"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  )}
 
                   <div className="flex justify-end gap-2 pt-2 border-t border-[#DCD4C9]">
                     <button
@@ -1635,6 +2190,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       <th className="p-3">Categoría / Sección</th>
                       <th className="p-3 text-right">Precio Lista</th>
                       <th className="p-3 text-right">Precio Empresa</th>
+                      <th className="p-3 text-center">Stock</th>
                       <th className="p-3 text-center">Acciones</th>
                     </tr>
                   </thead>
@@ -1677,20 +2233,43 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           ${(p.corporatePrice || 0).toLocaleString('es-AR')}
                         </td>
                         <td className="p-3 text-center">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleProductStock(p.id, p.inStock !== false)}
+                            className={`px-2.5 py-1 rounded-xs text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer border ${
+                              p.inStock !== false
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
+                                : 'bg-rose-50 text-rose-800 border-rose-300 hover:bg-rose-100'
+                            }`}
+                            title={p.inStock !== false ? 'En Stock (Visible en catálogo). Clic para marcar Sin Stock.' : 'Sin Stock (Oculto en catálogo). Clic para marcar En Stock.'}
+                          >
+                            {p.inStock !== false ? '● En Stock' : '○ Sin Stock'}
+                          </button>
+                        </td>
+                        <td className="p-3 text-center">
                           <div className="inline-flex items-center gap-1">
                             <button
                               type="button"
                               onClick={() => {
                                 setEditingProduct(p);
+                                setStandardSizesInput(p.standardSizes || (Array.isArray(p.availableSizes) ? p.availableSizes.join(', ') : '38, 40, 42, 44, 46, 48'));
+                                setFirebaseErrorNotice(null);
+                                setNewPhotoUrl('');
+                                setNewPhotoUrlMen('');
+                                setNewPhotoUrlWomen('');
                                 setProductForm({
                                   ...p,
                                   availableColors: Array.isArray(p.availableColors) ? [...p.availableColors] : [],
                                   availableSizes: Array.isArray(p.availableSizes) && p.availableSizes.length > 0 ? [...p.availableSizes] : ['CH', 'M', 'G', 'MG'],
+                                  standardSizes: p.standardSizes || (Array.isArray(p.availableSizes) ? p.availableSizes.join(', ') : ''),
                                   promotionTag: p.promotionTag || '',
                                   isUnisex: Boolean(p.isUnisex),
                                   isCorporateOnly: Boolean(p.isCorporateOnly),
                                   specialSizeRanges: p.specialSizeRanges ? JSON.parse(JSON.stringify(p.specialSizeRanges)) : [],
-                                  images: Array.isArray(p.images) && p.images.length > 0 ? [...p.images] : (p.image ? [p.image] : [])
+                                  images: Array.isArray(p.images) && p.images.length > 0 ? [...p.images] : (p.image ? [p.image] : []),
+                                  imagesMen: Array.isArray(p.imagesMen) ? [...p.imagesMen] : [],
+                                  imagesWomen: Array.isArray(p.imagesWomen) ? [...p.imagesWomen] : [],
+                                  inStock: p.inStock !== false,
                                 });
                                 setIsCreatingProduct(false);
                               }}
@@ -2014,6 +2593,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           {activeTab === 'variants' && (
             <AdminVariantsTab
               products={products}
+              categories={currentHierarchy}
               onUpdateProducts={onUpdateProducts}
               triggerSaveNotice={triggerSaveNotice}
             />

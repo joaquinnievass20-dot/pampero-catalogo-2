@@ -3,6 +3,15 @@ import { Product, MainCategory, ColorCodeDef } from '../../types';
 import { CATEGORY_HIERARCHY } from '../../data/categories';
 import { getSavedColorCodes, saveColorCodes, getEffectiveColors } from '../../utils/colorUtils';
 import { 
+  getStoredSizes, 
+  saveStoredSizes, 
+  resetToDefaultSizes, 
+  addSizeToCatalog, 
+  removeSizeFromCatalog, 
+  DynamicSizeCatalog,
+  DEFAULT_SIZES 
+} from '../../utils/sizeUtils';
+import { 
   Palette, 
   Ruler, 
   Check, 
@@ -14,26 +23,30 @@ import {
   Layers, 
   Tag, 
   Sparkles,
-  Info
+  Info,
+  RotateCcw
 } from 'lucide-react';
 
 interface AdminVariantsTabProps {
   products: Product[];
+  categories?: { name: string }[];
   onUpdateProducts: (products: Product[]) => void;
   triggerSaveNotice: () => void;
 }
 
-// Preset standard sizes
-const SIZES_LETTERS = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL', '4XL', 'Especial'];
-const SIZES_NUMBERS_PANTS = ['36', '38', '40', '42', '44', '46', '48', '50', '52', '54', '56', '58', '60'];
-const SIZES_NUMBERS_SHOES = ['36', '37', '38', '39', '40', '41', '42', '43', '44', '45', '46', '47', '48'];
-const SIZES_UNIQUE = ['Talle Único'];
-
 export const AdminVariantsTab: React.FC<AdminVariantsTabProps> = ({
   products,
+  categories,
   onUpdateProducts,
   triggerSaveNotice,
 }) => {
+  const categoryList: MainCategory[] = useMemo(() => {
+    if (categories && categories.length > 0) {
+      return categories.map((c) => c.name as MainCategory);
+    }
+    return ['Hombre', 'Mujer', 'Infantil', 'Venta Corporativa'];
+  }, [categories]);
+
   // Filters & selection
   const [selectedCategory, setSelectedCategory] = useState<MainCategory>('Hombre');
   const [searchCode, setSearchCode] = useState('');
@@ -41,6 +54,12 @@ export const AdminVariantsTab: React.FC<AdminVariantsTabProps> = ({
     const first = products.find((p) => p.category === 'Hombre');
     return first ? first.id : (products[0]?.id || '');
   });
+
+  // Dynamic Size Catalog State
+  const [sizeCatalog, setSizeCatalog] = useState<DynamicSizeCatalog>(() => getStoredSizes());
+  const [showSizeManager, setShowSizeManager] = useState(false);
+  const [selectedSizeGroup, setSelectedSizeGroup] = useState<keyof DynamicSizeCatalog>('letters');
+  const [newSizeInput, setNewSizeInput] = useState('');
 
   // Global color codes dictionary
   const [colorDefs, setColorDefs] = useState<ColorCodeDef[]>(() => getSavedColorCodes());
@@ -88,13 +107,13 @@ export const AdminVariantsTab: React.FC<AdminVariantsTabProps> = ({
 
       // Guess size format
       const sizes = currentProduct.availableSizes || [];
-      if (sizes.length === 1 && sizes[0] === 'Talle Único') {
+      if (sizes.length === 1 && (sizes[0] === 'Talle Único' || sizes[0] === 'Único' || sizes[0] === 'Ajustable')) {
         setSizeFormat('unique');
-      } else if (sizes.some((s) => ['S', 'M', 'L', 'XL'].includes(s.toUpperCase()))) {
+      } else if (sizes.some((s) => ['CH', 'M', 'G', 'MG', 'XG', 'XXG', 'XCH', 'S', 'L', 'XL'].includes(s.toUpperCase()))) {
         setSizeFormat('letters');
       } else if (
-        currentProduct.section.toLowerCase().includes('calzado') ||
-        currentProduct.subCategory.toLowerCase().includes('calzado')
+        currentProduct.section?.toLowerCase().includes('calzado') ||
+        currentProduct.subCategory?.toLowerCase().includes('calzado')
       ) {
         setSizeFormat('shoes');
       } else {
@@ -102,6 +121,32 @@ export const AdminVariantsTab: React.FC<AdminVariantsTabProps> = ({
       }
     }
   }, [currentProduct?.id]);
+
+  // Handle adding a size to catalog
+  const handleAddSizeToCatalog = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newSizeInput.trim()) return;
+    const updated = addSizeToCatalog(selectedSizeGroup, newSizeInput);
+    setSizeCatalog(updated);
+    setNewSizeInput('');
+    triggerSaveNotice();
+  };
+
+  // Handle removing a size from catalog
+  const handleRemoveSizeFromCatalog = (group: keyof DynamicSizeCatalog, size: string) => {
+    const updated = removeSizeFromCatalog(group, size);
+    setSizeCatalog(updated);
+    triggerSaveNotice();
+  };
+
+  // Handle resetting sizes to defaults
+  const handleResetDefaultSizes = () => {
+    if (confirm('¿Deseas restablecer el catálogo de talles a los valores por defecto oficiales de Pampero?')) {
+      const reset = resetToDefaultSizes();
+      setSizeCatalog(reset);
+      triggerSaveNotice();
+    }
+  };
 
   // Filtered list of products for the selector
   const availableProducts = useMemo(() => {
@@ -151,13 +196,13 @@ export const AdminVariantsTab: React.FC<AdminVariantsTabProps> = ({
   const handleApplyPresetSizes = (format: 'letters' | 'pants' | 'shoes' | 'unique') => {
     setSizeFormat(format);
     if (format === 'letters') {
-      setActiveSizes(['S', 'M', 'L', 'XL', 'XXL']);
+      setActiveSizes(sizeCatalog.letters.slice(0, 6));
     } else if (format === 'pants') {
-      setActiveSizes(['40', '42', '44', '46', '48', '50', '52']);
+      setActiveSizes(sizeCatalog.pants.slice(1, 8));
     } else if (format === 'shoes') {
-      setActiveSizes(['39', '40', '41', '42', '43', '44', '45']);
+      setActiveSizes(sizeCatalog.shoes.slice(3, 10));
     } else if (format === 'unique') {
-      setActiveSizes(['Talle Único']);
+      setActiveSizes([sizeCatalog.unique[0] || 'Talle Único']);
     }
   };
 
@@ -293,15 +338,129 @@ export const AdminVariantsTab: React.FC<AdminVariantsTabProps> = ({
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setShowColorDict(!showColorDict)}
-            className="px-3 py-1.5 bg-[#FAF8F5] hover:bg-[#ECE5DC] border border-[#DCD4C9] text-xs font-bold uppercase tracking-wider text-[#18231C] rounded-xs flex items-center gap-1.5 transition-colors cursor-pointer"
-          >
-            <Tag className="w-3.5 h-3.5 text-[#B9522F]" />
-            {showColorDict ? 'Ocultar Códigos C1, C4...' : 'Ver / Editar Códigos de Color (C1, B1...)'}
-          </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={() => {
+                setShowSizeManager(!showSizeManager);
+                if (showColorDict) setShowColorDict(false);
+              }}
+              className="px-3 py-1.5 bg-[#FAF8F5] hover:bg-[#ECE5DC] border border-[#DCD4C9] text-xs font-bold uppercase tracking-wider text-[#18231C] rounded-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <Ruler className="w-3.5 h-3.5 text-[#B9522F]" />
+              {showSizeManager ? 'Ocultar Catálogo de Talles' : 'Administrar Catálogo de Talles (CH, M, G...)'}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowColorDict(!showColorDict);
+                if (showSizeManager) setShowSizeManager(false);
+              }}
+              className="px-3 py-1.5 bg-[#FAF8F5] hover:bg-[#ECE5DC] border border-[#DCD4C9] text-xs font-bold uppercase tracking-wider text-[#18231C] rounded-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <Tag className="w-3.5 h-3.5 text-[#B9522F]" />
+              {showColorDict ? 'Ocultar Códigos C1, C4...' : 'Ver / Editar Códigos de Color (C1, B1...)'}
+            </button>
+          </div>
         </div>
+
+        {/* Dynamic Size Manager Drawer */}
+        {showSizeManager && (
+          <div className="mt-4 pt-4 border-t border-[#DCD4C9] bg-[#FAF8F5] p-4 rounded-xs border border-dashed border-[#DCD4C9] space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h4 className="font-bold text-xs uppercase tracking-wider text-[#18231C] flex items-center gap-2">
+                  <Ruler className="w-4 h-4 text-[#B9522F]" />
+                  Administrador Dinámico de Talles Oficiales Pampero
+                </h4>
+                <p className="text-[11px] text-[#6F6860] mt-0.5">
+                  Gestioná los talles de la escala oficial en español (CH, M, G, MG, XG...), pantalones, calzado y talles únicos. Los cambios se aplicarán de inmediato a todo el sistema.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleResetDefaultSizes}
+                className="inline-flex items-center gap-1.5 px-3 py-1 bg-white hover:bg-red-50 border border-[#DCD4C9] hover:border-red-300 text-xs font-semibold text-[#6F6860] hover:text-red-700 rounded-xs transition-colors cursor-pointer self-start sm:self-auto"
+                title="Restablecer a talles de fábrica"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                Restablecer a escala por defecto
+              </button>
+            </div>
+
+            {/* Size Category Tabs */}
+            <div className="flex items-center gap-2 border-b border-[#DCD4C9] pb-2 flex-wrap">
+              {[
+                { key: 'letters' as const, label: 'Letras (CH, M, G, MG, XG...)' },
+                { key: 'pants' as const, label: 'Pantalones / Bombachas (36, 38, 40...)' },
+                { key: 'shoes' as const, label: 'Calzado / Borcegos (36 a 48)' },
+                { key: 'unique' as const, label: 'Talle Único & Accesorios' },
+              ].map((tab) => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => setSelectedSizeGroup(tab.key)}
+                  className={`px-3 py-1.5 text-xs font-bold uppercase tracking-wider rounded-xs transition-colors cursor-pointer ${
+                    selectedSizeGroup === tab.key
+                      ? 'bg-[#18231C] text-white'
+                      : 'bg-white text-[#6F6860] hover:bg-[#ECE5DC] border border-[#DCD4C9]'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Current Group Sizes List */}
+            <div className="space-y-3">
+              <div className="flex flex-wrap gap-2 items-center">
+                {sizeCatalog[selectedSizeGroup].map((size) => (
+                  <div
+                    key={size}
+                    className="inline-flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-xs border border-[#DCD4C9] shadow-2xs group"
+                  >
+                    <span className="text-xs font-bold text-[#18231C]">{size}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveSizeFromCatalog(selectedSizeGroup, size)}
+                      className="text-[#8C827A] hover:text-red-600 transition-colors p-0.5 rounded-xs cursor-pointer ml-1"
+                      title={`Eliminar talle ${size}`}
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              {/* Add New Size to This Group Form */}
+              <form onSubmit={handleAddSizeToCatalog} className="flex items-center gap-2 max-w-sm pt-2">
+                <input
+                  type="text"
+                  required
+                  placeholder={`Nuevo talle para ${
+                    selectedSizeGroup === 'letters'
+                      ? 'letras (ej. 4XG)'
+                      : selectedSizeGroup === 'pants'
+                      ? 'pantalón (ej. 62)'
+                      : selectedSizeGroup === 'shoes'
+                      ? 'calzado (ej. 49)'
+                      : 'accesorios (ej. 45 Litros)'
+                  }`}
+                  value={newSizeInput}
+                  onChange={(e) => setNewSizeInput(e.target.value)}
+                  className="flex-1 px-3 py-1.5 text-xs bg-white rounded-xs border border-[#DCD4C9] outline-none font-medium"
+                />
+                <button
+                  type="submit"
+                  className="px-3 py-1.5 bg-[#18231C] hover:bg-black text-white text-xs font-bold rounded-xs flex items-center gap-1 transition-colors cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Agregar Talle
+                </button>
+              </form>
+            </div>
+          </div>
+        )}
 
         {/* Global Color Dictionary Drawer (Optional expand) */}
         {showColorDict && (
@@ -444,7 +603,7 @@ export const AdminVariantsTab: React.FC<AdminVariantsTabProps> = ({
               1. Seleccioná la Categoría
             </label>
             <div className="grid grid-cols-2 gap-1.5">
-              {(['Hombre', 'Mujer', 'Infantil', 'Venta Corporativa'] as MainCategory[]).map((cat) => (
+              {categoryList.map((cat) => (
                 <button
                   key={cat}
                   type="button"
@@ -602,7 +761,7 @@ export const AdminVariantsTab: React.FC<AdminVariantsTabProps> = ({
                           : 'bg-[#FAF8F5] text-[#4A453F] border-[#DCD4C9]'
                       }`}
                     >
-                      Letras (S, M, L...)
+                      Letras (CH, M, G, MG...)
                     </button>
                     <button
                       type="button"
@@ -647,14 +806,14 @@ export const AdminVariantsTab: React.FC<AdminVariantsTabProps> = ({
                   </span>
 
                   <div className="flex flex-wrap gap-2">
-                    {/* Render according to current format */}
+                    {/* Render according to current dynamic sizeCatalog format */}
                     {(sizeFormat === 'letters'
-                      ? SIZES_LETTERS
+                      ? sizeCatalog.letters
                       : sizeFormat === 'shoes'
-                      ? SIZES_NUMBERS_SHOES
+                      ? sizeCatalog.shoes
                       : sizeFormat === 'unique'
-                      ? SIZES_UNIQUE
-                      : SIZES_NUMBERS_PANTS
+                      ? sizeCatalog.unique
+                      : sizeCatalog.pants
                     ).map((size) => {
                       const isEnabled = activeSizes.includes(size);
                       return (
@@ -684,10 +843,10 @@ export const AdminVariantsTab: React.FC<AdminVariantsTabProps> = ({
                     {activeSizes
                       .filter(
                         (s) =>
-                          !SIZES_LETTERS.includes(s) &&
-                          !SIZES_NUMBERS_PANTS.includes(s) &&
-                          !SIZES_NUMBERS_SHOES.includes(s) &&
-                          !SIZES_UNIQUE.includes(s)
+                          !sizeCatalog.letters.includes(s) &&
+                          !sizeCatalog.pants.includes(s) &&
+                          !sizeCatalog.shoes.includes(s) &&
+                          !sizeCatalog.unique.includes(s)
                       )
                       .map((custom) => (
                         <button

@@ -7,10 +7,12 @@ import {
   INITIAL_PROMOTIONS,
   INITIAL_THEME,
   INITIAL_BRANCHES,
-  INITIAL_COUPONS
+  INITIAL_COUPONS,
+  INITIAL_VOLUME_DISCOUNTS,
 } from './src/data/initialData';
 import { INITIAL_LOOKBOOK } from './src/data/initialLookbook';
 import { DEFAULT_COLOR_CODES } from './src/utils/colorUtils';
+import { INITIAL_CATEGORY_HIERARCHY } from './src/data/categories';
 
 async function startServer() {
   const app = express();
@@ -47,6 +49,8 @@ async function startServer() {
   const BRANCHES_FILE = path.join(DATA_DIR, 'branches.json');
   const COUPONS_FILE = path.join(DATA_DIR, 'coupons.json');
   const LOOKBOOK_FILE = path.join(DATA_DIR, 'lookbook.json');
+  const CATEGORIES_FILE = path.join(DATA_DIR, 'categories.json');
+  const VOLUME_DISCOUNTS_FILE = path.join(DATA_DIR, 'volume_discounts.json');
 
   let catalogUpdatedAt = new Date().toISOString();
 
@@ -122,6 +126,20 @@ async function startServer() {
     writeJsonSafe(LOOKBOOK_FILE, serverLookbook);
   }
 
+  // 6c. Initialize Categories Hierarchy
+  let serverCategories: any[] = readJsonSafe(CATEGORIES_FILE, []);
+  if (!Array.isArray(serverCategories) || serverCategories.length === 0) {
+    serverCategories = INITIAL_CATEGORY_HIERARCHY;
+    writeJsonSafe(CATEGORIES_FILE, serverCategories);
+  }
+
+  // 6d. Initialize Volume Discounts
+  let serverVolumeDiscounts: any[] = readJsonSafe(VOLUME_DISCOUNTS_FILE, []);
+  if (!Array.isArray(serverVolumeDiscounts) || serverVolumeDiscounts.length === 0) {
+    serverVolumeDiscounts = INITIAL_VOLUME_DISCOUNTS;
+    writeJsonSafe(VOLUME_DISCOUNTS_FILE, serverVolumeDiscounts);
+  }
+
   // 7. Initialize Quotes Store
   let serverQuotes: any[] = readJsonSafe(QUOTES_FILE, []);
 
@@ -168,6 +186,8 @@ async function startServer() {
       coupons: serverCoupons,
       colors: serverColors,
       lookbook: serverLookbook,
+      categories: serverCategories,
+      volumeDiscounts: serverVolumeDiscounts,
     });
   });
 
@@ -525,6 +545,52 @@ async function startServer() {
         return res.json({ success: true, coupons: serverCoupons, updatedAt: catalogUpdatedAt });
       }
       res.status(400).json({ success: false, error: 'Formato inválido de cupones' });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // ==========================================
+  // CATEGORIES HIERARCHY APIS (Dynamic subcategories)
+  // ==========================================
+  app.get('/api/categories', (_req, res) => {
+    res.json({ success: true, categories: serverCategories });
+  });
+
+  app.post('/api/categories', (req, res) => {
+    try {
+      const { categories } = req.body;
+      if (Array.isArray(categories)) {
+        serverCategories = categories;
+        writeJsonSafe(CATEGORIES_FILE, serverCategories);
+        catalogUpdatedAt = new Date().toISOString();
+        console.log(`[CATEGORIES SAVED] ${serverCategories.length} categories persisted to disk`);
+        return res.json({ success: true, categories: serverCategories, updatedAt: catalogUpdatedAt });
+      }
+      res.status(400).json({ success: false, error: 'Formato inválido de categorías' });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // ==========================================
+  // VOLUME DISCOUNTS APIS (Automatic quantity discounts)
+  // ==========================================
+  app.get('/api/volume-discounts', (_req, res) => {
+    res.json({ success: true, rules: serverVolumeDiscounts });
+  });
+
+  app.post('/api/volume-discounts', (req, res) => {
+    try {
+      const { rules } = req.body;
+      if (Array.isArray(rules)) {
+        serverVolumeDiscounts = rules;
+        writeJsonSafe(VOLUME_DISCOUNTS_FILE, serverVolumeDiscounts);
+        catalogUpdatedAt = new Date().toISOString();
+        console.log(`[VOLUME DISCOUNTS SAVED] ${serverVolumeDiscounts.length} rules persisted to disk`);
+        return res.json({ success: true, rules: serverVolumeDiscounts, updatedAt: catalogUpdatedAt });
+      }
+      res.status(400).json({ success: false, error: 'Formato inválido de reglas de descuento por volumen' });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }

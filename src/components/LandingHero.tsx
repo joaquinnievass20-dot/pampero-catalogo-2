@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { MainCategory, UserSession, ThemeConfig, Promotion, PromotionButton } from '../types';
+import { MainCategory, UserSession, ThemeConfig, Promotion, PromotionButton, CategoryHierarchyItem } from '../types';
 import { PamperoLogo } from './PamperoLogo';
 import { CategoryMenuNav } from './CategoryMenuNav';
 import { UserNavMenu } from './UserNavMenu';
@@ -27,6 +27,7 @@ interface LandingHeroProps {
   onOpenAdmin?: () => void;
   onOpenProfile?: () => void;
   onOpenLookbook?: () => void;
+  categoriesHierarchy?: CategoryHierarchyItem[];
 }
 
 interface SlideItem {
@@ -61,6 +62,7 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
   onOpenAdmin,
   onOpenProfile,
   onOpenLookbook,
+  categoriesHierarchy,
 }) => {
   const accent = theme?.accentColor || '#FDB813';
   const hoverAccent = theme?.hoverAccentColor || '#E0A310';
@@ -182,28 +184,42 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
   };
 
   // Category cards
-  const categoryCards = [
-    {
-      slug: 'Hombre' as MainCategory,
-      name: 'HOMBRE',
-      tagline: 'Trabajo, campo y ciudad con la misma nobleza de siempre.',
-    },
-    {
-      slug: 'Mujer' as MainCategory,
-      name: 'MUJER',
-      tagline: 'Prendas de carácter, pensadas para durar temporadas enteras.',
-    },
-    {
-      slug: 'Infantil' as MainCategory,
-      name: 'INFANTIL',
-      tagline: 'La misma resistencia, en talles chicos.',
-    },
-    {
-      slug: 'Venta Corporativa' as MainCategory,
-      name: 'VENTA CORPORATIVA',
-      tagline: 'Equipamiento e indumentaria para equipos de trabajo.',
-    },
-  ];
+  const categoryCards = (categoriesHierarchy && categoriesHierarchy.length > 0)
+    ? categoriesHierarchy.map((c) => ({
+        slug: c.name as MainCategory,
+        name: c.name.toUpperCase(),
+        tagline: c.name === 'Hombre'
+          ? 'Trabajo, campo y ciudad con la misma nobleza de siempre.'
+          : c.name === 'Mujer'
+          ? 'Prendas de carácter, pensadas para durar temporadas enteras.'
+          : c.name === 'Infantil'
+          ? 'La misma resistencia, en talles chicos.'
+          : c.name === 'Venta Corporativa'
+          ? 'Equipamiento e indumentaria para equipos de trabajo.'
+          : `Colección y artículos oficiales de ${c.name}.`,
+      }))
+    : [
+        {
+          slug: 'Hombre' as MainCategory,
+          name: 'HOMBRE',
+          tagline: 'Trabajo, campo y ciudad con la misma nobleza de siempre.',
+        },
+        {
+          slug: 'Mujer' as MainCategory,
+          name: 'MUJER',
+          tagline: 'Prendas de carácter, pensadas para durar temporadas enteras.',
+        },
+        {
+          slug: 'Infantil' as MainCategory,
+          name: 'INFANTIL',
+          tagline: 'La misma resistencia, en talles chicos.',
+        },
+        {
+          slug: 'Venta Corporativa' as MainCategory,
+          name: 'VENTA CORPORATIVA',
+          tagline: 'Equipamiento e indumentaria para equipos de trabajo.',
+        },
+      ];
 
   const handleSlideClick = () => {
     if (!userSession) {
@@ -293,6 +309,7 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
           {/* Desktop Categories links with hover mega-menu dropdown */}
           <div className="hidden md:flex items-center gap-4">
             <CategoryMenuNav
+              categoriesHierarchy={categoriesHierarchy}
               onSelectCategoryItem={(cat, sec, sub) => {
                 onSelectCategory(cat, sec, sub);
               }}

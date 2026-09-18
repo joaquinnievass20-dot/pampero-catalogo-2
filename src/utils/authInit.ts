@@ -1,15 +1,15 @@
 import { RegisteredUser } from '../types';
 
-export const MASTER_ADMIN_EMAIL = 'admin@pampero.com';
+export const MASTER_ADMIN_EMAIL = 'joaquinnievass20@gmail.com';
 export const MASTER_ADMIN_PASSWORD = 'Pampero2026';
 export const MASTER_ADMIN_ROLE = 'admin' as const;
 
 export const MASTER_ADMIN_USER: RegisteredUser = {
   id: 'admin-master',
   type: 'admin',
-  name: 'Administrador Maestro Pampero',
+  name: 'Administrador Maestro Joaquín Nievas',
   repName: 'Administración Pampero Gran Mendoza',
-  email: 'admin@pampero.com',
+  email: 'joaquinnievass20@gmail.com',
   phone: '2614980000',
   cuitOrDni: '30-11223344-9',
   address: 'Av. San Martín 1234',
@@ -37,9 +37,18 @@ export function ensureMasterAdminInitialized(): RegisteredUser[] {
         creds = {};
       }
     }
-    if (!creds || !creds.email || !creds.password) {
+    
+    // Always update if missing or if still set to the legacy admin email
+    if (
+      !creds || 
+      !creds.email || 
+      !creds.password || 
+      creds.email.toLowerCase().trim() === 'admin@pampero.com' ||
+      creds.email.toLowerCase().trim() === 'admin@pampero.com.ar'
+    ) {
       needsUpdate = true;
     }
+    
     if (needsUpdate || !credsStr) {
       localStorage.setItem(
         'pampero_admin_credentials',
@@ -69,17 +78,35 @@ export function ensureMasterAdminInitialized(): RegisteredUser[] {
     users = [];
   }
 
-  // Check if admin@pampero.com exists
+  // Filter out any legacy admin@pampero.com entries
+  users = users.filter(
+    (u) => u.email?.toLowerCase().trim() !== 'admin@pampero.com' && u.email?.toLowerCase().trim() !== 'admin@pampero.com.ar'
+  );
+
+  // Check if joaquinnievass20@gmail.com exists
   const hasMasterAdmin = users.some(
     (u) => u.email?.toLowerCase().trim() === MASTER_ADMIN_EMAIL.toLowerCase()
   );
 
   if (!hasMasterAdmin) {
     users = [MASTER_ADMIN_USER, ...users];
-    try {
-      localStorage.setItem('pampero_registered_users', JSON.stringify(users));
-    } catch {}
+  } else {
+    // Ensure it is set as admin
+    users = users.map((u) => {
+      if (u.email?.toLowerCase().trim() === MASTER_ADMIN_EMAIL.toLowerCase()) {
+        return {
+          ...u,
+          type: 'admin',
+          status: 'active',
+        };
+      }
+      return u;
+    });
   }
+
+  try {
+    localStorage.setItem('pampero_registered_users', JSON.stringify(users));
+  } catch {}
 
   return users;
 }

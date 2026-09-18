@@ -99,10 +99,13 @@ export interface Product {
   promotionTag?: string; // e.g., 'Temporada 2026', 'Liquidación', 'Lanzamiento'
   image: string;
   images?: string[]; // Multiple photos ordered by position
+  imagesMen?: string[]; // Galería Hombre para productos Unisex
+  imagesWomen?: string[]; // Galería Mujer para productos Unisex
   imagesByColor?: Record<string, string>; // Maps color name or code (e.g. "C4" or "Azul Francia") to image URL
   additionalImages?: Array<{ url: string; colorCode?: string; position: number }>;
   availableColors: string[];
   availableSizes: string[];
+  standardSizes?: string; // Talles estándar ingresados en formato texto (ej: "38, 40, 42" o "S, M, L, XL")
   sizeType?: 'letters' | 'numbers'; // Letras (S, M, L, XL...) o Números (38, 40, 42... / 39, 40, 41...)
   specialSizeRanges?: SpecialSizeRange[]; // Variantes o rangos de talles especiales diferenciados con sufijos (-1, -2) y precios ajustados
   isUnisex?: boolean; // Si es Unisex, se muestra automáticamente tanto en Hombre como en Mujer
@@ -302,7 +305,7 @@ export interface QuantityDiscountRule {
 export type VolumeDiscountRule = QuantityDiscountRule;
 export type CategoryHierarchyItem = {
   name: MainCategory;
-  description: string;
+  description?: string;
   sections: Array<{
     name: string;
     subCategories: string[];

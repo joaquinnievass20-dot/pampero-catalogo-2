@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { UserSession, ThemeConfig } from '../types';
 import { PamperoLogo } from './PamperoLogo';
 import { ShieldCheck, ArrowLeft, AlertCircle, CheckCircle2, Sparkles } from 'lucide-react';
+import { MASTER_ADMIN_EMAIL, MASTER_ADMIN_PASSWORD } from '../utils/authInit';
 
 interface AuthViewProps {
   onLogin: (session: UserSession) => void;
@@ -43,13 +44,6 @@ export const AuthView: React.FC<AuthViewProps> = ({
   // Admin Login Fields
   const [adminUser, setAdminUser] = useState('');
   const [adminPass, setAdminPass] = useState('');
-
-  // Password Recovery State
-  const [isRecovering, setIsRecovering] = useState(false);
-  const [recoveryEmail, setRecoveryEmail] = useState('');
-  const [recoveryCode, setRecoveryCode] = useState('');
-  const [newAdminPassword, setNewAdminPassword] = useState('');
-  const [recoveryStatus, setRecoveryStatus] = useState<'idle' | 'code_sent' | 'success'>('idle');
 
   // Errors & Alerts
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -167,13 +161,15 @@ export const AuthView: React.FC<AuthViewProps> = ({
     } catch {}
 
     // 2. Check if it is an Admin logging in via standard form
-    let savedAdminEmail = 'admin@pampero.com';
-    let savedAdminPass = 'Pampero2026';
+    let savedAdminEmail = MASTER_ADMIN_EMAIL;
+    let savedAdminPass = MASTER_ADMIN_PASSWORD;
     try {
       const stored = localStorage.getItem('pampero_admin_credentials');
       if (stored) {
         const parsed = JSON.parse(stored);
-        if (parsed.email) savedAdminEmail = parsed.email.trim().toLowerCase();
+        if (parsed.email && parsed.email !== 'admin@pampero.com' && parsed.email !== 'admin@pampero.com.ar') {
+          savedAdminEmail = parsed.email.trim().toLowerCase();
+        }
         if (parsed.password) savedAdminPass = parsed.password;
       }
     } catch {}
@@ -182,11 +178,11 @@ export const AuthView: React.FC<AuthViewProps> = ({
     const legacyPass = localStorage.getItem('pampero_admin_pass');
 
     const validAdminUser = 
-      emailClean === 'admin' || 
-      emailClean === 'admin@pampero.com' || 
-      emailClean === 'admin@pampero.com.ar' || 
-      emailClean === 'pampero' ||
-      emailClean === savedAdminEmail.toLowerCase();
+      emailClean === 'joaquinnievass20@gmail.com' ||
+      emailClean === MASTER_ADMIN_EMAIL.toLowerCase() ||
+      emailClean === savedAdminEmail.toLowerCase() ||
+      emailClean === 'admin' ||
+      emailClean === 'pampero';
 
     const validAdminPass = 
       passClean === 'Pampero2026' ||
@@ -201,16 +197,16 @@ export const AuthView: React.FC<AuthViewProps> = ({
     if (validAdminUser && validAdminPass) {
       const adminSession: UserSession = {
         id: 'admin-master',
-        email: email.trim() || savedAdminEmail || 'admin@pampero.com',
+        email: emailClean === 'admin' || emailClean === 'pampero' ? MASTER_ADMIN_EMAIL : email.trim(),
         role: 'admin',
         clientType: 'empresa',
         clientData: {
-          fullName: 'Administrador Pampero Gran Mendoza',
+          fullName: 'Administrador Maestro Joaquín Nievas',
           companyName: 'Pampero Indumentaria Oficial',
         },
       };
 
-      setSuccessMessage('Acceso autorizado como Administrador.');
+      setSuccessMessage('Acceso autorizado como Administrador. Ingresando al panel...');
       setTimeout(() => {
         onLogin(adminSession);
       }, 350);
@@ -278,13 +274,15 @@ export const AuthView: React.FC<AuthViewProps> = ({
     } catch {}
 
     // 2. Check Admin credentials
-    let savedEmail = 'admin@pampero.com';
-    let savedPass = 'Pampero2026';
+    let savedEmail = MASTER_ADMIN_EMAIL;
+    let savedPass = MASTER_ADMIN_PASSWORD;
     try {
       const stored = localStorage.getItem('pampero_admin_credentials');
       if (stored) {
         const parsed = JSON.parse(stored);
-        if (parsed.email) savedEmail = parsed.email.trim().toLowerCase();
+        if (parsed.email && parsed.email !== 'admin@pampero.com' && parsed.email !== 'admin@pampero.com.ar') {
+          savedEmail = parsed.email.trim().toLowerCase();
+        }
         if (parsed.password) savedPass = parsed.password;
       }
     } catch {
@@ -296,11 +294,11 @@ export const AuthView: React.FC<AuthViewProps> = ({
 
     // Check against authorized admin credentials
     const validUser = 
-      userClean === 'admin' || 
-      userClean === 'admin@pampero.com' || 
-      userClean === 'admin@pampero.com.ar' || 
-      userClean === 'pampero' ||
-      userClean === savedEmail.toLowerCase();
+      userClean === 'joaquinnievass20@gmail.com' ||
+      userClean === MASTER_ADMIN_EMAIL.toLowerCase() ||
+      userClean === savedEmail.toLowerCase() ||
+      userClean === 'admin' ||
+      userClean === 'pampero';
 
     const validPass = 
       passClean === 'Pampero2026' ||
@@ -315,77 +313,22 @@ export const AuthView: React.FC<AuthViewProps> = ({
     if (validUser && validPass) {
       const adminSession: UserSession = {
         id: 'admin-master',
-        email: adminUser.trim() || savedEmail || 'admin@pampero.com',
+        email: userClean === 'admin' || userClean === 'pampero' ? MASTER_ADMIN_EMAIL : adminUser.trim(),
         role: 'admin',
         clientType: 'empresa',
         clientData: {
-          fullName: 'Administrador Pampero Gran Mendoza',
+          fullName: 'Administrador Maestro Joaquín Nievas',
           companyName: 'Pampero Indumentaria Oficial',
         },
       };
 
-      setSuccessMessage('Acceso autorizado como Administrador.');
+      setSuccessMessage('Acceso autorizado como Administrador. Ingresando al panel...');
       setTimeout(() => {
         onLogin(adminSession);
       }, 350);
     } else {
-      setErrorMessage('Credenciales incorrectas. Verificá tu usuario y contraseña de administración o empleado.');
+      setErrorMessage('Credenciales incorrectas. Verificá tu correo y contraseña de administración.');
     }
-  };
-
-  // Handle Send Password Recovery Code
-  const handleSendRecovery = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorMessage(null);
-    const targetEmail = recoveryEmail.trim();
-    if (!targetEmail || !targetEmail.includes('@')) {
-      setErrorMessage('Por favor ingresá un correo electrónico válido para la recuperación.');
-      return;
-    }
-
-    try {
-      await fetch('/api/send-recovery-code', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: targetEmail })
-      });
-    } catch {
-      // serverless fallback
-    }
-
-    setRecoveryStatus('code_sent');
-    setSuccessMessage('Si el correo está registrado, recibirás las instrucciones para restablecer tu contraseña.');
-  };
-
-  // Handle Set New Password
-  const handleResetPassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorMessage(null);
-    if (!newAdminPassword || newAdminPassword.trim().length < 4) {
-      setErrorMessage('La nueva contraseña debe tener al menos 4 caracteres.');
-      return;
-    }
-
-    try {
-      await fetch('/api/verify-recovery-code', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: recoveryEmail.trim(),
-          code: recoveryCode.trim(),
-          newPassword: newAdminPassword.trim()
-        })
-      });
-    } catch {}
-
-    localStorage.setItem('pampero_admin_custom_password', newAdminPassword.trim());
-    setRecoveryStatus('success');
-    setSuccessMessage('¡Contraseña actualizada exitosamente! Ahora podés ingresar con tu nueva clave.');
-    setAdminPass(newAdminPassword.trim());
-    setTimeout(() => {
-      setIsRecovering(false);
-      setRecoveryStatus('idle');
-    }, 1800);
   };
 
   return (
@@ -627,7 +570,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
                         type="text"
                         value={adminUser}
                         onChange={(e) => setAdminUser(e.target.value)}
-                        placeholder="admin"
+                        placeholder="joaquinnievass20@gmail.com"
                         autoComplete="new-password"
                         required
                         className="w-full px-3.5 py-2.5 bg-white border border-[#DCD4C9] rounded-xs text-sm text-[#18231C] focus:outline-none focus:border-[#FDB813]"
@@ -647,22 +590,10 @@ export const AuthView: React.FC<AuthViewProps> = ({
                         required
                         className="w-full px-3.5 py-2.5 bg-white border border-[#DCD4C9] rounded-xs text-sm text-[#18231C] focus:outline-none focus:border-[#FDB813]"
                       />
-                      <div className="flex items-center justify-between mt-1">
+                      <div className="mt-1">
                         <span className="text-[10px] text-[#8C847B]">
-                          Acceso protegido para administradores autorizados.
+                          Acceso protegido exclusivo para la administración de Pampero Gran Mendoza.
                         </span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsRecovering(true);
-                            setErrorMessage(null);
-                            setSuccessMessage(null);
-                          }}
-                          style={{ color: accent }}
-                          className="text-[11px] hover:underline font-semibold cursor-pointer"
-                        >
-                          ¿Olvidaste tu clave?
-                        </button>
                       </div>
                     </div>
 
@@ -676,116 +607,6 @@ export const AuthView: React.FC<AuthViewProps> = ({
                     >
                       INGRESAR AL PANEL
                     </button>
-
-                    {/* Password Recovery Box */}
-                    {isRecovering && (
-                      <div className="mt-4 p-4 bg-[#F5F2EC] border border-[#DCD4C9] rounded-xs space-y-3">
-                        <div className="flex items-center justify-between border-b border-[#DCD4C9] pb-2">
-                          <span className="text-[11px] font-bold uppercase tracking-wider text-[#18231C]">
-                            Recuperación de Contraseña
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => setIsRecovering(false)}
-                            className="text-xs text-[#6F6860] hover:text-[#18231C]"
-                          >
-                            ✕ Cancelar
-                          </button>
-                        </div>
-
-                        {recoveryStatus === 'idle' && (
-                          <div className="space-y-3">
-                            <p className="text-xs text-[#6F6860]">
-                              Se enviará un enlace de verificación a la cuenta administradora:
-                            </p>
-                            <div>
-                              <label className="block text-[10px] uppercase tracking-wider font-bold text-[#4A453F] mb-1">
-                                Correo del Administrador
-                              </label>
-                              <input
-                                type="email"
-                                value={recoveryEmail}
-                                onChange={(e) => setRecoveryEmail(e.target.value)}
-                                autoComplete="new-password"
-                                placeholder="tu@email.com"
-                                className="w-full px-3 py-2 bg-white border border-[#DCD4C9] rounded-xs text-xs text-[#18231C] font-semibold"
-                              />
-                            </div>
-                            <button
-                              type="button"
-                              onClick={handleSendRecovery}
-                              style={{ backgroundColor: accent, color: '#18231C' }}
-                              className="w-full py-2.5 hover:opacity-90 text-xs font-bold uppercase tracking-wider rounded-xs transition-opacity"
-                            >
-                              Enviar Código de Recuperación
-                            </button>
-                          </div>
-                        )}
-
-                        {recoveryStatus === 'code_sent' && (
-                          <div className="space-y-3">
-                            {/* Generic Secure Informational Notice */}
-                            <div className="p-3.5 bg-emerald-50 border border-emerald-300 rounded-xs text-left space-y-1">
-                              <div className="flex items-center gap-1.5 text-emerald-950 font-bold text-xs">
-                                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                                <span>Solicitud de Recuperación Enviada</span>
-                              </div>
-                              <p className="text-[11px] text-emerald-800 leading-relaxed">
-                                Si el correo <strong>{recoveryEmail}</strong> está registrado, recibirás las instrucciones con el código de verificación para restablecer tu contraseña.
-                              </p>
-                            </div>
-
-                            <div>
-                              <label className="block text-[10px] uppercase tracking-wider font-bold text-[#4A453F] mb-1">
-                                Código de 6 dígitos recibido
-                              </label>
-                              <input
-                                type="text"
-                                value={recoveryCode}
-                                onChange={(e) => setRecoveryCode(e.target.value)}
-                                placeholder="Ingresá el código de 6 dígitos"
-                                className="w-full px-3 py-2 bg-white border border-[#DCD4C9] rounded-xs text-xs text-[#18231C] font-mono tracking-widest font-bold"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-[10px] uppercase tracking-wider font-bold text-[#4A453F] mb-1">
-                                Nueva Contraseña
-                              </label>
-                              <input
-                                type="password"
-                                value={newAdminPassword}
-                                onChange={(e) => setNewAdminPassword(e.target.value)}
-                                placeholder="Ingresá tu nueva clave"
-                                className="w-full px-3 py-2 bg-white border border-[#DCD4C9] rounded-xs text-xs text-[#18231C] font-semibold"
-                              />
-                            </div>
-                            <button
-                              type="button"
-                              onClick={handleResetPassword}
-                              className="w-full py-2.5 bg-[#18231C] hover:bg-black text-white text-xs font-bold uppercase tracking-wider rounded-xs transition-colors cursor-pointer shadow-xs"
-                            >
-                              Guardar Nueva Contraseña
-                            </button>
-
-                            <div className="pt-2 border-t border-[#DCD4C9]/60 text-center">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  localStorage.setItem('pampero_admin_custom_password', 'pampero2026');
-                                  setAdminPass('pampero2026');
-                                  setSuccessMessage('Contraseña restaurada a la clave estándar: pampero2026');
-                                  setIsRecovering(false);
-                                  setRecoveryStatus('idle');
-                                }}
-                                className="text-[11px] text-[#18231C] hover:underline font-bold"
-                              >
-                                Restablecer directamente a la clave estándar: pampero2026
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
 
                     <div className="text-center pt-3">
                       <button

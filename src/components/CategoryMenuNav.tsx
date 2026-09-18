@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { MainCategory, ThemeConfig } from '../types';
+import { CategoryHierarchyItem, MainCategory, ThemeConfig } from '../types';
 import { CATEGORY_HIERARCHY } from '../data/categories';
 import { ChevronDown, ArrowRight, Tag } from 'lucide-react';
 
@@ -11,6 +11,7 @@ interface CategoryMenuNavProps {
   theme?: ThemeConfig;
   className?: string;
   isDarkHeader?: boolean;
+  categoriesHierarchy?: CategoryHierarchyItem[];
 }
 
 export const CategoryMenuNav: React.FC<CategoryMenuNavProps> = ({
@@ -21,6 +22,7 @@ export const CategoryMenuNav: React.FC<CategoryMenuNavProps> = ({
   theme,
   className = '',
   isDarkHeader = false,
+  categoriesHierarchy,
 }) => {
   const [hoveredCategory, setHoveredCategory] = useState<MainCategory | null>(null);
   const timeoutRef = useRef<number | null>(null);
@@ -56,8 +58,13 @@ export const CategoryMenuNav: React.FC<CategoryMenuNavProps> = ({
     }, 320);
   };
 
-  const categories: MainCategory[] = ['Hombre', 'Mujer', 'Infantil', 'Venta Corporativa'];
-  const activeStructure = CATEGORY_HIERARCHY.find((c) => c.name === hoveredCategory);
+  const categories: MainCategory[] = (categoriesHierarchy && categoriesHierarchy.length > 0)
+    ? (categoriesHierarchy.map((c) => c.name as MainCategory))
+    : ['Hombre', 'Mujer', 'Infantil', 'Venta Corporativa'];
+
+  const activeStructure = (categoriesHierarchy && categoriesHierarchy.length > 0)
+    ? categoriesHierarchy.find((c) => c.name === hoveredCategory)
+    : CATEGORY_HIERARCHY.find((c) => c.name === hoveredCategory);
 
   return (
     <div 
