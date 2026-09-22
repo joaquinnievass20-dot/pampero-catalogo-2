@@ -29,7 +29,8 @@ import { AdminQuotesTab } from './admin/AdminQuotesTab';
 import { AdminBulkExcelImportModal } from './admin/AdminBulkExcelImportModal';
 import { PamperoLogo } from './PamperoLogo';
 import { saveCatalogBackup } from '../utils/backupManager';
-import { saveSingleFirestoreProduct, deleteFirestoreProductDoc, isFirebaseReady } from '../services/firebase';
+import { doc, deleteDoc } from 'firebase/firestore';
+import { db, getFirebaseDb, saveSingleFirestoreProduct, deleteFirestoreProductDoc, isFirebaseReady } from '../services/firebase';
 import { 
   Palette, 
   Tag, 
@@ -381,12 +382,38 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     triggerSaveNotice();
   };
 
-  const handleDeleteProduct = async (id: string) => {
+  const handleDeleteProduct = async (id: string, code?: string) => {
     if (confirm('¿Desea eliminar este producto del catálogo?')) {
-      if (isFirebaseReady()) {
-        await deleteFirestoreProductDoc(id);
+      const targetId = String(id || '').trim();
+      const targetCode = String(code || '').trim();
+
+      // Intento de borrado en Firebase usando deleteDoc(doc(db, 'productos', id))
+      try {
+        const firestoreDb = db || getFirebaseDb();
+        if (firestoreDb && targetId) {
+          await deleteDoc(doc(firestoreDb, 'productos', targetId));
+          await deleteDoc(doc(firestoreDb, 'products', targetId)).catch(() => {});
+          if (targetCode && targetCode !== targetId) {
+            await deleteDoc(doc(firestoreDb, 'productos', targetCode)).catch(() => {});
+            await deleteDoc(doc(firestoreDb, 'products', targetCode)).catch(() => {});
+          }
+        }
+      } catch (fbErr) {
+        console.warn('[FIREBASE] Error al eliminar documento en Firestore (se fuerza eliminación en UI):', fbErr);
       }
-      onUpdateProducts(products.filter((p) => p.id !== id));
+
+      // Si el intento de borrar falla en Firebase (porque el ID es viejo o está corrupto),
+      // forzar siempre la eliminación del estado local (UI) para destrabar la vista del catálogo
+      const remainingProducts = products.filter((p) => {
+        const pId = String(p.id || '').trim();
+        const pCode = String(p.code || '').trim();
+        if (targetId && (pId === targetId || pCode === targetId)) return false;
+        if (targetCode && (pId === targetCode || pCode === targetCode)) return false;
+        return true;
+      });
+
+      onUpdateProducts(remainingProducts);
+      saveCatalogBackup(remainingProducts);
       triggerSaveNotice();
     }
   };
@@ -2280,7 +2307,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                             </button>
                             <button
                               type="button"
-                              onClick={() => handleDeleteProduct(p.id)}
+                              onClick={() => handleDeleteProduct(p.id, p.code)}
                               className="p-1 text-[#6F6860] hover:text-red-600"
                               title="Eliminar producto"
                             >

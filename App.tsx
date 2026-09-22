@@ -450,7 +450,7 @@ export default function App() {
   // Quote Drawer
   const [isCartOpen, setIsCartOpen] = useState(false);
 
-  // Persist handlers - Writes directly to centralized backend & updates local state
+  // Persist handlers - Writes directly to Cloud Firestore & updates local state
   const handleUpdateProducts = async (newProducts: Product[]) => {
     const sanitized = newProducts.map((p) => ({
       ...p,
@@ -459,29 +459,8 @@ export default function App() {
     setProducts(sanitized);
     saveCatalogBackup(sanitized);
 
-    // Persist to Cloud Firestore
+    // Persist to Cloud Firestore via Firebase SDK
     saveFirestoreProducts(sanitized);
-
-    try {
-      const res = await fetch('/api/products', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ products: sanitized }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && Array.isArray(data.products) && data.products.length > 0) {
-          const fresh = data.products.map((p: Product) => ({
-            ...p,
-            category: sanitizeCategory(p.category),
-          }));
-          setProducts(fresh);
-          saveCatalogBackup(fresh);
-        }
-      }
-    } catch (err) {
-      console.error('[PAMPERO PERSIST] Error saving products to server:', err);
-    }
   };
 
   const handleUpdatePromotions = async (newPromos: Promotion[]) => {
