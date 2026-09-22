@@ -34,7 +34,10 @@ import {
   fetchFirestoreStoreConfig,
   saveFirestoreStoreConfig,
   subscribeToFirestoreStoreConfig,
+  db,
+  getFirebaseDb,
 } from './services/firebase';
+import { doc, deleteDoc } from 'firebase/firestore';
 import { ensureMasterAdminInitialized } from './utils/authInit';
 import { trackAddToCart } from './utils/analytics';
 import { LandingHero } from './components/LandingHero';
@@ -238,6 +241,8 @@ export default function App() {
         },
       });
       if (!res.ok) return;
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) return;
       const data = await res.json();
       if (!data || !data.success) return;
 
@@ -245,15 +250,15 @@ export default function App() {
       const localBackup = loadCatalogBackup();
       const serverProds: Product[] = Array.isArray(data.products) ? data.products : [];
 
-      if (isServerCatalogReset(serverProds, localBackup) && localBackup && localBackup.length > 0) {
+      if (isServerCatalogReset(serverProds, localBackup) && localBackup && localBackup.length > 0 && !isFirebaseReady()) {
         setProducts(localBackup);
         syncBackupToServer(localBackup);
       } else if (serverProds.length > 0 && !isFirebaseReady()) {
         const sanitized = serverProds.map((p: Product) => ({
           ...p,
           category: sanitizeCategory(p.category),
-          section: p.section || 'Urbano',
-          subCategory: p.subCategory || 'General',
+          section: p.section || '',
+          subCategory: p.subCategory || '',
         }));
         setProducts(sanitized);
         saveCatalogBackup(sanitized);
@@ -461,6 +466,34 @@ export default function App() {
 
     // Persist to Cloud Firestore via Firebase SDK
     saveFirestoreProducts(sanitized);
+  };
+
+  const handleDeleteProduct = async (id: string) => {
+    const targetId = String(id || '').trim();
+    if (!targetId) return;
+
+    try {
+      const firestoreDb = db || getFirebaseDb();
+      if (firestoreDb) {
+        await deleteDoc(doc(firestoreDb, 'products', targetId));
+        await deleteDoc(doc(firestoreDb, 'productos', targetId)).catch(() => {});
+      }
+    } catch (fbErr) {
+      console.warn('[FIREBASE] Error al eliminar documento en backend:', fbErr);
+    } finally {
+      // Si el comando deleteDoc falla en el backend porque el ID está corrupto o no existe,
+      // el bloque catch/finally fuerza igualmente la eliminación de ese producto del estado local de React
+      // (setProducts(prev => prev.filter(p => p.id !== id))) para que desaparezca visualmente de la interfaz para siempre.
+      setProducts((prev) => {
+        const remaining = prev.filter((p) => {
+          const pId = String(p.id || '').trim();
+          const pCode = String(p.code || '').trim();
+          return pId !== targetId && pCode !== targetId;
+        });
+        saveCatalogBackup(remaining);
+        return remaining;
+      });
+    }
   };
 
   const handleUpdatePromotions = async (newPromos: Promotion[]) => {
@@ -996,6 +1029,7 @@ export default function App() {
             categories={categories}
             onUpdateCategories={handleUpdateCategories}
             onUpdateProducts={handleUpdateProducts}
+            onDeleteProduct={handleDeleteProduct}
             onUpdatePromotions={handleUpdatePromotions}
             onUpdateTheme={handleUpdateTheme}
             onUpdateBranches={handleUpdateBranches}

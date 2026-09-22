@@ -93,6 +93,7 @@ interface AdminPanelProps {
   onClose: () => void;
   products: Product[];
   onUpdateProducts: (newProducts: Product[]) => void;
+  onDeleteProduct?: (id: string) => void;
   promotions: Promotion[];
   onUpdatePromotions: (newPromos: Promotion[]) => void;
   theme: ThemeConfig;
@@ -116,6 +117,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   onClose,
   products,
   onUpdateProducts,
+  onDeleteProduct,
   promotions,
   onUpdatePromotions,
   theme,
@@ -387,34 +389,45 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       const targetId = String(id || '').trim();
       const targetCode = String(code || '').trim();
 
-      // Intento de borrado en Firebase usando deleteDoc(doc(db, 'productos', id))
+      // Función que fuerza la eliminación del estado local de React (UI) para que desaparezca para siempre
+      const forceLocalRemoval = () => {
+        const remainingProducts = products.filter((p) => {
+          const pId = String(p.id || '').trim();
+          const pCode = String(p.code || '').trim();
+          if (targetId && (pId === targetId || pCode === targetId)) return false;
+          if (targetCode && (pId === targetCode || pCode === targetCode)) return false;
+          return true;
+        });
+
+        onUpdateProducts(remainingProducts);
+        saveCatalogBackup(remainingProducts);
+        if (onDeleteProduct) {
+          onDeleteProduct(targetId);
+        }
+        triggerSaveNotice();
+      };
+
       try {
         const firestoreDb = db || getFirebaseDb();
         if (firestoreDb && targetId) {
-          await deleteDoc(doc(firestoreDb, 'productos', targetId));
-          await deleteDoc(doc(firestoreDb, 'products', targetId)).catch(() => {});
+          // deleteDoc(doc(db, 'products', id))
+          await deleteDoc(doc(firestoreDb, 'products', targetId));
+          await deleteDoc(doc(firestoreDb, 'productos', targetId)).catch(() => {});
           if (targetCode && targetCode !== targetId) {
-            await deleteDoc(doc(firestoreDb, 'productos', targetCode)).catch(() => {});
             await deleteDoc(doc(firestoreDb, 'products', targetCode)).catch(() => {});
+            await deleteDoc(doc(firestoreDb, 'productos', targetCode)).catch(() => {});
           }
         }
       } catch (fbErr) {
-        console.warn('[FIREBASE] Error al eliminar documento en Firestore (se fuerza eliminación en UI):', fbErr);
+        console.warn('[FIREBASE] Error al eliminar documento en backend (se fuerza eliminación en UI):', fbErr);
+        // Si el comando deleteDoc falla en el backend porque el ID está corrupto o no existe,
+        // el bloque catch fuerza igualmente la eliminación de ese producto del estado local de React
+        forceLocalRemoval();
+        return;
       }
 
-      // Si el intento de borrar falla en Firebase (porque el ID es viejo o está corrupto),
-      // forzar siempre la eliminación del estado local (UI) para destrabar la vista del catálogo
-      const remainingProducts = products.filter((p) => {
-        const pId = String(p.id || '').trim();
-        const pCode = String(p.code || '').trim();
-        if (targetId && (pId === targetId || pCode === targetId)) return false;
-        if (targetCode && (pId === targetCode || pCode === targetCode)) return false;
-        return true;
-      });
-
-      onUpdateProducts(remainingProducts);
-      saveCatalogBackup(remainingProducts);
-      triggerSaveNotice();
+      // Si fue exitoso en Firebase, también limpia el estado local de React
+      forceLocalRemoval();
     }
   };
 
