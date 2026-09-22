@@ -78,18 +78,6 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
         }
       }
     } catch {}
-
-    // 2. Fetch from server user quote endpoint
-    if (userSession.email) {
-      fetch(`/api/quotes/user/${encodeURIComponent(userSession.email)}`)
-        .then((res) => res.json())
-        .then((data) => {
-          if (Array.isArray(data.quotes) && data.quotes.length > 0) {
-            setQuoteHistory(data.quotes);
-          }
-        })
-        .catch(() => {});
-    }
   }, [userSession.email]);
 
   const handleSubmit = (e: React.FormEvent) => {

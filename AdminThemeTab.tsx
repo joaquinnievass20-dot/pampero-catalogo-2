@@ -346,19 +346,10 @@ export const AdminThemeTab: React.FC<AdminThemeTabProps> = ({
       }
     }
     onUpdateTheme(currentTheme);
-    try {
-      await fetch('/api/theme', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ theme: currentTheme }),
-      });
-    } catch (err) {
-      console.error('[THEME] Error saving theme to server:', err);
-    }
     triggerSaveNotice();
   };
 
-  // Logo file upload handler with direct server persistence
+  // Logo file upload handler with direct persistence
   const handleLogoFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -372,29 +363,15 @@ export const AdminThemeTab: React.FC<AdminThemeTabProps> = ({
     reader.onload = async (event) => {
       const dataUrl = event.target?.result as string;
       if (dataUrl) {
-        // 1. Immediate optimistic update
         applyLiveChange('customLogoUrl', dataUrl);
-        triggerSaveNotice();
-
-        // 2. Direct server persistence
-        try {
-          const resp = await fetch('/api/theme/logo', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ dataUrl, filename: file.name }),
-          });
-          const result = await resp.json();
-          if (result.success && result.theme) {
-            setCurrentTheme(result.theme);
-            onUpdateTheme(result.theme);
-            if (typeof window !== 'undefined') {
-              localStorage.setItem('pampero_catalog_theme', JSON.stringify(result.theme));
-              localStorage.setItem('pampero_custom_logo', result.logoUrl);
-            }
-          }
-        } catch (err) {
-          console.error('[LOGO UPLOAD] Error persisting logo to server:', err);
+        const updatedTheme = { ...currentTheme, customLogoUrl: dataUrl };
+        setCurrentTheme(updatedTheme);
+        onUpdateTheme(updatedTheme);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('pampero_catalog_theme', JSON.stringify(updatedTheme));
+          localStorage.setItem('pampero_custom_logo', dataUrl);
         }
+        triggerSaveNotice();
       }
     };
     reader.readAsDataURL(file);
@@ -411,15 +388,6 @@ export const AdminThemeTab: React.FC<AdminThemeTabProps> = ({
     if (typeof window !== 'undefined') {
       localStorage.setItem('pampero_catalog_theme', JSON.stringify(merged));
       localStorage.setItem('pampero_theme_config', JSON.stringify(merged));
-    }
-    try {
-      await fetch('/api/theme', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ theme: merged }),
-      });
-    } catch (err) {
-      console.error('[THEME] Error saving preset to server:', err);
     }
     triggerSaveNotice();
   };
@@ -440,15 +408,6 @@ export const AdminThemeTab: React.FC<AdminThemeTabProps> = ({
     }
     setCurrentTheme(merged);
     onUpdateTheme(merged);
-    try {
-      await fetch('/api/theme', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ theme: merged }),
-      });
-    } catch (err) {
-      console.error('[THEME] Error resetting theme on server:', err);
-    }
     triggerSaveNotice();
   };
 

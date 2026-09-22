@@ -132,12 +132,6 @@ export function saveStoredCategoryHierarchy(newHierarchy: CategoryStructure[]): 
   try {
     localStorage.setItem('pampero_category_hierarchy', JSON.stringify(newHierarchy));
     window.dispatchEvent(new CustomEvent('pampero_categories_updated', { detail: newHierarchy }));
-    // Asynchronous background sync with server
-    fetch('/api/categories', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ categories: newHierarchy }),
-    }).catch((err) => console.warn('Categories server sync error (ignored):', err));
   } catch (e) {
     console.error('Error saving stored category hierarchy', e);
   }

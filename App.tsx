@@ -230,63 +230,6 @@ export default function App() {
         console.warn('[FIREBASE SYNC] Cloud sync warning:', fErr);
       }
     }
-
-    // 2. Local Express Server API (if running in full-stack Node container)
-    try {
-      const res = await fetch(`/api/catalog/sync?_t=${Date.now()}`, {
-        cache: 'no-store',
-        headers: {
-          'Cache-Control': 'no-cache, no-store',
-          Pragma: 'no-cache',
-        },
-      });
-      if (!res.ok) return;
-      const contentType = res.headers.get('content-type') || '';
-      if (!contentType.includes('application/json')) return;
-      const data = await res.json();
-      if (!data || !data.success) return;
-
-      // Authoritative Products Catalog with Resilience & Hybrid Auto-Recovery
-      const localBackup = loadCatalogBackup();
-      const serverProds: Product[] = Array.isArray(data.products) ? data.products : [];
-
-      if (isServerCatalogReset(serverProds, localBackup) && localBackup && localBackup.length > 0 && !isFirebaseReady()) {
-        setProducts(localBackup);
-        syncBackupToServer(localBackup);
-      } else if (serverProds.length > 0 && !isFirebaseReady()) {
-        const sanitized = serverProds.map((p: Product) => ({
-          ...p,
-          category: sanitizeCategory(p.category),
-          section: p.section || '',
-          subCategory: p.subCategory || '',
-        }));
-        setProducts(sanitized);
-        saveCatalogBackup(sanitized);
-      }
-
-      if (!isFirebaseReady()) {
-        if (data.theme && typeof data.theme === 'object') {
-          setTheme(data.theme);
-        }
-        if (Array.isArray(data.promotions) && data.promotions.length > 0) {
-          setPromotions(data.promotions);
-        }
-        if (Array.isArray(data.branches) && data.branches.length > 0) {
-          setBranches(data.branches);
-        }
-        if (Array.isArray(data.coupons)) {
-          setCoupons(data.coupons);
-        }
-        if (Array.isArray(data.categories) && data.categories.length > 0) {
-          setCategories(data.categories);
-        }
-        if (Array.isArray(data.volumeDiscounts) && data.volumeDiscounts.length > 0) {
-          setVolumeDiscounts(data.volumeDiscounts);
-        }
-      }
-    } catch {
-      // Offline or serverless environment
-    }
   };
 
   // Sync products and store configuration in real-time across all devices and tabs
@@ -475,21 +418,19 @@ export default function App() {
     try {
       const firestoreDb = db || getFirebaseDb();
       if (firestoreDb) {
-        await deleteDoc(doc(firestoreDb, 'products', targetId));
-        await deleteDoc(doc(firestoreDb, 'productos', targetId)).catch(() => {});
+        await deleteDoc(doc(firestoreDb, 'productos', targetId));
       }
-    } catch (fbErr) {
-      console.warn('[FIREBASE] Error al eliminar documento en backend:', fbErr);
-    } finally {
-      // Si el comando deleteDoc falla en el backend porque el ID está corrupto o no existe,
-      // el bloque catch/finally fuerza igualmente la eliminación de ese producto del estado local de React
-      // (setProducts(prev => prev.filter(p => p.id !== id))) para que desaparezca visualmente de la interfaz para siempre.
       setProducts((prev) => {
-        const remaining = prev.filter((p) => {
-          const pId = String(p.id || '').trim();
-          const pCode = String(p.code || '').trim();
-          return pId !== targetId && pCode !== targetId;
-        });
+        const remaining = prev.filter((p) => p.id !== targetId);
+        saveCatalogBackup(remaining);
+        return remaining;
+      });
+    } catch (error) {
+      console.warn('[FIREBASE] Error al eliminar documento en backend (forzando eliminación en UI):', error);
+      // Crucial: Si deleteDoc falla (porque el ID está corrupto o es de la base vieja),
+      // el bloque catch DEBE forzar la eliminación del producto del estado local de React
+      setProducts((prev) => {
+        const remaining = prev.filter((p) => p.id !== targetId);
         saveCatalogBackup(remaining);
         return remaining;
       });
@@ -502,18 +443,8 @@ export default function App() {
       localStorage.setItem('pampero_catalog_promos', JSON.stringify(newPromos));
     } catch {}
 
-    // Persist to Cloud Firestore
+    // Persist to Cloud Firestore via Firebase SDK
     saveFirestoreStoreConfig({ promotions: newPromos });
-
-    try {
-      await fetch('/api/promotions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ promotions: newPromos }),
-      });
-    } catch (err) {
-      console.error('[PAMPERO PERSIST] Error saving promotions to server:', err);
-    }
   };
 
   const handleUpdateTheme = async (newTheme: ThemeConfig) => {
@@ -529,18 +460,8 @@ export default function App() {
       }
     } catch {}
 
-    // Persist to Cloud Firestore
+    // Persist to Cloud Firestore via Firebase SDK
     saveFirestoreStoreConfig({ theme: newTheme });
-
-    try {
-      await fetch('/api/theme', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ theme: newTheme }),
-      });
-    } catch (err) {
-      console.error('[PAMPERO PERSIST] Error saving theme to server:', err);
-    }
   };
 
   const handleUpdateBranches = async (newBranches: BranchLocation[]) => {
@@ -549,18 +470,8 @@ export default function App() {
       localStorage.setItem('pampero_catalog_branches', JSON.stringify(newBranches));
     } catch {}
 
-    // Persist to Cloud Firestore
+    // Persist to Cloud Firestore via Firebase SDK
     saveFirestoreStoreConfig({ branches: newBranches });
-
-    try {
-      await fetch('/api/branches', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ branches: newBranches }),
-      });
-    } catch (err) {
-      console.error('[PAMPERO PERSIST] Error saving branches to server:', err);
-    }
   };
 
   const handleUpdateCoupons = async (newCoupons: DiscountCoupon[]) => {
@@ -569,18 +480,8 @@ export default function App() {
       localStorage.setItem('pampero_discount_coupons', JSON.stringify(newCoupons));
     } catch {}
 
-    // Persist to Cloud Firestore
+    // Persist to Cloud Firestore via Firebase SDK
     saveFirestoreStoreConfig({ coupons: newCoupons });
-
-    try {
-      await fetch('/api/coupons', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ coupons: newCoupons }),
-      });
-    } catch (err) {
-      console.error('[PAMPERO PERSIST] Error saving coupons to server:', err);
-    }
   };
 
   const handleUpdateLookbook = async (newLookbook: LookbookItem[]) => {
@@ -589,18 +490,8 @@ export default function App() {
       localStorage.setItem('pampero_catalog_lookbook', JSON.stringify(newLookbook));
     } catch {}
 
-    // Persist to Cloud Firestore
+    // Persist to Cloud Firestore via Firebase SDK
     saveFirestoreStoreConfig({ lookbook: newLookbook });
-
-    try {
-      await fetch('/api/lookbook', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lookbook: newLookbook }),
-      });
-    } catch (err) {
-      console.error('[PAMPERO PERSIST] Error saving lookbook to server:', err);
-    }
   };
 
   const handleUpdateCategories = async (newCategories: CategoryHierarchyItem[]) => {
@@ -609,18 +500,8 @@ export default function App() {
       localStorage.setItem('pampero_catalog_categories', JSON.stringify(newCategories));
     } catch {}
 
-    // Persist to Cloud Firestore
+    // Persist to Cloud Firestore via Firebase SDK
     saveFirestoreStoreConfig({ categories: newCategories });
-
-    try {
-      await fetch('/api/categories', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ categories: newCategories }),
-      });
-    } catch (err) {
-      console.error('[PAMPERO PERSIST] Error saving categories to server:', err);
-    }
   };
 
   const handleUpdateVolumeDiscounts = async (newDiscounts: VolumeDiscountRule[]) => {
@@ -629,18 +510,8 @@ export default function App() {
       localStorage.setItem('pampero_volume_discounts', JSON.stringify(newDiscounts));
     } catch {}
 
-    // Persist to Cloud Firestore
+    // Persist to Cloud Firestore via Firebase SDK
     saveFirestoreStoreConfig({ volumeDiscounts: newDiscounts });
-
-    try {
-      await fetch('/api/volume-discounts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ volumeDiscounts: newDiscounts }),
-      });
-    } catch (err) {
-      console.error('[PAMPERO PERSIST] Error saving volume discounts to server:', err);
-    }
   };
 
   const handleLogin = (session: UserSession) => {

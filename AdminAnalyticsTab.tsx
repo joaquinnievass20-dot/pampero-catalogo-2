@@ -39,50 +39,37 @@ export const AdminAnalyticsTab: React.FC = () => {
     
     setFunnel(getLocalFunnelMetrics());
 
-    // Fetch from central server analytics API
-    fetch('/api/analytics')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.success) {
-          setSearchMetrics(data.searchMetrics || []);
-          setProductMetrics(data.productMetrics || []);
-          return;
-        }
-        throw new Error('Fallback to local');
-      })
-      .catch(() => {
-        try {
-          // 1. Load real search analytics from local storage without fake data
-          const rawSearch = localStorage.getItem('pampero_search_analytics');
-          if (rawSearch) {
-            const parsed = JSON.parse(rawSearch);
-            const list: SearchMetric[] = Object.entries(parsed).map(([term, data]: [string, any]) => ({
-              term,
-              count: typeof data === 'number' ? data : data.count || 1,
-              lastSearched: typeof data === 'object' && data.lastSearched ? data.lastSearched : new Date().toISOString(),
-            }));
-            list.sort((a, b) => b.count - a.count);
-            setSearchMetrics(list);
-          } else {
-            setSearchMetrics([]);
-          }
+    try {
+      // 1. Load real search analytics from local storage without fake data
+      const rawSearch = localStorage.getItem('pampero_search_analytics');
+      if (rawSearch) {
+        const parsed = JSON.parse(rawSearch);
+        const list: SearchMetric[] = Object.entries(parsed).map(([term, data]: [string, any]) => ({
+          term,
+          count: typeof data === 'number' ? data : data.count || 1,
+          lastSearched: typeof data === 'object' && data.lastSearched ? data.lastSearched : new Date().toISOString(),
+        }));
+        list.sort((a, b) => b.count - a.count);
+        setSearchMetrics(list);
+      } else {
+        setSearchMetrics([]);
+      }
 
-          // 2. Load real product click/interaction metrics without fake data
-          const rawProduct = localStorage.getItem('pampero_product_metrics');
-          if (rawProduct) {
-            const parsed = JSON.parse(rawProduct);
-            const list: ProductMetric[] = Object.values(parsed);
-            list.sort((a, b) => b.clickCount - a.clickCount);
-            setProductMetrics(list);
-          } else {
-            setProductMetrics([]);
-          }
-        } catch (e) {
-          console.error('Error loading analytics:', e);
-          setSearchMetrics([]);
-          setProductMetrics([]);
-        }
-      });
+      // 2. Load real product click/interaction metrics without fake data
+      const rawProduct = localStorage.getItem('pampero_product_metrics');
+      if (rawProduct) {
+        const parsed = JSON.parse(rawProduct);
+        const list: ProductMetric[] = Object.values(parsed);
+        list.sort((a, b) => b.clickCount - a.clickCount);
+        setProductMetrics(list);
+      } else {
+        setProductMetrics([]);
+      }
+    } catch (e) {
+      console.error('Error loading analytics:', e);
+      setSearchMetrics([]);
+      setProductMetrics([]);
+    }
   };
 
   useEffect(() => {
@@ -91,7 +78,6 @@ export const AdminAnalyticsTab: React.FC = () => {
 
   const handleClearMetrics = () => {
     if (confirm('¿Estás seguro de reiniciar todas las métricas de búsquedas y clics a cero?')) {
-      fetch('/api/analytics/reset', { method: 'POST' }).catch(() => {});
       localStorage.removeItem('pampero_search_analytics');
       localStorage.removeItem('pampero_product_metrics');
       localStorage.removeItem('pampero_funnel_analytics');

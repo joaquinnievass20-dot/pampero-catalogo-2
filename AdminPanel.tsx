@@ -387,18 +387,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const handleDeleteProduct = async (id: string, code?: string) => {
     if (confirm('¿Desea eliminar este producto del catálogo?')) {
       const targetId = String(id || '').trim();
-      const targetCode = String(code || '').trim();
 
-      // Función que fuerza la eliminación del estado local de React (UI) para que desaparezca para siempre
+      // Función que fuerza la eliminación del producto del estado local de React (UI)
       const forceLocalRemoval = () => {
-        const remainingProducts = products.filter((p) => {
-          const pId = String(p.id || '').trim();
-          const pCode = String(p.code || '').trim();
-          if (targetId && (pId === targetId || pCode === targetId)) return false;
-          if (targetCode && (pId === targetCode || pCode === targetCode)) return false;
-          return true;
-        });
-
+        const remainingProducts = products.filter((p) => p.id !== targetId);
         onUpdateProducts(remainingProducts);
         saveCatalogBackup(remainingProducts);
         if (onDeleteProduct) {
@@ -410,24 +402,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       try {
         const firestoreDb = db || getFirebaseDb();
         if (firestoreDb && targetId) {
-          // deleteDoc(doc(db, 'products', id))
-          await deleteDoc(doc(firestoreDb, 'products', targetId));
-          await deleteDoc(doc(firestoreDb, 'productos', targetId)).catch(() => {});
-          if (targetCode && targetCode !== targetId) {
-            await deleteDoc(doc(firestoreDb, 'products', targetCode)).catch(() => {});
-            await deleteDoc(doc(firestoreDb, 'productos', targetCode)).catch(() => {});
-          }
+          // deleteDoc(doc(db, 'productos', id))
+          await deleteDoc(doc(firestoreDb, 'productos', targetId));
+          await deleteDoc(doc(firestoreDb, 'products', targetId)).catch(() => {});
         }
-      } catch (fbErr) {
-        console.warn('[FIREBASE] Error al eliminar documento en backend (se fuerza eliminación en UI):', fbErr);
-        // Si el comando deleteDoc falla en el backend porque el ID está corrupto o no existe,
-        // el bloque catch fuerza igualmente la eliminación de ese producto del estado local de React
+        // Éxito: sincronizar estado local de React
         forceLocalRemoval();
-        return;
+      } catch (error) {
+        console.warn('[FIREBASE] Error al eliminar documento en backend (se fuerza eliminación en UI):', error);
+        // Crucial: Si deleteDoc falla (porque el ID está corrupto o es de la base vieja),
+        // el bloque catch DEBE forzar la eliminación del producto del estado local de React
+        forceLocalRemoval();
       }
-
-      // Si fue exitoso en Firebase, también limpia el estado local de React
-      forceLocalRemoval();
     }
   };
 

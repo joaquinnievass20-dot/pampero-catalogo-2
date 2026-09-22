@@ -28,18 +28,6 @@ export const AdminQuotesTab: React.FC = () => {
   const fetchQuotes = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/quotes');
-      if (res.ok) {
-        const data = await res.json();
-        if (data.quotes) {
-          setQuotes(data.quotes);
-          return;
-        }
-      }
-    } catch {}
-
-    // Fallback to local storage if offline
-    try {
       const local = localStorage.getItem('pampero_received_quotes');
       if (local) {
         setQuotes(JSON.parse(local));
