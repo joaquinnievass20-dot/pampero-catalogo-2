@@ -104,16 +104,49 @@ export const AdminBulkExcelImportModal: React.FC<AdminBulkExcelImportModalProps>
     return 'Hombre';
   };
 
+  const cleanPrice = (val: any): number => {
+    if (val === undefined || val === null || val === '') return 0;
+    if (typeof val === 'number') return isNaN(val) ? 0 : Math.round(val);
+    let str = String(val).trim().replace(/[\$\sA-Za-z]/g, '');
+    if (!str) return 0;
+    // Format with thousands separator and decimals, e.g. 16.180,50
+    if (str.includes('.') && str.includes(',')) {
+      str = str.replace(/\./g, '').replace(',', '.');
+    } else if (str.includes(',')) {
+      const parts = str.split(',');
+      if (parts.length > 2 || (parts.length === 2 && parts[1].length === 3 && parts[0].length >= 1)) {
+        str = str.replace(/,/g, '');
+      } else {
+        str = str.replace(',', '.');
+      }
+    } else if (str.includes('.')) {
+      const parts = str.split('.');
+      if (parts.length > 2) {
+        str = str.replace(/\./g, '');
+      } else if (parts.length === 2) {
+        // e.g. "$16.180" -> parts[1] is 3 digits, so it's thousands separator: 16180
+        if (parts[1].length === 3) {
+          str = parts[0] + parts[1];
+        } else {
+          str = parts[0] + '.' + parts[1];
+        }
+      }
+    }
+    const num = parseFloat(str.replace(/[^0-9.]/g, ''));
+    return isNaN(num) ? 0 : Math.round(num);
+  };
+
   const parseRawRows = (rows: any[]) => {
     const list: Partial<Product>[] = [];
 
     rows.forEach((r, idx) => {
-      // Look for keys flexibly (case-insensitive)
+      // Look for keys flexibly (case-insensitive and accent-insensitive)
       const getVal = (possibleKeys: string[]) => {
         for (const k of Object.keys(r)) {
-          const cleanKey = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const cleanKey = k.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, '');
           for (const pk of possibleKeys) {
-            if (cleanKey.includes(pk.toLowerCase().replace(/[^a-z0-9]/g, ''))) {
+            const cleanPk = pk.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, '');
+            if (cleanKey.includes(cleanPk)) {
               return r[k];
             }
           }
@@ -121,8 +154,9 @@ export const AdminBulkExcelImportModal: React.FC<AdminBulkExcelImportModalProps>
         return undefined;
       };
 
-      const code = String(getVal(['codigo', 'sku', 'cod', 'articulo']) || '').trim();
-      const name = String(getVal(['nombre', 'producto', 'denominacion', 'item']) || '').trim();
+      const rawCode = getVal(['codigo', 'sku', 'cod', 'articulo', 'art']);
+      const code = rawCode !== undefined && rawCode !== null ? String(rawCode).trim() : '';
+      const name = String(getVal(['nombre', 'producto', 'denominacion', 'item', 'titulo', 'descripcioncorta']) || '').trim();
 
       if (!code && !name) return; // skip empty rows
 
@@ -132,14 +166,16 @@ export const AdminBulkExcelImportModal: React.FC<AdminBulkExcelImportModalProps>
       const section = String(getVal(['seccion', 'area']) || 'Urbano').trim();
       const subCategory = String(getVal(['subcategoria', 'subrubro', 'tipo']) || 'General').trim();
       
-      const rawPrice = getVal(['precio', 'preciominorista', 'venta', 'pvp']);
-      const price = Number(String(rawPrice || '0').replace(/[^0-9.]/g, '')) || 0;
+      const rawPrice = getVal(['precio', 'preciominorista', 'venta', 'pvp', 'valor']);
+      const price = cleanPrice(rawPrice);
 
       const rawCorpPrice = getVal(['preciomayorista', 'empresa', 'mayorista', 'preciocorp']);
-      const corporatePrice = rawCorpPrice ? Number(String(rawCorpPrice).replace(/[^0-9.]/g, '')) : Math.round(price * 0.85);
+      const corporatePrice = rawCorpPrice !== undefined && rawCorpPrice !== null && String(rawCorpPrice).trim() !== ''
+        ? cleanPrice(rawCorpPrice)
+        : Math.round(price * 0.85);
 
       const rawDesc = getVal(['descuento', 'descuentoporcentaje', 'promo']);
-      const discountPercentage = Number(String(rawDesc || '0').replace(/[^0-9.]/g, '')) || 0;
+      const discountPercentage = rawDesc ? cleanPrice(rawDesc) : 0;
 
       // Extract Unisex flag
       const rawUnisex = String(getVal(['unisex', 'esunisex', 'genero', 'sexo']) || '').trim().toLowerCase();
@@ -159,7 +195,7 @@ export const AdminBulkExcelImportModal: React.FC<AdminBulkExcelImportModalProps>
             // format: from-to:price:suffix or label:price:suffix
             const segments = part.split(':').map((s) => s.trim());
             const rangeStr = segments[0] || '50-58';
-            const rangePrice = Number(String(segments[1] || '0').replace(/[^0-9.]/g, '')) || Math.round(price * 1.15);
+            const rangePrice = segments[1] ? cleanPrice(segments[1]) : Math.round(price * 1.15);
             const rangeSuffix = segments[2] || '-1';
             const [fromS, toS] = rangeStr.includes('-') ? rangeStr.split('-').map((s) => s.trim()) : [rangeStr, rangeStr];
             const sizeList: string[] = [];
@@ -200,45 +236,59 @@ export const AdminBulkExcelImportModal: React.FC<AdminBulkExcelImportModalProps>
         ? String(rawColors).split(/[,;/]/).map((c) => c.trim()).filter(Boolean)
         : ['Negro', 'Azul trabajo'];
 
-      const rawSizes = getVal(['talles', 'talle', 'medidas']);
-      const availableSizes = rawSizes
-        ? String(rawSizes).split(/[,;/]/).map((s) => s.trim()).filter(Boolean)
-        : ['S', 'M', 'L', 'XL'];
+      // Talles como texto libre y lista disponible
+      const rawSizes = getVal(['talles', 'talle', 'medidas', 'curvatalles', 'curva', 'sizes']);
+      const standardSizes = rawSizes !== undefined && rawSizes !== null ? String(rawSizes).trim() : '';
+
+      let availableSizes: string[] = [];
+      if (standardSizes) {
+        if (/[;,/]/.test(standardSizes)) {
+          availableSizes = standardSizes.split(/[;,/]+/).map((s) => s.trim()).filter(Boolean);
+        } else if (/\s+/.test(standardSizes) && !standardSizes.toLowerCase().includes('al') && !standardSizes.toLowerCase().includes('a')) {
+          availableSizes = standardSizes.split(/\s+/).map((s) => s.trim()).filter(Boolean);
+        } else {
+          availableSizes = [standardSizes];
+        }
+      }
+      if (availableSizes.length === 0) {
+        availableSizes = ['S', 'M', 'L', 'XL'];
+      }
 
       const rawImg = String(getVal(['imagen', 'foto', 'url', 'imageurl', 'img']) || '').trim();
       const image = rawImg || 'https://images.unsplash.com/photo-1544923246-77307dd654cb?auto=format&fit=crop&w=800&q=80';
 
       const description = String(getVal(['descripcion', 'detalle', 'observaciones']) || 'Prenda original Pampero oficial.').trim();
 
-        const assignedCode = code || `PAM-${Math.floor(1000 + Math.random() * 9000)}`;
+      const assignedCode = code || `PAM-${Math.floor(1000 + Math.random() * 9000)}`;
 
-        list.push({
-          id: assignedCode,
-          code: assignedCode,
-          name: name || 'Producto Pampero',
-          category,
-          section,
-          subCategory,
-          price,
-          corporatePrice,
-          discountPercentage,
-          isUnisex,
-          isCorporateOnly,
-          specialSizeRanges,
-          availableColors,
-          availableSizes,
-          image,
-          images: [image],
-          description,
-          features: ['Calidad Pampero Garantizada', 'Costuras Reforzadas'],
-          inStock: true,
-          promotionTag: discountPercentage > 0 ? 'Liquidación' : 'Temporada 2026',
-        });
+      list.push({
+        id: assignedCode,
+        code: assignedCode,
+        name: name || 'Producto Pampero',
+        category,
+        section,
+        subCategory,
+        price,
+        corporatePrice,
+        discountPercentage,
+        isUnisex,
+        isCorporateOnly,
+        specialSizeRanges,
+        availableColors,
+        availableSizes,
+        standardSizes: standardSizes || availableSizes.join(', '),
+        image,
+        images: [image],
+        description,
+        features: ['Calidad Pampero Garantizada', 'Costuras Reforzadas'],
+        inStock: true,
+        promotionTag: discountPercentage > 0 ? 'Liquidación' : 'Temporada 2026',
       });
+    });
 
-      setParsedRows(list);
-      setErrorMsg(list.length === 0 ? 'No se encontraron filas válidas con Código o Nombre.' : null);
-    };
+    setParsedRows(list);
+    setErrorMsg(list.length === 0 ? 'No se encontraron filas válidas con Código o Nombre.' : null);
+  };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -314,6 +364,11 @@ export const AdminBulkExcelImportModal: React.FC<AdminBulkExcelImportModalProps>
       // Preparar los productos asegurando que el código SKU sea el ID único de documento
       const fullProducts: Product[] = parsedRows.map((p, idx) => {
         const sku = String(p.code || p.id || `PAM-${idx + 100}`).trim();
+        const priceCleaned = typeof p.price === 'number' ? p.price : cleanPrice(p.price);
+        const corporatePriceCleaned = p.corporatePrice !== undefined
+          ? (typeof p.corporatePrice === 'number' ? p.corporatePrice : cleanPrice(p.corporatePrice))
+          : Math.round(priceCleaned * 0.85);
+
         return {
           id: sku,
           code: sku,
@@ -323,9 +378,9 @@ export const AdminBulkExcelImportModal: React.FC<AdminBulkExcelImportModalProps>
           subCategory: p.subCategory || 'General',
           description: p.description || 'Prenda oficial Pampero.',
           features: p.features || ['Calidad Pampero Garantizada', 'Costuras Reforzadas'],
-          price: Number(p.price) || 0,
-          corporatePrice: Number(p.corporatePrice) || Math.round((Number(p.price) || 0) * 0.85),
-          discountPercentage: Number(p.discountPercentage) || 0,
+          price: priceCleaned,
+          corporatePrice: corporatePriceCleaned,
+          discountPercentage: typeof p.discountPercentage === 'number' ? p.discountPercentage : cleanPrice(p.discountPercentage),
           promotionTag: p.promotionTag || 'Temporada 2026',
           image: p.image || 'https://images.unsplash.com/photo-1544923246-77307dd654cb?auto=format&fit=crop&w=800&q=80',
           images: Array.isArray(p.images) && p.images.length > 0 ? p.images : [p.image || 'https://images.unsplash.com/photo-1544923246-77307dd654cb?auto=format&fit=crop&w=800&q=80'],
@@ -333,6 +388,7 @@ export const AdminBulkExcelImportModal: React.FC<AdminBulkExcelImportModalProps>
           imagesWomen: Array.isArray(p.imagesWomen) ? p.imagesWomen : [],
           availableColors: Array.isArray(p.availableColors) && p.availableColors.length > 0 ? p.availableColors : ['Negro', 'Azul trabajo'],
           availableSizes: Array.isArray(p.availableSizes) && p.availableSizes.length > 0 ? p.availableSizes : ['S', 'M', 'L', 'XL'],
+          standardSizes: p.standardSizes || (Array.isArray(p.availableSizes) ? p.availableSizes.join(', ') : ''),
           isUnisex: Boolean(p.isUnisex),
           isCorporateOnly: Boolean(p.isCorporateOnly),
           specialSizeRanges: p.specialSizeRanges,
@@ -652,7 +708,7 @@ export const AdminBulkExcelImportModal: React.FC<AdminBulkExcelImportModalProps>
                           {r.availableColors?.join(', ') || '-'}
                         </td>
                         <td className="p-2 text-[#6F6860] text-[11px]">
-                          {r.availableSizes?.join(', ') || '-'}
+                          {r.standardSizes || r.availableSizes?.join(', ') || '-'}
                         </td>
                       </tr>
                     ))}

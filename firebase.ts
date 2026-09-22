@@ -1,5 +1,6 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import {
+  initializeFirestore,
   getFirestore,
   collection,
   doc,
@@ -40,11 +41,30 @@ export const firebaseConfig = {
 export let db: Firestore | null = null;
 let isInitialized = false;
 
+function createFirestoreInstance(): Firestore | null {
+  try {
+    const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+    try {
+      // Force long polling to prevent WebSocket / WebChannel streaming 10s timeouts
+      // in browser iframes, strict proxies, or offline fallback scenarios.
+      return initializeFirestore(app, {
+        experimentalForceLongPolling: true,
+      });
+    } catch {
+      return getFirestore(app);
+    }
+  } catch (error) {
+    console.warn('[FIREBASE] Initialization warning (offline/fallback mode):', error);
+    return null;
+  }
+}
+
 try {
-  const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-  db = getFirestore(app);
-  isInitialized = true;
-  console.log('[FIREBASE] Cloud Firestore connected to project:', firebaseConfig.projectId);
+  db = createFirestoreInstance();
+  isInitialized = db !== null;
+  if (db) {
+    console.log('[FIREBASE] Cloud Firestore connected to project:', firebaseConfig.projectId);
+  }
 } catch (error) {
   console.warn('[FIREBASE] Initialization warning (offline/fallback mode):', error);
   db = null;
@@ -53,19 +73,26 @@ try {
 
 export function getFirebaseDb(): Firestore | null {
   if (db) return db;
-  try {
-    const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-    db = getFirestore(app);
-    isInitialized = true;
-    return db;
-  } catch (error) {
-    console.warn('[FIREBASE] Could not obtain Firestore instance:', error);
-    return null;
-  }
+  db = createFirestoreInstance();
+  isInitialized = db !== null;
+  return db;
 }
 
 export function isFirebaseReady(): boolean {
   return (isInitialized && db !== null) || getFirebaseDb() !== null;
+}
+
+/**
+ * Executes a promise with an automatic timeout to prevent stalling
+ * if the device or network connection is offline or unstable.
+ */
+function withTimeout<T>(promise: Promise<T>, timeoutMs = 8000): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`Operación de Firestore cancelada por timeout (${timeoutMs}ms)`)), timeoutMs)
+    ),
+  ]);
 }
 
 // ==========================================
@@ -76,11 +103,16 @@ export async function fetchFirestoreProducts(): Promise<Product[] | null> {
   const firestoreDb = db || getFirebaseDb();
   if (!firestoreDb) return null;
   try {
-    let snapshot = await getDocs(collection(firestoreDb, 'productos'));
-    if (snapshot.empty) {
-      snapshot = await getDocs(collection(firestoreDb, 'products'));
-    }
-    if (snapshot.empty) {
+    const fetchAction = async () => {
+      let snapshot = await getDocs(collection(firestoreDb, 'productos'));
+      if (snapshot.empty) {
+        snapshot = await getDocs(collection(firestoreDb, 'products'));
+      }
+      return snapshot;
+    };
+
+    const snapshot = await withTimeout(fetchAction(), 7000);
+    if (!snapshot || snapshot.empty) {
       return null;
     }
     const products: Product[] = [];
@@ -98,8 +130,8 @@ export async function fetchFirestoreProducts(): Promise<Product[] | null> {
       }
     });
     return products;
-  } catch (err) {
-    console.warn('[FIREBASE] Could not fetch products from Firestore:', err);
+  } catch (err: any) {
+    console.warn('[FIREBASE] Aviso de lectura en Cloud Firestore (modo offline/fallback activo):', err?.message || err);
     return null;
   }
 }
@@ -241,24 +273,26 @@ export interface FirestoreStoreConfig {
 }
 
 export async function fetchFirestoreStoreConfig(): Promise<FirestoreStoreConfig | null> {
-  if (!db) return null;
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return null;
   try {
-    const configDocRef = doc(db, 'store_config', 'main');
-    const docSnap = await getDoc(configDocRef);
-    if (!docSnap.exists()) {
+    const configDocRef = doc(firestoreDb, 'store_config', 'main');
+    const docSnap = await withTimeout(getDoc(configDocRef), 7000);
+    if (!docSnap || !docSnap.exists()) {
       return null;
     }
     return docSnap.data() as FirestoreStoreConfig;
-  } catch (err) {
-    console.warn('[FIREBASE] Could not fetch store_config from Firestore:', err);
+  } catch (err: any) {
+    console.warn('[FIREBASE] Aviso de lectura de configuración (modo offline/fallback activo):', err?.message || err);
     return null;
   }
 }
 
 export async function saveFirestoreStoreConfig(partialConfig: Partial<FirestoreStoreConfig>): Promise<boolean> {
-  if (!db) return false;
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return false;
   try {
-    const configDocRef = doc(db, 'store_config', 'main');
+    const configDocRef = doc(firestoreDb, 'store_config', 'main');
     const cleaned = JSON.parse(JSON.stringify(partialConfig));
     await setDoc(
       configDocRef,
@@ -283,9 +317,10 @@ export async function saveFirestoreStoreConfig(partialConfig: Partial<FirestoreS
 export function subscribeToFirestoreStoreConfig(
   onConfigChange: (config: FirestoreStoreConfig) => void
 ): () => void {
-  if (!db) return () => {};
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return () => {};
   try {
-    const configDocRef = doc(db, 'store_config', 'main');
+    const configDocRef = doc(firestoreDb, 'store_config', 'main');
     const unsubscribe = onSnapshot(
       configDocRef,
       (docSnap) => {
@@ -294,11 +329,12 @@ export function subscribeToFirestoreStoreConfig(
         }
       },
       (error) => {
-        console.warn('[FIREBASE] Real-time listener warning:', error);
+        console.warn('[FIREBASE] Real-time listener offline fallback:', error.message);
       }
     );
     return unsubscribe;
-  } catch {
+  } catch (err: any) {
+    console.warn('[FIREBASE] Error attaching real-time listener:', err?.message || err);
     return () => {};
   }
 }
