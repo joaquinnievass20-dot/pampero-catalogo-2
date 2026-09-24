@@ -34,7 +34,10 @@ import {
   fetchFirestoreStoreConfig,
   saveFirestoreStoreConfig,
   subscribeToFirestoreStoreConfig,
+  db,
+  getFirebaseDb,
 } from './services/firebase';
+import { doc, deleteDoc } from 'firebase/firestore';
 import { ensureMasterAdminInitialized } from './utils/authInit';
 import { trackAddToCart } from './utils/analytics';
 import { LandingHero } from './components/LandingHero';
@@ -43,6 +46,7 @@ import { ProductDetailView } from './components/ProductDetailView';
 import { LookbookView } from './components/LookbookView';
 import { AuthView } from './components/AuthView';
 import { AdminPanel } from './components/AdminPanel';
+import { CRMView } from './components/crm/CRMView';
 import { QuoteDrawer } from './components/QuoteDrawer';
 import { UserProfileModal } from './components/UserProfileModal';
 import { Footer } from './components/Footer';
@@ -61,19 +65,19 @@ import {
 } from 'lucide-react';
 
 export default function App() {
-  // Category sanitizer to ensure newly added products are never miscategorized
+  // Category sanitizer to ensure categories are cleanly mapped without inventing values for empty fields
   const sanitizeCategory = (rawCat: any): MainCategory => {
-    if (!rawCat) return 'Hombre';
+    if (!rawCat || !String(rawCat).trim()) return '' as MainCategory;
     const str = String(rawCat).trim();
     if (str === 'Mujer' || str === '1') return 'Mujer';
     if (str === 'Infantil' || str === '2') return 'Infantil';
     if (str === 'Venta Corporativa' || str === '3') return 'Venta Corporativa';
+    if (str === 'Hombre') return 'Hombre';
     const s = str.toLowerCase();
     if (s.includes('mujer')) return 'Mujer';
     if (s.includes('infan') || s.includes('niñ')) return 'Infantil';
     if (s.includes('corp') || s.includes('venta')) return 'Venta Corporativa';
-    if (str.length > 0) return str as MainCategory;
-    return 'Hombre';
+    return str as MainCategory;
   };
 
   // 1. Theme Configuration
@@ -156,8 +160,8 @@ export default function App() {
           const sanitized = firestoreProds.map((p: Product) => ({
             ...p,
             category: sanitizeCategory(p.category),
-            section: p.section || 'Urbano',
-            subCategory: p.subCategory || 'General',
+            section: p.section || '',
+            subCategory: p.subCategory || '',
           }));
           setProducts(sanitized);
           saveCatalogBackup(sanitized);
@@ -226,61 +230,6 @@ export default function App() {
       } catch (fErr) {
         console.warn('[FIREBASE SYNC] Cloud sync warning:', fErr);
       }
-    }
-
-    // 2. Local Express Server API (if running in full-stack Node container)
-    try {
-      const res = await fetch(`/api/catalog/sync?_t=${Date.now()}`, {
-        cache: 'no-store',
-        headers: {
-          'Cache-Control': 'no-cache, no-store',
-          Pragma: 'no-cache',
-        },
-      });
-      if (!res.ok) return;
-      const data = await res.json();
-      if (!data || !data.success) return;
-
-      // Authoritative Products Catalog with Resilience & Hybrid Auto-Recovery
-      const localBackup = loadCatalogBackup();
-      const serverProds: Product[] = Array.isArray(data.products) ? data.products : [];
-
-      if (isServerCatalogReset(serverProds, localBackup) && localBackup && localBackup.length > 0) {
-        setProducts(localBackup);
-        syncBackupToServer(localBackup);
-      } else if (serverProds.length > 0 && !isFirebaseReady()) {
-        const sanitized = serverProds.map((p: Product) => ({
-          ...p,
-          category: sanitizeCategory(p.category),
-          section: p.section || 'Urbano',
-          subCategory: p.subCategory || 'General',
-        }));
-        setProducts(sanitized);
-        saveCatalogBackup(sanitized);
-      }
-
-      if (!isFirebaseReady()) {
-        if (data.theme && typeof data.theme === 'object') {
-          setTheme(data.theme);
-        }
-        if (Array.isArray(data.promotions) && data.promotions.length > 0) {
-          setPromotions(data.promotions);
-        }
-        if (Array.isArray(data.branches) && data.branches.length > 0) {
-          setBranches(data.branches);
-        }
-        if (Array.isArray(data.coupons)) {
-          setCoupons(data.coupons);
-        }
-        if (Array.isArray(data.categories) && data.categories.length > 0) {
-          setCategories(data.categories);
-        }
-        if (Array.isArray(data.volumeDiscounts) && data.volumeDiscounts.length > 0) {
-          setVolumeDiscounts(data.volumeDiscounts);
-        }
-      }
-    } catch {
-      // Offline or serverless environment
     }
   };
 
@@ -436,7 +385,7 @@ export default function App() {
   // 'product_detail' -> Product detail (Screenshot 4)
   // 'admin'   -> Admin panel (requires admin authentication)
   // 'lookbook' -> Interactive campaign lookbook with hotspots
-  const [viewMode, setViewMode] = useState<'landing' | 'auth' | 'catalog' | 'product_detail' | 'admin' | 'lookbook'>('landing');
+  const [viewMode, setViewMode] = useState<'landing' | 'auth' | 'catalog' | 'product_detail' | 'admin' | 'lookbook' | 'crm'>('landing');
   const [authInitialTab, setAuthInitialTab] = useState<'login' | 'register' | 'admin'>('register');
   const [authInitialType, setAuthInitialType] = useState<'consumidor' | 'empresa'>('consumidor');
 
@@ -450,7 +399,7 @@ export default function App() {
   // Quote Drawer
   const [isCartOpen, setIsCartOpen] = useState(false);
 
-  // Persist handlers - Writes directly to centralized backend & updates local state
+  // Persist handlers - Writes directly to Cloud Firestore & updates local state
   const handleUpdateProducts = async (newProducts: Product[]) => {
     const sanitized = newProducts.map((p) => ({
       ...p,
@@ -459,28 +408,49 @@ export default function App() {
     setProducts(sanitized);
     saveCatalogBackup(sanitized);
 
-    // Persist to Cloud Firestore
+    // Persist to Cloud Firestore via Firebase SDK
     saveFirestoreProducts(sanitized);
+  };
+
+  const handleDeleteProduct = async (id: string) => {
+    const targetId = String(id || '').trim();
 
     try {
-      const res = await fetch('/api/products', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ products: sanitized }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && Array.isArray(data.products) && data.products.length > 0) {
-          const fresh = data.products.map((p: Product) => ({
-            ...p,
-            category: sanitizeCategory(p.category),
-          }));
-          setProducts(fresh);
-          saveCatalogBackup(fresh);
-        }
+      const firestoreDb = db || getFirebaseDb();
+      if (firestoreDb && targetId) {
+        // deleteDoc(doc(db, 'productos', id)) con timeout para evitar congelamiento si la conexión se cuelga
+        await Promise.race([
+          (async () => {
+            await deleteDoc(doc(firestoreDb, 'productos', targetId)).catch(() => {});
+            await deleteDoc(doc(firestoreDb, 'products', targetId)).catch(() => {});
+          })(),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Timeout en llamada deleteDoc de Firestore')), 2000)
+          ),
+        ]);
       }
-    } catch (err) {
-      console.error('[PAMPERO PERSIST] Error saving products to server:', err);
+    } catch (error) {
+      console.warn('[FIREBASE] Error al eliminar documento en backend (forzando eliminación en UI):', error);
+      // Crucial: Si deleteDoc falla (porque el ID está corrupto o es de la base vieja),
+      // el bloque catch DEBE forzar la eliminación del producto del estado local de React
+      setProducts((prev) => {
+        const remaining = prev.filter((p) => p.id !== id && String(p.id || '').trim() !== targetId && String(p.code || '').trim() !== targetId);
+        saveCatalogBackup(remaining);
+        return remaining;
+      });
+    } finally {
+      // El bloque catch o finally DEBE forzar la eliminación del producto del estado local de React
+      // (setProducts(prev => prev.filter(p => p.id !== id))) para que desaparezcan visualmente de la tabla sí o sí al apretar el botón
+      setProducts((prev) => {
+        const remaining = prev.filter((p) => {
+          const pId = String(p.id || '').trim();
+          const pCode = String(p.code || '').trim();
+          const pName = String(p.name || '').trim();
+          return p.id !== id && pId !== id && pId !== targetId && pCode !== id && pCode !== targetId && (targetId ? pName !== targetId : true);
+        });
+        saveCatalogBackup(remaining);
+        return remaining;
+      });
     }
   };
 
@@ -490,18 +460,8 @@ export default function App() {
       localStorage.setItem('pampero_catalog_promos', JSON.stringify(newPromos));
     } catch {}
 
-    // Persist to Cloud Firestore
+    // Persist to Cloud Firestore via Firebase SDK
     saveFirestoreStoreConfig({ promotions: newPromos });
-
-    try {
-      await fetch('/api/promotions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ promotions: newPromos }),
-      });
-    } catch (err) {
-      console.error('[PAMPERO PERSIST] Error saving promotions to server:', err);
-    }
   };
 
   const handleUpdateTheme = async (newTheme: ThemeConfig) => {
@@ -517,18 +477,8 @@ export default function App() {
       }
     } catch {}
 
-    // Persist to Cloud Firestore
+    // Persist to Cloud Firestore via Firebase SDK
     saveFirestoreStoreConfig({ theme: newTheme });
-
-    try {
-      await fetch('/api/theme', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ theme: newTheme }),
-      });
-    } catch (err) {
-      console.error('[PAMPERO PERSIST] Error saving theme to server:', err);
-    }
   };
 
   const handleUpdateBranches = async (newBranches: BranchLocation[]) => {
@@ -537,18 +487,8 @@ export default function App() {
       localStorage.setItem('pampero_catalog_branches', JSON.stringify(newBranches));
     } catch {}
 
-    // Persist to Cloud Firestore
+    // Persist to Cloud Firestore via Firebase SDK
     saveFirestoreStoreConfig({ branches: newBranches });
-
-    try {
-      await fetch('/api/branches', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ branches: newBranches }),
-      });
-    } catch (err) {
-      console.error('[PAMPERO PERSIST] Error saving branches to server:', err);
-    }
   };
 
   const handleUpdateCoupons = async (newCoupons: DiscountCoupon[]) => {
@@ -557,18 +497,8 @@ export default function App() {
       localStorage.setItem('pampero_discount_coupons', JSON.stringify(newCoupons));
     } catch {}
 
-    // Persist to Cloud Firestore
+    // Persist to Cloud Firestore via Firebase SDK
     saveFirestoreStoreConfig({ coupons: newCoupons });
-
-    try {
-      await fetch('/api/coupons', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ coupons: newCoupons }),
-      });
-    } catch (err) {
-      console.error('[PAMPERO PERSIST] Error saving coupons to server:', err);
-    }
   };
 
   const handleUpdateLookbook = async (newLookbook: LookbookItem[]) => {
@@ -577,18 +507,8 @@ export default function App() {
       localStorage.setItem('pampero_catalog_lookbook', JSON.stringify(newLookbook));
     } catch {}
 
-    // Persist to Cloud Firestore
+    // Persist to Cloud Firestore via Firebase SDK
     saveFirestoreStoreConfig({ lookbook: newLookbook });
-
-    try {
-      await fetch('/api/lookbook', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lookbook: newLookbook }),
-      });
-    } catch (err) {
-      console.error('[PAMPERO PERSIST] Error saving lookbook to server:', err);
-    }
   };
 
   const handleUpdateCategories = async (newCategories: CategoryHierarchyItem[]) => {
@@ -597,18 +517,8 @@ export default function App() {
       localStorage.setItem('pampero_catalog_categories', JSON.stringify(newCategories));
     } catch {}
 
-    // Persist to Cloud Firestore
+    // Persist to Cloud Firestore via Firebase SDK
     saveFirestoreStoreConfig({ categories: newCategories });
-
-    try {
-      await fetch('/api/categories', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ categories: newCategories }),
-      });
-    } catch (err) {
-      console.error('[PAMPERO PERSIST] Error saving categories to server:', err);
-    }
   };
 
   const handleUpdateVolumeDiscounts = async (newDiscounts: VolumeDiscountRule[]) => {
@@ -617,18 +527,8 @@ export default function App() {
       localStorage.setItem('pampero_volume_discounts', JSON.stringify(newDiscounts));
     } catch {}
 
-    // Persist to Cloud Firestore
+    // Persist to Cloud Firestore via Firebase SDK
     saveFirestoreStoreConfig({ volumeDiscounts: newDiscounts });
-
-    try {
-      await fetch('/api/volume-discounts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ volumeDiscounts: newDiscounts }),
-      });
-    } catch (err) {
-      console.error('[PAMPERO PERSIST] Error saving volume discounts to server:', err);
-    }
   };
 
   const handleLogin = (session: UserSession) => {
@@ -917,6 +817,7 @@ export default function App() {
               onOpenAuth={() => openAuthScreen('login', 'consumidor')}
               onLogout={handleLogout}
               onOpenAdmin={() => setViewMode('admin')}
+              onOpenCRM={() => setViewMode('crm')}
               onOpenProfile={() => setIsProfileOpen(true)}
               theme={theme}
             />
@@ -940,6 +841,7 @@ export default function App() {
             onOpenCart={() => setIsCartOpen(true)}
             onLogout={handleLogout}
             onOpenAdmin={() => setViewMode('admin')}
+              onOpenCRM={() => setViewMode('crm')}
             onOpenProfile={() => setIsProfileOpen(true)}
             onOpenLookbook={() => setViewMode('lookbook')}
           />
@@ -1017,6 +919,7 @@ export default function App() {
             categories={categories}
             onUpdateCategories={handleUpdateCategories}
             onUpdateProducts={handleUpdateProducts}
+            onDeleteProduct={handleDeleteProduct}
             onUpdatePromotions={handleUpdatePromotions}
             onUpdateTheme={handleUpdateTheme}
             onUpdateBranches={handleUpdateBranches}
@@ -1030,7 +933,17 @@ export default function App() {
             }}
           />
         )}
-      </main>
+      
+
+          {/* VIEW 7: CRM DASHBOARD */}
+          {viewMode === 'crm' && (
+            <CRMView
+              userSession={userSession}
+              onClose={() => setViewMode('landing')}
+              theme={theme}
+            />
+          )}
+        </main>
 
       {/* Footer (with exact Mendoza and Luján de Cuyo addresses) */}
       <Footer
@@ -1103,3 +1016,4 @@ export default function App() {
     </div>
   );
 }
+

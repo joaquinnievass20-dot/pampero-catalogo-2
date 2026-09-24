@@ -17,6 +17,7 @@ import {
   TrendingDown,
 } from 'lucide-react';
 import { trackWhatsAppQuote } from '../utils/analytics';
+import { saveCRMOrder } from '../services/firebase';
 
 interface QuoteDrawerProps {
   isOpen: boolean;
@@ -271,6 +272,22 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
       const adminQuotes = JSON.parse(localStorage.getItem('pampero_received_quotes') || '[]');
       adminQuotes.unshift(quoteRecord);
       localStorage.setItem('pampero_received_quotes', JSON.stringify(adminQuotes));
+
+      // GUARDADO EN FIREBASE PARA EL NUEVO CRM KANBAN
+      saveCRMOrder({
+        id: quoteId,
+        date: new Date().toISOString(),
+        quoteId: quoteId,
+        clientName: quoteRecord.clientName,
+        clientType: quoteRecord.clientType,
+        status: 'cotizacion',
+        seller: 'Sin Asignar',
+        branch: 'Sin Asignar',
+        totalUnits: totalUnits,
+        totalEstimated: finalTotal,
+        observations: observations.trim(),
+        items: items,
+      });
     } catch {}
 
     // Empty cart and redirect to WhatsApp
@@ -600,3 +617,4 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
     </div>
   );
 };
+

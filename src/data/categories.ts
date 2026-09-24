@@ -105,6 +105,18 @@ export const INITIAL_CATEGORY_HIERARCHY: CategoryStructure[] = [
         name: 'Empresas & Dotaciones',
         subCategories: ['Camisas', 'Pantalones', 'Calzado', 'Impermeables', 'Abrigos', 'Seguridad'],
       },
+      {
+        name: 'Industria',
+        subCategories: [
+          'Abrigos',
+          'Remeras y Camisas',
+          'Pantalones y Bermudas',
+          'Impermeables',
+          'Indumentaria profesional',
+          'Elementos de Protección',
+          'Calzado',
+        ],
+      },
     ],
   },
 ];
@@ -132,12 +144,6 @@ export function saveStoredCategoryHierarchy(newHierarchy: CategoryStructure[]): 
   try {
     localStorage.setItem('pampero_category_hierarchy', JSON.stringify(newHierarchy));
     window.dispatchEvent(new CustomEvent('pampero_categories_updated', { detail: newHierarchy }));
-    // Asynchronous background sync with server
-    fetch('/api/categories', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ categories: newHierarchy }),
-    }).catch((err) => console.warn('Categories server sync error (ignored):', err));
   } catch (e) {
     console.error('Error saving stored category hierarchy', e);
   }
@@ -145,12 +151,17 @@ export function saveStoredCategoryHierarchy(newHierarchy: CategoryStructure[]): 
 
 
 export function sanitizeCategory(rawCat: any): MainCategory {
-  if (rawCat === 'Mujer' || rawCat === '1' || rawCat === 1) return 'Mujer';
-  if (rawCat === 'Infantil' || rawCat === '2' || rawCat === 2) return 'Infantil';
-  if (rawCat === 'Venta Corporativa' || rawCat === '3' || rawCat === 3) return 'Venta Corporativa';
-  const s = String(rawCat || '').toLowerCase();
+  if (rawCat === undefined || rawCat === null) return '' as MainCategory;
+  const str = String(rawCat).trim();
+  if (!str) return '' as MainCategory;
+  if (str === 'Mujer' || str === '1') return 'Mujer';
+  if (str === 'Infantil' || str === '2') return 'Infantil';
+  if (str === 'Venta Corporativa' || str === '3') return 'Venta Corporativa';
+  if (str === 'Hombre') return 'Hombre';
+  const s = str.toLowerCase();
   if (s.includes('mujer')) return 'Mujer';
   if (s.includes('infan') || s.includes('niñ')) return 'Infantil';
   if (s.includes('corp') || s.includes('venta')) return 'Venta Corporativa';
-  return 'Hombre';
+  if (s.includes('hombre')) return 'Hombre';
+  return str as MainCategory;
 }

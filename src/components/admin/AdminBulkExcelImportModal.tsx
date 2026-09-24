@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import * as XLSX from 'xlsx';
 import { Product, MainCategory } from '../../types';
 import { CATEGORY_HIERARCHY } from '../../data/categories';
+import { writeBatch, doc } from 'firebase/firestore';
+import { db, getFirebaseDb } from '../../services/firebase';
 import { 
   FileSpreadsheet, 
   Upload, 
@@ -19,13 +21,17 @@ import {
 interface AdminBulkExcelImportModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onImportProducts: (newProducts: Product[]) => void;
+  onImportProducts?: (newProducts: Product[]) => void;
+  onImportSuccess?: (newProducts: Product[]) => void;
+  existingProducts?: Product[];
 }
 
 export const AdminBulkExcelImportModal: React.FC<AdminBulkExcelImportModalProps> = ({
   isOpen,
   onClose,
   onImportProducts,
+  onImportSuccess,
+  existingProducts = [],
 }) => {
   const [pasteText, setPasteText] = useState('');
   const [parsedRows, setParsedRows] = useState<Partial<Product>[]>([]);
@@ -98,16 +104,30 @@ export const AdminBulkExcelImportModal: React.FC<AdminBulkExcelImportModalProps>
     return 'Hombre';
   };
 
+  const cleanPrice = (val: any): number => {
+    if (val === undefined || val === null || val === '') return 0;
+    if (typeof val === 'number') return isNaN(val) ? 0 : Math.round(val);
+    let str = String(val).trim();
+    if (str.includes(',')) {
+      str = str.split(',')[0];
+    }
+    // Limpia los precios quitando "$" y "."
+    const cleaned = str.replace(/[\$\.\s]/g, '').replace(/[^0-9]/g, '');
+    const num = parseInt(cleaned, 10);
+    return isNaN(num) ? 0 : num;
+  };
+
   const parseRawRows = (rows: any[]) => {
     const list: Partial<Product>[] = [];
 
-    rows.forEach((r, idx) => {
-      // Look for keys flexibly (case-insensitive)
+    rows.forEach((r) => {
+      // Look for keys flexibly (case-insensitive and accent-insensitive)
       const getVal = (possibleKeys: string[]) => {
         for (const k of Object.keys(r)) {
-          const cleanKey = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const cleanKey = k.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, '');
           for (const pk of possibleKeys) {
-            if (cleanKey.includes(pk.toLowerCase().replace(/[^a-z0-9]/g, ''))) {
+            const cleanPk = pk.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, '');
+            if (cleanKey.includes(cleanPk)) {
               return r[k];
             }
           }
@@ -115,25 +135,46 @@ export const AdminBulkExcelImportModal: React.FC<AdminBulkExcelImportModalProps>
         return undefined;
       };
 
-      const code = String(getVal(['codigo', 'sku', 'cod', 'articulo']) || '').trim();
-      const name = String(getVal(['nombre', 'producto', 'denominacion', 'item']) || '').trim();
+      // SKU Obligatorio: extraer exactamente el código de la columna del Excel
+      const rawCode = 
+        r['CÓDIGO'] !== undefined ? r['CÓDIGO'] :
+        r['CODIGO'] !== undefined ? r['CODIGO'] :
+        r['Código'] !== undefined ? r['Código'] :
+        r['Codigo'] !== undefined ? r['Codigo'] :
+        r['código'] !== undefined ? r['código'] :
+        r['codigo'] !== undefined ? r['codigo'] :
+        r['SKU'] !== undefined ? r['SKU'] :
+        r['sku'] !== undefined ? r['sku'] :
+        getVal(['codigo', 'sku', 'cod', 'articulo', 'art', 'código', 'cód']);
 
-      if (!code && !name) return; // skip empty rows
+      const code = rawCode !== undefined && rawCode !== null ? String(rawCode).trim() : '';
 
-      const rawCat = getVal(['categoria', 'rubro', 'linea']);
-      const category = normalizeCategory(rawCat);
+      // Si no tiene código/SKU se salta la fila (no se generan IDs automáticos)
+      if (!code) return;
 
-      const section = String(getVal(['seccion', 'area']) || 'Urbano').trim();
-      const subCategory = String(getVal(['subcategoria', 'subrubro', 'tipo']) || 'General').trim();
+      const rawName = getVal(['nombre', 'producto', 'denominacion', 'item', 'titulo', 'descripcioncorta']);
+      const name = rawName !== undefined && rawName !== null ? String(rawName).trim() : '';
+
+      // Mapeo Estricto: los campos vacíos en el Excel deben guardarse vacíos, no inventes categorías ni subcategorías
+      const rawCat = getVal(['categoria', 'rubro', 'linea', 'categoría']);
+      const category = rawCat !== undefined && rawCat !== null ? String(rawCat).trim() : '';
+
+      const rawSection = getVal(['seccion', 'area', 'sección']);
+      const section = rawSection !== undefined && rawSection !== null ? String(rawSection).trim() : '';
+
+      const rawSubCat = getVal(['subcategoria', 'subrubro', 'tipo', 'subcategoría']);
+      const subCategory = rawSubCat !== undefined && rawSubCat !== null ? String(rawSubCat).trim() : '';
       
-      const rawPrice = getVal(['precio', 'preciominorista', 'venta', 'pvp']);
-      const price = Number(String(rawPrice || '0').replace(/[^0-9.]/g, '')) || 0;
+      const rawPrice = getVal(['precio', 'preciominorista', 'venta', 'pvp', 'valor']);
+      const price = cleanPrice(rawPrice);
 
       const rawCorpPrice = getVal(['preciomayorista', 'empresa', 'mayorista', 'preciocorp']);
-      const corporatePrice = rawCorpPrice ? Number(String(rawCorpPrice).replace(/[^0-9.]/g, '')) : Math.round(price * 0.85);
+      const corporatePrice = rawCorpPrice !== undefined && rawCorpPrice !== null && String(rawCorpPrice).trim() !== ''
+        ? cleanPrice(rawCorpPrice)
+        : Math.round(price * 0.85);
 
       const rawDesc = getVal(['descuento', 'descuentoporcentaje', 'promo']);
-      const discountPercentage = Number(String(rawDesc || '0').replace(/[^0-9.]/g, '')) || 0;
+      const discountPercentage = rawDesc ? cleanPrice(rawDesc) : 0;
 
       // Extract Unisex flag
       const rawUnisex = String(getVal(['unisex', 'esunisex', 'genero', 'sexo']) || '').trim().toLowerCase();
@@ -141,7 +182,7 @@ export const AdminBulkExcelImportModal: React.FC<AdminBulkExcelImportModalProps>
 
       // Extract Corporate Only / Industrial flag
       const rawCorpOnly = String(getVal(['corporativo', 'solocorporativo', 'exclusivocorporativo', 'industrial', 'lineaindustrial']) || '').trim().toLowerCase();
-      const isCorporateOnly = rawCorpOnly === 'si' || rawCorpOnly === 'sí' || rawCorpOnly === 'true' || rawCorpOnly === '1' || section.toLowerCase().includes('industria') || category === 'Venta Corporativa';
+      const isCorporateOnly = rawCorpOnly === 'si' || rawCorpOnly === 'sí' || rawCorpOnly === 'true' || rawCorpOnly === '1';
 
       // Extract Special Size Ranges: "50-58:56000:-1;60-66:64000:-2"
       const rawSpecialSizes = String(getVal(['tallesespeciales', 'rangotalles', 'variantesprecio', 'talles_especiales', 'preciosdiferenciados']) || '').trim();
@@ -150,10 +191,9 @@ export const AdminBulkExcelImportModal: React.FC<AdminBulkExcelImportModalProps>
         try {
           const parts = rawSpecialSizes.split(/[;,]/).map((s) => s.trim()).filter(Boolean);
           const ranges = parts.map((part, pIdx) => {
-            // format: from-to:price:suffix or label:price:suffix
             const segments = part.split(':').map((s) => s.trim());
             const rangeStr = segments[0] || '50-58';
-            const rangePrice = Number(String(segments[1] || '0').replace(/[^0-9.]/g, '')) || Math.round(price * 1.15);
+            const rangePrice = segments[1] ? cleanPrice(segments[1]) : Math.round(price * 1.15);
             const rangeSuffix = segments[2] || '-1';
             const [fromS, toS] = rangeStr.includes('-') ? rangeStr.split('-').map((s) => s.trim()) : [rangeStr, rangeStr];
             const sizeList: string[] = [];
@@ -192,22 +232,33 @@ export const AdminBulkExcelImportModal: React.FC<AdminBulkExcelImportModalProps>
       const rawColors = getVal(['colores', 'color', 'variantes']);
       const availableColors = rawColors 
         ? String(rawColors).split(/[,;/]/).map((c) => c.trim()).filter(Boolean)
-        : ['Negro', 'Azul trabajo'];
+        : [];
 
-      const rawSizes = getVal(['talles', 'talle', 'medidas']);
-      const availableSizes = rawSizes
-        ? String(rawSizes).split(/[,;/]/).map((s) => s.trim()).filter(Boolean)
-        : ['S', 'M', 'L', 'XL'];
+      // Talles como texto literal
+      const rawSizes = getVal(['talles', 'talle', 'medidas', 'curvatalles', 'curva', 'sizes']);
+      const standardSizes = rawSizes !== undefined && rawSizes !== null ? String(rawSizes).trim() : '';
+
+      let availableSizes: string[] = [];
+      if (standardSizes) {
+        if (/[;,/]/.test(standardSizes)) {
+          availableSizes = standardSizes.split(/[;,/]+/).map((s) => s.trim()).filter(Boolean);
+        } else if (/\s+/.test(standardSizes) && !standardSizes.toLowerCase().includes('al') && !standardSizes.toLowerCase().includes('a')) {
+          availableSizes = standardSizes.split(/\s+/).map((s) => s.trim()).filter(Boolean);
+        } else {
+          availableSizes = [standardSizes];
+        }
+      }
 
       const rawImg = String(getVal(['imagen', 'foto', 'url', 'imageurl', 'img']) || '').trim();
-      const image = rawImg || 'https://images.unsplash.com/photo-1544923246-77307dd654cb?auto=format&fit=crop&w=800&q=80';
+      const image = rawImg || '';
 
-      const description = String(getVal(['descripcion', 'detalle', 'observaciones']) || 'Prenda original Pampero oficial.').trim();
+      const description = String(getVal(['descripcion', 'descripción', 'detalle', 'observaciones']) || '').trim();
+      const rawPromoTag = String(getVal(['etiqueta', 'tag', 'promocion', 'promoción', 'estado']) || '').trim();
 
       list.push({
-        id: `pmp-${code.toLowerCase().replace(/[^a-z0-9]/g, '-') || Date.now() + '-' + idx}`,
-        code: code || `PAM-${Math.floor(1000 + Math.random() * 9000)}`,
-        name: name || 'Producto Pampero',
+        id: code,
+        code: code,
+        name: name || code,
         category,
         section,
         subCategory,
@@ -219,17 +270,18 @@ export const AdminBulkExcelImportModal: React.FC<AdminBulkExcelImportModalProps>
         specialSizeRanges,
         availableColors,
         availableSizes,
+        standardSizes,
         image,
-        images: [image],
+        images: image ? [image] : [],
         description,
-        features: ['Calidad Pampero Garantizada', 'Costuras Reforzadas'],
+        features: [],
         inStock: true,
-        promotionTag: discountPercentage > 0 ? 'Liquidación' : 'Temporada 2026',
+        promotionTag: rawPromoTag,
       });
     });
 
     setParsedRows(list);
-    setErrorMsg(list.length === 0 ? 'No se encontraron filas válidas con Código o Nombre.' : null);
+    setErrorMsg(list.length === 0 ? 'No se encontraron filas válidas con Código (SKU) en la planilla.' : null);
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -294,46 +346,121 @@ export const AdminBulkExcelImportModal: React.FC<AdminBulkExcelImportModalProps>
     if (parsedRows.length === 0) return;
 
     setIsProcessing(true);
+    setErrorMsg(null);
+    setSuccessCount(null);
+
     try {
-      const fullProducts = parsedRows.map((p) => ({
-        id: p.id || `pmp-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-        code: p.code || 'PAM-000',
-        name: p.name || 'Producto Pampero',
-        category: p.category || 'Hombre',
-        section: p.section || 'Urbano',
-        subCategory: p.subCategory || 'Abrigos',
-        description: p.description || '',
-        features: p.features || ['Calidad Pampero Garantizada'],
-        price: Number(p.price) || 0,
-        corporatePrice: Number(p.corporatePrice) || Math.round((Number(p.price) || 0) * 0.85),
-        discountPercentage: Number(p.discountPercentage) || 0,
-        promotionTag: p.promotionTag || 'Temporada 2026',
-        image: p.image || '/ph-1.jpg',
-        images: p.images || [p.image || '/ph-1.jpg'],
-        availableColors: p.availableColors || ['Negro', 'Azul trabajo'],
-        availableSizes: p.availableSizes || ['S', 'M', 'L', 'XL'],
-        inStock: true,
-      })) as Product[];
-
-      // Send to server persistent storage
-      const res = await fetch('/api/products/bulk', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ products: fullProducts }),
-      });
-
-      const json = await res.json();
-      if (json.success) {
-        onImportProducts(json.products || fullProducts);
-        setSuccessCount(parsedRows.length);
-        setTimeout(() => {
-          onClose();
-        }, 1800);
-      } else {
-        throw new Error(json.error || 'Error al guardar en el servidor');
+      const firestoreDb = db || getFirebaseDb();
+      if (!firestoreDb) {
+        throw new Error('No se pudo establecer conexión con Firebase Firestore. Verificá tu conexión a internet.');
       }
+
+      // Preparar los productos asegurando que el código SKU sea el ID único de documento
+      const fullProducts: Product[] = parsedRows
+        .filter((p) => Boolean(p.code || p.id))
+        .map((p) => {
+          const sku = String(p.code || p.id).trim();
+          const priceCleaned = typeof p.price === 'number' ? p.price : cleanPrice(p.price);
+          const corporatePriceCleaned = p.corporatePrice !== undefined && p.corporatePrice !== null
+            ? (typeof p.corporatePrice === 'number' ? p.corporatePrice : cleanPrice(p.corporatePrice))
+            : Math.round(priceCleaned * 0.85);
+
+          return {
+            id: sku,
+            code: sku,
+            name: p.name || sku,
+            category: p.category || '',
+            section: p.section || '',
+            subCategory: p.subCategory || '',
+            description: p.description || '',
+            features: Array.isArray(p.features) ? p.features : [],
+            price: priceCleaned,
+            corporatePrice: corporatePriceCleaned,
+            discountPercentage: typeof p.discountPercentage === 'number' ? p.discountPercentage : cleanPrice(p.discountPercentage),
+            promotionTag: p.promotionTag || '',
+            image: p.image || '',
+            images: Array.isArray(p.images) && p.images.length > 0 ? p.images : (p.image ? [p.image] : []),
+            imagesMen: Array.isArray(p.imagesMen) ? p.imagesMen : [],
+            imagesWomen: Array.isArray(p.imagesWomen) ? p.imagesWomen : [],
+            availableColors: Array.isArray(p.availableColors) ? p.availableColors : [],
+            availableSizes: Array.isArray(p.availableSizes) ? p.availableSizes : [],
+            standardSizes: p.standardSizes || '',
+            isUnisex: Boolean(p.isUnisex),
+            isCorporateOnly: Boolean(p.isCorporateOnly),
+            specialSizeRanges: p.specialSizeRanges,
+            inStock: true,
+          };
+        });
+
+      // Firebase Batch Write directamente desde el frontend usando writeBatch(db)
+      // Firestore limita cada batch a 500 operaciones. Usamos bloques seguros de 200 items.
+      const BATCH_SIZE = 200;
+      for (let i = 0; i < fullProducts.length; i += BATCH_SIZE) {
+        const batch = writeBatch(firestoreDb);
+        const chunk = fullProducts.slice(i, i + BATCH_SIZE);
+
+        for (const producto of chunk) {
+          const sku = String(producto.code || producto.id).trim();
+          if (!sku) continue;
+
+          // SKU Obligatorio: doc(db, 'products', String(fila['CÓDIGO']))
+          const docRefProducts = doc(firestoreDb, 'products', sku);
+          const docRefProductos = doc(firestoreDb, 'productos', sku);
+
+          // Limpiar valores undefined para evitar rechazos del SDK de Firestore
+          const datos = JSON.parse(
+            JSON.stringify(
+              {
+                ...producto,
+                id: sku,
+                code: sku,
+                updatedAt: new Date().toISOString(),
+              },
+              (_, v) => (v === undefined ? null : v)
+            )
+          );
+
+          // batch.set(referencia, datos, { merge: true }) para no duplicar
+          batch.set(docRefProducts, datos, { merge: true });
+          batch.set(docRefProductos, datos, { merge: true });
+        }
+
+        // Ejecutar escritura por lotes en Firebase
+        await batch.commit();
+      }
+
+      // Actualizar el catálogo en memoria y notificar componentes padres
+      const currentList = existingProducts || [];
+      const updatedMap = new Map<string, Product>();
+      currentList.forEach((p) => {
+        const k = (p.code || p.id).trim().toUpperCase();
+        updatedMap.set(k, p);
+      });
+      fullProducts.forEach((p) => {
+        const k = (p.code || p.id).trim().toUpperCase();
+        const existing = updatedMap.get(k);
+        updatedMap.set(k, {
+          ...(existing || {}),
+          ...p,
+        });
+      });
+      const updatedCatalog = Array.from(updatedMap.values());
+
+      if (onImportSuccess) {
+        onImportSuccess(updatedCatalog);
+      }
+      if (onImportProducts) {
+        onImportProducts(updatedCatalog);
+      }
+
+      setSuccessCount(fullProducts.length);
+      setTimeout(() => {
+        onClose();
+      }, 1800);
     } catch (err: any) {
-      setErrorMsg(`Error guardando en el servidor: ${err.message}`);
+      console.error('[FIREBASE BATCH ERROR]:', err);
+      const errorMsgDetails = err?.message || String(err);
+      setErrorMsg(`Error al guardar en Firebase: ${errorMsgDetails}. Comprobá los permisos o la conexión.`);
     } finally {
       setIsProcessing(false);
     }
@@ -576,7 +703,7 @@ export const AdminBulkExcelImportModal: React.FC<AdminBulkExcelImportModalProps>
                           {r.availableColors?.join(', ') || '-'}
                         </td>
                         <td className="p-2 text-[#6F6860] text-[11px]">
-                          {r.availableSizes?.join(', ') || '-'}
+                          {r.standardSizes || r.availableSizes?.join(', ') || '-'}
                         </td>
                       </tr>
                     ))}
@@ -607,7 +734,7 @@ export const AdminBulkExcelImportModal: React.FC<AdminBulkExcelImportModalProps>
             >
               <Check className="w-4 h-4" />
               {isProcessing
-                ? 'Guardando en Servidor...'
+                ? 'Guardando en Firebase...'
                 : `Confirmar e Importar ${parsedRows.length} Artículos`}
             </button>
           )}

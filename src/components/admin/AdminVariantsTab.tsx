@@ -74,17 +74,12 @@ export const AdminVariantsTab: React.FC<AdminVariantsTabProps> = ({
   const [editColorName, setEditColorName] = useState('');
   const [editColorHex, setEditColorHex] = useState('');
 
-  // Fetch color codes from server on mount
+  // Sync color codes from local storage on mount
   React.useEffect(() => {
-    fetch('/api/colors')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.success && Array.isArray(data.colors) && data.colors.length > 0) {
-          setColorDefs(data.colors);
-          saveColorCodes(data.colors);
-        }
-      })
-      .catch(() => {});
+    const local = getSavedColorCodes();
+    if (Array.isArray(local) && local.length > 0) {
+      setColorDefs(local);
+    }
   }, []);
 
   // Selected product object
@@ -258,13 +253,6 @@ export const AdminVariantsTab: React.FC<AdminVariantsTabProps> = ({
     setNewColorCode('');
     setNewColorName('');
     triggerSaveNotice();
-
-    // Persist to server
-    fetch('/api/colors/upsert', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newColor),
-    }).catch(() => {});
   };
 
   // Start editing an existing color
@@ -292,13 +280,6 @@ export const AdminVariantsTab: React.FC<AdminVariantsTabProps> = ({
     saveColorCodes(updated);
     setEditingColor(null);
     triggerSaveNotice();
-
-    // Persist to server
-    fetch('/api/colors/upsert', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updatedDef),
-    }).catch(() => {});
   };
 
   // Delete color
@@ -311,11 +292,6 @@ export const AdminVariantsTab: React.FC<AdminVariantsTabProps> = ({
         setEditingColor(null);
       }
       triggerSaveNotice();
-
-      // Persist to server
-      fetch(`/api/colors/${encodeURIComponent(code)}`, {
-        method: 'DELETE',
-      }).catch(() => {});
     }
   };
 

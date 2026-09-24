@@ -115,12 +115,6 @@ export const Navbar: React.FC<NavbarProps> = ({
         lastSearched: new Date().toISOString(),
       };
       localStorage.setItem('pampero_search_analytics', JSON.stringify(metrics));
-
-      fetch('/api/analytics/search', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: trimmed, userEmail: userSession?.email }),
-      }).catch(() => {});
     } catch {}
   };
 

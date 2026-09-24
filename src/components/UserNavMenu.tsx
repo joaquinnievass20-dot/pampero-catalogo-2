@@ -19,6 +19,7 @@ interface UserNavMenuProps {
   onOpenAuth: () => void;
   onLogout: () => void;
   onOpenAdmin?: () => void;
+  onOpenCRM?: () => void;
   onOpenProfile?: () => void;
   onOpenCatalog?: () => void;
   showCatalogBtn?: boolean;
@@ -222,6 +223,23 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
                   </button>
                 )}
 
+                                {/* CRM Dashboard */}
+                {(userSession.role === 'admin' || userSession.role === 'employee') && onOpenCRM && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDropdownOpen(false);
+                      onOpenCRM();
+                    }}
+                    className="w-full flex items-center justify-between px-3 py-2 text-left text-xs font-bold text-[#18231C] hover:bg-[#FAF8F5] rounded-xs transition-colors cursor-pointer group"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="w-4 h-4 flex items-center justify-center text-white bg-[#B9522F] rounded-full text-[9px]">M</span>
+                      <span>Gestin / CRM</span>
+                    </div>
+                  </button>
+                )}
+
                 {/* Profile / Contact Info */}
                 {onOpenProfile && (
                   <button
@@ -296,3 +314,4 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
     </div>
   );
 };
+

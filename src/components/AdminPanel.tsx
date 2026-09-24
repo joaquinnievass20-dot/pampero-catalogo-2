@@ -29,7 +29,8 @@ import { AdminQuotesTab } from './admin/AdminQuotesTab';
 import { AdminBulkExcelImportModal } from './admin/AdminBulkExcelImportModal';
 import { PamperoLogo } from './PamperoLogo';
 import { saveCatalogBackup } from '../utils/backupManager';
-import { saveSingleFirestoreProduct, deleteFirestoreProductDoc, isFirebaseReady } from '../services/firebase';
+import { doc, deleteDoc } from 'firebase/firestore';
+import { db, getFirebaseDb, saveSingleFirestoreProduct, deleteFirestoreProductDoc, isFirebaseReady } from '../services/firebase';
 import { 
   Palette, 
   Tag, 
@@ -92,6 +93,7 @@ interface AdminPanelProps {
   onClose: () => void;
   products: Product[];
   onUpdateProducts: (newProducts: Product[]) => void;
+  onDeleteProduct?: (id: string) => void;
   promotions: Promotion[];
   onUpdatePromotions: (newPromos: Promotion[]) => void;
   theme: ThemeConfig;
@@ -115,6 +117,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   onClose,
   products,
   onUpdateProducts,
+  onDeleteProduct,
   promotions,
   onUpdatePromotions,
   theme,
@@ -243,17 +246,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   // Helper to normalize category
   const sanitizeCategory = (rawCat: any): MainCategory => {
-    if (!rawCat) return 'Hombre';
+    if (!rawCat || !String(rawCat).trim()) return '' as MainCategory;
     const str = String(rawCat).trim();
     if (str === 'Mujer' || str === '1') return 'Mujer';
     if (str === 'Infantil' || str === '2') return 'Infantil';
     if (str === 'Venta Corporativa' || str === '3') return 'Venta Corporativa';
+    if (str === 'Hombre') return 'Hombre';
     const s = str.toLowerCase();
     if (s.includes('mujer')) return 'Mujer';
     if (s.includes('infan') || s.includes('niñ')) return 'Infantil';
     if (s.includes('corp') || s.includes('venta')) return 'Venta Corporativa';
-    if (str.length > 0) return str as MainCategory;
-    return 'Hombre';
+    return str as MainCategory;
   };
 
   // Product Handlers
@@ -261,16 +264,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     e.preventDefault();
     if (!productForm.name?.trim()) return;
 
-    // Regla automática: si se le asigna la línea "Industria", clasificar automáticamente como Venta Corporativa
-    const isIndustrial = 
-      (productForm.section || '').trim().toLowerCase() === 'industria' ||
-      (productForm.subCategory || '').trim().toLowerCase().includes('industria');
-    
-    const isCorp = Boolean(productForm.isCorporateOnly) || isIndustrial || productForm.category === 'Venta Corporativa';
+    const sku = (productForm.code || (editingProduct ? editingProduct.code : '') || '').trim();
+    if (!sku) {
+      setFirebaseErrorNotice('El código o SKU del producto es obligatorio.');
+      return;
+    }
+
+    // Regla: si se clasifica en Venta Corporativa o se marca explícitamente como exclusivo corporativo
+    const isCorp = Boolean(productForm.isCorporateOnly) || productForm.category === 'Venta Corporativa';
 
     const cleanCategory = sanitizeCategory(productForm.category);
-    const cleanSection = ((productForm.section || '').trim()) || (isIndustrial ? 'Industria' : 'Urbano');
-    const cleanSubCategory = (productForm.subCategory || '').trim() || 'Abrigos';
+    const cleanSection = (productForm.section || '').trim();
+    const cleanSubCategory = (productForm.subCategory || '').trim();
 
     // Talles Estándar: permitir texto con letras, números, comas y espacios
     const parsedSizes = standardSizesInput
@@ -301,6 +306,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         ? {
             ...editingProduct,
             ...productForm,
+            id: sku || editingProduct.id,
+            code: sku || editingProduct.code,
             category: cleanCategory,
             section: cleanSection,
             subCategory: cleanSubCategory,
@@ -316,8 +323,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             inStock: productForm.inStock !== false,
           }
         : {
-            id: 'prod-' + Date.now(),
-            code: (productForm.code || '').trim() || 'PAM-' + Math.floor(Math.random() * 900 + 100),
+            id: sku,
+            code: sku,
             name: (productForm.name || '').trim(),
             category: cleanCategory,
             section: cleanSection,
@@ -381,13 +388,66 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     triggerSaveNotice();
   };
 
-  const handleDeleteProduct = async (id: string) => {
-    if (confirm('¿Desea eliminar este producto del catálogo?')) {
-      if (isFirebaseReady()) {
-        await deleteFirestoreProductDoc(id);
+  const handleDeleteProduct = async (id: string, code?: string, name?: string) => {
+    let confirmed = true;
+    try {
+      confirmed = confirm('¿Desea eliminar este producto del catálogo?');
+    } catch {
+      confirmed = true;
+    }
+    if (!confirmed) return;
+
+    const targetId = String(id || '').trim();
+    const targetCode = String(code || '').trim();
+    const targetName = String(name || '').trim();
+
+    // Función que fuerza la eliminación del producto del estado local de React (UI)
+    const forceLocalRemoval = () => {
+      const remainingProducts = products.filter((p) => {
+        const pId = String(p.id || '').trim();
+        const pCode = String(p.code || '').trim();
+        const pName = String(p.name || '').trim();
+        if (id && (p.id === id || pId === id || pId === targetId)) return false;
+        if (targetId && (pId === targetId || pCode === targetId || pName === targetId)) return false;
+        if (code && (p.code === code || pCode === code)) return false;
+        if (targetCode && (pCode === targetCode || pId === targetCode || pName === targetCode)) return false;
+        if (targetName && pName === targetName && !pId && !pCode) return false;
+        return true;
+      });
+      onUpdateProducts(remainingProducts);
+      saveCatalogBackup(remainingProducts);
+      if (onDeleteProduct) {
+        onDeleteProduct(id || targetId || targetCode);
       }
-      onUpdateProducts(products.filter((p) => p.id !== id));
       triggerSaveNotice();
+    };
+
+    try {
+      const firestoreDb = db || getFirebaseDb();
+      if (firestoreDb && (targetId || targetCode)) {
+        await Promise.race([
+          (async () => {
+            if (targetId) {
+              await deleteDoc(doc(firestoreDb, 'productos', targetId)).catch(() => {});
+              await deleteDoc(doc(firestoreDb, 'products', targetId)).catch(() => {});
+            }
+            if (targetCode && targetCode !== targetId) {
+              await deleteDoc(doc(firestoreDb, 'productos', targetCode)).catch(() => {});
+              await deleteDoc(doc(firestoreDb, 'products', targetCode)).catch(() => {});
+            }
+          })(),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Timeout Firebase deleteDoc')), 2000)
+          ),
+        ]);
+      }
+    } catch (error) {
+      console.warn('[FIREBASE] Error al eliminar documento en backend (se fuerza eliminación en UI):', error);
+      forceLocalRemoval();
+    } finally {
+      // El bloque catch o finally DEBE forzar la eliminación del producto del estado local de React
+      // para destrabar la interfaz visualmente de una vez por todas.
+      forceLocalRemoval();
     }
   };
 
@@ -936,15 +996,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     setNewPhotoUrlMen('');
                     setNewPhotoUrlWomen('');
                     setProductForm({
-                      code: 'PAM-' + Math.floor(Math.random() * 900 + 100),
+                      code: '',
                       name: '',
                       category: 'Hombre',
-                      section: 'Urbano',
-                      subCategory: 'Abrigos',
+                      section: '',
+                      subCategory: '',
                       description: '',
                       features: ['Calidad Pampero Garantizada', '100% Algodón Reforzado'],
-                      price: 55000,
-                      corporatePrice: 46000,
+                      price: 0,
+                      corporatePrice: 0,
                       discountPercentage: 0,
                       promotionTag: '',
                       isUnisex: false,
@@ -1023,13 +1083,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           const foundCat = currentHierarchy.find((c) => c.name === newCatName) || currentHierarchy[0];
                           const defaultSec = foundCat.sections[0]?.name || 'Urbano';
                           const defaultSub = foundCat.sections[0]?.subCategories[0] || 'Abrigos';
-                          const isIndustria = defaultSec.toLowerCase() === 'industria';
                           setProductForm({
                             ...productForm,
                             category: newCatName,
                             section: defaultSec,
                             subCategory: defaultSub,
-                            isCorporateOnly: isIndustria ? true : productForm.isCorporateOnly,
                           });
                         }}
                         className="w-full px-3 py-1.5 border border-[#DCD4C9] rounded-xs text-xs font-semibold bg-white"
@@ -1052,12 +1110,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                             onChange={(e) => {
                               const newSec = e.target.value;
                               const foundSec = currentCat.sections.find((s) => s.name === newSec);
-                              const isIndustria = newSec.trim().toLowerCase() === 'industria';
                               setProductForm({
                                 ...productForm,
                                 section: newSec,
                                 subCategory: foundSec?.subCategories[0] || 'General',
-                                isCorporateOnly: isIndustria ? true : (productForm.section?.toLowerCase() === 'industria' ? false : productForm.isCorporateOnly),
                               });
                             }}
                             className="w-full px-3 py-1.5 border border-[#DCD4C9] rounded-xs text-xs font-semibold bg-white"
@@ -1152,13 +1208,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       </label>
 
                       <label className={`flex items-start gap-2 p-2.5 rounded-xs border cursor-pointer transition-colors ${
-                        (productForm.isCorporateOnly || productForm.section?.toLowerCase() === 'industria')
+                        productForm.isCorporateOnly
                           ? 'bg-amber-50/70 border-amber-300'
                           : 'bg-white border-[#DCD4C9] hover:border-[#18231C]'
                       }`}>
                         <input
                           type="checkbox"
-                          checked={Boolean(productForm.isCorporateOnly || productForm.section?.toLowerCase() === 'industria')}
+                          checked={Boolean(productForm.isCorporateOnly)}
                           onChange={(e) => {
                             const isCorp = e.target.checked;
                             setProductForm({
@@ -1171,16 +1227,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         <div>
                           <span className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
                             Exclusivo Venta Corporativa
-                            {productForm.section?.toLowerCase() === 'industria' && (
-                              <span className="bg-amber-200 text-amber-900 text-[10px] px-1.5 py-0.5 rounded-xs font-bold">
-                                Automático (Industria)
-                              </span>
-                            )}
                           </span>
                           <span className="text-[11px] text-[#6F6860] block leading-tight mt-0.5">
-                            {productForm.section?.toLowerCase() === 'industria'
-                              ? 'Clasificado automáticamente como Venta Corporativa por tener la línea "Industria".'
-                              : 'Asigna este artículo al catálogo de Venta Corporativa.'}
+                            Marcar solo si es un producto exclusivo para empresas/dotaciones y no debe ofrecerse a particulares.
                           </span>
                         </div>
                       </label>
@@ -2195,8 +2244,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#DCD4C9]">
-                    {filteredProducts.map((p) => (
-                      <tr key={p.id} className="hover:bg-[#FAF8F5]">
+                    {filteredProducts.map((p, pIdx) => (
+                      <tr key={p.id || p.code || p.name || `p-row-${pIdx}`} className="hover:bg-[#FAF8F5]">
                         <td className="p-3">
                           <img
                             src={p.image}
@@ -2280,7 +2329,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                             </button>
                             <button
                               type="button"
-                              onClick={() => handleDeleteProduct(p.id)}
+                              onClick={() => handleDeleteProduct(p.id, p.code, p.name)}
                               className="p-1 text-[#6F6860] hover:text-red-600"
                               title="Eliminar producto"
                             >

@@ -312,3 +312,25 @@ export type CategoryHierarchyItem = {
   }>;
 };
 
+
+
+// --- CRM & MANAGEMENT TYPES ---
+export type CRMOrderStatus = 'cotizacion' | 'sena_50' | 'produccion' | 'listo' | 'entregado' | 'cancelado';
+
+export interface CRMOrder {
+  id: string;
+  date: string;
+  quoteId?: string;
+  clientName: string;
+  clientType: 'consumidor_final' | 'empresa';
+  status: CRMOrderStatus;
+  seller: string;
+  branch: string;
+  totalUnits: number;
+  totalEstimated: number;
+  delayDays?: number;
+  observations?: string;
+  blockReason?: string;
+  items?: any[];
+  updatedAt: string;
+}

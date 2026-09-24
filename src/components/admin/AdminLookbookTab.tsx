@@ -97,25 +97,8 @@ export const AdminLookbookTab: React.FC<AdminLookbookTabProps> = ({
       const dataUrl = event.target?.result as string;
       if (!dataUrl) return;
 
-      try {
-        const res = await fetch('/api/lookbook/upload', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ dataUrl, filename: file.name }),
-        });
-        const data = await res.json();
-        if (data.success && data.url) {
-          handleUpdateLookField('imageUrl', data.url);
-          notify('success', 'Imagen de campaña subida con éxito.');
-        } else {
-          // Fallback to dataUrl directly
-          handleUpdateLookField('imageUrl', dataUrl);
-          notify('success', 'Imagen cargada localmente.');
-        }
-      } catch {
-        handleUpdateLookField('imageUrl', dataUrl);
-        notify('success', 'Imagen cargada localmente.');
-      }
+      handleUpdateLookField('imageUrl', dataUrl);
+      notify('success', 'Imagen cargada con éxito.');
     };
     reader.readAsDataURL(file);
   };
@@ -229,26 +212,9 @@ export const AdminLookbookTab: React.FC<AdminLookbookTabProps> = ({
   const handleSaveAll = async () => {
     setIsSaving(true);
     try {
-      // 1. Send POST to server to persist to data_storage/lookbook.json
-      const response = await fetch('/api/lookbook', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lookbook: looks }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Error al guardar en el servidor');
-      }
-
-      const data = await response.json();
-      if (data.success) {
-        // Also update parent state
-        await onUpdateLookbook(data.lookbook || looks);
-        triggerSaveNotice();
-        notify('success', '¡Lookbook guardado y sincronizado con éxito en el servidor!');
-      } else {
-        throw new Error(data.error || 'Error desconocido');
-      }
+      await onUpdateLookbook(looks);
+      triggerSaveNotice();
+      notify('success', '¡Lookbook guardado y sincronizado con éxito!');
     } catch (err: any) {
       console.error(err);
       notify('error', `Error al persistir lookbook: ${err.message}`);

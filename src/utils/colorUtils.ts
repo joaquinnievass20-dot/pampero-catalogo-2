@@ -146,21 +146,6 @@ export function recordProductInteraction(product: Product, type: 'click' | 'sear
     current[id].lastInteracted = new Date().toISOString();
     localStorage.setItem(key, JSON.stringify(current));
 
-    // Also send real click to server
-    if (type === 'click') {
-      fetch('/api/analytics/click', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          productId: product.id,
-          productCode: product.code,
-          productName: product.name,
-          category: product.category,
-          userEmail: userEmail || undefined,
-        }),
-      }).catch(() => {});
-    }
-
     // Store viewed products isolated per user account
     const userKey = userEmail ? userEmail.toLowerCase().trim() : 'guest';
     const viewedKey = `pampero_viewed_products_${userKey}`;
