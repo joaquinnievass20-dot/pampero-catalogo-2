@@ -107,33 +107,14 @@ export const AdminBulkExcelImportModal: React.FC<AdminBulkExcelImportModalProps>
   const cleanPrice = (val: any): number => {
     if (val === undefined || val === null || val === '') return 0;
     if (typeof val === 'number') return isNaN(val) ? 0 : Math.round(val);
-    let str = String(val).trim().replace(/[\$\sA-Za-z]/g, '');
-    if (!str) return 0;
-    // Format with thousands separator and decimals, e.g. 16.180,50
-    if (str.includes('.') && str.includes(',')) {
-      str = str.replace(/\./g, '').replace(',', '.');
-    } else if (str.includes(',')) {
-      const parts = str.split(',');
-      if (parts.length > 2 || (parts.length === 2 && parts[1].length === 3 && parts[0].length >= 1)) {
-        str = str.replace(/,/g, '');
-      } else {
-        str = str.replace(',', '.');
-      }
-    } else if (str.includes('.')) {
-      const parts = str.split('.');
-      if (parts.length > 2) {
-        str = str.replace(/\./g, '');
-      } else if (parts.length === 2) {
-        // e.g. "$16.180" -> parts[1] is 3 digits, so it's thousands separator: 16180
-        if (parts[1].length === 3) {
-          str = parts[0] + parts[1];
-        } else {
-          str = parts[0] + '.' + parts[1];
-        }
-      }
+    let str = String(val).trim();
+    if (str.includes(',')) {
+      str = str.split(',')[0];
     }
-    const num = parseFloat(str.replace(/[^0-9.]/g, ''));
-    return isNaN(num) ? 0 : Math.round(num);
+    // Limpia los precios quitando "$" y "."
+    const cleaned = str.replace(/[\$\.\s]/g, '').replace(/[^0-9]/g, '');
+    const num = parseInt(cleaned, 10);
+    return isNaN(num) ? 0 : num;
   };
 
   const parseRawRows = (rows: any[]) => {
@@ -155,7 +136,17 @@ export const AdminBulkExcelImportModal: React.FC<AdminBulkExcelImportModalProps>
       };
 
       // SKU Obligatorio: extraer exactamente el código de la columna del Excel
-      const rawCode = getVal(['codigo', 'sku', 'cod', 'articulo', 'art', 'código', 'cód']);
+      const rawCode = 
+        r['CÓDIGO'] !== undefined ? r['CÓDIGO'] :
+        r['CODIGO'] !== undefined ? r['CODIGO'] :
+        r['Código'] !== undefined ? r['Código'] :
+        r['Codigo'] !== undefined ? r['Codigo'] :
+        r['código'] !== undefined ? r['código'] :
+        r['codigo'] !== undefined ? r['codigo'] :
+        r['SKU'] !== undefined ? r['SKU'] :
+        r['sku'] !== undefined ? r['sku'] :
+        getVal(['codigo', 'sku', 'cod', 'articulo', 'art', 'código', 'cód']);
+
       const code = rawCode !== undefined && rawCode !== null ? String(rawCode).trim() : '';
 
       // Si no tiene código/SKU se salta la fila (no se generan IDs automáticos)

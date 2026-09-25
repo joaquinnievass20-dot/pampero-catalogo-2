@@ -9,7 +9,9 @@ import {
   ShieldCheck, 
   Building2, 
   FileText,
-  Compass
+  Compass,
+  Bell,
+  LayoutDashboard
 } from 'lucide-react';
 
 interface UserNavMenuProps {
@@ -19,6 +21,7 @@ interface UserNavMenuProps {
   onOpenAuth: () => void;
   onLogout: () => void;
   onOpenAdmin?: () => void;
+  onOpenCRM?: () => void;
   onOpenProfile?: () => void;
   onOpenCatalog?: () => void;
   showCatalogBtn?: boolean;
@@ -32,6 +35,7 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
   onOpenAuth,
   onLogout,
   onOpenAdmin,
+  onOpenCRM,
   onOpenProfile,
   onOpenCatalog,
   showCatalogBtn = false,
@@ -127,6 +131,32 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
         </span>
       </button>
 
+      {/* Gestión / CRM Button - Visible for admin/employee */}
+      {(userSession?.role === 'admin' || userSession?.role === 'employee') && onOpenCRM && (
+        <button
+          type="button"
+          onClick={onOpenCRM}
+          className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xs bg-[#B9522F] text-white hover:bg-[#a04424] text-xs font-bold uppercase tracking-wider transition-all shadow-2xs cursor-pointer select-none shrink-0"
+          title="Abrir Tablero de Gestión / CRM"
+        >
+          <LayoutDashboard className="w-3.5 h-3.5" />
+          <span>Gestión / CRM</span>
+        </button>
+      )}
+
+      {/* Notification Bell (CRM) - Only for admin/employee */}
+      {(userSession?.role === 'admin' || userSession?.role === 'employee') && onOpenCRM && (
+        <button 
+          type="button"
+          className="relative p-1.5 sm:p-2 text-[#6F6860] hover:text-[#18231C] transition-colors cursor-pointer"
+          title="Notificaciones de Gestión"
+          onClick={onOpenCRM}
+        >
+          <Bell className="w-5 h-5" />
+          <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
+        </button>
+      )}
+
       {/* 3. User Dropdown Menu or INGRESAR Button */}
       {userSession ? (
         <div className="relative" ref={dropdownRef}>
@@ -218,6 +248,26 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
                       className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded-xs"
                     >
                       Admin
+                    </span>
+                  </button>
+                )}
+
+                {/* CRM Dashboard */}
+                {(userSession.role === 'admin' || userSession.role === 'employee') && onOpenCRM && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDropdownOpen(false);
+                      onOpenCRM();
+                    }}
+                    className="w-full flex items-center justify-between px-3 py-2 text-left text-xs font-bold text-[#18231C] hover:bg-[#FAF8F5] rounded-xs transition-colors cursor-pointer group"
+                  >
+                    <div className="flex items-center gap-2">
+                      <LayoutDashboard className="w-4 h-4 text-[#B9522F]" />
+                      <span>Gestión / CRM</span>
+                    </div>
+                    <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded-xs bg-[#B9522F]/10 text-[#B9522F]">
+                      Nuevo
                     </span>
                   </button>
                 )}

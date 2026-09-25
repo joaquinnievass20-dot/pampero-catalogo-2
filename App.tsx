@@ -46,6 +46,7 @@ import { ProductDetailView } from './components/ProductDetailView';
 import { LookbookView } from './components/LookbookView';
 import { AuthView } from './components/AuthView';
 import { AdminPanel } from './components/AdminPanel';
+import { CRMView } from './components/crm/CRMView';
 import { QuoteDrawer } from './components/QuoteDrawer';
 import { UserProfileModal } from './components/UserProfileModal';
 import { Footer } from './components/Footer';
@@ -60,23 +61,24 @@ import {
   User as UserIcon,
   Tag,
   Search,
-  Sparkles
+  Sparkles,
+  LayoutDashboard
 } from 'lucide-react';
 
 export default function App() {
-  // Category sanitizer to ensure newly added products are never miscategorized
+  // Category sanitizer to ensure categories are cleanly mapped without inventing values for empty fields
   const sanitizeCategory = (rawCat: any): MainCategory => {
-    if (!rawCat) return 'Hombre';
+    if (!rawCat || !String(rawCat).trim()) return '' as MainCategory;
     const str = String(rawCat).trim();
     if (str === 'Mujer' || str === '1') return 'Mujer';
     if (str === 'Infantil' || str === '2') return 'Infantil';
     if (str === 'Venta Corporativa' || str === '3') return 'Venta Corporativa';
+    if (str === 'Hombre') return 'Hombre';
     const s = str.toLowerCase();
     if (s.includes('mujer')) return 'Mujer';
     if (s.includes('infan') || s.includes('niñ')) return 'Infantil';
     if (s.includes('corp') || s.includes('venta')) return 'Venta Corporativa';
-    if (str.length > 0) return str as MainCategory;
-    return 'Hombre';
+    return str as MainCategory;
   };
 
   // 1. Theme Configuration
@@ -159,8 +161,8 @@ export default function App() {
           const sanitized = firestoreProds.map((p: Product) => ({
             ...p,
             category: sanitizeCategory(p.category),
-            section: p.section || 'Urbano',
-            subCategory: p.subCategory || 'General',
+            section: p.section || '',
+            subCategory: p.subCategory || '',
           }));
           setProducts(sanitized);
           saveCatalogBackup(sanitized);
@@ -309,11 +311,16 @@ export default function App() {
   // 6. User Session - strictly null at initial start as requested
   const [userSession, setUserSession] = useState<UserSession | null>(null);
 
-  // 7. Quotation Cart
+  // 7. Quotation Cart (strictly sanitized to prevent malformed localStorage items from freezing the app)
   const [cart, setCart] = useState<CartItem[]>(() => {
     try {
       const saved = localStorage.getItem('pampero_quote_cart');
-      return saved ? JSON.parse(saved) : [];
+      if (!saved) return [];
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) {
+        return parsed.filter((it: any) => it && it.product && typeof it.product === 'object' && it.quantity > 0);
+      }
+      return [];
     } catch {
       return [];
     }
@@ -384,7 +391,7 @@ export default function App() {
   // 'product_detail' -> Product detail (Screenshot 4)
   // 'admin'   -> Admin panel (requires admin authentication)
   // 'lookbook' -> Interactive campaign lookbook with hotspots
-  const [viewMode, setViewMode] = useState<'landing' | 'auth' | 'catalog' | 'product_detail' | 'admin' | 'lookbook'>('landing');
+  const [viewMode, setViewMode] = useState<'landing' | 'auth' | 'catalog' | 'product_detail' | 'admin' | 'lookbook' | 'crm'>('landing');
   const [authInitialTab, setAuthInitialTab] = useState<'login' | 'register' | 'admin'>('register');
   const [authInitialType, setAuthInitialType] = useState<'consumidor' | 'empresa'>('consumidor');
 
@@ -413,24 +420,40 @@ export default function App() {
 
   const handleDeleteProduct = async (id: string) => {
     const targetId = String(id || '').trim();
-    if (!targetId) return;
 
     try {
       const firestoreDb = db || getFirebaseDb();
-      if (firestoreDb) {
-        await deleteDoc(doc(firestoreDb, 'productos', targetId));
+      if (firestoreDb && targetId) {
+        // deleteDoc(doc(db, 'productos', id)) con timeout para evitar congelamiento si la conexión se cuelga
+        await Promise.race([
+          (async () => {
+            await deleteDoc(doc(firestoreDb, 'productos', targetId)).catch(() => {});
+            await deleteDoc(doc(firestoreDb, 'products', targetId)).catch(() => {});
+          })(),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Timeout en llamada deleteDoc de Firestore')), 2000)
+          ),
+        ]);
       }
-      setProducts((prev) => {
-        const remaining = prev.filter((p) => p.id !== targetId);
-        saveCatalogBackup(remaining);
-        return remaining;
-      });
     } catch (error) {
       console.warn('[FIREBASE] Error al eliminar documento en backend (forzando eliminación en UI):', error);
       // Crucial: Si deleteDoc falla (porque el ID está corrupto o es de la base vieja),
       // el bloque catch DEBE forzar la eliminación del producto del estado local de React
       setProducts((prev) => {
-        const remaining = prev.filter((p) => p.id !== targetId);
+        const remaining = prev.filter((p) => p.id !== id && String(p.id || '').trim() !== targetId && String(p.code || '').trim() !== targetId);
+        saveCatalogBackup(remaining);
+        return remaining;
+      });
+    } finally {
+      // El bloque catch o finally DEBE forzar la eliminación del producto del estado local de React
+      // (setProducts(prev => prev.filter(p => p.id !== id))) para que desaparezcan visualmente de la tabla sí o sí al apretar el botón
+      setProducts((prev) => {
+        const remaining = prev.filter((p) => {
+          const pId = String(p.id || '').trim();
+          const pCode = String(p.code || '').trim();
+          const pName = String(p.name || '').trim();
+          return p.id !== id && pId !== id && pId !== targetId && pCode !== id && pCode !== targetId && (targetId ? pName !== targetId : true);
+        });
         saveCatalogBackup(remaining);
         return remaining;
       });
@@ -671,33 +694,45 @@ export default function App() {
   return (
     <div className="min-h-screen flex flex-col bg-[#F5F2EC] text-[#22201D] font-sans antialiased selection:bg-[#FDB813] selection:text-black">
       
-      {/* Admin Floating Bar if logged in as Admin */}
-      {userSession?.role === 'admin' && (
+      {/* Admin & Staff Floating Bar if logged in as Admin or Employee */}
+      {(userSession?.role === 'admin' || userSession?.role === 'employee') && (
         <div className="bg-[#18231C] text-[#F5F2EC] px-4 py-2 text-xs flex flex-wrap items-center justify-between gap-2 border-b border-amber-500/40 z-50">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="font-bold text-amber-300">Modo Administrador Activo</span>
+            <span className="font-bold text-amber-300">
+              {userSession.role === 'admin' ? 'Modo Administrador Activo' : 'Portal de Personal / Empleado'}
+            </span>
             <span className="text-neutral-300 hidden sm:inline">
-              · Podés agregar productos, editar imágenes, gestionar promociones y sucursales.
+              · CRM Kanban, gestión de cotizaciones, pedidos y catálogo.
             </span>
           </div>
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => setViewMode('admin')}
-              style={{
-                backgroundColor: theme.accentColor || '#FDB813',
-                color: theme.buttonTextColor || '#18231C',
-              }}
-              className="px-3 py-1 rounded-xs hover:opacity-90 font-bold flex items-center gap-1.5 uppercase tracking-wider text-[10px] transition-opacity"
+              onClick={() => setViewMode('crm')}
+              className="px-3 py-1 rounded-xs bg-[#B9522F] hover:bg-[#a04424] text-white font-bold flex items-center gap-1.5 uppercase tracking-wider text-[10px] transition-all shadow-xs cursor-pointer"
             >
-              <Settings className="w-3.5 h-3.5" />
-              Panel de Control
+              <LayoutDashboard className="w-3.5 h-3.5" />
+              Gestión / CRM
             </button>
+            {userSession.role === 'admin' && (
+              <button
+                type="button"
+                onClick={() => setViewMode('admin')}
+                style={{
+                  backgroundColor: theme.accentColor || '#FDB813',
+                  color: theme.buttonTextColor || '#18231C',
+                }}
+                className="px-3 py-1 rounded-xs hover:opacity-90 font-bold flex items-center gap-1.5 uppercase tracking-wider text-[10px] transition-opacity cursor-pointer"
+              >
+                <Settings className="w-3.5 h-3.5" />
+                Panel de Control
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setViewMode('catalog')}
-              className="px-2.5 py-1 rounded-xs bg-white/10 hover:bg-white/20 text-white text-[10px] uppercase tracking-wider font-semibold"
+              className="px-2.5 py-1 rounded-xs bg-white/10 hover:bg-white/20 text-white text-[10px] uppercase tracking-wider font-semibold cursor-pointer"
             >
               Ver Catálogo
             </button>
@@ -800,6 +835,7 @@ export default function App() {
               onOpenAuth={() => openAuthScreen('login', 'consumidor')}
               onLogout={handleLogout}
               onOpenAdmin={() => setViewMode('admin')}
+              onOpenCRM={() => setViewMode('crm')}
               onOpenProfile={() => setIsProfileOpen(true)}
               theme={theme}
             />
@@ -823,6 +859,7 @@ export default function App() {
             onOpenCart={() => setIsCartOpen(true)}
             onLogout={handleLogout}
             onOpenAdmin={() => setViewMode('admin')}
+              onOpenCRM={() => setViewMode('crm')}
             onOpenProfile={() => setIsProfileOpen(true)}
             onOpenLookbook={() => setViewMode('lookbook')}
           />
@@ -914,7 +951,17 @@ export default function App() {
             }}
           />
         )}
-      </main>
+      
+
+          {/* VIEW 7: CRM DASHBOARD */}
+          {viewMode === 'crm' && (
+            <CRMView
+              userSession={userSession}
+              onClose={() => setViewMode('landing')}
+              theme={theme}
+            />
+          )}
+        </main>
 
       {/* Footer (with exact Mendoza and Luján de Cuyo addresses) */}
       <Footer
@@ -971,6 +1018,7 @@ export default function App() {
         userSession={userSession}
         theme={theme}
         coupons={coupons}
+        volumeDiscounts={volumeDiscounts}
       />
 
       {/* User Profile / Address Editing Modal */}
@@ -987,3 +1035,4 @@ export default function App() {
     </div>
   );
 }
+

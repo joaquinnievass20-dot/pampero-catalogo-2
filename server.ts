@@ -176,6 +176,25 @@ async function startServer() {
   // UNIFIED CATALOG SYNC (CENTRALIZED REAL-TIME TRUTH)
   // ==========================================
   app.get('/api/catalog/sync', (_req, res) => {
+    const diskProducts = readJsonSafe(PRODUCTS_FILE, null);
+    if (Array.isArray(diskProducts) && diskProducts.length > 0) serverProducts = diskProducts;
+    const diskTheme = readJsonSafe(THEME_FILE, null);
+    if (diskTheme && typeof diskTheme === 'object') serverTheme = diskTheme;
+    const diskLookbook = readJsonSafe(LOOKBOOK_FILE, null);
+    if (Array.isArray(diskLookbook) && diskLookbook.length > 0) serverLookbook = diskLookbook;
+    const diskPromos = readJsonSafe(PROMOTIONS_FILE, null);
+    if (Array.isArray(diskPromos) && diskPromos.length > 0) serverPromotions = diskPromos;
+    const diskBranches = readJsonSafe(BRANCHES_FILE, null);
+    if (Array.isArray(diskBranches) && diskBranches.length > 0) serverBranches = diskBranches;
+    const diskCoupons = readJsonSafe(COUPONS_FILE, null);
+    if (Array.isArray(diskCoupons)) serverCoupons = diskCoupons;
+    const diskColors = readJsonSafe(COLORS_FILE, null);
+    if (Array.isArray(diskColors) && diskColors.length > 0) serverColors = diskColors;
+    const diskCats = readJsonSafe(CATEGORIES_FILE, null);
+    if (Array.isArray(diskCats) && diskCats.length > 0) serverCategories = diskCats;
+    const diskDiscounts = readJsonSafe(VOLUME_DISCOUNTS_FILE, null);
+    if (Array.isArray(diskDiscounts) && diskDiscounts.length > 0) serverVolumeDiscounts = diskDiscounts;
+
     res.json({
       success: true,
       updatedAt: catalogUpdatedAt,

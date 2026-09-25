@@ -338,3 +338,157 @@ export function subscribeToFirestoreStoreConfig(
     return () => {};
   }
 }
+
+
+// --- CRM FIREBASE INTEGRATION ---
+export const saveCRMOrder = async (orderData: any) => {
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return;
+  try {
+    const docRef = doc(firestoreDb, 'crm_orders', orderData.id);
+    await setDoc(docRef, { ...orderData, updatedAt: new Date().toISOString() }, { merge: true });
+    console.log('[FIREBASE] CRM Order Saved:', orderData.id);
+  } catch (err) {
+    console.error('Error saving CRM order:', err);
+  }
+};
+
+export const deleteCRMOrder = async (orderId: string) => {
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return;
+  try {
+    await deleteDoc(doc(firestoreDb, 'crm_orders', orderId));
+    console.log('[FIREBASE] CRM Order Deleted:', orderId);
+  } catch (err) {
+    console.error('Error deleting CRM order:', err);
+  }
+};
+
+export const subscribeToCRMOrders = (onUpdate: (orders: any[]) => void) => {
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return () => {};
+  const colRef = collection(firestoreDb, 'crm_orders');
+  return onSnapshot(colRef, (snapshot) => {
+    const orders = snapshot.docs.map(doc => doc.data() as any);
+    onUpdate(orders);
+  }, (error) => {
+    console.error('Error listening to CRM orders:', error);
+  });
+};
+
+// --- LEADS & VISITAS COMERCIALES ---
+export const saveLeadVisit = async (visitData: any) => {
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return;
+  try {
+    const docRef = doc(firestoreDb, 'crm_leads_visitas', visitData.id);
+    await setDoc(docRef, { ...visitData, updatedAt: new Date().toISOString() }, { merge: true });
+  } catch (err) {
+    console.error('Error saving lead visit:', err);
+  }
+};
+
+export const deleteLeadVisit = async (visitId: string) => {
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return;
+  try {
+    await deleteDoc(doc(firestoreDb, 'crm_leads_visitas', visitId));
+  } catch (err) {
+    console.error('Error deleting lead visit:', err);
+  }
+};
+
+export const subscribeToLeadVisits = (onUpdate: (visits: any[]) => void) => {
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return () => {};
+  const colRef = collection(firestoreDb, 'crm_leads_visitas');
+  return onSnapshot(colRef, (snapshot) => {
+    const visits = snapshot.docs.map(doc => doc.data() as any);
+    onUpdate(visits);
+  }, (error) => {
+    console.error('Error listening to lead visits:', error);
+  });
+};
+
+// --- PEDIDOS A PROVEEDOR (MACATA / PAMPERO CENTRAL) ---
+export const saveSupplierOrder = async (orderData: any) => {
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return;
+  try {
+    const docRef = doc(firestoreDb, 'crm_pedidos_proveedor', orderData.id);
+    await setDoc(docRef, { ...orderData, updatedAt: new Date().toISOString() }, { merge: true });
+  } catch (err) {
+    console.error('Error saving supplier order:', err);
+  }
+};
+
+export const deleteSupplierOrder = async (orderId: string) => {
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return;
+  try {
+    await deleteDoc(doc(firestoreDb, 'crm_pedidos_proveedor', orderId));
+  } catch (err) {
+    console.error('Error deleting supplier order:', err);
+  }
+};
+
+export const subscribeToSupplierOrders = (onUpdate: (orders: any[]) => void) => {
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return () => {};
+  const colRef = collection(firestoreDb, 'crm_pedidos_proveedor');
+  return onSnapshot(colRef, (snapshot) => {
+    const orders = snapshot.docs.map(doc => doc.data() as any);
+    onUpdate(orders);
+  }, (error) => {
+    console.error('Error listening to supplier orders:', error);
+  });
+};
+
+// --- PORTAL DE TALLES EMPRESARIAL ---
+export const saveSizingCampaign = async (campaignData: any) => {
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return;
+  try {
+    const docRef = doc(firestoreDb, 'crm_sizing_campaigns', campaignData.id);
+    await setDoc(docRef, { ...campaignData, updatedAt: new Date().toISOString() }, { merge: true });
+  } catch (err) {
+    console.error('Error saving sizing campaign:', err);
+  }
+};
+
+export const subscribeToSizingCampaigns = (onUpdate: (campaigns: any[]) => void) => {
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return () => {};
+  const colRef = collection(firestoreDb, 'crm_sizing_campaigns');
+  return onSnapshot(colRef, (snapshot) => {
+    const campaigns = snapshot.docs.map(doc => doc.data() as any);
+    onUpdate(campaigns);
+  }, (error) => {
+    console.error('Error listening to sizing campaigns:', error);
+  });
+};
+
+export const saveEmployeeSizeEntry = async (entryData: any) => {
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return;
+  try {
+    const docRef = doc(firestoreDb, 'crm_employee_sizes', entryData.id);
+    await setDoc(docRef, { ...entryData, submittedAt: new Date().toISOString() }, { merge: true });
+  } catch (err) {
+    console.error('Error saving employee size entry:', err);
+  }
+};
+
+export const subscribeToEmployeeSizeEntries = (campaignId: string, onUpdate: (entries: any[]) => void) => {
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return () => {};
+  const colRef = collection(firestoreDb, 'crm_employee_sizes');
+  return onSnapshot(colRef, (snapshot) => {
+    const all = snapshot.docs.map(doc => doc.data() as any);
+    const filtered = campaignId === 'all' ? all : all.filter(e => e.campaignId === campaignId);
+    onUpdate(filtered);
+  }, (error) => {
+    console.error('Error listening to employee size entries:', error);
+  });
+};
+

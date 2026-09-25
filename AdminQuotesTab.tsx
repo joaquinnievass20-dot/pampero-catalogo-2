@@ -43,11 +43,11 @@ export const AdminQuotesTab: React.FC = () => {
   const filteredQuotes = quotes.filter((q) => {
     const s = search.toLowerCase();
     return (
-      q.id.toLowerCase().includes(s) ||
-      q.clientName.toLowerCase().includes(s) ||
-      q.clientEmail.toLowerCase().includes(s) ||
-      q.clientPhone.toLowerCase().includes(s) ||
-      q.clientAddress.toLowerCase().includes(s)
+      (q.id || '').toLowerCase().includes(s) ||
+      (q.clientName || '').toLowerCase().includes(s) ||
+      (q.clientEmail || '').toLowerCase().includes(s) ||
+      (q.clientPhone || '').toLowerCase().includes(s) ||
+      (q.clientAddress || '').toLowerCase().includes(s)
     );
   });
 

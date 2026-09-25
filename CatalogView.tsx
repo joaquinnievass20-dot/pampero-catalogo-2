@@ -103,17 +103,17 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
 
   // Helper to normalize category
   const sanitizeCategory = (rawCat: any): MainCategory => {
-    if (!rawCat) return 'Hombre';
+    if (!rawCat || !String(rawCat).trim()) return '' as MainCategory;
     const str = String(rawCat).trim();
     if (str === 'Mujer' || str === '1') return 'Mujer';
     if (str === 'Infantil' || str === '2') return 'Infantil';
     if (str === 'Venta Corporativa' || str === '3') return 'Venta Corporativa';
+    if (str === 'Hombre') return 'Hombre';
     const s = str.toLowerCase();
     if (s.includes('mujer')) return 'Mujer';
     if (s.includes('infan') || s.includes('niñ')) return 'Infantil';
     if (s.includes('corp') || s.includes('venta')) return 'Venta Corporativa';
-    if (str.length > 0) return str as MainCategory;
-    return 'Hombre';
+    return str as MainCategory;
   };
 
   const activeHierarchy = useMemo(() => {
@@ -127,11 +127,18 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
 
   // Helper to check if a product is industrial or corporate
   const isIndustrialProduct = (p: Product) => {
+    const sec = (p.section || '').toLowerCase().trim();
+    const sub = (p.subCategory || '').toLowerCase().trim();
+    const cat = (p.category || '').toLowerCase().trim();
     return Boolean(
       p.isCorporateOnly ||
-      p.category === 'Venta Corporativa' ||
-      (p.section && p.section.toLowerCase() === 'industria') ||
-      (p.subCategory && p.subCategory.toLowerCase().includes('industria'))
+      cat === 'venta corporativa' ||
+      cat.includes('corporativ') ||
+      sec === 'industria' ||
+      sec.includes('industria') ||
+      sec.includes('corporativ') ||
+      sub.includes('industria') ||
+      sub.includes('corporativ')
     );
   };
 
@@ -143,13 +150,14 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
       const cat = sanitizeCategory(p.category);
       const isInd = isIndustrialProduct(p);
       let belongs = false;
-      if (isInd) {
-        belongs = currentCategory === 'Venta Corporativa';
-      } else {
-        if (currentCategory === 'Venta Corporativa') belongs = false;
-        else if (currentCategory === 'Hombre') belongs = cat === 'Hombre' || Boolean(p.isUnisex);
-        else if (currentCategory === 'Mujer') belongs = cat === 'Mujer' || Boolean(p.isUnisex);
-        else belongs = cat === currentCategory;
+      if (currentCategory === 'Venta Corporativa') {
+        belongs = isInd || cat === 'Venta Corporativa';
+      } else if (currentCategory === 'Hombre') {
+        belongs = cat === 'Hombre' || Boolean(p.isUnisex);
+      } else if (currentCategory === 'Mujer') {
+        belongs = cat === 'Mujer' || Boolean(p.isUnisex);
+      } else if (currentCategory === 'Infantil') {
+        belongs = cat === 'Infantil';
       }
       if (belongs && p.subCategory) {
         set.add(p.subCategory.trim());
@@ -164,12 +172,21 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
     products
       .filter((p) => {
         if (p.inStock === false) return false;
+        const cat = sanitizeCategory(p.category);
         const isInd = isIndustrialProduct(p);
-        if (isInd) return currentCategory === 'Venta Corporativa';
-        if (currentCategory === 'Venta Corporativa') return false;
-        if (currentCategory === 'Hombre') return sanitizeCategory(p.category) === 'Hombre' || Boolean(p.isUnisex);
-        if (currentCategory === 'Mujer') return sanitizeCategory(p.category) === 'Mujer' || Boolean(p.isUnisex);
-        return sanitizeCategory(p.category) === currentCategory;
+        if (currentCategory === 'Venta Corporativa') {
+          return isInd || cat === 'Venta Corporativa';
+        }
+        if (currentCategory === 'Hombre') {
+          return cat === 'Hombre' || Boolean(p.isUnisex);
+        }
+        if (currentCategory === 'Mujer') {
+          return cat === 'Mujer' || Boolean(p.isUnisex);
+        }
+        if (currentCategory === 'Infantil') {
+          return cat === 'Infantil';
+        }
+        return false;
       })
       .forEach((p) => {
         p.availableColors?.forEach((c) => set.add(c));
@@ -232,28 +249,30 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
           (promoLower.includes('promo') && p.discountPercentage && p.discountPercentage > 0);
         if (!matchesPromo) return false;
       } else if (!q) {
-        // Respect category filter with Unisex and Industrial rules
+        // Regla: Si un producto se carga en Hombre o Mujer y se marca en la línea "Industria" (o Venta Corporativa),
+        // debe visualizarse en AMBAS categorías al mismo tiempo en el catálogo público:
+        // en su categoría original (Hombre o Mujer) y también en la pestaña general de "Venta Corporativa".
         const isInd = isIndustrialProduct(p);
-        if (isInd) {
-          if (currentCategory !== 'Venta Corporativa') return false;
-        } else {
-          if (currentCategory === 'Venta Corporativa') return false;
-          if (currentCategory === 'Hombre') {
-            if (prodCategory !== 'Hombre' && !p.isUnisex) return false;
-          } else if (currentCategory === 'Mujer') {
-            if (prodCategory !== 'Mujer' && !p.isUnisex) return false;
-          } else if (currentCategory === 'Infantil') {
-            if (prodCategory !== 'Infantil') return false;
-          }
+        if (currentCategory === 'Venta Corporativa') {
+          if (!isInd && prodCategory !== 'Venta Corporativa') return false;
+        } else if (currentCategory === 'Hombre') {
+          if (prodCategory !== 'Hombre' && !p.isUnisex) return false;
+        } else if (currentCategory === 'Mujer') {
+          if (prodCategory !== 'Mujer' && !p.isUnisex) return false;
+        } else if (currentCategory === 'Infantil') {
+          if (prodCategory !== 'Infantil') return false;
         }
       }
 
       // 2. Section/Line filter
       if (selectedSection !== 'Todas') {
+        const secLower = selectedSection.toLowerCase();
+        const isSecIndustria = secLower === 'industria';
         const sectionMatch =
-          (p.section && p.section.toLowerCase() === selectedSection.toLowerCase()) ||
-          (p.subCategory && p.subCategory.toLowerCase().includes(selectedSection.toLowerCase())) ||
-          (p.name && p.name.toLowerCase().includes(selectedSection.toLowerCase()));
+          (p.section && p.section.toLowerCase() === secLower) ||
+          (p.subCategory && p.subCategory.toLowerCase().includes(secLower)) ||
+          (p.name && p.name.toLowerCase().includes(secLower)) ||
+          (isSecIndustria && isIndustrialProduct(p));
         if (!sectionMatch) return false;
       }
 
