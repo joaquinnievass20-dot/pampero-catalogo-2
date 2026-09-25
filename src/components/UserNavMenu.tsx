@@ -9,7 +9,9 @@ import {
   ShieldCheck, 
   Building2, 
   FileText,
-  Compass
+  Compass,
+  Bell,
+  LayoutDashboard
 } from 'lucide-react';
 
 interface UserNavMenuProps {
@@ -33,6 +35,7 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
   onOpenAuth,
   onLogout,
   onOpenAdmin,
+  onOpenCRM,
   onOpenProfile,
   onOpenCatalog,
   showCatalogBtn = false,
@@ -127,6 +130,19 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
           {cartCount}
         </span>
       </button>
+
+      {/* Notification Bell (CRM) - Only for admin/employee */}
+      {(userSession?.role === 'admin' || userSession?.role === 'employee') && onOpenCRM && (
+        <button 
+          type="button"
+          className="relative p-1.5 sm:p-2 text-[#6F6860] hover:text-[#18231C] transition-colors cursor-pointer"
+          title="Notificaciones de Gestión"
+          onClick={onOpenCRM}
+        >
+          <Bell className="w-5 h-5" />
+          <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
+        </button>
+      )}
 
       {/* 3. User Dropdown Menu or INGRESAR Button */}
       {userSession ? (
@@ -223,7 +239,7 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
                   </button>
                 )}
 
-                                {/* CRM Dashboard */}
+                {/* CRM Dashboard */}
                 {(userSession.role === 'admin' || userSession.role === 'employee') && onOpenCRM && (
                   <button
                     type="button"
@@ -234,9 +250,12 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
                     className="w-full flex items-center justify-between px-3 py-2 text-left text-xs font-bold text-[#18231C] hover:bg-[#FAF8F5] rounded-xs transition-colors cursor-pointer group"
                   >
                     <div className="flex items-center gap-2">
-                      <span className="w-4 h-4 flex items-center justify-center text-white bg-[#B9522F] rounded-full text-[9px]">M</span>
-                      <span>Gestin / CRM</span>
+                      <LayoutDashboard className="w-4 h-4 text-[#B9522F]" />
+                      <span>Gestión / CRM</span>
                     </div>
+                    <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded-xs bg-[#B9522F]/10 text-[#B9522F]">
+                      Nuevo
+                    </span>
                   </button>
                 )}
 
@@ -314,4 +333,3 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
     </div>
   );
 };
-
