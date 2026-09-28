@@ -52,53 +52,57 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
 
   if (!isOpen) return null;
 
-  const isCompany = userSession?.clientType === 'empresa';
-  const targetEmail = theme.screenTexts?.quoteEmail || 'ventas@pamperomaipu.com.ar';
+  // Sanitize items list to prevent crashes if an item or product is corrupted in localStorage
+  const safeItems = (items || []).filter((it) => it && it.product && typeof it.product === 'object' && it.quantity > 0);
 
-  const totalUnits = items.reduce((acc, item) => acc + item.quantity, 0);
+  const isCompany = userSession?.clientType === 'empresa';
+  const targetEmail = theme?.screenTexts?.quoteEmail || 'ventas@pamperomaipu.com.ar';
+
+  const totalUnits = safeItems.reduce((acc, item) => acc + (Number(item.quantity) || 0), 0);
   const qualifiesForCorporatePrice = isCompany || totalUnits > 10;
 
   // Base item price taking into account special sizes and corporate tier
   const calculateItemBasePrice = (item: CartItem) => {
+    if (!item?.product) return 0;
     if (item.specialSizeRange) {
       return (qualifiesForCorporatePrice && item.specialSizeRange.corporatePrice)
-        ? item.specialSizeRange.corporatePrice
-        : (item.specialSizeRange.price || item.unitPriceAdjusted || item.product.price);
+        ? Number(item.specialSizeRange.corporatePrice)
+        : Number(item.specialSizeRange.price || item.unitPriceAdjusted || item.product.price || 0);
     }
     return (qualifiesForCorporatePrice && item.product.corporatePrice)
-      ? item.product.corporatePrice
-      : (item.unitPriceAdjusted || item.product.price);
+      ? Number(item.product.corporatePrice)
+      : Number(item.unitPriceAdjusted || item.product.price || 0);
   };
 
   // Check applicable volume discount percentage for an item
   const getItemVolumeDiscountPercent = (item: CartItem) => {
-    if (!volumeDiscounts || volumeDiscounts.length === 0) return 0;
+    if (!volumeDiscounts || volumeDiscounts.length === 0 || !item?.product) return 0;
     const applicableRules = volumeDiscounts.filter((rule) => {
       if (!rule.active) return false;
-      const catMatch = !rule.category || rule.category === 'Todas' || rule.category === item.product.category;
-      const subMatch = !rule.subCategory || rule.subCategory === 'Todas' || rule.subCategory === item.product.subCategory;
+      const catMatch = !rule.category || rule.category === 'Todas' || rule.category === item.product?.category;
+      const subMatch = !rule.subCategory || rule.subCategory === 'Todas' || rule.subCategory === item.product?.subCategory;
       if (!catMatch || !subMatch) return false;
 
       // Count units in cart matching rule's scope
-      const matchingUnits = items
+      const matchingUnits = safeItems
         .filter((it) => {
-          const cM = !rule.category || rule.category === 'Todas' || rule.category === it.product.category;
-          const sM = !rule.subCategory || rule.subCategory === 'Todas' || rule.subCategory === it.product.subCategory;
+          const cM = !rule.category || rule.category === 'Todas' || rule.category === it.product?.category;
+          const sM = !rule.subCategory || rule.subCategory === 'Todas' || rule.subCategory === it.product?.subCategory;
           return cM && sM;
         })
-        .reduce((acc, it) => acc + it.quantity, 0);
+        .reduce((acc, it) => acc + (Number(it.quantity) || 0), 0);
 
       return matchingUnits >= rule.minQuantity;
     });
 
     if (applicableRules.length === 0) return 0;
-    return Math.max(...applicableRules.map((r) => r.discountPercentage));
+    return Math.max(...applicableRules.map((r) => r.discountPercentage || 0));
   };
 
   // Final unit price with best discount
   const calculateItemPrice = (item: CartItem) => {
     const base = calculateItemBasePrice(item);
-    const prodDiscount = item.product.discountPercentage || 0;
+    const prodDiscount = item?.product?.discountPercentage || 0;
     const volDiscount = getItemVolumeDiscountPercent(item);
     const effectiveDiscount = Math.max(prodDiscount, volDiscount);
     return Math.round(base * (1 - effectiveDiscount / 100));
@@ -109,19 +113,19 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
     if (!volumeDiscounts || volumeDiscounts.length === 0) return [];
     return volumeDiscounts.filter((rule) => {
       if (!rule.active) return false;
-      const matchingUnits = items
+      const matchingUnits = safeItems
         .filter((it) => {
-          const cM = !rule.category || rule.category === 'Todas' || rule.category === it.product.category;
-          const sM = !rule.subCategory || rule.subCategory === 'Todas' || rule.subCategory === it.product.subCategory;
+          const cM = !rule.category || rule.category === 'Todas' || rule.category === it.product?.category;
+          const sM = !rule.subCategory || rule.subCategory === 'Todas' || rule.subCategory === it.product?.subCategory;
           return cM && sM;
         })
-        .reduce((acc, it) => acc + it.quantity, 0);
+        .reduce((acc, it) => acc + (Number(it.quantity) || 0), 0);
       return matchingUnits >= rule.minQuantity;
     });
-  }, [volumeDiscounts, items]);
+  }, [volumeDiscounts, safeItems]);
 
-  const subtotalEstimate = items.reduce((acc, item) => {
-    return acc + calculateItemPrice(item) * item.quantity;
+  const subtotalEstimate = safeItems.reduce((acc, item) => {
+    return acc + calculateItemPrice(item) * (Number(item.quantity) || 0);
   }, 0);
 
   // Calculate discount from applied coupon
@@ -209,10 +213,10 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
       `Dirección: ${direccion}\n\n`;
 
     let itemsList = `DETALLE DE ARTÍCULOS COTIZADOS (${totalUnits} unidades en total):\n\n`;
-    items.forEach((it) => {
+    safeItems.forEach((it) => {
       const unitPrice = calculateItemPrice(it);
-      const code = it.codeWithSuffix || (it.specialSizeRange?.suffix ? `${it.product.code}${it.specialSizeRange.suffix}` : it.product.code);
-      itemsList += `${it.product.name} (Cód: ${code})\n` +
+      const code = it.codeWithSuffix || (it.specialSizeRange?.suffix ? `${it.product?.code || ''}${it.specialSizeRange.suffix}` : (it.product?.code || ''));
+      itemsList += `${it.product?.name || 'Artículo'} (Cód: ${code})\n` +
         `• Cantidad: ${it.quantity} un.\n` +
         `• Talle: ${it.selectedSize || 'Estándar'} | Color: ${it.selectedColor || 'Estándar'}\n` +
         `• Estimado Unit: $${unitPrice.toLocaleString('es-AR')}\n\n`;
@@ -292,7 +296,16 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
 
     // Empty cart and redirect to WhatsApp
     onClear();
-    window.open(whatsappUrl, '_blank');
+    try {
+      if (typeof window !== 'undefined') {
+        const opened = window.open(whatsappUrl, '_blank');
+        if (!opened) {
+          window.location.href = whatsappUrl;
+        }
+      }
+    } catch (err) {
+      console.warn('Could not launch WhatsApp URL:', err);
+    }
     onClose();
   };
 
@@ -371,7 +384,7 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
 
         {/* Item list */}
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
-          {items.length === 0 ? (
+          {safeItems.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center p-6 text-[#6F6860]">
               <ShoppingBag className="w-12 h-12 mb-3 stroke-[1.5] opacity-40 text-[#18231C]" />
               <p className="font-bold text-[#18231C] text-sm uppercase tracking-wider">Tu lista de cotización está vacía</p>
@@ -380,23 +393,23 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
               </p>
             </div>
           ) : (
-            items.map((item, idx) => {
+            safeItems.map((item, idx) => {
               const unitPrice = calculateItemPrice(item);
-              const displayCode = item.codeWithSuffix || (item.specialSizeRange?.suffix ? `${item.product.code}${item.specialSizeRange.suffix}` : item.product.code);
+              const displayCode = item.codeWithSuffix || (item.specialSizeRange?.suffix ? `${item.product?.code || ''}${item.specialSizeRange.suffix}` : (item.product?.code || ''));
               return (
                 <div
-                  key={`${item.product.id}-${item.selectedSize}-${item.selectedColor}-${idx}`}
+                  key={`${item.product?.id || idx}-${item.selectedSize}-${item.selectedColor}-${idx}`}
                   className="bg-[#FAF8F5] rounded-xs p-3 border border-[#DCD4C9] flex gap-3 items-center"
                 >
                   <img
-                    src={item.product.image}
-                    alt={item.product.name}
+                    src={item.product?.image || '/logo.png'}
+                    alt={item.product?.name || 'Artículo'}
                     className="w-14 h-14 object-cover rounded-xs border border-[#DCD4C9] shrink-0 bg-white"
                     referrerPolicy="no-referrer"
                   />
                   <div className="flex-1 min-w-0">
                     <h4 className="font-bold text-xs text-[#18231C] truncate uppercase">
-                      {item.product.name}
+                      {item.product?.name || 'Artículo Pampero'}
                     </h4>
                     <p className="text-[11px] text-[#6F6860]">
                       Cód: <span className="font-semibold text-[#18231C]">{displayCode}</span>
@@ -422,7 +435,7 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
                   <div className="flex flex-col items-end gap-1.5">
                     <button
                       type="button"
-                      onClick={() => onRemoveItem(item.product.id, item.selectedColor, item.selectedSize, item.codeWithSuffix)}
+                      onClick={() => onRemoveItem(item?.product?.id || (item as any)?.id, item.selectedColor, item.selectedSize, item.codeWithSuffix)}
                       className="text-[#6F6860] hover:text-red-600 p-1 cursor-pointer"
                       title="Eliminar artículo"
                     >
@@ -432,7 +445,7 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
                     <div className="flex items-center border border-[#DCD4C9] rounded-xs bg-white">
                       <button
                         type="button"
-                        onClick={() => onUpdateQuantity(item.product.id, -1, item.selectedColor, item.selectedSize, item.codeWithSuffix)}
+                        onClick={() => onUpdateQuantity(item?.product?.id || (item as any)?.id, -1, item.selectedColor, item.selectedSize, item.codeWithSuffix)}
                         className="px-2 py-0.5 text-[#18231C] hover:bg-[#ECE5DC] text-xs font-bold cursor-pointer"
                       >
                         -
@@ -440,7 +453,7 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
                       <span className="px-2 text-xs font-bold text-[#18231C]">{item.quantity}</span>
                       <button
                         type="button"
-                        onClick={() => onUpdateQuantity(item.product.id, 1, item.selectedColor, item.selectedSize, item.codeWithSuffix)}
+                        onClick={() => onUpdateQuantity(item?.product?.id || (item as any)?.id, 1, item.selectedColor, item.selectedSize, item.codeWithSuffix)}
                         className="px-2 py-0.5 text-[#18231C] hover:bg-[#ECE5DC] text-xs font-bold cursor-pointer"
                       >
                         +

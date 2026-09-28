@@ -340,11 +340,26 @@ export function subscribeToFirestoreStoreConfig(
 }
 
 
+import { 
+  INITIAL_CRM_ORDERS, 
+  INITIAL_LEAD_VISITS, 
+  INITIAL_SUPPLIER_ORDERS, 
+  INITIAL_SIZING_CAMPAIGNS, 
+  INITIAL_EMPLOYEE_SIZES 
+} from '../data/initialCRMData';
+
 // --- CRM FIREBASE INTEGRATION ---
 export const saveCRMOrder = async (orderData: any) => {
-  if (!db) return;
+  const firestoreDb = db || getFirebaseDb();
   try {
-    const docRef = doc(db, 'crm_orders', orderData.id);
+    const local = JSON.parse(localStorage.getItem('pampero_crm_orders') || '[]');
+    const updated = [orderData, ...local.filter((o: any) => o.id !== orderData.id)];
+    localStorage.setItem('pampero_crm_orders', JSON.stringify(updated));
+  } catch {}
+
+  if (!firestoreDb) return;
+  try {
+    const docRef = doc(firestoreDb, 'crm_orders', orderData.id);
     await setDoc(docRef, { ...orderData, updatedAt: new Date().toISOString() }, { merge: true });
     console.log('[FIREBASE] CRM Order Saved:', orderData.id);
   } catch (err) {
@@ -352,14 +367,271 @@ export const saveCRMOrder = async (orderData: any) => {
   }
 };
 
+export const deleteCRMOrder = async (orderId: string) => {
+  try {
+    const local = JSON.parse(localStorage.getItem('pampero_crm_orders') || '[]');
+    const updated = local.filter((o: any) => o.id !== orderId);
+    localStorage.setItem('pampero_crm_orders', JSON.stringify(updated));
+  } catch {}
+
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return;
+  try {
+    await deleteDoc(doc(firestoreDb, 'crm_orders', orderId));
+    console.log('[FIREBASE] CRM Order Deleted:', orderId);
+  } catch (err) {
+    console.error('Error deleting CRM order:', err);
+  }
+};
+
 export const subscribeToCRMOrders = (onUpdate: (orders: any[]) => void) => {
-  if (!db) return () => {};
-  const colRef = collection(db, 'crm_orders');
+  // 1. Initial immediate local or seed load
+  try {
+    const local = localStorage.getItem('pampero_crm_orders');
+    if (local) {
+      const parsed = JSON.parse(local);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        onUpdate(parsed);
+      } else {
+        onUpdate(INITIAL_CRM_ORDERS);
+        localStorage.setItem('pampero_crm_orders', JSON.stringify(INITIAL_CRM_ORDERS));
+      }
+    } else {
+      onUpdate(INITIAL_CRM_ORDERS);
+      localStorage.setItem('pampero_crm_orders', JSON.stringify(INITIAL_CRM_ORDERS));
+    }
+  } catch {
+    onUpdate(INITIAL_CRM_ORDERS);
+  }
+
+  // 2. Realtime listener from Firestore
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return () => {};
+  const colRef = collection(firestoreDb, 'crm_orders');
   return onSnapshot(colRef, (snapshot) => {
-    const orders = snapshot.docs.map(doc => doc.data() as any);
-    onUpdate(orders);
+    if (!snapshot.empty) {
+      const orders = snapshot.docs.map(doc => doc.data() as any);
+      localStorage.setItem('pampero_crm_orders', JSON.stringify(orders));
+      onUpdate(orders);
+    }
   }, (error) => {
-    console.error('Error listening to CRM orders:', error);
+    console.warn('Fallback CRM orders listener:', error);
+  });
+};
+
+// --- LEADS & VISITAS COMERCIALES ---
+export const saveLeadVisit = async (visitData: any) => {
+  try {
+    const local = JSON.parse(localStorage.getItem('pampero_lead_visits') || '[]');
+    const updated = [visitData, ...local.filter((v: any) => v.id !== visitData.id)];
+    localStorage.setItem('pampero_lead_visits', JSON.stringify(updated));
+  } catch {}
+
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return;
+  try {
+    const docRef = doc(firestoreDb, 'crm_leads_visitas', visitData.id);
+    await setDoc(docRef, { ...visitData, updatedAt: new Date().toISOString() }, { merge: true });
+  } catch (err) {
+    console.error('Error saving lead visit:', err);
+  }
+};
+
+export const deleteLeadVisit = async (visitId: string) => {
+  try {
+    const local = JSON.parse(localStorage.getItem('pampero_lead_visits') || '[]');
+    const updated = local.filter((v: any) => v.id !== visitId);
+    localStorage.setItem('pampero_lead_visits', JSON.stringify(updated));
+  } catch {}
+
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return;
+  try {
+    await deleteDoc(doc(firestoreDb, 'crm_leads_visitas', visitId));
+  } catch (err) {
+    console.error('Error deleting lead visit:', err);
+  }
+};
+
+export const subscribeToLeadVisits = (onUpdate: (visits: any[]) => void) => {
+  try {
+    const local = localStorage.getItem('pampero_lead_visits');
+    if (local) {
+      const parsed = JSON.parse(local);
+      if (Array.isArray(parsed) && parsed.length > 0) onUpdate(parsed);
+      else onUpdate(INITIAL_LEAD_VISITS);
+    } else {
+      onUpdate(INITIAL_LEAD_VISITS);
+    }
+  } catch {
+    onUpdate(INITIAL_LEAD_VISITS);
+  }
+
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return () => {};
+  const colRef = collection(firestoreDb, 'crm_leads_visitas');
+  return onSnapshot(colRef, (snapshot) => {
+    if (!snapshot.empty) {
+      const visits = snapshot.docs.map(doc => doc.data() as any);
+      localStorage.setItem('pampero_lead_visits', JSON.stringify(visits));
+      onUpdate(visits);
+    }
+  }, (error) => {
+    console.warn('Error listening to lead visits:', error);
+  });
+};
+
+// --- PEDIDOS A PROVEEDOR (MACATA / PAMPERO CENTRAL) ---
+export const saveSupplierOrder = async (orderData: any) => {
+  try {
+    const local = JSON.parse(localStorage.getItem('pampero_supplier_orders') || '[]');
+    const updated = [orderData, ...local.filter((o: any) => o.id !== orderData.id)];
+    localStorage.setItem('pampero_supplier_orders', JSON.stringify(updated));
+  } catch {}
+
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return;
+  try {
+    const docRef = doc(firestoreDb, 'crm_pedidos_proveedor', orderData.id);
+    await setDoc(docRef, { ...orderData, updatedAt: new Date().toISOString() }, { merge: true });
+  } catch (err) {
+    console.error('Error saving supplier order:', err);
+  }
+};
+
+export const deleteSupplierOrder = async (orderId: string) => {
+  try {
+    const local = JSON.parse(localStorage.getItem('pampero_supplier_orders') || '[]');
+    const updated = local.filter((o: any) => o.id !== orderId);
+    localStorage.setItem('pampero_supplier_orders', JSON.stringify(updated));
+  } catch {}
+
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return;
+  try {
+    await deleteDoc(doc(firestoreDb, 'crm_pedidos_proveedor', orderId));
+  } catch (err) {
+    console.error('Error deleting supplier order:', err);
+  }
+};
+
+export const subscribeToSupplierOrders = (onUpdate: (orders: any[]) => void) => {
+  try {
+    const local = localStorage.getItem('pampero_supplier_orders');
+    if (local) {
+      const parsed = JSON.parse(local);
+      if (Array.isArray(parsed) && parsed.length > 0) onUpdate(parsed);
+      else onUpdate(INITIAL_SUPPLIER_ORDERS);
+    } else {
+      onUpdate(INITIAL_SUPPLIER_ORDERS);
+    }
+  } catch {
+    onUpdate(INITIAL_SUPPLIER_ORDERS);
+  }
+
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return () => {};
+  const colRef = collection(firestoreDb, 'crm_pedidos_proveedor');
+  return onSnapshot(colRef, (snapshot) => {
+    if (!snapshot.empty) {
+      const orders = snapshot.docs.map(doc => doc.data() as any);
+      localStorage.setItem('pampero_supplier_orders', JSON.stringify(orders));
+      onUpdate(orders);
+    }
+  }, (error) => {
+    console.warn('Error listening to supplier orders:', error);
+  });
+};
+
+// --- PORTAL DE TALLES EMPRESARIAL ---
+export const saveSizingCampaign = async (campaignData: any) => {
+  try {
+    const local = JSON.parse(localStorage.getItem('pampero_sizing_campaigns') || '[]');
+    const updated = [campaignData, ...local.filter((c: any) => c.id !== campaignData.id)];
+    localStorage.setItem('pampero_sizing_campaigns', JSON.stringify(updated));
+  } catch {}
+
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return;
+  try {
+    const docRef = doc(firestoreDb, 'crm_sizing_campaigns', campaignData.id);
+    await setDoc(docRef, { ...campaignData, updatedAt: new Date().toISOString() }, { merge: true });
+  } catch (err) {
+    console.error('Error saving sizing campaign:', err);
+  }
+};
+
+export const subscribeToSizingCampaigns = (onUpdate: (campaigns: any[]) => void) => {
+  try {
+    const local = localStorage.getItem('pampero_sizing_campaigns');
+    if (local) {
+      const parsed = JSON.parse(local);
+      if (Array.isArray(parsed) && parsed.length > 0) onUpdate(parsed);
+      else onUpdate(INITIAL_SIZING_CAMPAIGNS);
+    } else {
+      onUpdate(INITIAL_SIZING_CAMPAIGNS);
+    }
+  } catch {
+    onUpdate(INITIAL_SIZING_CAMPAIGNS);
+  }
+
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return () => {};
+  const colRef = collection(firestoreDb, 'crm_sizing_campaigns');
+  return onSnapshot(colRef, (snapshot) => {
+    if (!snapshot.empty) {
+      const campaigns = snapshot.docs.map(doc => doc.data() as any);
+      localStorage.setItem('pampero_sizing_campaigns', JSON.stringify(campaigns));
+      onUpdate(campaigns);
+    }
+  }, (error) => {
+    console.warn('Error listening to sizing campaigns:', error);
+  });
+};
+
+export const saveEmployeeSizeEntry = async (entryData: any) => {
+  try {
+    const local = JSON.parse(localStorage.getItem('pampero_employee_sizes') || '[]');
+    const updated = [entryData, ...local.filter((e: any) => e.id !== entryData.id)];
+    localStorage.setItem('pampero_employee_sizes', JSON.stringify(updated));
+  } catch {}
+
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return;
+  try {
+    const docRef = doc(firestoreDb, 'crm_employee_sizes', entryData.id);
+    await setDoc(docRef, { ...entryData, submittedAt: new Date().toISOString() }, { merge: true });
+  } catch (err) {
+    console.error('Error saving employee size entry:', err);
+  }
+};
+
+export const subscribeToEmployeeSizeEntries = (campaignId: string, onUpdate: (entries: any[]) => void) => {
+  try {
+    const local = localStorage.getItem('pampero_employee_sizes');
+    let list = INITIAL_EMPLOYEE_SIZES;
+    if (local) {
+      const parsed = JSON.parse(local);
+      if (Array.isArray(parsed) && parsed.length > 0) list = parsed;
+    }
+    const filtered = campaignId === 'all' ? list : list.filter(e => e.campaignId === campaignId);
+    onUpdate(filtered);
+  } catch {
+    onUpdate(INITIAL_EMPLOYEE_SIZES);
+  }
+
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return () => {};
+  const colRef = collection(firestoreDb, 'crm_employee_sizes');
+  return onSnapshot(colRef, (snapshot) => {
+    if (!snapshot.empty) {
+      const all = snapshot.docs.map(doc => doc.data() as any);
+      localStorage.setItem('pampero_employee_sizes', JSON.stringify(all));
+      const filtered = campaignId === 'all' ? all : all.filter(e => e.campaignId === campaignId);
+      onUpdate(filtered);
+    }
+  }, (error) => {
+    console.warn('Error listening to employee size entries:', error);
   });
 };
 

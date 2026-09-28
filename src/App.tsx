@@ -47,6 +47,8 @@ import { LookbookView } from './components/LookbookView';
 import { AuthView } from './components/AuthView';
 import { AdminPanel } from './components/AdminPanel';
 import { CRMView } from './components/crm/CRMView';
+import { ClientUniformSimulatorView } from './components/client/ClientUniformSimulatorView';
+import { ClientSizingPortalView } from './components/client/ClientSizingPortalView';
 import { QuoteDrawer } from './components/QuoteDrawer';
 import { UserProfileModal } from './components/UserProfileModal';
 import { Footer } from './components/Footer';
@@ -61,7 +63,9 @@ import {
   User as UserIcon,
   Tag,
   Search,
-  Sparkles
+  Sparkles,
+  Shirt,
+  LayoutDashboard
 } from 'lucide-react';
 
 export default function App() {
@@ -310,11 +314,16 @@ export default function App() {
   // 6. User Session - strictly null at initial start as requested
   const [userSession, setUserSession] = useState<UserSession | null>(null);
 
-  // 7. Quotation Cart
+  // 7. Quotation Cart (strictly sanitized to prevent malformed localStorage items from freezing the app)
   const [cart, setCart] = useState<CartItem[]>(() => {
     try {
       const saved = localStorage.getItem('pampero_quote_cart');
-      return saved ? JSON.parse(saved) : [];
+      if (!saved) return [];
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) {
+        return parsed.filter((it: any) => it && it.product && typeof it.product === 'object' && it.quantity > 0);
+      }
+      return [];
     } catch {
       return [];
     }
@@ -385,7 +394,10 @@ export default function App() {
   // 'product_detail' -> Product detail (Screenshot 4)
   // 'admin'   -> Admin panel (requires admin authentication)
   // 'lookbook' -> Interactive campaign lookbook with hotspots
-  const [viewMode, setViewMode] = useState<'landing' | 'auth' | 'catalog' | 'product_detail' | 'admin' | 'lookbook' | 'crm'>('landing');
+  // 'crm'      -> Internal Kanban management system
+  // 'uniform_simulator' -> Client 3D / live uniform embroidery simulator
+  // 'sizing_portal'     -> Client digital employee sizing portal
+  const [viewMode, setViewMode] = useState<'landing' | 'auth' | 'catalog' | 'product_detail' | 'admin' | 'lookbook' | 'crm' | 'uniform_simulator' | 'sizing_portal'>('landing');
   const [authInitialTab, setAuthInitialTab] = useState<'login' | 'register' | 'admin'>('register');
   const [authInitialType, setAuthInitialType] = useState<'consumidor' | 'empresa'>('consumidor');
 
@@ -688,33 +700,45 @@ export default function App() {
   return (
     <div className="min-h-screen flex flex-col bg-[#F5F2EC] text-[#22201D] font-sans antialiased selection:bg-[#FDB813] selection:text-black">
       
-      {/* Admin Floating Bar if logged in as Admin */}
-      {userSession?.role === 'admin' && (
+      {/* Admin & Staff Floating Bar if logged in as Admin or Employee */}
+      {(userSession?.role === 'admin' || userSession?.role === 'employee') && (
         <div className="bg-[#18231C] text-[#F5F2EC] px-4 py-2 text-xs flex flex-wrap items-center justify-between gap-2 border-b border-amber-500/40 z-50">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="font-bold text-amber-300">Modo Administrador Activo</span>
+            <span className="font-bold text-amber-300">
+              {userSession.role === 'admin' ? 'Modo Administrador Activo' : 'Portal de Personal / Empleado'}
+            </span>
             <span className="text-neutral-300 hidden sm:inline">
-              · Podés agregar productos, editar imágenes, gestionar promociones y sucursales.
+              · CRM Kanban, gestión de cotizaciones, pedidos y catálogo.
             </span>
           </div>
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => setViewMode('admin')}
-              style={{
-                backgroundColor: theme.accentColor || '#FDB813',
-                color: theme.buttonTextColor || '#18231C',
-              }}
-              className="px-3 py-1 rounded-xs hover:opacity-90 font-bold flex items-center gap-1.5 uppercase tracking-wider text-[10px] transition-opacity"
+              onClick={() => setViewMode('crm')}
+              className="px-3 py-1 rounded-xs bg-[#B9522F] hover:bg-[#a04424] text-white font-bold flex items-center gap-1.5 uppercase tracking-wider text-[10px] transition-all shadow-xs cursor-pointer"
             >
-              <Settings className="w-3.5 h-3.5" />
-              Panel de Control
+              <LayoutDashboard className="w-3.5 h-3.5" />
+              Gestión / CRM
             </button>
+            {userSession.role === 'admin' && (
+              <button
+                type="button"
+                onClick={() => setViewMode('admin')}
+                style={{
+                  backgroundColor: theme.accentColor || '#FDB813',
+                  color: theme.buttonTextColor || '#18231C',
+                }}
+                className="px-3 py-1 rounded-xs hover:opacity-90 font-bold flex items-center gap-1.5 uppercase tracking-wider text-[10px] transition-opacity cursor-pointer"
+              >
+                <Settings className="w-3.5 h-3.5" />
+                Panel de Control
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setViewMode('catalog')}
-              className="px-2.5 py-1 rounded-xs bg-white/10 hover:bg-white/20 text-white text-[10px] uppercase tracking-wider font-semibold"
+              className="px-2.5 py-1 rounded-xs bg-white/10 hover:bg-white/20 text-white text-[10px] uppercase tracking-wider font-semibold cursor-pointer"
             >
               Ver Catálogo
             </button>
@@ -776,8 +800,26 @@ export default function App() {
               />
               <button
                 type="button"
+                onClick={() => setViewMode('uniform_simulator')}
+                className="px-3 py-1.5 rounded-xs border border-[#FDB813]/40 hover:border-[#FDB813] text-[11px] font-bold uppercase tracking-wider text-[#18231C] bg-amber-50 hover:bg-[#FDB813] hover:text-[#18231C] transition-all cursor-pointer select-none flex items-center gap-1 shadow-2xs"
+                title="Armador de Uniformes Virtual con tu logo"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-[#B9522F]" />
+                <span>Armador</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('sizing_portal')}
+                className="px-3 py-1.5 rounded-xs border border-[#18231C]/30 hover:border-[#18231C] text-[11px] font-bold uppercase tracking-wider text-[#18231C] hover:bg-[#18231C] hover:text-[#F5F2EC] transition-all cursor-pointer select-none flex items-center gap-1"
+                title="Portal de Talles para Empleados de Empresas"
+              >
+                <Shirt className="w-3.5 h-3.5 text-[#18231C]" />
+                <span>Portal Talles</span>
+              </button>
+              <button
+                type="button"
                 onClick={() => setViewMode('lookbook')}
-                className="px-3.5 py-1.5 rounded-xs border border-[#18231C]/30 hover:border-[#18231C] text-[11px] font-bold uppercase tracking-wider text-[#18231C] hover:bg-[#18231C] hover:text-[#F5F2EC] transition-all cursor-pointer select-none"
+                className="px-3 py-1.5 rounded-xs border border-[#18231C]/30 hover:border-[#18231C] text-[11px] font-bold uppercase tracking-wider text-[#18231C] hover:bg-[#18231C] hover:text-[#F5F2EC] transition-all cursor-pointer select-none"
                 title="Catálogo Interactivo"
               >
                 Catálogo Interactivo
@@ -818,6 +860,8 @@ export default function App() {
               onLogout={handleLogout}
               onOpenAdmin={() => setViewMode('admin')}
               onOpenCRM={() => setViewMode('crm')}
+              onOpenUniformSimulator={() => setViewMode('uniform_simulator')}
+              onOpenSizingPortal={() => setViewMode('sizing_portal')}
               onOpenProfile={() => setIsProfileOpen(true)}
               theme={theme}
             />
@@ -841,7 +885,9 @@ export default function App() {
             onOpenCart={() => setIsCartOpen(true)}
             onLogout={handleLogout}
             onOpenAdmin={() => setViewMode('admin')}
-              onOpenCRM={() => setViewMode('crm')}
+            onOpenCRM={() => setViewMode('crm')}
+            onOpenUniformSimulator={() => setViewMode('uniform_simulator')}
+            onOpenSizingPortal={() => setViewMode('sizing_portal')}
             onOpenProfile={() => setIsProfileOpen(true)}
             onOpenLookbook={() => setViewMode('lookbook')}
           />
@@ -941,6 +987,23 @@ export default function App() {
               userSession={userSession}
               onClose={() => setViewMode('landing')}
               theme={theme}
+              onSetSession={(s) => setUserSession(s)}
+            />
+          )}
+
+          {/* VIEW 8: UNIFORM SIMULATOR (Armador de Uniformes Virtual) */}
+          {viewMode === 'uniform_simulator' && (
+            <ClientUniformSimulatorView
+              onBackToHome={() => setViewMode('landing')}
+              theme={theme}
+            />
+          )}
+
+          {/* VIEW 9: SIZING PORTAL (Portal de Talles para Empleados) */}
+          {viewMode === 'sizing_portal' && (
+            <ClientSizingPortalView
+              onBackToHome={() => setViewMode('landing')}
+              theme={theme}
             />
           )}
         </main>
@@ -956,6 +1019,9 @@ export default function App() {
             openAuthScreen('admin', 'empresa');
           }
         }}
+        onOpenCRM={() => setViewMode('crm')}
+        onOpenUniformSimulator={() => setViewMode('uniform_simulator')}
+        onOpenSizingPortal={() => setViewMode('sizing_portal')}
         onSelectCategory={(cat) => openCatalogScreen(null, cat as MainCategory)}
         onOpenLookbook={() => setViewMode('lookbook')}
       />
@@ -1000,6 +1066,7 @@ export default function App() {
         userSession={userSession}
         theme={theme}
         coupons={coupons}
+        volumeDiscounts={volumeDiscounts}
       />
 
       {/* User Profile / Address Editing Modal */}

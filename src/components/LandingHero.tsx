@@ -11,7 +11,9 @@ import {
   LogOut,
   Settings,
   Tag,
-  Sparkles
+  Sparkles,
+  Shirt,
+  LayoutDashboard
 } from 'lucide-react';
 
 interface LandingHeroProps {
@@ -25,6 +27,9 @@ interface LandingHeroProps {
   onOpenCart: () => void;
   onLogout: () => void;
   onOpenAdmin?: () => void;
+  onOpenCRM?: () => void;
+  onOpenUniformSimulator?: () => void;
+  onOpenSizingPortal?: () => void;
   onOpenProfile?: () => void;
   onOpenLookbook?: () => void;
   categoriesHierarchy?: CategoryHierarchyItem[];
@@ -60,6 +65,9 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
   onOpenCart,
   onLogout,
   onOpenAdmin,
+  onOpenCRM,
+  onOpenUniformSimulator,
+  onOpenSizingPortal,
   onOpenProfile,
   onOpenLookbook,
   categoriesHierarchy,
@@ -336,6 +344,9 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
             onOpenAuth={() => onOpenAuth('login', 'consumidor')}
             onLogout={onLogout}
             onOpenAdmin={onOpenAdmin}
+            onOpenCRM={onOpenCRM}
+            onOpenUniformSimulator={onOpenUniformSimulator}
+            onOpenSizingPortal={onOpenSizingPortal}
             onOpenProfile={onOpenProfile}
             onOpenCatalog={() => onOpenCatalog(null, null)}
             showCatalogBtn={true}
@@ -584,6 +595,86 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
           </div>
         </section>
       )}
+
+      {/* 3.5. Interactive Tools Spotlight Section (Armador, Portal de Talles, CRM) */}
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-2 mb-10">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          {/* Card 1: Armador de Uniformes */}
+          <div 
+            onClick={onOpenUniformSimulator}
+            className="group relative p-6 bg-white border border-[#DCD4C9] rounded-xs shadow-xs hover:shadow-xl hover:border-[#FDB813] transition-all cursor-pointer flex flex-col justify-between overflow-hidden"
+          >
+            <div className="space-y-2">
+              <div className="w-10 h-10 rounded-xs bg-[#FAF8F5] border border-[#DCD4C9] flex items-center justify-center text-[#FDB813] group-hover:bg-[#18231C] transition-colors">
+                <Sparkles className="w-5 h-5 text-[#B9522F] group-hover:text-[#FDB813]" />
+              </div>
+              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[#B9522F] block">
+                Herramienta Corporativa
+              </span>
+              <h3 className="font-display font-bold text-xl uppercase tracking-wider text-[#18231C] group-hover:text-[#B9522F] transition-colors">
+                Armador de Uniformes Virtual
+              </h3>
+              <p className="text-xs text-[#6F6860] leading-relaxed">
+                Subí el logo de tu empresa y mirá el preview bordado en chombas, camisas y camperas Pampero en tiempo real.
+              </p>
+            </div>
+            <div className="pt-4 mt-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-[#18231C] group-hover:text-[#B9522F]">
+              <span>Probar Simulador</span>
+              <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-1" />
+            </div>
+          </div>
+
+          {/* Card 2: Portal de Talles */}
+          <div 
+            onClick={onOpenSizingPortal}
+            className="group relative p-6 bg-white border border-[#DCD4C9] rounded-xs shadow-xs hover:shadow-xl hover:border-[#18231C] transition-all cursor-pointer flex flex-col justify-between overflow-hidden"
+          >
+            <div className="space-y-2">
+              <div className="w-10 h-10 rounded-xs bg-[#FAF8F5] border border-[#DCD4C9] flex items-center justify-center text-[#18231C] group-hover:bg-[#18231C] group-hover:text-[#FDB813] transition-colors">
+                <Shirt className="w-5 h-5 text-[#18231C] group-hover:text-[#FDB813]" />
+              </div>
+              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[#6F6860] block">
+                Automatización Empresas
+              </span>
+              <h3 className="font-display font-bold text-xl uppercase tracking-wider text-[#18231C] group-hover:text-[#18231C] transition-colors">
+                Portal de Talles para Empleados
+              </h3>
+              <p className="text-xs text-[#6F6860] leading-relaxed">
+                Enlace digital único por empresa para que tus trabajadores carguen sus talles de calzado, pantalón y abrigo sin planillas.
+              </p>
+            </div>
+            <div className="pt-4 mt-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-[#18231C]">
+              <span>Abrir Portal de Talles</span>
+              <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-1" />
+            </div>
+          </div>
+
+          {/* Card 3: Gestión / CRM */}
+          <div 
+            onClick={onOpenCRM}
+            className="group relative p-6 bg-[#18231C] border border-[#2B3B30] rounded-xs shadow-xs hover:shadow-xl hover:border-[#FDB813] transition-all cursor-pointer flex flex-col justify-between overflow-hidden text-white"
+          >
+            <div className="space-y-2">
+              <div className="w-10 h-10 rounded-xs bg-white/10 border border-white/20 flex items-center justify-center text-[#FDB813] group-hover:bg-[#FDB813] group-hover:text-[#18231C] transition-colors">
+                <LayoutDashboard className="w-5 h-5 text-[#FDB813] group-hover:text-[#18231C]" />
+              </div>
+              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[#FDB813] block">
+                Sistema Interno Pampero
+              </span>
+              <h3 className="font-display font-bold text-xl uppercase tracking-wider text-white group-hover:text-[#FDB813] transition-colors">
+                Tablero de Gestión & CRM
+              </h3>
+              <p className="text-xs text-[#DCD4C9]/80 leading-relaxed">
+                Reemplazo del Excel: Tablero Kanban de cotizaciones, seña 50%, taller de bordados y avisos con alertas de demora.
+              </p>
+            </div>
+            <div className="pt-4 mt-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-[#FDB813]">
+              <span>Ingresar a Gestión / CRM</span>
+              <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-1" />
+            </div>
+          </div>
+        </div>
+      </section>
 
       {/* 4. Four Large Main Category Cards */}
       <section 

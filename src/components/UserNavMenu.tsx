@@ -11,7 +11,9 @@ import {
   FileText,
   Compass,
   Bell,
-  LayoutDashboard
+  LayoutDashboard,
+  Sparkles,
+  Shirt
 } from 'lucide-react';
 
 interface UserNavMenuProps {
@@ -22,6 +24,8 @@ interface UserNavMenuProps {
   onLogout: () => void;
   onOpenAdmin?: () => void;
   onOpenCRM?: () => void;
+  onOpenUniformSimulator?: () => void;
+  onOpenSizingPortal?: () => void;
   onOpenProfile?: () => void;
   onOpenCatalog?: () => void;
   showCatalogBtn?: boolean;
@@ -36,6 +40,8 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
   onLogout,
   onOpenAdmin,
   onOpenCRM,
+  onOpenUniformSimulator,
+  onOpenSizingPortal,
   onOpenProfile,
   onOpenCatalog,
   showCatalogBtn = false,
@@ -93,7 +99,7 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
           type="button"
           onClick={onOpenCatalog}
           style={{ backgroundColor: accent }}
-          className="hidden md:flex items-center gap-1.5 px-3.5 py-2 rounded-xs text-[#18231C] text-[11px] uppercase tracking-[0.2em] font-extrabold transition-all shadow-2xs hover:brightness-105 cursor-pointer shrink-0"
+          className="hidden xl:flex items-center gap-1.5 px-3.5 py-2 rounded-xs text-[#18231C] text-[11px] uppercase tracking-[0.2em] font-extrabold transition-all shadow-2xs hover:brightness-105 cursor-pointer shrink-0"
           title="Ver Catálogo Completo"
         >
           <Compass className="w-3.5 h-3.5" />
@@ -101,7 +107,20 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
         </button>
       )}
 
-      {/* 2. Cotización / Carrito Button - ALWAYS VISIBLE, ACCESSIBLE AND BRANDED */}
+      {/* 2. Armador de Uniformes Shortcut (Desktop) */}
+      {onOpenUniformSimulator && (
+        <button
+          type="button"
+          onClick={onOpenUniformSimulator}
+          className="hidden lg:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xs border border-[#18231C]/20 hover:border-[#18231C] text-[#18231C] hover:bg-[#18231C] hover:text-[#F5F2EC] text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer select-none shrink-0"
+          title="Armador de Uniformes Virtual con tu logo bordado"
+        >
+          <Sparkles className="w-3.5 h-3.5 text-[#FDB813]" />
+          <span>Armador</span>
+        </button>
+      )}
+
+      {/* 3. Cotización / Carrito Button - ALWAYS VISIBLE, ACCESSIBLE AND BRANDED */}
       <button
         id="btn-nav-cart-quote"
         type="button"
@@ -131,20 +150,23 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
         </span>
       </button>
 
-      {/* Notification Bell (CRM) - Only for admin/employee */}
-      {(userSession?.role === 'admin' || userSession?.role === 'employee') && onOpenCRM && (
-        <button 
+      {/* 4. GESTIÓN / CRM Button - ALWAYS VISIBLE AND PROMINENT */}
+      {onOpenCRM && (
+        <button
+          id="btn-nav-open-crm"
           type="button"
-          className="relative p-1.5 sm:p-2 text-[#6F6860] hover:text-[#18231C] transition-colors cursor-pointer"
-          title="Notificaciones de Gestión"
           onClick={onOpenCRM}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xs bg-[#B9522F] hover:bg-[#a04424] text-white text-xs font-bold uppercase tracking-wider transition-all shadow-xs cursor-pointer select-none shrink-0"
+          title="Abrir Tablero de Gestión / CRM Pampero"
         >
-          <Bell className="w-5 h-5" />
-          <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
+          <LayoutDashboard className="w-3.5 h-3.5 text-white" />
+          <span className="hidden sm:inline">Gestión / CRM</span>
+          <span className="sm:hidden">CRM</span>
+          <span className="w-2 h-2 rounded-full bg-amber-300 animate-pulse ml-0.5"></span>
         </button>
       )}
 
-      {/* 3. User Dropdown Menu or INGRESAR Button */}
+      {/* 5. User Dropdown Menu or INGRESAR Button */}
       {userSession ? (
         <div className="relative" ref={dropdownRef}>
           <button
@@ -179,7 +201,7 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
           {/* Clean Corporate Dropdown Menu */}
           {dropdownOpen && (
             <div 
-              className="absolute right-0 top-full mt-2 w-64 bg-white border border-[#DCD4C9] shadow-2xl rounded-xs z-50 animate-fadeIn divide-y divide-[#DCD4C9]/60"
+              className="absolute right-0 top-full mt-2 w-72 bg-white border border-[#DCD4C9] shadow-2xl rounded-xs z-50 animate-fadeIn divide-y divide-[#DCD4C9]/60"
               style={{ borderTopColor: accent, borderTopWidth: '3px' }}
             >
               {/* Header with User Info */}
@@ -216,6 +238,63 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
 
               {/* Menu Links */}
               <div className="p-1.5 space-y-0.5">
+                {/* CRM Dashboard */}
+                {onOpenCRM && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDropdownOpen(false);
+                      onOpenCRM();
+                    }}
+                    className="w-full flex items-center justify-between px-3 py-2 text-left text-xs font-bold text-[#18231C] hover:bg-[#FAF8F5] rounded-xs transition-colors cursor-pointer group"
+                  >
+                    <div className="flex items-center gap-2">
+                      <LayoutDashboard className="w-4 h-4 text-[#B9522F]" />
+                      <span>Tablero Gestión / CRM</span>
+                    </div>
+                    <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded-xs bg-[#B9522F]/10 text-[#B9522F]">
+                      Activo
+                    </span>
+                  </button>
+                )}
+
+                {/* Armador de Uniformes */}
+                {onOpenUniformSimulator && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDropdownOpen(false);
+                      onOpenUniformSimulator();
+                    }}
+                    className="w-full flex items-center justify-between px-3 py-2 text-left text-xs font-bold text-[#18231C] hover:bg-[#FAF8F5] rounded-xs transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-[#FDB813]" />
+                      <span>Armador de Uniformes</span>
+                    </div>
+                    <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded-xs bg-amber-100 text-amber-900">
+                      Virtual
+                    </span>
+                  </button>
+                )}
+
+                {/* Portal de Talles */}
+                {onOpenSizingPortal && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDropdownOpen(false);
+                      onOpenSizingPortal();
+                    }}
+                    className="w-full flex items-center justify-between px-3 py-2 text-left text-xs font-bold text-[#18231C] hover:bg-[#FAF8F5] rounded-xs transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Shirt className="w-4 h-4 text-[#18231C]" />
+                      <span>Portal de Talles Empleados</span>
+                    </div>
+                  </button>
+                )}
+
                 {/* Admin or Employee Panel */}
                 {(userSession.role === 'admin' || userSession.role === 'employee') && onOpenAdmin && (
                   <button
@@ -235,26 +314,6 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
                       className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded-xs"
                     >
                       Admin
-                    </span>
-                  </button>
-                )}
-
-                {/* CRM Dashboard */}
-                {(userSession.role === 'admin' || userSession.role === 'employee') && onOpenCRM && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDropdownOpen(false);
-                      onOpenCRM();
-                    }}
-                    className="w-full flex items-center justify-between px-3 py-2 text-left text-xs font-bold text-[#18231C] hover:bg-[#FAF8F5] rounded-xs transition-colors cursor-pointer group"
-                  >
-                    <div className="flex items-center gap-2">
-                      <LayoutDashboard className="w-4 h-4 text-[#B9522F]" />
-                      <span>Gestión / CRM</span>
-                    </div>
-                    <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded-xs bg-[#B9522F]/10 text-[#B9522F]">
-                      Nuevo
                     </span>
                   </button>
                 )}
@@ -324,7 +383,7 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
             backgroundColor: primaryBg,
             color: '#F5F2EC'
           }}
-          className="px-4 sm:px-6 py-2 sm:py-2 rounded-xs text-[11px] uppercase tracking-[0.25em] font-bold transition-all shadow-2xs hover:brightness-110 cursor-pointer shrink-0"
+          className="px-4 sm:px-5 py-2 rounded-xs text-[11px] uppercase tracking-[0.25em] font-bold transition-all shadow-2xs hover:brightness-110 cursor-pointer shrink-0"
         >
           INGRESAR
         </button>

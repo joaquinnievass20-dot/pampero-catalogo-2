@@ -334,3 +334,74 @@ export interface CRMOrder {
   items?: any[];
   updatedAt: string;
 }
+
+export type LeadVisitStatus = 'programada' | 'realizada' | 'presupuesto_enviado' | 'cerrada' | 'cancelada';
+
+export interface LeadVisit {
+  id: string;
+  date: string;
+  companyName: string;
+  contactName: string;
+  phone: string;
+  email: string;
+  seller: string; // 'Itatí' | 'Guada' | 'Carolina' | 'Gustavo'
+  branch: string;
+  status: LeadVisitStatus;
+  objective: string;
+  nextStep: string;
+  nextStepDate?: string;
+  estimatedUnits?: number;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type SupplierOrderStatus = 'borrador' | 'enviado' | 'en_fabricacion' | 'despachado' | 'recibido_completo' | 'recibido_incompleto';
+
+export interface SupplierOrder {
+  id: string;
+  orderNumber: string;
+  supplierName: string; // 'Macata' | 'Pampero Central' | 'Calzado Confort' | 'Otro'
+  orderDate: string;
+  estimatedArrivalDate: string;
+  actualArrivalDate?: string;
+  status: SupplierOrderStatus;
+  itemsCount: number;
+  totalAmount: number;
+  itemsDescription: string;
+  trackingNumber?: string;
+  branchDestination: string;
+  responsibleStaff: string;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EmployeeSizeEntry {
+  id: string;
+  campaignId: string;
+  companyName: string;
+  employeeName: string;
+  employeeDni: string;
+  department: string;
+  gender?: 'Hombre' | 'Mujer';
+  shirtSize?: string;
+  pantsSize?: string;
+  footwearSize?: string;
+  jacketSize?: string;
+  notes?: string;
+  submittedAt: string;
+}
+
+export interface SizingCampaign {
+  id: string;
+  companyName: string;
+  cuit?: string;
+  contactName: string;
+  contactPhone: string;
+  active: boolean;
+  requiredGarments: string[]; // ['Camisa/Chomba', 'Pantalón/Bombacha', 'Calzado de Seguridad', 'Campera Térmica']
+  createdAt: string;
+  expiresAt: string;
+  entriesCount?: number;
+}
