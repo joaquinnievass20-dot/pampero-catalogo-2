@@ -47,6 +47,8 @@ import { LookbookView } from './components/LookbookView';
 import { AuthView } from './components/AuthView';
 import { AdminPanel } from './components/AdminPanel';
 import { CRMView } from './components/crm/CRMView';
+import { ClientUniformSimulatorView } from './components/client/ClientUniformSimulatorView';
+import { ClientSizingPortalView } from './components/client/ClientSizingPortalView';
 import { QuoteDrawer } from './components/QuoteDrawer';
 import { UserProfileModal } from './components/UserProfileModal';
 import { Footer } from './components/Footer';
@@ -62,6 +64,7 @@ import {
   Tag,
   Search,
   Sparkles,
+  Shirt,
   LayoutDashboard
 } from 'lucide-react';
 
@@ -391,7 +394,10 @@ export default function App() {
   // 'product_detail' -> Product detail (Screenshot 4)
   // 'admin'   -> Admin panel (requires admin authentication)
   // 'lookbook' -> Interactive campaign lookbook with hotspots
-  const [viewMode, setViewMode] = useState<'landing' | 'auth' | 'catalog' | 'product_detail' | 'admin' | 'lookbook' | 'crm'>('landing');
+  // 'crm'      -> Internal Kanban management system
+  // 'uniform_simulator' -> Client 3D / live uniform embroidery simulator
+  // 'sizing_portal'     -> Client digital employee sizing portal
+  const [viewMode, setViewMode] = useState<'landing' | 'auth' | 'catalog' | 'product_detail' | 'admin' | 'lookbook' | 'crm' | 'uniform_simulator' | 'sizing_portal'>('landing');
   const [authInitialTab, setAuthInitialTab] = useState<'login' | 'register' | 'admin'>('register');
   const [authInitialType, setAuthInitialType] = useState<'consumidor' | 'empresa'>('consumidor');
 
@@ -794,8 +800,26 @@ export default function App() {
               />
               <button
                 type="button"
+                onClick={() => setViewMode('uniform_simulator')}
+                className="px-3 py-1.5 rounded-xs border border-[#FDB813]/40 hover:border-[#FDB813] text-[11px] font-bold uppercase tracking-wider text-[#18231C] bg-amber-50 hover:bg-[#FDB813] hover:text-[#18231C] transition-all cursor-pointer select-none flex items-center gap-1 shadow-2xs"
+                title="Armador de Uniformes Virtual con tu logo"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-[#B9522F]" />
+                <span>Armador</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('sizing_portal')}
+                className="px-3 py-1.5 rounded-xs border border-[#18231C]/30 hover:border-[#18231C] text-[11px] font-bold uppercase tracking-wider text-[#18231C] hover:bg-[#18231C] hover:text-[#F5F2EC] transition-all cursor-pointer select-none flex items-center gap-1"
+                title="Portal de Talles para Empleados de Empresas"
+              >
+                <Shirt className="w-3.5 h-3.5 text-[#18231C]" />
+                <span>Portal Talles</span>
+              </button>
+              <button
+                type="button"
                 onClick={() => setViewMode('lookbook')}
-                className="px-3.5 py-1.5 rounded-xs border border-[#18231C]/30 hover:border-[#18231C] text-[11px] font-bold uppercase tracking-wider text-[#18231C] hover:bg-[#18231C] hover:text-[#F5F2EC] transition-all cursor-pointer select-none"
+                className="px-3 py-1.5 rounded-xs border border-[#18231C]/30 hover:border-[#18231C] text-[11px] font-bold uppercase tracking-wider text-[#18231C] hover:bg-[#18231C] hover:text-[#F5F2EC] transition-all cursor-pointer select-none"
                 title="Catálogo Interactivo"
               >
                 Catálogo Interactivo
@@ -836,6 +860,8 @@ export default function App() {
               onLogout={handleLogout}
               onOpenAdmin={() => setViewMode('admin')}
               onOpenCRM={() => setViewMode('crm')}
+              onOpenUniformSimulator={() => setViewMode('uniform_simulator')}
+              onOpenSizingPortal={() => setViewMode('sizing_portal')}
               onOpenProfile={() => setIsProfileOpen(true)}
               theme={theme}
             />
@@ -859,7 +885,9 @@ export default function App() {
             onOpenCart={() => setIsCartOpen(true)}
             onLogout={handleLogout}
             onOpenAdmin={() => setViewMode('admin')}
-              onOpenCRM={() => setViewMode('crm')}
+            onOpenCRM={() => setViewMode('crm')}
+            onOpenUniformSimulator={() => setViewMode('uniform_simulator')}
+            onOpenSizingPortal={() => setViewMode('sizing_portal')}
             onOpenProfile={() => setIsProfileOpen(true)}
             onOpenLookbook={() => setViewMode('lookbook')}
           />
@@ -959,6 +987,23 @@ export default function App() {
               userSession={userSession}
               onClose={() => setViewMode('landing')}
               theme={theme}
+              onSetSession={(s) => setUserSession(s)}
+            />
+          )}
+
+          {/* VIEW 8: UNIFORM SIMULATOR (Armador de Uniformes Virtual) */}
+          {viewMode === 'uniform_simulator' && (
+            <ClientUniformSimulatorView
+              onBackToHome={() => setViewMode('landing')}
+              theme={theme}
+            />
+          )}
+
+          {/* VIEW 9: SIZING PORTAL (Portal de Talles para Empleados) */}
+          {viewMode === 'sizing_portal' && (
+            <ClientSizingPortalView
+              onBackToHome={() => setViewMode('landing')}
+              theme={theme}
             />
           )}
         </main>
@@ -974,6 +1019,9 @@ export default function App() {
             openAuthScreen('admin', 'empresa');
           }
         }}
+        onOpenCRM={() => setViewMode('crm')}
+        onOpenUniformSimulator={() => setViewMode('uniform_simulator')}
+        onOpenSizingPortal={() => setViewMode('sizing_portal')}
         onSelectCategory={(cat) => openCatalogScreen(null, cat as MainCategory)}
         onOpenLookbook={() => setViewMode('lookbook')}
       />

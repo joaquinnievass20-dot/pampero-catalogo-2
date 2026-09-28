@@ -296,7 +296,16 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
 
     // Empty cart and redirect to WhatsApp
     onClear();
-    window.open(whatsappUrl, '_blank');
+    try {
+      if (typeof window !== 'undefined') {
+        const opened = window.open(whatsappUrl, '_blank');
+        if (!opened) {
+          window.location.href = whatsappUrl;
+        }
+      }
+    } catch (err) {
+      console.warn('Could not launch WhatsApp URL:', err);
+    }
     onClose();
   };
 
@@ -426,7 +435,7 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
                   <div className="flex flex-col items-end gap-1.5">
                     <button
                       type="button"
-                      onClick={() => onRemoveItem(item.product.id, item.selectedColor, item.selectedSize, item.codeWithSuffix)}
+                      onClick={() => onRemoveItem(item?.product?.id || (item as any)?.id, item.selectedColor, item.selectedSize, item.codeWithSuffix)}
                       className="text-[#6F6860] hover:text-red-600 p-1 cursor-pointer"
                       title="Eliminar artículo"
                     >
@@ -436,7 +445,7 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
                     <div className="flex items-center border border-[#DCD4C9] rounded-xs bg-white">
                       <button
                         type="button"
-                        onClick={() => onUpdateQuantity(item.product.id, -1, item.selectedColor, item.selectedSize, item.codeWithSuffix)}
+                        onClick={() => onUpdateQuantity(item?.product?.id || (item as any)?.id, -1, item.selectedColor, item.selectedSize, item.codeWithSuffix)}
                         className="px-2 py-0.5 text-[#18231C] hover:bg-[#ECE5DC] text-xs font-bold cursor-pointer"
                       >
                         -
@@ -444,7 +453,7 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
                       <span className="px-2 text-xs font-bold text-[#18231C]">{item.quantity}</span>
                       <button
                         type="button"
-                        onClick={() => onUpdateQuantity(item.product.id, 1, item.selectedColor, item.selectedSize, item.codeWithSuffix)}
+                        onClick={() => onUpdateQuantity(item?.product?.id || (item as any)?.id, 1, item.selectedColor, item.selectedSize, item.codeWithSuffix)}
                         className="px-2 py-0.5 text-[#18231C] hover:bg-[#ECE5DC] text-xs font-bold cursor-pointer"
                       >
                         +

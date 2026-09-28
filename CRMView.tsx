@@ -42,7 +42,9 @@ import {
   MessageCircle, 
   Calendar,
   Layers,
-  Phone
+  Phone,
+  ArrowRight,
+  ShieldCheck
 } from 'lucide-react';
 import { CRMNotificationsModal } from './CRMNotificationsModal';
 import { CRMVisitsTab } from './CRMVisitsTab';
@@ -54,6 +56,7 @@ interface CRMViewProps {
   userSession: UserSession | null;
   onClose: () => void;
   theme: ThemeConfig;
+  onSetSession?: (session: UserSession) => void;
 }
 
 const STATUS_COLUMNS: { id: CRMOrderStatus; label: string; color: string; bgColor: string }[] = [
@@ -64,12 +67,18 @@ const STATUS_COLUMNS: { id: CRMOrderStatus; label: string; color: string; bgColo
   { id: 'entregado', label: 'Entregado / Cerrado', color: '#3B82F6', bgColor: '#EFF6FF' },
 ];
 
-export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme }) => {
+export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, onSetSession }) => {
   const [orders, setOrders] = useState<CRMOrder[]>([]);
   const [visits, setVisits] = useState<LeadVisit[]>([]);
   const [supplierOrders, setSupplierOrders] = useState<SupplierOrder[]>([]);
   const [sizingCampaigns, setSizingCampaigns] = useState<SizingCampaign[]>([]);
   const [employeeSizes, setEmployeeSizes] = useState<EmployeeSizeEntry[]>([]);
+
+  // Demo authorization for direct staff access & evaluation
+  const [demoRole, setDemoRole] = useState<'admin' | 'employee' | null>(userSession?.role || null);
+  const [activeStaffUser, setActiveStaffUser] = useState<string>(
+    userSession?.clientData?.fullName || (userSession?.role === 'admin' ? 'Administrador General' : 'Itatí (Maipú)')
+  );
 
   const [activeTab, setActiveTab] = useState<'board' | 'visits' | 'suppliers' | 'sizing' | 'simulator'>('board');
   const [sellerFilter, setSellerFilter] = useState('todos');
@@ -83,8 +92,32 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme })
 
   const accent = theme?.accentColor || '#FDB813';
 
-  // Permission: Admins and Employees can access CRM
-  const canAccess = userSession?.role === 'admin' || userSession?.role === 'employee';
+  // Permission: Admins and Employees or demo authorized
+  const canAccess = userSession?.role === 'admin' || userSession?.role === 'employee' || Boolean(demoRole);
+
+  const handleAuthorizeStaff = (role: 'admin' | 'employee', name: string) => {
+    setDemoRole(role);
+    setActiveStaffUser(name);
+    if (name.includes('Itatí')) setSellerFilter('itatí');
+    else if (name.includes('Guada')) setSellerFilter('guada');
+    else if (name.includes('Carolina')) setSellerFilter('carolina');
+    else setSellerFilter('todos');
+
+    if (onSetSession) {
+      onSetSession({
+        email: role === 'admin' ? 'admin@pamperomaipu.com.ar' : 'itatinievas@pamperomaipu.com.ar',
+        role: role,
+        clientType: 'empresa',
+        clientData: {
+          fullName: name,
+          companyName: 'Pampero Gran Mendoza',
+          cuit: '30-71549821-3',
+          phone: '261 527-6713',
+          deliveryAddress: 'Lateral Este Acceso Sur 1280, Maipú',
+        } as any,
+      });
+    }
+  };
 
   // Real-time Firestore Subscriptions
   useEffect(() => {
@@ -177,15 +210,84 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme })
 
   if (!canAccess) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 text-center">
-        <h2 className="text-xl font-bold mb-4 text-[#18231C]">Acceso Denegado</h2>
-        <p className="mb-4 text-[#6F6860]">No tenés permisos para ver el sistema de gestión.</p>
-        <button
-          onClick={onClose}
-          className="px-4 py-2 bg-[#18231C] text-white rounded-xs font-bold text-xs uppercase cursor-pointer"
-        >
-          Volver al Catálogo
-        </button>
+      <div className="min-h-[80vh] flex items-center justify-center p-4 bg-[#FAF8F5]">
+        <div className="max-w-md w-full bg-white border border-[#DCD4C9] rounded-xs shadow-2xl p-6 sm:p-8 space-y-6 text-center animate-fadeIn">
+          <div className="w-14 h-14 rounded-full bg-[#18231C] text-[#FDB813] flex items-center justify-center mx-auto shadow-sm">
+            <LayoutDashboard className="w-7 h-7" />
+          </div>
+          <div>
+            <span className="text-[10px] font-black uppercase tracking-[0.25em] text-[#B9522F] block">
+              PORTAL INTERNO EXCLUSIVO
+            </span>
+            <h2 className="font-display text-2xl font-bold text-[#18231C] uppercase tracking-wider mt-1">
+              Gestión Pampero · CRM
+            </h2>
+            <p className="text-xs text-[#6F6860] mt-1.5 leading-relaxed">
+              Sistema de seguimiento Kanban de cotizaciones, presupuestos, visitas comerciales, pedidos a fábrica y entregas para el equipo de Mendoza.
+            </p>
+          </div>
+
+          {/* Quick Staff 1-Click Access for evaluation & staff */}
+          <div className="space-y-2 pt-2 text-left">
+            <span className="text-[10px] font-bold text-[#8C827A] uppercase tracking-wider block text-center">
+              Acceso Rápido de Personal:
+            </span>
+            <button
+              type="button"
+              onClick={() => handleAuthorizeStaff('admin', 'Administrador General')}
+              className="w-full py-2.5 px-4 bg-[#18231C] hover:bg-black text-[#F5F2EC] rounded-xs text-xs font-bold uppercase tracking-wider flex items-center justify-between transition-all cursor-pointer shadow-xs"
+            >
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                <span>Administrador General</span>
+              </div>
+              <span className="text-[10px] text-[#FDB813] font-mono">Control Total</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleAuthorizeStaff('employee', 'Itatí - Vendedora Maipú')}
+              className="w-full py-2.5 px-4 bg-[#FAF8F5] hover:bg-[#ECE5DC] border border-[#DCD4C9] text-[#18231C] rounded-xs text-xs font-bold uppercase tracking-wider flex items-center justify-between transition-all cursor-pointer"
+            >
+              <div className="flex items-center gap-2">
+                <User className="w-4 h-4 text-[#B9522F]" />
+                <span>Vendedora: Itatí</span>
+              </div>
+              <span className="text-[10px] text-[#6F6860] font-mono">Suc. Maipú</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleAuthorizeStaff('employee', 'Guada - Vendedora Ciudad')}
+              className="w-full py-2.5 px-4 bg-[#FAF8F5] hover:bg-[#ECE5DC] border border-[#DCD4C9] text-[#18231C] rounded-xs text-xs font-bold uppercase tracking-wider flex items-center justify-between transition-all cursor-pointer"
+            >
+              <div className="flex items-center gap-2">
+                <User className="w-4 h-4 text-[#B9522F]" />
+                <span>Vendedora: Guada</span>
+              </div>
+              <span className="text-[10px] text-[#6F6860] font-mono">Suc. Ciudad</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleAuthorizeStaff('employee', 'Carolina - Vendedora Luján')}
+              className="w-full py-2.5 px-4 bg-[#FAF8F5] hover:bg-[#ECE5DC] border border-[#DCD4C9] text-[#18231C] rounded-xs text-xs font-bold uppercase tracking-wider flex items-center justify-between transition-all cursor-pointer"
+            >
+              <div className="flex items-center gap-2">
+                <User className="w-4 h-4 text-[#B9522F]" />
+                <span>Vendedora: Carolina</span>
+              </div>
+              <span className="text-[10px] text-[#6F6860] font-mono">Suc. Luján</span>
+            </button>
+          </div>
+
+          <div className="pt-2 border-t border-[#DCD4C9]">
+            <button
+              type="button"
+              onClick={onClose}
+              className="text-xs text-[#6F6860] hover:text-[#18231C] underline font-medium cursor-pointer"
+            >
+              ← Volver al Catálogo Público
+            </button>
+          </div>
+        </div>
       </div>
     );
   }
@@ -193,7 +295,7 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme })
   return (
     <div className="flex flex-col min-h-[calc(100vh-80px)] bg-[#FAF8F5]">
       {/* Top Bar Navigation */}
-      <div className="bg-white border-b border-[#DCD4C9] px-4 sm:px-6 py-3.5 flex flex-col md:flex-row items-start md:items-center justify-between shrink-0 shadow-xs gap-3">
+      <div className="bg-white border-b border-[#DCD4C9] px-4 sm:px-6 py-3 flex flex-col lg:flex-row items-start lg:items-center justify-between shrink-0 shadow-xs gap-3">
         <div className="flex items-center gap-4 sm:gap-6 flex-wrap">
           <h2 className="font-display font-bold text-lg sm:text-xl uppercase tracking-wider text-[#18231C] flex items-center gap-2">
             <LayoutDashboard className="w-5 h-5 text-[#B9522F]" />
@@ -204,7 +306,7 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme })
             {[
               { key: 'board', label: 'Tablero Kanban', icon: LayoutDashboard },
               { key: 'visits', label: 'Visitas Comerciales', icon: Building2 },
-              { key: 'suppliers', label: 'Pedidos a Proveedor', icon: Truck },
+              { key: 'suppliers', label: 'Pedidos Proveedor', icon: Truck },
               { key: 'sizing', label: 'Portal de Talles', icon: Shirt },
               { key: 'simulator', label: 'Simulador Bordado', icon: Sparkles },
             ].map((tab) => {
@@ -227,7 +329,26 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme })
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5 sm:gap-3 flex-wrap">
+        <div className="flex items-center gap-2.5 sm:gap-3 flex-wrap w-full lg:w-auto justify-between lg:justify-end">
+          {/* Active staff switcher for RBAC demonstration */}
+          <div className="flex items-center gap-1.5 text-xs bg-[#FAF8F5] border border-[#DCD4C9] px-2.5 py-1 rounded-xs">
+            <span className="text-[10px] text-[#8C827A] uppercase font-bold">Operador:</span>
+            <select
+              value={activeStaffUser}
+              onChange={(e) => {
+                const name = e.target.value;
+                const role = name.includes('Admin') ? 'admin' : 'employee';
+                handleAuthorizeStaff(role, name);
+              }}
+              className="font-bold text-[#18231C] bg-transparent outline-none cursor-pointer text-xs"
+            >
+              <option value="Administrador General">Administrador General (Todo)</option>
+              <option value="Itatí - Vendedora Maipú">Itatí (Suc. Maipú)</option>
+              <option value="Guada - Vendedora Ciudad">Guada (Suc. Ciudad)</option>
+              <option value="Carolina - Vendedora Luján">Carolina (Suc. Luján)</option>
+            </select>
+          </div>
+
           {/* Notifications Bell */}
           <button
             onClick={() => setShowNotificationsModal(true)}
@@ -247,7 +368,7 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme })
             className="flex items-center gap-1.5 px-3 py-1.5 bg-[#18231C] text-white rounded-xs text-xs font-bold hover:bg-black transition-colors cursor-pointer shadow-xs"
           >
             <Plus className="w-3.5 h-3.5" />
-            Nuevo Pedido
+            <span>Nuevo Pedido</span>
           </button>
 
           <button
@@ -264,6 +385,42 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme })
         {/* === TAB 1: KANBAN BOARD === */}
         {activeTab === 'board' && (
           <div className="flex flex-col h-full space-y-4">
+            {/* Phase 3: High-visibility Urgent Alerts Banner */}
+            {(delayedOrdersCount > 0 || blockedOrdersCount > 0) && (
+              <div className="bg-red-50 border-l-4 border-red-600 p-3.5 rounded-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-red-950 shadow-2xs">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-1.5 bg-red-600 text-white rounded-xs animate-pulse">
+                    <AlertTriangle className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h5 className="font-bold text-xs uppercase tracking-wider text-red-900">
+                      Atención Requerida · Pedidos con Alerta ({totalAlertsCount})
+                    </h5>
+                    <p className="text-[11px] text-red-800">
+                      Hay <strong>{delayedOrdersCount} pedidos demorados</strong> (&gt;7 días en cotización/seña) y <strong>{blockedOrdersCount} bloqueados</strong> que requieren resolución hoy.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setFilterDelayedOnly(!filterDelayedOnly)}
+                    className="px-3 py-1.5 bg-white border border-red-300 text-red-700 hover:bg-red-100 rounded-xs text-xs font-bold uppercase transition-colors cursor-pointer"
+                  >
+                    {filterDelayedOnly ? 'Mostrar Todos' : 'Filtrar Solo Alertas'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowNotificationsModal(true)}
+                    className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-xs text-xs font-bold uppercase transition-colors cursor-pointer shadow-2xs"
+                  >
+                    Ver Alertas ({totalAlertsCount})
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Filters Bar */}
             <div className="flex flex-wrap items-center gap-3 bg-white p-3 rounded-xs border border-[#DCD4C9] shadow-xs">
               <Filter className="w-4 h-4 text-[#8C827A]" />
@@ -421,15 +578,55 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme })
 
                             {/* Card Footer */}
                             <div className="mt-2.5 flex justify-between items-center border-t border-[#ECE5DC] pt-2">
-                              <div className="flex items-center gap-1">
+                              <div className="flex items-center gap-1.5">
                                 <Clock className="w-3 h-3 text-[#8C827A]" />
                                 <span className="text-[10px] font-bold text-[#8C827A]">
                                   {order.seller || 'Sin asignar'}
                                 </span>
+                                {order.branch && (
+                                  <span className="text-[9px] px-1 py-0.2 rounded-xs bg-[#FAF8F5] border border-[#DCD4C9] text-[#6F6860]">
+                                    {order.branch}
+                                  </span>
+                                )}
                               </div>
                               <span className="font-bold text-emerald-700 text-sm">
                                 $ {(order.totalEstimated || 0).toLocaleString('es-AR')}
                               </span>
+                            </div>
+
+                            {/* Card Action Shortcuts */}
+                            <div className="mt-2 pt-1.5 border-t border-dashed border-[#ECE5DC] flex items-center justify-between gap-1">
+                              <a
+                                href={`https://wa.me/?text=${encodeURIComponent(`Hola ${order.clientName}, te escribimos de Pampero Gran Mendoza para actualizarte sobre tu solicitud #${order.id.slice(-6)} (Estado: ${col.label}). Total: $${(order.totalEstimated || 0).toLocaleString('es-AR')}. ¿Tenés alguna consulta?`)}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xs text-[10px] font-bold flex items-center gap-1 transition-colors"
+                                title="Avisar al cliente por WhatsApp"
+                              >
+                                <MessageCircle className="w-3 h-3 text-emerald-600" />
+                                <span>WhatsApp</span>
+                              </a>
+
+                              {(() => {
+                                const currentIndex = STATUS_COLUMNS.findIndex((c) => c.id === order.status);
+                                const nextCol = currentIndex >= 0 && currentIndex < STATUS_COLUMNS.length - 1 ? STATUS_COLUMNS[currentIndex + 1] : null;
+                                if (!nextCol) return null;
+                                return (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      saveCRMOrder({ ...order, status: nextCol.id, updatedAt: new Date().toISOString() });
+                                    }}
+                                    className="px-2 py-1 bg-[#18231C] hover:bg-[#B9522F] text-white rounded-xs text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 transition-colors cursor-pointer"
+                                    title={`Avanzar a ${nextCol.label}`}
+                                  >
+                                    <span>{nextCol.label.split('/')[0].split(' ')[0]}</span>
+                                    <ArrowRight className="w-2.5 h-2.5" />
+                                  </button>
+                                );
+                              })()}
                             </div>
                           </div>
                         );
