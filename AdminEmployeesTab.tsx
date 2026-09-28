@@ -20,10 +20,11 @@ interface AdminEmployeesTabProps {
 }
 
 export const AVAILABLE_TABS_FOR_EMPLOYEE = [
+  { id: 'crm', label: 'Tablero de Gestión / CRM (Pedidos y Empresas)' },
   { id: 'products', label: 'Productos (Crear / Editar / Eliminar)' },
-  { id: 'variants', label: 'Colores y Talles por Artículo' },
+  { id: 'mass_images', label: 'Carga Masiva y Edición de Fotos' },
   { id: 'prices', label: 'Precios & Planillas Excel' },
-  { id: 'mass_images', label: 'Carga Masiva de Fotos' },
+  { id: 'variants', label: 'Colores y Talles por Artículo' },
   { id: 'promos', label: 'Promociones & Banners' },
   { id: 'coupons', label: 'Cupones de Descuento' },
   { id: 'quotes', label: 'Cotizaciones Recibidas' },
@@ -61,12 +62,16 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [branch, setBranch] = useState('Maipú');
+  const [sellerName, setSellerName] = useState('');
+  const [crmScope, setCrmScope] = useState<'all' | 'branch_only' | 'own_only'>('branch_only');
   const [allowedTabs, setAllowedTabs] = useState<string[]>([
     'products',
     'variants',
     'prices',
     'mass_images',
     'quotes',
+    'crm'
   ]);
 
   const saveToStorage = (list: EmployeeAccount[]) => {
@@ -96,7 +101,10 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
     setName('');
     setEmail('');
     setPassword('');
-    setAllowedTabs(['products', 'variants', 'prices', 'mass_images', 'quotes']);
+    setBranch('Maipú');
+    setSellerName('');
+    setCrmScope('branch_only');
+    setAllowedTabs(['products', 'variants', 'prices', 'mass_images', 'quotes', 'crm']);
     setShowCreateModal(true);
   };
 
@@ -105,6 +113,9 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
     setName(emp.name);
     setEmail(emp.email);
     setPassword(emp.password || '');
+    setBranch(emp.branch || 'Maipú');
+    setSellerName(emp.sellerName || '');
+    setCrmScope(emp.crmScope || 'branch_only');
     setAllowedTabs(emp.allowedTabs || []);
     setShowCreateModal(true);
   };
@@ -121,6 +132,9 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
             name: name.trim(),
             email: email.trim().toLowerCase(),
             password: password.trim() || emp.password,
+            branch,
+            sellerName: sellerName.trim(),
+            crmScope,
             allowedTabs,
           };
         }
@@ -134,6 +148,9 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
         email: email.trim().toLowerCase(),
         password: password.trim() || 'pampero123',
         role: 'employee',
+        branch,
+        sellerName: sellerName.trim(),
+        crmScope,
         allowedTabs,
         createdAt: new Date().toISOString().split('T')[0],
         active: true,
@@ -241,7 +258,27 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
                         </div>
                       </div>
                     </td>
-                    <td className="p-3 font-mono text-[#6F6860]">{emp.email}</td>
+                    <td className="p-3 font-mono text-[#6F6860]">
+                      <div>{emp.email}</div>
+                      <div className="flex items-center gap-1 mt-1 font-sans">
+                        <span className="px-1.5 py-0.2 rounded-xs bg-amber-50 text-amber-900 border border-amber-200 text-[10px] font-bold">
+                          {emp.branch || 'Maipú'}
+                        </span>
+                        {emp.crmScope === 'own_only' ? (
+                          <span className="px-1.5 py-0.2 rounded-xs bg-blue-50 text-blue-800 border border-blue-200 text-[10px] font-semibold">
+                            Solo sus pedidos
+                          </span>
+                        ) : emp.crmScope === 'branch_only' ? (
+                          <span className="px-1.5 py-0.2 rounded-xs bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-semibold">
+                            Solo su local
+                          </span>
+                        ) : (
+                          <span className="px-1.5 py-0.2 rounded-xs bg-purple-50 text-purple-800 border border-purple-200 text-[10px] font-semibold">
+                            Todas las empresas
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td className="p-3">
                       <div className="flex flex-wrap gap-1 max-w-md">
                         {emp.allowedTabs?.map((t) => {
@@ -365,6 +402,61 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
                     className="w-full pl-9 pr-3 py-2 text-xs bg-[#FAF8F5] rounded-xs border border-[#DCD4C9] outline-none"
                   />
                 </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-[#18231C] mb-1">
+                    Sucursal / Local Asignado *
+                  </label>
+                  <select
+                    value={branch}
+                    onChange={(e) => setBranch(e.target.value)}
+                    className="w-full px-3 py-2 text-xs bg-[#FAF8F5] rounded-xs border border-[#DCD4C9] outline-none cursor-pointer"
+                  >
+                    <option value="Maipú">Maipú</option>
+                    <option value="Ciudad">Ciudad</option>
+                    <option value="Luján">Luján de Cuyo</option>
+                    <option value="Todas">Todas (Supervisor / Gerente)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-[#18231C] mb-1">
+                    Identificador de Vendedor (opcional)
+                  </label>
+                  <input
+                    type="text"
+                    value={sellerName}
+                    onChange={(e) => setSellerName(e.target.value)}
+                    placeholder="Ej. Itatí / Guada / Carolina"
+                    className="w-full px-3 py-2 text-xs bg-[#FAF8F5] rounded-xs border border-[#DCD4C9] outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-[#18231C] mb-1">
+                  Alcance de Privacidad en Gestión / CRM *
+                </label>
+                <select
+                  value={crmScope}
+                  onChange={(e) => setCrmScope(e.target.value as any)}
+                  className="w-full px-3 py-2 text-xs bg-[#FAF8F5] rounded-xs border border-[#DCD4C9] outline-none cursor-pointer font-medium"
+                >
+                  <option value="branch_only">
+                    Solo su Local y sus vendedores (Recomendado para locales)
+                  </option>
+                  <option value="own_only">
+                    Solo sus propios clientes y cotizaciones asignadas (Vendedor individual)
+                  </option>
+                  <option value="all">
+                    Ver todas las empresas y sucursales (Dirección / Supervisor)
+                  </option>
+                </select>
+                <span className="text-[11px] text-[#6F6860] block mt-1">
+                  Garantiza que una sucursal no acceda a los pedidos ni clientes privados de las demás sucursales.
+                </span>
               </div>
 
               {/* Granular permissions checklist */}

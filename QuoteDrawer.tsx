@@ -332,16 +332,16 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
           <div className="flex items-center gap-2.5">
             <ShoppingBag className="w-5 h-5" style={{ color: theme.iconColor || theme.accentColor || '#FDB813' }} />
             <div>
-              <h3 className="font-display text-lg uppercase tracking-wider leading-tight">Lista de Cotización</h3>
+              <h3 className="font-display text-lg uppercase tracking-wider leading-tight">Mi Pedido</h3>
               <p className="text-[11px] opacity-75 font-sans">
-                {totalUnits} {totalUnits === 1 ? 'artículo seleccionado' : 'artículos seleccionados'}
+                {totalUnits} {totalUnits === 1 ? 'artículo en tu pedido' : 'artículos en tu pedido'}
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
             className="opacity-75 hover:opacity-100 p-1.5 rounded-xs hover:bg-white/10 transition-colors"
-            aria-label="Cerrar lista de cotización"
+            aria-label="Cerrar Mi Pedido"
           >
             <X className="w-5 h-5" />
           </button>

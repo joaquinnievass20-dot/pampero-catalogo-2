@@ -24,6 +24,7 @@ interface UserNavMenuProps {
   onLogout: () => void;
   onOpenAdmin?: () => void;
   onOpenCRM?: () => void;
+  onOpenHub?: () => void;
   onOpenUniformSimulator?: () => void;
   onOpenSizingPortal?: () => void;
   onOpenProfile?: () => void;
@@ -40,6 +41,7 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
   onLogout,
   onOpenAdmin,
   onOpenCRM,
+  onOpenHub,
   onOpenUniformSimulator,
   onOpenSizingPortal,
   onOpenProfile,
@@ -120,38 +122,40 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
         </button>
       )}
 
-      {/* 3. Cotización / Carrito Button - ALWAYS VISIBLE, ACCESSIBLE AND BRANDED */}
-      <button
-        id="btn-nav-cart-quote"
-        type="button"
-        onClick={onOpenCart}
-        style={{
-          backgroundColor: cartCount > 0 ? primaryBg : '#FFFFFF',
-          borderColor: cartCount > 0 ? accent : '#DCD4C9',
-          color: cartCount > 0 ? '#F5F2EC' : '#18231C',
-        }}
-        className="relative px-3 sm:px-3.5 py-2 rounded-xs border text-xs font-bold uppercase tracking-wider flex items-center gap-2 shadow-2xs transition-all hover:brightness-105 shrink-0 cursor-pointer select-none"
-        title="Ver lista de cotización"
-        aria-label="Abrir lista de cotización"
-      >
-        <ShoppingBag 
-          className="w-4 h-4 shrink-0" 
-          style={{ color: cartCount > 0 ? accent : '#18231C' }} 
-        />
-        <span className="hidden sm:inline font-sans text-xs">Cotización</span>
-        <span 
+      {/* 3. Mi Pedido Button - EXCLUSIVO PARA CLIENTES Y VISITANTES (Oculto para personal porque es el carrito que arma el cliente) */}
+      {(!userSession || userSession.role === 'client') && (
+        <button
+          id="btn-nav-cart-quote"
+          type="button"
+          onClick={onOpenCart}
           style={{
-            backgroundColor: cartCount > 0 ? accent : '#EAE6DF',
-            color: cartCount > 0 ? '#18231C' : '#6F6860',
+            backgroundColor: cartCount > 0 ? primaryBg : '#FFFFFF',
+            borderColor: cartCount > 0 ? accent : '#DCD4C9',
+            color: cartCount > 0 ? '#F5F2EC' : '#18231C',
           }}
-          className="w-5 h-5 rounded-full text-[10px] font-black flex items-center justify-center shrink-0 shadow-2xs"
+          className="relative px-3 sm:px-3.5 py-2 rounded-xs border text-xs font-bold uppercase tracking-wider flex items-center gap-2 shadow-2xs transition-all hover:brightness-105 shrink-0 cursor-pointer select-none"
+          title="Ver Mi Pedido"
+          aria-label="Abrir Mi Pedido"
         >
-          {cartCount}
-        </span>
-      </button>
+          <ShoppingBag 
+            className="w-4 h-4 shrink-0" 
+            style={{ color: cartCount > 0 ? accent : '#18231C' }} 
+          />
+          <span className="hidden sm:inline font-sans text-xs">Mi Pedido</span>
+          <span 
+            style={{
+              backgroundColor: cartCount > 0 ? accent : '#EAE6DF',
+              color: cartCount > 0 ? '#18231C' : '#6F6860',
+            }}
+            className="w-5 h-5 rounded-full text-[10px] font-black flex items-center justify-center shrink-0 shadow-2xs"
+          >
+            {cartCount}
+          </span>
+        </button>
+      )}
 
-      {/* 4. GESTIÓN / CRM Button - ALWAYS VISIBLE AND PROMINENT */}
-      {onOpenCRM && (
+      {/* 4. GESTIÓN / CRM Button - EXCLUSIVO PARA PERSONAL LOGUEADO (Admin o Empleado) */}
+      {(userSession?.role === 'admin' || userSession?.role === 'employee') && onOpenCRM && (
         <button
           id="btn-nav-open-crm"
           type="button"
@@ -238,8 +242,28 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
 
               {/* Menu Links */}
               <div className="p-1.5 space-y-0.5">
+                {/* Staff Main Hub (for admin & employee) */}
+                {(userSession.role === 'admin' || userSession.role === 'employee') && onOpenHub && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDropdownOpen(false);
+                      onOpenHub();
+                    }}
+                    className="w-full flex items-center justify-between px-3 py-2 text-left text-xs font-bold text-[#18231C] bg-amber-50/60 hover:bg-amber-100/70 rounded-xs transition-colors cursor-pointer group"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Compass className="w-4 h-4 text-[#B9522F]" />
+                      <span>Menú Principal de Personal</span>
+                    </div>
+                    <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded-xs bg-[#B9522F] text-white">
+                      Inicio
+                    </span>
+                  </button>
+                )}
+
                 {/* CRM Dashboard */}
-                {onOpenCRM && (
+                {(userSession.role === 'admin' || userSession.role === 'employee') && onOpenCRM && (
                   <button
                     type="button"
                     onClick={() => {
@@ -333,7 +357,7 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
                   </button>
                 )}
 
-                {/* Quote history / cart access */}
+                {/* Quote history / cart access - Mi Pedido */}
                 <button
                   type="button"
                   onClick={() => {
@@ -343,8 +367,8 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
                   className="w-full flex items-center justify-between px-3 py-2 text-left text-xs text-[#4A453F] hover:text-[#18231C] hover:bg-[#FAF8F5] rounded-xs transition-colors cursor-pointer"
                 >
                   <div className="flex items-center gap-2">
-                    <FileText className="w-4 h-4 text-[#8C827A]" />
-                    <span>Lista de Cotización</span>
+                    <ShoppingBag className="w-4 h-4 text-[#8C827A]" />
+                    <span>Mi Pedido</span>
                   </div>
                   {cartCount > 0 && (
                     <span 

@@ -27,6 +27,10 @@ import { AdminVariantsTab } from './admin/AdminVariantsTab';
 import { AdminEmployeesTab } from './admin/AdminEmployeesTab';
 import { AdminQuotesTab } from './admin/AdminQuotesTab';
 import { AdminBulkExcelImportModal } from './admin/AdminBulkExcelImportModal';
+import { AdminNotificationsTab } from './admin/AdminNotificationsTab';
+import { AdminSellersTab } from './admin/AdminSellersTab';
+import { compressImage } from '../utils/imageCompressor';
+import { parseImageFileName } from '../utils/imageNamingParser';
 import { PamperoLogo } from './PamperoLogo';
 import { saveCatalogBackup } from '../utils/backupManager';
 import { doc, deleteDoc } from 'firebase/firestore';
@@ -68,7 +72,8 @@ import {
   Percent,
   EyeOff,
   AlertTriangle,
-  AlertCircle
+  AlertCircle,
+  Bell
 } from 'lucide-react';
 
 export type AdminTabKey = 
@@ -84,6 +89,8 @@ export type AdminTabKey =
   | 'branches' 
   | 'quotes' 
   | 'employees' 
+  | 'sellers'
+  | 'notifications'
   | 'users' 
   | 'security' 
   | 'analytics';
@@ -223,6 +230,73 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     inStock: true,
   });
 
+  const [activePhotoGalleryTab, setActivePhotoGalleryTab] = useState<'general' | 'men' | 'women'>('general');
+  const [isUploadingPhotos, setIsUploadingPhotos] = useState(false);
+
+  // Multi-photo upload processor with automatic compression, filename parsing, and categorization
+  const handleUploadPhotos = async (
+    filesList: FileList | File[],
+    targetScope: 'general' | 'men' | 'women' | 'auto' = 'auto'
+  ) => {
+    if (!filesList || filesList.length === 0) return;
+    setIsUploadingPhotos(true);
+    const files = Array.from(filesList);
+
+    const newGeneral: string[] = [];
+    const newMen: string[] = [];
+    const newWomen: string[] = [];
+
+    for (const file of files) {
+      try {
+        const compressed = await compressImage(file, {
+          maxWidth: 1200,
+          maxHeight: 1200,
+          quality: 0.82,
+        });
+
+        const parsed = parseImageFileName(file.name);
+        let determined = targetScope;
+
+        if (determined === 'auto') {
+          if (parsed.gender === 'Mujer') {
+            determined = 'women';
+          } else if (parsed.gender === 'Hombre') {
+            determined = 'men';
+          } else {
+            determined = activePhotoGalleryTab;
+          }
+        }
+
+        if (determined === 'women') {
+          newWomen.push(compressed);
+        } else if (determined === 'men') {
+          newMen.push(compressed);
+        } else {
+          newGeneral.push(compressed);
+        }
+      } catch (err) {
+        console.error('Error processing image:', file.name, err);
+      }
+    }
+
+    setProductForm((prev) => {
+      const updatedGeneral = [...(prev.images || (prev.image ? [prev.image] : [])), ...newGeneral];
+      const updatedMen = [...(prev.imagesMen || []), ...newMen];
+      const updatedWomen = [...(prev.imagesWomen || []), ...newWomen];
+      const primary = prev.image || updatedGeneral[0] || updatedMen[0] || updatedWomen[0] || '';
+
+      return {
+        ...prev,
+        image: primary,
+        images: updatedGeneral,
+        imagesMen: updatedMen,
+        imagesWomen: updatedWomen,
+      };
+    });
+
+    setIsUploadingPhotos(false);
+  };
+
   // Branches Tab internal state
   const [isCreatingBranch, setIsCreatingBranch] = useState(false);
   const [editingBranch, setEditingBranch] = useState<BranchLocation | null>(null);
@@ -286,17 +360,27 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       ? parsedSizes 
       : (standardSizesInput.trim() ? [standardSizesInput.trim()] : ['Único']);
 
-    // Fotos duales para productos Unisex
-    const isUnisex = Boolean(productForm.isUnisex);
+    // Fotos duales para productos Unisex y galerías Hombre/Mujer
     const imagesMen = Array.isArray(productForm.imagesMen) ? productForm.imagesMen.filter(Boolean) : [];
     const imagesWomen = Array.isArray(productForm.imagesWomen) ? productForm.imagesWomen.filter(Boolean) : [];
+    const isUnisex = Boolean(productForm.isUnisex || (imagesMen.length > 0 && imagesWomen.length > 0));
 
-    const rawImages = isUnisex && imagesMen.length > 0
-      ? imagesMen
-      : (Array.isArray(productForm.images) && productForm.images.length > 0
-          ? productForm.images.filter(Boolean)
-          : [productForm.image || 'https://images.unsplash.com/photo-1544923246-77307dd654cb?auto=format&fit=crop&w=800&q=80']);
-    const primaryImage = rawImages[0] || productForm.image || 'https://images.unsplash.com/photo-1544923246-77307dd654cb?auto=format&fit=crop&w=800&q=80';
+    // Consolidar fotos generales sin descartar ninguna
+    let rawImages: string[] = [];
+    if (Array.isArray(productForm.images) && productForm.images.length > 0) {
+      rawImages = productForm.images.filter(Boolean);
+    }
+    if (rawImages.length === 0) {
+      rawImages = [...imagesMen, ...imagesWomen];
+    }
+    if (rawImages.length === 0 && productForm.image) {
+      rawImages = [productForm.image];
+    }
+    if (rawImages.length === 0) {
+      rawImages = ['https://images.unsplash.com/photo-1544923246-77307dd654cb?auto=format&fit=crop&w=800&q=80'];
+    }
+
+    const primaryImage = imagesMen[0] || imagesWomen[0] || rawImages[0] || productForm.image || rawImages[0];
 
     setIsSavingProduct(true);
     setFirebaseErrorNotice(null);
@@ -352,14 +436,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       if (isFirebaseReady()) {
         const fireResult = await saveSingleFirestoreProduct(prodToSave);
         if (!fireResult.success) {
-          console.error('[FIREBASE ERROR CRÍTICO AL GUARDAR PRODUCTO]:', fireResult.error);
-          setFirebaseErrorNotice(`Error al guardar en Firebase: ${fireResult.error}. Verificá las reglas de seguridad de Firestore o la conexión a internet.`);
-          setIsSavingProduct(false);
-          return; // No cerramos el modal para que el usuario no pierda lo cargado
+          console.warn('[FIREBASE WARNING AL GUARDAR PRODUCTO]:', fireResult.error);
         }
       }
 
-      // 2. Actualizar estado local y backup
+      // 2. Guardado en servidor central Express /api/products
+      try {
+        await fetch('/api/products', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ product: prodToSave }),
+        });
+      } catch (srvErr) {
+        console.warn('[SERVER SYNC] Fallback save product:', srvErr);
+      }
+
+      // 3. Actualizar estado local y backup
       const updatedList = editingProduct
         ? products.map((p) => (p.id === editingProduct.id ? prodToSave : p))
         : [prodToSave, ...products];
@@ -841,6 +933,44 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 >
                   <UserCheck className="w-4 h-4" style={{ color: iconColor }} />
                   Empleados & Permisos
+                </button>
+              )}
+
+              {/* Vendedores & Locales */}
+              {isTabVisible('sellers') && (
+                <button
+                  id="admin-tab-sellers"
+                  onClick={() => setActiveTab('sellers')}
+                  style={{
+                    borderTopColor: activeTab === 'sellers' ? activeBorderColor : 'transparent',
+                  }}
+                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                    activeTab === 'sellers'
+                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
+                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
+                  }`}
+                >
+                  <Users className="w-4 h-4" style={{ color: iconColor }} />
+                  Vendedores & Locales
+                </button>
+              )}
+
+              {/* Notificaciones & Alertas */}
+              {isTabVisible('notifications') && (
+                <button
+                  id="admin-tab-notifications"
+                  onClick={() => setActiveTab('notifications')}
+                  style={{
+                    borderTopColor: activeTab === 'notifications' ? activeBorderColor : 'transparent',
+                  }}
+                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                    activeTab === 'notifications'
+                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
+                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
+                  }`}
+                >
+                  <Bell className="w-4 h-4" style={{ color: iconColor }} />
+                  Notificaciones
                 </button>
               )}
 
@@ -1595,599 +1725,323 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     </div>
                   </div>
 
-                  {/* Multi-Photo Manager & Reordering */}
-                  {productForm.isUnisex ? (
-                    <div className="space-y-4">
-                      {/* Banner explicativo Unisex */}
-                      <div className="p-3 bg-blue-50 border border-blue-200 rounded-xs flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Layers className="w-4 h-4 text-blue-700 shrink-0" />
-                          <div>
-                            <span className="text-xs font-bold text-blue-900 block">
-                              Producto Unisex: Galerías Duales Habilitadas
-                            </span>
-                            <span className="text-[11px] text-blue-700">
-                              Cargá las fotos para el modelo Hombre y el modelo Mujer por separado. Ambas se guardarán en el mismo producto en Firebase.
-                            </span>
-                          </div>
-                        </div>
-                        <span className="text-[10px] font-mono font-bold bg-blue-100 text-blue-800 px-2 py-0.5 rounded-xs">
-                          {(productForm.imagesMen?.length || 0)} H / {(productForm.imagesWomen?.length || 0)} M
-                        </span>
+                  {/* Multi-Photo Manager & Categorization */}
+                  <div className="p-4 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs space-y-4">
+                    {/* Header & Gallery Tab Selector */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#DCD4C9] pb-3">
+                      <div>
+                        <label className="block text-xs font-bold uppercase tracking-wider text-[#18231C] flex items-center gap-2">
+                          <Images className="w-4 h-4 text-[#B9522F]" />
+                          <span>Galería de Fotos & Modelos (Carga Múltiple)</span>
+                        </label>
+                        <p className="text-[11px] text-[#6F6860] mt-0.5">
+                          Subí múltiples fotos a la vez. Si los nombres tienen <strong className="text-[#18231C]">#Hombre</strong>, <strong className="text-[#18231C]">#Mujer</strong> o <strong className="text-[#18231C]">#Femenino</strong>, se asignan automáticamente.
+                        </p>
                       </div>
 
-                      {/* Galería 1: Hombre */}
-                      <div className="p-4 bg-[#FAF8F5] border-2 border-blue-300 rounded-xs space-y-3">
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-[#DCD4C9] pb-2">
-                          <div>
-                            <label className="block text-xs font-bold uppercase tracking-wider text-blue-950 flex items-center gap-1.5">
-                              <span className="w-2.5 h-2.5 rounded-full bg-blue-600 inline-block"></span>
-                              Galería Hombre (Modelo Masculino)
-                            </label>
-                            <p className="text-[11px] text-[#6F6860]">
-                              Fotos que se mostrarán en la sección Hombre o cuando se elija modelo masculino.
-                            </p>
-                          </div>
-                          <span className="text-xs font-mono font-bold text-blue-800">
-                            {(productForm.imagesMen?.length || 0)} fotos
+                      {/* Tab Selector: General, Hombre, Mujer */}
+                      <div className="flex items-center gap-1 bg-white p-1 rounded-xs border border-[#DCD4C9] self-start sm:self-auto">
+                        <button
+                          type="button"
+                          onClick={() => setActivePhotoGalleryTab('general')}
+                          className={`px-3 py-1 text-xs font-bold rounded-xs transition-all cursor-pointer flex items-center gap-1.5 ${
+                            activePhotoGalleryTab === 'general'
+                              ? 'bg-[#18231C] text-white shadow-2xs'
+                              : 'text-[#6F6860] hover:text-[#18231C]'
+                          }`}
+                        >
+                          <span>General</span>
+                          <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                            activePhotoGalleryTab === 'general' ? 'bg-amber-400 text-black font-black' : 'bg-neutral-100 text-neutral-600'
+                          }`}>
+                            {productForm.images?.length || (productForm.image ? 1 : 0)}
                           </span>
-                        </div>
+                        </button>
 
-                        {/* Upload Controls Hombre */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                          <label className="border-2 border-dashed border-blue-300 hover:border-blue-600 bg-white p-3 rounded-xs flex flex-col items-center justify-center gap-1.5 cursor-pointer text-center group transition-colors">
-                            <Upload className="w-5 h-5 text-blue-600 group-hover:scale-110 transition-transform" />
-                            <span className="text-xs font-bold text-blue-950">Subir fotos Hombre desde la PC</span>
-                            <span className="text-[10px] text-[#6F6860]">Múltiples archivos (JPG, PNG, WebP)</span>
-                            <input
-                              type="file"
-                              multiple
-                              accept="image/*"
-                              className="hidden"
-                              onChange={(e) => {
-                                const files = e.target.files;
-                                if (!files || files.length === 0) return;
-                                const current = Array.isArray(productForm.imagesMen) ? [...productForm.imagesMen] : [];
-                                Array.from(files).forEach((file: File) => {
-                                  const reader = new FileReader();
-                                  reader.onload = (ev) => {
-                                    const res = ev.target?.result as string;
-                                    if (res) {
-                                      current.push(res);
-                                      setProductForm((prev) => ({
-                                        ...prev,
-                                        imagesMen: [...current],
-                                        image: prev.image || current[0],
-                                      }));
-                                    }
-                                  };
-                                  reader.readAsDataURL(file);
-                                });
-                              }}
-                            />
-                          </label>
-
-                          <div className="border border-[#DCD4C9] bg-white p-3 rounded-xs flex flex-col justify-between gap-2">
-                            <span className="text-xs font-bold text-[#18231C]">O agregar por URL (Hombre):</span>
-                            <div className="flex gap-1.5">
-                              <input
-                                type="text"
-                                placeholder="https://..."
-                                value={newPhotoUrlMen}
-                                onChange={(e) => setNewPhotoUrlMen(e.target.value)}
-                                className="flex-1 px-2.5 py-1.5 border border-[#DCD4C9] rounded-xs text-xs font-mono outline-none focus:border-blue-500"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  if (!newPhotoUrlMen.trim()) return;
-                                  const current = Array.isArray(productForm.imagesMen) ? [...productForm.imagesMen] : [];
-                                  const updated = [...current, newPhotoUrlMen.trim()];
-                                  setProductForm((prev) => ({
-                                    ...prev,
-                                    imagesMen: updated,
-                                    image: prev.image || updated[0],
-                                  }));
-                                  setNewPhotoUrlMen('');
-                                }}
-                                className="px-3 py-1.5 bg-blue-900 hover:bg-blue-950 text-white text-xs font-bold rounded-xs cursor-pointer"
-                              >
-                                Agregar
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Preview Hombre */}
-                        {Array.isArray(productForm.imagesMen) && productForm.imagesMen.length > 0 ? (
-                          <div className="space-y-2 pt-2">
-                            <span className="text-[11px] font-bold uppercase tracking-wider text-blue-950 block">
-                              Fotos Hombre ({productForm.imagesMen.length}):
-                            </span>
-                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                              {productForm.imagesMen.map((imgUrl, idx) => (
-                                <div
-                                  key={idx}
-                                  className={`bg-white border rounded-xs p-2 flex flex-col justify-between space-y-2 relative transition-all ${
-                                    idx === 0 ? 'border-2 border-blue-600 shadow-xs' : 'border-[#DCD4C9]'
-                                  }`}
-                                >
-                                  <div className="w-full h-28 rounded-xs overflow-hidden bg-neutral-100 relative">
-                                    <img src={imgUrl} alt={`Hombre ${idx + 1}`} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                                    <span className="absolute top-1 left-1 px-1.5 py-0.5 rounded-xs text-[10px] font-bold bg-blue-600 text-white">
-                                      {idx === 0 ? '★ Portada Hombre' : `#${idx + 1}`}
-                                    </span>
-                                  </div>
-                                  <div className="flex items-center justify-between gap-1 pt-1 border-t border-[#ECE5DC]">
-                                    <div className="flex items-center gap-1">
-                                      <button
-                                        type="button"
-                                        disabled={idx === 0}
-                                        onClick={() => {
-                                          if (idx === 0) return;
-                                          const updated = [...(productForm.imagesMen || [])];
-                                          const temp = updated[idx];
-                                          updated[idx] = updated[idx - 1];
-                                          updated[idx - 1] = temp;
-                                          setProductForm((prev) => ({ ...prev, imagesMen: updated }));
-                                        }}
-                                        className={`p-1 rounded-xs border text-xs cursor-pointer ${
-                                          idx === 0 ? 'border-neutral-200 text-neutral-300 cursor-not-allowed' : 'border-[#DCD4C9] text-[#18231C] hover:bg-neutral-100'
-                                        }`}
-                                        title="Mover a la izquierda"
-                                      >
-                                        <ArrowLeft className="w-3 h-3" />
-                                      </button>
-                                      <button
-                                        type="button"
-                                        disabled={idx === (productForm.imagesMen?.length || 0) - 1}
-                                        onClick={() => {
-                                          if (idx === (productForm.imagesMen?.length || 0) - 1) return;
-                                          const updated = [...(productForm.imagesMen || [])];
-                                          const temp = updated[idx];
-                                          updated[idx] = updated[idx + 1];
-                                          updated[idx + 1] = temp;
-                                          setProductForm((prev) => ({ ...prev, imagesMen: updated }));
-                                        }}
-                                        className={`p-1 rounded-xs border text-xs cursor-pointer ${
-                                          idx === (productForm.imagesMen?.length || 0) - 1 ? 'border-neutral-200 text-neutral-300 cursor-not-allowed' : 'border-[#DCD4C9] text-[#18231C] hover:bg-neutral-100'
-                                        }`}
-                                        title="Mover a la derecha"
-                                      >
-                                        <ArrowRight className="w-3 h-3" />
-                                      </button>
-                                    </div>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        const updated = [...(productForm.imagesMen || [])];
-                                        updated.splice(idx, 1);
-                                        setProductForm((prev) => ({ ...prev, imagesMen: updated }));
-                                      }}
-                                      className="p-1 rounded-xs border border-red-200 text-red-600 hover:bg-red-50 text-xs cursor-pointer"
-                                      title="Eliminar foto"
-                                    >
-                                      <Trash2 className="w-3 h-3" />
-                                    </button>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="p-3 bg-white border border-[#DCD4C9] rounded-xs text-center text-xs text-[#6F6860]">
-                            No hay fotos cargadas aún para Hombre.
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Galería 2: Mujer */}
-                      <div className="p-4 bg-[#FAF8F5] border-2 border-rose-300 rounded-xs space-y-3">
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-[#DCD4C9] pb-2">
-                          <div>
-                            <label className="block text-xs font-bold uppercase tracking-wider text-rose-950 flex items-center gap-1.5">
-                              <span className="w-2.5 h-2.5 rounded-full bg-rose-600 inline-block"></span>
-                              Galería Mujer (Modelo Femenino)
-                            </label>
-                            <p className="text-[11px] text-[#6F6860]">
-                              Fotos que se mostrarán en la sección Mujer o cuando se elija modelo femenino.
-                            </p>
-                          </div>
-                          <span className="text-xs font-mono font-bold text-rose-800">
-                            {(productForm.imagesWomen?.length || 0)} fotos
+                        <button
+                          type="button"
+                          onClick={() => setActivePhotoGalleryTab('men')}
+                          className={`px-3 py-1 text-xs font-bold rounded-xs transition-all cursor-pointer flex items-center gap-1.5 ${
+                            activePhotoGalleryTab === 'men'
+                              ? 'bg-blue-900 text-white shadow-2xs'
+                              : 'text-[#6F6860] hover:text-blue-900'
+                          }`}
+                        >
+                          <span>Hombre (♂)</span>
+                          <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                            activePhotoGalleryTab === 'men' ? 'bg-blue-200 text-blue-950 font-black' : 'bg-neutral-100 text-neutral-600'
+                          }`}>
+                            {productForm.imagesMen?.length || 0}
                           </span>
-                        </div>
+                        </button>
 
-                        {/* Upload Controls Mujer */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                          <label className="border-2 border-dashed border-rose-300 hover:border-rose-600 bg-white p-3 rounded-xs flex flex-col items-center justify-center gap-1.5 cursor-pointer text-center group transition-colors">
-                            <Upload className="w-5 h-5 text-rose-600 group-hover:scale-110 transition-transform" />
-                            <span className="text-xs font-bold text-rose-950">Subir fotos Mujer desde la PC</span>
-                            <span className="text-[10px] text-[#6F6860]">Múltiples archivos (JPG, PNG, WebP)</span>
-                            <input
-                              type="file"
-                              multiple
-                              accept="image/*"
-                              className="hidden"
-                              onChange={(e) => {
-                                const files = e.target.files;
-                                if (!files || files.length === 0) return;
-                                const current = Array.isArray(productForm.imagesWomen) ? [...productForm.imagesWomen] : [];
-                                Array.from(files).forEach((file: File) => {
-                                  const reader = new FileReader();
-                                  reader.onload = (ev) => {
-                                    const res = ev.target?.result as string;
-                                    if (res) {
-                                      current.push(res);
-                                      setProductForm((prev) => ({
-                                        ...prev,
-                                        imagesWomen: [...current],
-                                      }));
-                                    }
-                                  };
-                                  reader.readAsDataURL(file);
-                                });
-                              }}
-                            />
-                          </label>
-
-                          <div className="border border-[#DCD4C9] bg-white p-3 rounded-xs flex flex-col justify-between gap-2">
-                            <span className="text-xs font-bold text-[#18231C]">O agregar por URL (Mujer):</span>
-                            <div className="flex gap-1.5">
-                              <input
-                                type="text"
-                                placeholder="https://..."
-                                value={newPhotoUrlWomen}
-                                onChange={(e) => setNewPhotoUrlWomen(e.target.value)}
-                                className="flex-1 px-2.5 py-1.5 border border-[#DCD4C9] rounded-xs text-xs font-mono outline-none focus:border-rose-500"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  if (!newPhotoUrlWomen.trim()) return;
-                                  const current = Array.isArray(productForm.imagesWomen) ? [...productForm.imagesWomen] : [];
-                                  const updated = [...current, newPhotoUrlWomen.trim()];
-                                  setProductForm((prev) => ({
-                                    ...prev,
-                                    imagesWomen: updated,
-                                  }));
-                                  setNewPhotoUrlWomen('');
-                                }}
-                                className="px-3 py-1.5 bg-rose-800 hover:bg-rose-900 text-white text-xs font-bold rounded-xs cursor-pointer"
-                              >
-                                Agregar
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Preview Mujer */}
-                        {Array.isArray(productForm.imagesWomen) && productForm.imagesWomen.length > 0 ? (
-                          <div className="space-y-2 pt-2">
-                            <span className="text-[11px] font-bold uppercase tracking-wider text-rose-950 block">
-                              Fotos Mujer ({productForm.imagesWomen.length}):
-                            </span>
-                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                              {productForm.imagesWomen.map((imgUrl, idx) => (
-                                <div
-                                  key={idx}
-                                  className={`bg-white border rounded-xs p-2 flex flex-col justify-between space-y-2 relative transition-all ${
-                                    idx === 0 ? 'border-2 border-rose-600 shadow-xs' : 'border-[#DCD4C9]'
-                                  }`}
-                                >
-                                  <div className="w-full h-28 rounded-xs overflow-hidden bg-neutral-100 relative">
-                                    <img src={imgUrl} alt={`Mujer ${idx + 1}`} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                                    <span className="absolute top-1 left-1 px-1.5 py-0.5 rounded-xs text-[10px] font-bold bg-rose-600 text-white">
-                                      {idx === 0 ? '★ Portada Mujer' : `#${idx + 1}`}
-                                    </span>
-                                  </div>
-                                  <div className="flex items-center justify-between gap-1 pt-1 border-t border-[#ECE5DC]">
-                                    <div className="flex items-center gap-1">
-                                      <button
-                                        type="button"
-                                        disabled={idx === 0}
-                                        onClick={() => {
-                                          if (idx === 0) return;
-                                          const updated = [...(productForm.imagesWomen || [])];
-                                          const temp = updated[idx];
-                                          updated[idx] = updated[idx - 1];
-                                          updated[idx - 1] = temp;
-                                          setProductForm((prev) => ({ ...prev, imagesWomen: updated }));
-                                        }}
-                                        className={`p-1 rounded-xs border text-xs cursor-pointer ${
-                                          idx === 0 ? 'border-neutral-200 text-neutral-300 cursor-not-allowed' : 'border-[#DCD4C9] text-[#18231C] hover:bg-neutral-100'
-                                        }`}
-                                        title="Mover a la izquierda"
-                                      >
-                                        <ArrowLeft className="w-3 h-3" />
-                                      </button>
-                                      <button
-                                        type="button"
-                                        disabled={idx === (productForm.imagesWomen?.length || 0) - 1}
-                                        onClick={() => {
-                                          if (idx === (productForm.imagesWomen?.length || 0) - 1) return;
-                                          const updated = [...(productForm.imagesWomen || [])];
-                                          const temp = updated[idx];
-                                          updated[idx] = updated[idx + 1];
-                                          updated[idx + 1] = temp;
-                                          setProductForm((prev) => ({ ...prev, imagesWomen: updated }));
-                                        }}
-                                        className={`p-1 rounded-xs border text-xs cursor-pointer ${
-                                          idx === (productForm.imagesWomen?.length || 0) - 1 ? 'border-neutral-200 text-neutral-300 cursor-not-allowed' : 'border-[#DCD4C9] text-[#18231C] hover:bg-neutral-100'
-                                        }`}
-                                        title="Mover a la derecha"
-                                      >
-                                        <ArrowRight className="w-3 h-3" />
-                                      </button>
-                                    </div>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        const updated = [...(productForm.imagesWomen || [])];
-                                        updated.splice(idx, 1);
-                                        setProductForm((prev) => ({ ...prev, imagesWomen: updated }));
-                                      }}
-                                      className="p-1 rounded-xs border border-red-200 text-red-600 hover:bg-red-50 text-xs cursor-pointer"
-                                      title="Eliminar foto"
-                                    >
-                                      <Trash2 className="w-3 h-3" />
-                                    </button>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="p-3 bg-white border border-[#DCD4C9] rounded-xs text-center text-xs text-[#6F6860]">
-                            No hay fotos cargadas aún para Mujer.
-                          </div>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => setActivePhotoGalleryTab('women')}
+                          className={`px-3 py-1 text-xs font-bold rounded-xs transition-all cursor-pointer flex items-center gap-1.5 ${
+                            activePhotoGalleryTab === 'women'
+                              ? 'bg-rose-800 text-white shadow-2xs'
+                              : 'text-[#6F6860] hover:text-rose-800'
+                          }`}
+                        >
+                          <span>Mujer (♀)</span>
+                          <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                            activePhotoGalleryTab === 'women' ? 'bg-rose-200 text-rose-950 font-black' : 'bg-neutral-100 text-neutral-600'
+                          }`}>
+                            {productForm.imagesWomen?.length || 0}
+                          </span>
+                        </button>
                       </div>
                     </div>
-                  ) : (
-                    <div className="p-4 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs space-y-3">
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-[#DCD4C9] pb-2">
-                        <div>
-                          <label className="block text-xs font-bold uppercase tracking-wider text-[#18231C]">
-                            Galería de Fotos del Producto (Subir y Ordenar)
-                          </label>
-                          <p className="text-[11px] text-[#6F6860]">
-                            Subí varias fotos por artículo y ordenalas. La foto <strong style={{ color: theme.accentColor || '#FDB813' }}>#1</strong> será la portada principal que se verá en el catálogo.
-                          </p>
-                        </div>
-                        <span className="text-xs font-mono font-bold text-[#6F6860]">
-                          {(productForm.images?.length || (productForm.image ? 1 : 0))} fotos
-                        </span>
+
+                    {/* Format hint badge */}
+                    <div className="p-2.5 bg-amber-50/80 border border-amber-200/80 rounded-xs flex items-center gap-2 text-amber-900 text-xs">
+                      <Sparkles className="w-4 h-4 text-[#B9522F] shrink-0" />
+                      <div className="flex-1 min-w-0 text-[11px] leading-tight">
+                        <strong className="font-bold">Formato inteligente Pampero: </strong>
+                        <span>Nombrá tus archivos como </span>
+                        <code className="bg-amber-100 px-1 py-0.5 rounded-xs font-mono font-bold text-amber-950">
+                          código#color#género#posición.jpg
+                        </code>
+                        <span> (ej: </span>
+                        <code className="bg-amber-100 px-1 py-0.5 rounded-xs font-mono text-amber-950">
+                          {productForm.code || '111108004'}#C1#Femenino#1.jpg
+                        </code>
+                        <span>). Al subirlas se ubican solas en su modelo y posición.</span>
                       </div>
+                    </div>
 
-                      {/* Upload Controls */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                        {/* From PC */}
-                        <label className="border-2 border-dashed border-[#DCD4C9] hover:border-[#18231C] bg-white p-3 rounded-xs flex flex-col items-center justify-center gap-1.5 cursor-pointer text-center group transition-colors">
-                          <Upload className="w-5 h-5 text-[#6F6860] group-hover:text-[#18231C]" />
-                          <span className="text-xs font-bold text-[#18231C]">
-                            Subir fotos desde la PC
-                          </span>
-                          <span className="text-[10px] text-[#6F6860]">
-                            Podés seleccionar varios archivos juntos (JPG, PNG, WebP)
-                          </span>
+                    {/* Upload Controls Row */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {/* From PC */}
+                      <label className="border-2 border-dashed border-[#DCD4C9] hover:border-[#18231C] bg-white p-3.5 rounded-xs flex flex-col items-center justify-center gap-1.5 cursor-pointer text-center group transition-colors">
+                        <Upload className="w-5 h-5 text-[#6F6860] group-hover:scale-110 group-hover:text-[#18231C] transition-all" />
+                        <span className="text-xs font-bold text-[#18231C]">
+                          {isUploadingPhotos ? 'Optimizando fotos...' : `Subir fotos a ${activePhotoGalleryTab === 'men' ? 'Hombre' : activePhotoGalleryTab === 'women' ? 'Mujer' : 'General'}`}
+                        </span>
+                        <span className="text-[10px] text-[#6F6860]">
+                          Podés seleccionar múltiples fotos juntas (JPG, PNG, WebP)
+                        </span>
+                        <input
+                          type="file"
+                          multiple
+                          accept="image/*"
+                          disabled={isUploadingPhotos}
+                          className="hidden"
+                          onChange={(e) => {
+                            if (e.target.files) {
+                              handleUploadPhotos(e.target.files, 'auto');
+                            }
+                          }}
+                        />
+                      </label>
+
+                      {/* By URL */}
+                      <div className="border border-[#DCD4C9] bg-white p-3.5 rounded-xs flex flex-col justify-between gap-2">
+                        <span className="text-xs font-bold text-[#18231C]">
+                          O agregar por enlace URL:
+                        </span>
+                        <div className="flex gap-1.5">
                           <input
-                            type="file"
-                            multiple
-                            accept="image/*"
-                            className="hidden"
-                            onChange={(e) => {
-                              const files = e.target.files;
-                              if (!files || files.length === 0) return;
-                              const current = Array.isArray(productForm.images) && productForm.images.length > 0
-                                ? [...productForm.images]
-                                : (productForm.image ? [productForm.image] : []);
-
-                              Array.from(files).forEach((file: File) => {
-                                const reader = new FileReader();
-                                reader.onload = (event) => {
-                                  const result = event.target?.result as string;
-                                  if (result) {
-                                    current.push(result);
-                                    setProductForm((prev) => ({
-                                      ...prev,
-                                      images: [...current],
-                                      image: current[0],
-                                    }));
-                                  }
-                                };
-                                reader.readAsDataURL(file);
-                              });
-                            }}
+                            type="text"
+                            placeholder="https://..."
+                            value={newPhotoUrl}
+                            onChange={(e) => setNewPhotoUrl(e.target.value)}
+                            className="flex-1 px-2.5 py-1.5 border border-[#DCD4C9] rounded-xs text-xs font-mono outline-none focus:border-[#FDB813]"
                           />
-                        </label>
-
-                        {/* By URL */}
-                        <div className="border border-[#DCD4C9] bg-white p-3 rounded-xs flex flex-col justify-between gap-2">
-                          <span className="text-xs font-bold text-[#18231C]">
-                            O agregar foto por enlace URL:
-                          </span>
-                          <div className="flex gap-1.5">
-                            <input
-                              type="text"
-                              placeholder="https://..."
-                              value={newPhotoUrl}
-                              onChange={(e) => setNewPhotoUrl(e.target.value)}
-                              className="flex-1 px-2.5 py-1.5 border border-[#DCD4C9] rounded-xs text-xs font-mono outline-none focus:border-[#FDB813]"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (!newPhotoUrl.trim()) return;
-                                const current = Array.isArray(productForm.images) && productForm.images.length > 0
-                                  ? [...productForm.images]
-                                  : (productForm.image ? [productForm.image] : []);
-                                const updated = [...current, newPhotoUrl.trim()];
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const trimmed = newPhotoUrl.trim();
+                              if (!trimmed) return;
+                              if (activePhotoGalleryTab === 'men') {
+                                const list = Array.isArray(productForm.imagesMen) ? [...productForm.imagesMen] : [];
+                                setProductForm((prev) => ({ ...prev, imagesMen: [...list, trimmed] }));
+                              } else if (activePhotoGalleryTab === 'women') {
+                                const list = Array.isArray(productForm.imagesWomen) ? [...productForm.imagesWomen] : [];
+                                setProductForm((prev) => ({ ...prev, imagesWomen: [...list, trimmed] }));
+                              } else {
+                                const list = Array.isArray(productForm.images) ? [...productForm.images] : (productForm.image ? [productForm.image] : []);
                                 setProductForm((prev) => ({
                                   ...prev,
-                                  images: updated,
-                                  image: updated[0],
+                                  images: [...list, trimmed],
+                                  image: prev.image || trimmed,
                                 }));
-                                setNewPhotoUrl('');
-                              }}
-                              className="px-3 py-1.5 bg-[#18231C] hover:bg-black text-white text-xs font-bold rounded-xs cursor-pointer"
-                            >
-                              Agregar
-                            </button>
-                          </div>
+                              }
+                              setNewPhotoUrl('');
+                            }}
+                            className="px-3 py-1.5 bg-[#18231C] hover:bg-black text-white text-xs font-bold rounded-xs cursor-pointer shrink-0"
+                          >
+                            Agregar
+                          </button>
                         </div>
                       </div>
+                    </div>
 
-                      {/* Photos Preview & Ordering Grid */}
-                      {(() => {
-                        const list = Array.isArray(productForm.images) && productForm.images.length > 0
+                    {/* Preview Grid for Active Tab */}
+                    {(() => {
+                      let activeList: string[] = [];
+                      if (activePhotoGalleryTab === 'men') {
+                        activeList = productForm.imagesMen || [];
+                      } else if (activePhotoGalleryTab === 'women') {
+                        activeList = productForm.imagesWomen || [];
+                      } else {
+                        activeList = (productForm.images && productForm.images.length > 0)
                           ? productForm.images
                           : (productForm.image ? [productForm.image] : []);
+                      }
 
-                        if (list.length === 0) {
-                          return (
-                            <div className="p-4 bg-white border border-[#DCD4C9] rounded-xs text-center text-xs text-[#6F6860]">
-                              No hay fotos cargadas todavía para este producto.
-                            </div>
-                          );
-                        }
-
+                      if (activeList.length === 0) {
                         return (
-                          <div className="space-y-2 pt-2">
-                            <span className="text-[11px] font-bold uppercase tracking-wider text-[#4A453F] block">
-                              Fotos del producto (utilizá las flechas para ordenar):
+                          <div className="p-6 bg-white border border-[#DCD4C9] rounded-xs text-center text-xs text-[#6F6860] space-y-1">
+                            <p className="font-semibold text-[#18231C]">
+                              No hay fotos cargadas todavía en la galería {activePhotoGalleryTab === 'men' ? 'Hombre' : activePhotoGalleryTab === 'women' ? 'Mujer' : 'General'}.
+                            </p>
+                            <p className="text-[11px]">
+                              Hacé clic en &quot;Subir fotos&quot; arriba para cargar una o varias imágenes de este producto.
+                            </p>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="space-y-2 pt-1">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-bold uppercase tracking-wider text-[#18231C]">
+                              Fotos {activePhotoGalleryTab === 'men' ? 'Hombre' : activePhotoGalleryTab === 'women' ? 'Mujer' : 'General'} ({activeList.length}):
                             </span>
-                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                              {list.map((imgUrl, idx) => (
-                                <div
-                                  key={idx}
-                                  className={`bg-white border rounded-xs p-2 flex flex-col justify-between space-y-2 relative transition-all ${
-                                    idx === 0
-                                      ? 'border-2 shadow-xs'
-                                      : 'border-[#DCD4C9]'
-                                  }`}
-                                  style={{
-                                    borderColor: idx === 0 ? (theme.accentColor || '#FDB813') : undefined,
-                                  }}
-                                >
-                                  {/* Thumbnail */}
-                                  <div className="w-full h-28 rounded-xs overflow-hidden bg-neutral-100 relative">
-                                    <img
-                                      src={imgUrl}
-                                      alt={`Foto ${idx + 1}`}
-                                      className="w-full h-full object-cover"
-                                      referrerPolicy="no-referrer"
-                                    />
-                                    <span
-                                      className="absolute top-1 left-1 px-1.5 py-0.5 rounded-xs text-[10px] font-bold"
-                                      style={{
-                                        backgroundColor: idx === 0 ? (theme.accentColor || '#FDB813') : 'rgba(0,0,0,0.7)',
-                                        color: idx === 0 ? '#18231C' : '#FFFFFF',
+                            <span className="text-[10px] text-[#6F6860]">
+                              Usá las flechas para ordenar. La foto #1 es la portada.
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                            {activeList.map((imgUrl, idx) => (
+                              <div
+                                key={idx}
+                                className={`bg-white border rounded-xs p-2 flex flex-col justify-between space-y-2 relative transition-all ${
+                                  idx === 0
+                                    ? 'border-2 border-[#18231C] shadow-xs'
+                                    : 'border-[#DCD4C9]'
+                                }`}
+                              >
+                                <div className="w-full h-28 rounded-xs overflow-hidden bg-neutral-100 relative">
+                                  <img
+                                    src={imgUrl}
+                                    alt={`Foto ${idx + 1}`}
+                                    className="w-full h-full object-cover"
+                                    referrerPolicy="no-referrer"
+                                  />
+                                  <span
+                                    className={`absolute top-1 left-1 px-1.5 py-0.5 rounded-xs text-[10px] font-bold ${
+                                      idx === 0 ? 'bg-[#18231C] text-amber-400' : 'bg-black/70 text-white'
+                                    }`}
+                                  >
+                                    {idx === 0 ? '★ Portada' : `#${idx + 1}`}
+                                  </span>
+                                </div>
+
+                                <div className="flex items-center justify-between gap-1 pt-1 border-t border-[#ECE5DC]">
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      type="button"
+                                      disabled={idx === 0}
+                                      onClick={() => {
+                                        if (idx === 0) return;
+                                        const updated = [...activeList];
+                                        const temp = updated[idx];
+                                        updated[idx] = updated[idx - 1];
+                                        updated[idx - 1] = temp;
+                                        if (activePhotoGalleryTab === 'men') {
+                                          setProductForm((prev) => ({ ...prev, imagesMen: updated }));
+                                        } else if (activePhotoGalleryTab === 'women') {
+                                          setProductForm((prev) => ({ ...prev, imagesWomen: updated }));
+                                        } else {
+                                          setProductForm((prev) => ({ ...prev, images: updated, image: updated[0] }));
+                                        }
                                       }}
+                                      className={`p-1 rounded-xs border text-xs cursor-pointer ${
+                                        idx === 0 ? 'border-neutral-200 text-neutral-300 cursor-not-allowed' : 'border-[#DCD4C9] text-[#18231C] hover:bg-[#ECE5DC]'
+                                      }`}
+                                      title="Mover a la izquierda"
                                     >
-                                      {idx === 0 ? '★ Portada' : `#${idx + 1}`}
-                                    </span>
-                                  </div>
-
-                                  {/* Controls */}
-                                  <div className="flex items-center justify-between gap-1 pt-1 border-t border-[#ECE5DC]">
-                                    <div className="flex items-center gap-1">
-                                      <button
-                                        type="button"
-                                        disabled={idx === 0}
-                                        onClick={() => {
-                                          if (idx === 0) return;
-                                          const updated = [...list];
-                                          const temp = updated[idx];
-                                          updated[idx] = updated[idx - 1];
-                                          updated[idx - 1] = temp;
-                                          setProductForm((prev) => ({
-                                            ...prev,
-                                            images: updated,
-                                            image: updated[0],
-                                          }));
-                                        }}
-                                        className={`p-1 rounded-xs border text-xs cursor-pointer ${
-                                          idx === 0
-                                            ? 'border-neutral-200 text-neutral-300 cursor-not-allowed'
-                                            : 'border-[#DCD4C9] text-[#18231C] hover:bg-[#ECE5DC]'
-                                        }`}
-                                        title="Mover a la izquierda (adelantar orden)"
-                                      >
-                                        <ArrowLeft className="w-3 h-3" />
-                                      </button>
-
-                                      <button
-                                        type="button"
-                                        disabled={idx === list.length - 1}
-                                        onClick={() => {
-                                          if (idx === list.length - 1) return;
-                                          const updated = [...list];
-                                          const temp = updated[idx];
-                                          updated[idx] = updated[idx + 1];
-                                          updated[idx + 1] = temp;
-                                          setProductForm((prev) => ({
-                                            ...prev,
-                                            images: updated,
-                                            image: updated[0],
-                                          }));
-                                        }}
-                                        className={`p-1 rounded-xs border text-xs cursor-pointer ${
-                                          idx === list.length - 1
-                                            ? 'border-neutral-200 text-neutral-300 cursor-not-allowed'
-                                            : 'border-[#DCD4C9] text-[#18231C] hover:bg-[#ECE5DC]'
-                                        }`}
-                                        title="Mover a la derecha (postergar orden)"
-                                      >
-                                        <ArrowRight className="w-3 h-3" />
-                                      </button>
-
-                                      {idx !== 0 && (
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            const updated = [...list];
-                                            const selected = updated.splice(idx, 1)[0];
-                                            updated.unshift(selected);
-                                            setProductForm((prev) => ({
-                                              ...prev,
-                                              images: updated,
-                                              image: updated[0],
-                                            }));
-                                          }}
-                                          className="p-1 rounded-xs border border-[#DCD4C9] text-amber-600 hover:bg-amber-50 text-xs cursor-pointer"
-                                          title="Hacer Portada Principal"
-                                        >
-                                          <Star className="w-3 h-3 fill-amber-500 text-amber-500" />
-                                        </button>
-                                      )}
-                                    </div>
+                                      <ArrowLeft className="w-3 h-3" />
+                                    </button>
 
                                     <button
                                       type="button"
+                                      disabled={idx === activeList.length - 1}
                                       onClick={() => {
-                                        const updated = [...list];
-                                        updated.splice(idx, 1);
-                                        setProductForm((prev) => ({
-                                          ...prev,
-                                          images: updated,
-                                          image: updated[0] || '',
-                                        }));
+                                        if (idx === activeList.length - 1) return;
+                                        const updated = [...activeList];
+                                        const temp = updated[idx];
+                                        updated[idx] = updated[idx + 1];
+                                        updated[idx + 1] = temp;
+                                        if (activePhotoGalleryTab === 'men') {
+                                          setProductForm((prev) => ({ ...prev, imagesMen: updated }));
+                                        } else if (activePhotoGalleryTab === 'women') {
+                                          setProductForm((prev) => ({ ...prev, imagesWomen: updated }));
+                                        } else {
+                                          setProductForm((prev) => ({ ...prev, images: updated, image: updated[0] }));
+                                        }
                                       }}
-                                      className="p-1 rounded-xs border border-red-200 text-red-600 hover:bg-red-50 text-xs cursor-pointer"
-                                      title="Eliminar foto"
+                                      className={`p-1 rounded-xs border text-xs cursor-pointer ${
+                                        idx === activeList.length - 1 ? 'border-neutral-200 text-neutral-300 cursor-not-allowed' : 'border-[#DCD4C9] text-[#18231C] hover:bg-[#ECE5DC]'
+                                      }`}
+                                      title="Mover a la derecha"
                                     >
-                                      <Trash2 className="w-3 h-3" />
+                                      <ArrowRight className="w-3 h-3" />
                                     </button>
+
+                                    {idx !== 0 && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const updated = [...activeList];
+                                          const selected = updated.splice(idx, 1)[0];
+                                          updated.unshift(selected);
+                                          if (activePhotoGalleryTab === 'men') {
+                                            setProductForm((prev) => ({ ...prev, imagesMen: updated }));
+                                          } else if (activePhotoGalleryTab === 'women') {
+                                            setProductForm((prev) => ({ ...prev, imagesWomen: updated }));
+                                          } else {
+                                            setProductForm((prev) => ({ ...prev, images: updated, image: updated[0] }));
+                                          }
+                                        }}
+                                        className="p-1 rounded-xs border border-[#DCD4C9] text-amber-600 hover:bg-amber-50 text-xs cursor-pointer"
+                                        title="Hacer Portada"
+                                      >
+                                        <Star className="w-3 h-3 fill-amber-500 text-amber-500" />
+                                      </button>
+                                    )}
                                   </div>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const updated = [...activeList];
+                                      updated.splice(idx, 1);
+                                      if (activePhotoGalleryTab === 'men') {
+                                        setProductForm((prev) => ({ ...prev, imagesMen: updated }));
+                                      } else if (activePhotoGalleryTab === 'women') {
+                                        setProductForm((prev) => ({ ...prev, imagesWomen: updated }));
+                                      } else {
+                                        setProductForm((prev) => ({ ...prev, images: updated, image: updated[0] || '' }));
+                                      }
+                                    }}
+                                    className="p-1 rounded-xs border border-red-200 text-red-600 hover:bg-red-50 text-xs cursor-pointer"
+                                    title="Eliminar foto"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
                                 </div>
-                              ))}
-                            </div>
+                              </div>
+                            ))}
                           </div>
-                        );
-                      })()}
-                    </div>
-                  )}
+                        </div>
+                      );
+                    })()}
+                  </div>
 
                   {/* Firebase Error Notice if present */}
                   {firebaseErrorNotice && (
@@ -2670,6 +2524,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           {/* TAB 13: MÉTRICAS & BÚSQUEDAS */}
           {activeTab === 'analytics' && (
             <AdminAnalyticsTab />
+          )}
+
+          {/* TAB 14: VENDEDORES & LOCALES */}
+          {activeTab === 'sellers' && (
+            <AdminSellersTab
+              branches={branches}
+              triggerSaveNotice={triggerSaveNotice}
+            />
+          )}
+
+          {/* TAB 15: CONFIGURACIÓN DE NOTIFICACIONES */}
+          {activeTab === 'notifications' && (
+            <AdminNotificationsTab
+              triggerSaveNotice={triggerSaveNotice}
+            />
           )}
 
         </div>
