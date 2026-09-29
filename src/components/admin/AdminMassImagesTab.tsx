@@ -1,5 +1,8 @@
 import React, { useState, useRef } from 'react';
 import { Product } from '../../types';
+import { parseImageFileName, ParsedImageInfo } from '../../utils/imageNamingParser';
+import { compressImage } from '../../utils/imageCompressor';
+import { uploadImageToStorage } from '../../services/firebase';
 import { 
   Images, 
   Upload, 
@@ -13,7 +16,9 @@ import {
   ArrowRight,
   HelpCircle,
   ExternalLink,
-  CheckCircle2
+  CheckCircle2,
+  Layers,
+  Shirt
 } from 'lucide-react';
 
 interface AdminMassImagesTabProps {
@@ -75,80 +80,157 @@ export const AdminMassImagesTab: React.FC<AdminMassImagesTabProps> = ({
   const [activeSubTab, setActiveSubTab] = useState<'instructions' | 'batch_files' | 'drive_links' | 'product_list'>('instructions');
   const [searchQuery, setSearchQuery] = useState('');
   const [driveLinksText, setDriveLinksText] = useState('');
-  const [uploadedFilesPreview, setUploadedFilesPreview] = useState<Array<{ name: string; dataUrl: string; matchedCode?: string; matchedProduct?: Product }>>([]);
+  const [uploadedFilesPreview, setUploadedFilesPreview] = useState<Array<{
+    name: string;
+    dataUrl: string;
+    matchedCode?: string;
+    matchedProduct?: Product;
+    parsedInfo: ParsedImageInfo;
+  }>>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const fileBatchInputRef = useRef<HTMLInputElement>(null);
 
-  // 1. Batch upload multiple files from local disk
-  const handleBatchFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // 1. Batch upload multiple files from local disk (con soporte de código#color#género#posición)
+  const handleBatchFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
     setIsProcessing(true);
     const fileList = Array.from(files) as File[];
-    const previews: Array<{ name: string; dataUrl: string; matchedCode?: string; matchedProduct?: Product }> = [];
 
-    let processedCount = 0;
+    try {
+      const readPromises = fileList.map(async (file) => {
+        try {
+          const parsedInfo = parseImageFileName(file.name);
+          const compressed = await compressImage(file, {
+            maxWidth: 1200,
+            maxHeight: 1200,
+            quality: 0.85,
+          });
 
-    fileList.forEach((file) => {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const dataUrl = event.target?.result as string;
-        const fileNameWithoutExt = file.name.substring(0, file.name.lastIndexOf('.')).toLowerCase();
+          const codeToMatch = (parsedInfo.productCode || '').toLowerCase().trim();
+          const fileNameWithoutExt = file.name.substring(0, file.name.lastIndexOf('.')).toLowerCase();
 
-        // Match against product code or product name
-        const matched = products.find((p) => {
-          const codeLower = p.code.toLowerCase();
-          const nameLower = p.name.toLowerCase();
-          return (
-            codeLower === fileNameWithoutExt ||
-            fileNameWithoutExt.includes(codeLower) ||
-            codeLower.includes(fileNameWithoutExt) ||
-            nameLower.includes(fileNameWithoutExt) ||
-            fileNameWithoutExt.includes(nameLower)
-          );
-        });
+          const matched = products.find((p) => {
+            const codeLower = (p.code || '').toLowerCase().trim();
+            const nameLower = (p.name || '').toLowerCase().trim();
+            if (codeToMatch && codeLower === codeToMatch) return true;
+            return (
+              codeLower === fileNameWithoutExt ||
+              fileNameWithoutExt.includes(codeLower) ||
+              codeLower.includes(fileNameWithoutExt) ||
+              nameLower.includes(codeToMatch || fileNameWithoutExt)
+            );
+          });
 
-        previews.push({
-          name: file.name,
-          dataUrl,
-          matchedCode: matched?.code,
-          matchedProduct: matched,
-        });
+          // Subir a Firebase Storage para obtener URL pública permanente
+          const skuPrefix = (codeToMatch || matched?.code || 'lote').replace(/[^a-zA-Z0-9_-]/g, '_');
+          const publicUrl = await uploadImageToStorage(compressed, `products/${skuPrefix}`);
 
-        processedCount++;
-        if (processedCount === fileList.length) {
-          setUploadedFilesPreview(previews);
-          setIsProcessing(false);
+          return {
+            name: file.name,
+            dataUrl: publicUrl,
+            matchedCode: matched?.code,
+            matchedProduct: matched,
+            parsedInfo,
+          };
+        } catch (err) {
+          console.error('Error subiendo archivo batch a Firebase Storage:', file.name, err);
+          const parsedInfo = parseImageFileName(file.name);
+          return {
+            name: file.name,
+            dataUrl: '',
+            matchedCode: undefined,
+            matchedProduct: undefined,
+            parsedInfo,
+          };
         }
-      };
-      reader.readAsDataURL(file);
-    });
+      });
+
+      const results = await Promise.all(readPromises);
+      setUploadedFilesPreview(results.filter((r) => Boolean(r.dataUrl)));
+    } catch (err) {
+      console.error('Error reading batch files:', err);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
-  // Apply batch files to products
+  // Apply batch files to products (Soporta múltiples fotos por producto, Mujer, Hombre y orden)
   const handleApplyBatchFiles = () => {
     if (uploadedFilesPreview.length === 0) return;
 
-    let updatedCount = 0;
-    const matchMap = new Map<string, string>();
+    // Group files by matched product ID
+    const productGroups = new Map<string, typeof uploadedFilesPreview>();
     uploadedFilesPreview.forEach((item) => {
       if (item.matchedProduct) {
-        matchMap.set(item.matchedProduct.id, item.dataUrl);
+        const prodId = item.matchedProduct.id;
+        const existing = productGroups.get(prodId) || [];
+        existing.push(item);
+        productGroups.set(prodId, existing);
       }
     });
 
+    if (productGroups.size === 0) {
+      alert('No se detectó coincidencia de código de producto en ninguno de los archivos. Asegurate de que el nombre del archivo contenga el código del producto (ej: 111108004#C1#Femenino#1.jpg o 111108004.jpg).');
+      return;
+    }
+
+    let updatedCount = 0;
     const updated = products.map((p) => {
-      const newImg = matchMap.get(p.id);
-      if (newImg) {
-        updatedCount++;
-        return { ...p, image: newImg };
-      }
-      return p;
+      const itemsForProduct = productGroups.get(p.id);
+      if (!itemsForProduct || itemsForProduct.length === 0) return p;
+
+      updatedCount++;
+
+      // Sort items by position if provided
+      const sorted = [...itemsForProduct].sort((a, b) => {
+        const posA = a.parsedInfo.position ?? 999;
+        const posB = b.parsedInfo.position ?? 999;
+        return posA - posB;
+      });
+
+      const womenPhotos: string[] = Array.isArray(p.imagesWomen) ? [...p.imagesWomen] : [];
+      const menPhotos: string[] = Array.isArray(p.imagesMen) ? [...p.imagesMen] : [];
+      const generalPhotos: string[] = Array.isArray(p.images) && p.images.length > 0 
+        ? [...p.images] 
+        : (p.image ? [p.image] : []);
+
+      let hasGenderSpecific = false;
+
+      sorted.forEach((item) => {
+        const gender = item.parsedInfo.gender;
+        if (gender === 'Mujer') {
+          hasGenderSpecific = true;
+          if (!womenPhotos.includes(item.dataUrl)) womenPhotos.push(item.dataUrl);
+        } else if (gender === 'Hombre') {
+          hasGenderSpecific = true;
+          if (!menPhotos.includes(item.dataUrl)) menPhotos.push(item.dataUrl);
+        } else {
+          if (!generalPhotos.includes(item.dataUrl)) generalPhotos.push(item.dataUrl);
+        }
+      });
+
+      const isUnisex = Boolean(p.isUnisex || hasGenderSpecific || (womenPhotos.length > 0 && menPhotos.length > 0));
+
+      const finalGeneral = generalPhotos.length > 0
+        ? generalPhotos
+        : (menPhotos.length > 0 ? menPhotos : womenPhotos);
+
+      const primaryImage = finalGeneral[0] || p.image;
+
+      return {
+        ...p,
+        image: primaryImage,
+        images: finalGeneral,
+        imagesMen: menPhotos,
+        imagesWomen: womenPhotos,
+        isUnisex,
+      };
     });
 
     onUpdateProducts(updated);
-    alert(`¡Éxito! Se actualizaron las imágenes de ${updatedCount} productos del catálogo.`);
+    alert(`¡Éxito! Se actualizaron las fotos de ${updatedCount} productos del catálogo con soporte múltiple y galerías.`);
     triggerSaveNotice();
     setUploadedFilesPreview([]);
   };
@@ -340,10 +422,14 @@ export const AdminMassImagesTab: React.FC<AdminMassImagesTabProps> = ({
                 <p>
                   <strong>Paso 1:</strong> En tu computadora, asegurate de que los nombres de los archivos de imagen contengan el código del producto o parte del nombre.
                 </p>
-                <div className="p-2.5 bg-white border border-[#DCD4C9] rounded-xs font-mono text-[11px] space-y-1">
-                  <div>✓ <span className="text-[#18231C] font-bold">BOM-01.jpg</span> (Se vinculará con Bombacha Pampero)</div>
-                  <div>✓ <span className="text-[#18231C] font-bold">CAM-01.png</span> (Se vinculará con Campera Softshell)</div>
-                  <div>✓ <span className="text-[#18231C] font-bold">CAL-01.webp</span> (Se vinculará con Botas de Seguridad)</div>
+                <div className="p-2.5 bg-white border border-[#DCD4C9] rounded-xs font-mono text-[11px] space-y-1.5">
+                  <div className="text-[#B9522F] font-bold text-[10px] uppercase tracking-wider mb-1">
+                    Formato oficial recomendado: código#color#género#posición
+                  </div>
+                  <div>✓ <span className="text-[#18231C] font-bold">111108004#C1#Femenino#1.jpg</span> (Foto 1 modelo Mujer)</div>
+                  <div>✓ <span className="text-[#18231C] font-bold">111108004#C1#Masculino#2.png</span> (Foto 2 modelo Hombre)</div>
+                  <div>✓ <span className="text-[#18231C] font-bold">BOM-01#1.jpg</span> (Foto 1 general)</div>
+                  <div>✓ <span className="text-[#18231C] font-bold">111108004.jpg</span> (Foto principal directa con solo el código)</div>
                 </div>
                 <p>
                   <strong>Paso 2:</strong> Hacé clic en la pestaña <strong>"1. Subir Carpeta de Fotos desde tu PC"</strong>.
@@ -477,8 +563,15 @@ export const AdminMassImagesTab: React.FC<AdminMassImagesTabProps> = ({
               <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-3">
                 {uploadedFilesPreview.map((item, idx) => (
                   <div key={idx} className="bg-white p-2 rounded-xs border border-[#DCD4C9] space-y-1.5 shadow-2xs">
-                    <div className="aspect-[4/5] bg-neutral-100 rounded-xs overflow-hidden">
+                    <div className="aspect-[4/5] bg-neutral-100 rounded-xs overflow-hidden relative">
                       <img src={item.dataUrl} alt={item.name} className="w-full h-full object-cover" />
+                      {item.parsedInfo.gender && (
+                        <span className={`absolute top-1 left-1 px-1.5 py-0.2 rounded-xs text-[9px] font-bold text-white uppercase ${
+                          item.parsedInfo.gender === 'Mujer' ? 'bg-rose-600' : 'bg-blue-600'
+                        }`}>
+                          {item.parsedInfo.gender} {item.parsedInfo.position ? `#${item.parsedInfo.position}` : ''}
+                        </span>
+                      )}
                     </div>
                     <div className="text-[10px] font-mono text-neutral-500 truncate" title={item.name}>
                       {item.name}

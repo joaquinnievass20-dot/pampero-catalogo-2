@@ -24,11 +24,11 @@ interface UserNavMenuProps {
   onLogout: () => void;
   onOpenAdmin?: () => void;
   onOpenCRM?: () => void;
+  onOpenHub?: () => void;
   onOpenUniformSimulator?: () => void;
   onOpenSizingPortal?: () => void;
   onOpenProfile?: () => void;
   onOpenCatalog?: () => void;
-  showCatalogBtn?: boolean;
   theme?: ThemeConfig;
 }
 
@@ -40,11 +40,11 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
   onLogout,
   onOpenAdmin,
   onOpenCRM,
+  onOpenHub,
   onOpenUniformSimulator,
   onOpenSizingPortal,
   onOpenProfile,
   onOpenCatalog,
-  showCatalogBtn = false,
   theme,
 }) => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -93,80 +93,39 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
   return (
     <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
       
-      {/* 1. Optional Shortcut to Catalog */}
-      {showCatalogBtn && onOpenCatalog && (
+      {/* 1. Mi Pedido Button - EXCLUSIVO PARA CLIENTES Y VISITANTES (Oculto para personal porque es el carrito que arma el cliente) */}
+      {(!userSession || userSession.role === 'client') && (
         <button
+          id="btn-nav-cart-quote"
           type="button"
-          onClick={onOpenCatalog}
-          style={{ backgroundColor: accent }}
-          className="hidden xl:flex items-center gap-1.5 px-3.5 py-2 rounded-xs text-[#18231C] text-[11px] uppercase tracking-[0.2em] font-extrabold transition-all shadow-2xs hover:brightness-105 cursor-pointer shrink-0"
-          title="Ver Catálogo Completo"
-        >
-          <Compass className="w-3.5 h-3.5" />
-          <span>Catálogo</span>
-        </button>
-      )}
-
-      {/* 2. Armador de Uniformes Shortcut (Desktop) */}
-      {onOpenUniformSimulator && (
-        <button
-          type="button"
-          onClick={onOpenUniformSimulator}
-          className="hidden lg:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xs border border-[#18231C]/20 hover:border-[#18231C] text-[#18231C] hover:bg-[#18231C] hover:text-[#F5F2EC] text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer select-none shrink-0"
-          title="Armador de Uniformes Virtual con tu logo bordado"
-        >
-          <Sparkles className="w-3.5 h-3.5 text-[#FDB813]" />
-          <span>Armador</span>
-        </button>
-      )}
-
-      {/* 3. Cotización / Carrito Button - ALWAYS VISIBLE, ACCESSIBLE AND BRANDED */}
-      <button
-        id="btn-nav-cart-quote"
-        type="button"
-        onClick={onOpenCart}
-        style={{
-          backgroundColor: cartCount > 0 ? primaryBg : '#FFFFFF',
-          borderColor: cartCount > 0 ? accent : '#DCD4C9',
-          color: cartCount > 0 ? '#F5F2EC' : '#18231C',
-        }}
-        className="relative px-3 sm:px-3.5 py-2 rounded-xs border text-xs font-bold uppercase tracking-wider flex items-center gap-2 shadow-2xs transition-all hover:brightness-105 shrink-0 cursor-pointer select-none"
-        title="Ver lista de cotización"
-        aria-label="Abrir lista de cotización"
-      >
-        <ShoppingBag 
-          className="w-4 h-4 shrink-0" 
-          style={{ color: cartCount > 0 ? accent : '#18231C' }} 
-        />
-        <span className="hidden sm:inline font-sans text-xs">Cotización</span>
-        <span 
+          onClick={onOpenCart}
           style={{
-            backgroundColor: cartCount > 0 ? accent : '#EAE6DF',
-            color: cartCount > 0 ? '#18231C' : '#6F6860',
+            backgroundColor: cartCount > 0 ? primaryBg : '#FFFFFF',
+            borderColor: cartCount > 0 ? accent : '#DCD4C9',
+            color: cartCount > 0 ? '#F5F2EC' : '#18231C',
           }}
-          className="w-5 h-5 rounded-full text-[10px] font-black flex items-center justify-center shrink-0 shadow-2xs"
+          className="relative px-3 sm:px-3.5 py-2 rounded-xs border text-xs font-bold uppercase tracking-wider flex items-center gap-2 shadow-2xs transition-all hover:brightness-105 shrink-0 cursor-pointer select-none"
+          title="Ver Mi Pedido"
+          aria-label="Abrir Mi Pedido"
         >
-          {cartCount}
-        </span>
-      </button>
-
-      {/* 4. GESTIÓN / CRM Button - ALWAYS VISIBLE AND PROMINENT */}
-      {onOpenCRM && (
-        <button
-          id="btn-nav-open-crm"
-          type="button"
-          onClick={onOpenCRM}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-xs bg-[#B9522F] hover:bg-[#a04424] text-white text-xs font-bold uppercase tracking-wider transition-all shadow-xs cursor-pointer select-none shrink-0"
-          title="Abrir Tablero de Gestión / CRM Pampero"
-        >
-          <LayoutDashboard className="w-3.5 h-3.5 text-white" />
-          <span className="hidden sm:inline">Gestión / CRM</span>
-          <span className="sm:hidden">CRM</span>
-          <span className="w-2 h-2 rounded-full bg-amber-300 animate-pulse ml-0.5"></span>
+          <ShoppingBag 
+            className="w-4 h-4 shrink-0" 
+            style={{ color: cartCount > 0 ? accent : '#18231C' }} 
+          />
+          <span className="hidden sm:inline font-sans text-xs">Mi Pedido</span>
+          <span 
+            style={{
+              backgroundColor: cartCount > 0 ? accent : '#EAE6DF',
+              color: cartCount > 0 ? '#18231C' : '#6F6860',
+            }}
+            className="w-5 h-5 rounded-full text-[10px] font-black flex items-center justify-center shrink-0 shadow-2xs"
+          >
+            {cartCount}
+          </span>
         </button>
       )}
 
-      {/* 5. User Dropdown Menu or INGRESAR Button */}
+      {/* 3. User Dropdown Menu or INGRESAR Button */}
       {userSession ? (
         <div className="relative" ref={dropdownRef}>
           <button
@@ -238,8 +197,28 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
 
               {/* Menu Links */}
               <div className="p-1.5 space-y-0.5">
+                {/* Staff Main Hub (for admin & employee) */}
+                {(userSession.role === 'admin' || userSession.role === 'employee') && onOpenHub && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDropdownOpen(false);
+                      onOpenHub();
+                    }}
+                    className="w-full flex items-center justify-between px-3 py-2 text-left text-xs font-bold text-[#18231C] bg-amber-50/60 hover:bg-amber-100/70 rounded-xs transition-colors cursor-pointer group"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Compass className="w-4 h-4 text-[#B9522F]" />
+                      <span>Menú Principal de Personal</span>
+                    </div>
+                    <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded-xs bg-[#B9522F] text-white">
+                      Inicio
+                    </span>
+                  </button>
+                )}
+
                 {/* CRM Dashboard */}
-                {onOpenCRM && (
+                {(userSession.role === 'admin' || userSession.role === 'employee') && onOpenCRM && (
                   <button
                     type="button"
                     onClick={() => {
@@ -333,7 +312,7 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
                   </button>
                 )}
 
-                {/* Quote history / cart access */}
+                {/* Quote history / cart access - Mi Pedido */}
                 <button
                   type="button"
                   onClick={() => {
@@ -343,8 +322,8 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
                   className="w-full flex items-center justify-between px-3 py-2 text-left text-xs text-[#4A453F] hover:text-[#18231C] hover:bg-[#FAF8F5] rounded-xs transition-colors cursor-pointer"
                 >
                   <div className="flex items-center gap-2">
-                    <FileText className="w-4 h-4 text-[#8C827A]" />
-                    <span>Lista de Cotización</span>
+                    <ShoppingBag className="w-4 h-4 text-[#8C827A]" />
+                    <span>Mi Pedido</span>
                   </div>
                   {cartCount > 0 && (
                     <span 

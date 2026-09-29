@@ -489,36 +489,15 @@ async function startServer() {
     }
   });
 
-  // Upload lookbook campaign images
+  // Upload lookbook campaign images (No local disk write, delegated to Firebase Storage)
   app.post('/api/lookbook/upload', (req, res) => {
     try {
-      const { dataUrl, filename } = req.body;
+      const { dataUrl } = req.body;
       if (!dataUrl) {
         return res.status(400).json({ success: false, error: 'No se envió imagen' });
       }
-
-      let savedUrl = dataUrl;
-      if (typeof dataUrl === 'string' && dataUrl.startsWith('data:image/')) {
-        const matches = dataUrl.match(/^data:image\/([a-zA-Z+]+);base64,(.+)$/);
-        if (matches) {
-          let ext = matches[1];
-          if (ext.includes('jpeg') || ext.includes('jpg')) ext = 'jpg';
-          else if (ext.includes('png')) ext = 'png';
-          else if (ext.includes('webp')) ext = 'webp';
-
-          const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
-          if (!fs.existsSync(uploadsDir)) {
-            fs.mkdirSync(uploadsDir, { recursive: true });
-          }
-          const safeName = `lookbook-${Date.now()}-${Math.floor(Math.random() * 1000)}.${ext}`;
-          const filePath = path.join(uploadsDir, safeName);
-          fs.writeFileSync(filePath, Buffer.from(matches[2], 'base64'));
-          savedUrl = `/uploads/${safeName}`;
-          console.log(`[LOOKBOOK IMAGE SAVED] ${savedUrl}`);
-        }
-      }
-
-      return res.json({ success: true, url: savedUrl });
+      // Delegated to Firebase Storage to prevent data loss on ephemeral Vercel disks
+      return res.json({ success: true, url: dataUrl });
     } catch (err: any) {
       console.error('[LOOKBOOK UPLOAD ERROR]', err);
       res.status(500).json({ success: false, error: err.message });

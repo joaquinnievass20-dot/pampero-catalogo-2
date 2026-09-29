@@ -7,7 +7,9 @@ import {
   LeadVisit, 
   SupplierOrder, 
   SizingCampaign, 
-  EmployeeSizeEntry 
+  EmployeeSizeEntry,
+  Seller,
+  EmployeeAccount
 } from '../../types';
 import { 
   subscribeToCRMOrders, 
@@ -57,6 +59,7 @@ interface CRMViewProps {
   onClose: () => void;
   theme: ThemeConfig;
   onSetSession?: (session: UserSession) => void;
+  onOpenAuth?: () => void;
 }
 
 const STATUS_COLUMNS: { id: CRMOrderStatus; label: string; color: string; bgColor: string }[] = [
@@ -67,22 +70,93 @@ const STATUS_COLUMNS: { id: CRMOrderStatus; label: string; color: string; bgColo
   { id: 'entregado', label: 'Entregado / Cerrado', color: '#3B82F6', bgColor: '#EFF6FF' },
 ];
 
-export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, onSetSession }) => {
+export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, onSetSession, onOpenAuth }) => {
   const [orders, setOrders] = useState<CRMOrder[]>([]);
   const [visits, setVisits] = useState<LeadVisit[]>([]);
   const [supplierOrders, setSupplierOrders] = useState<SupplierOrder[]>([]);
   const [sizingCampaigns, setSizingCampaigns] = useState<SizingCampaign[]>([]);
   const [employeeSizes, setEmployeeSizes] = useState<EmployeeSizeEntry[]>([]);
 
-  // Demo authorization for direct staff access & evaluation
-  const [demoRole, setDemoRole] = useState<'admin' | 'employee' | null>(userSession?.role || null);
-  const [activeStaffUser, setActiveStaffUser] = useState<string>(
-    userSession?.clientData?.fullName || (userSession?.role === 'admin' ? 'Administrador General' : 'Itatí (Maipú)')
-  );
+  // RBAC Access Control: Check if logged in staff has CRM permissions
+  const currentEmployee: EmployeeAccount | null = (() => {
+    if (userSession?.role !== 'employee') return null;
+    try {
+      const saved = localStorage.getItem('pampero_employees');
+      if (saved) {
+        const list = JSON.parse(saved);
+        return list.find((e: any) => 
+          e.email?.toLowerCase() === userSession.email?.toLowerCase() || e.id === userSession.id
+        ) || null;
+      }
+    } catch {}
+    return null;
+  })();
 
-  const [activeTab, setActiveTab] = useState<'board' | 'visits' | 'suppliers' | 'sizing' | 'simulator'>('board');
-  const [sellerFilter, setSellerFilter] = useState('todos');
-  const [branchFilter, setBranchFilter] = useState('todos');
+  const isStaff = userSession?.role === 'admin' || userSession?.role === 'employee';
+  const hasCrmPermission = userSession?.role === 'admin' || (currentEmployee?.allowedTabs ? currentEmployee.allowedTabs.includes('crm') : true);
+  const canAccess = Boolean(isStaff && hasCrmPermission);
+
+  // CRM Visibility Scope
+  const crmScope: 'all' | 'branch_only' | 'own_only' = userSession?.role === 'admin'
+    ? 'all'
+    : (currentEmployee?.crmScope || 'branch_only');
+
+  const assignedBranch = currentEmployee?.branch || 'Maipú';
+  const assignedSellerName = currentEmployee?.sellerName || userSession?.clientData?.fullName || '';
+
+  // Dynamic sellers list from localStorage / store
+  const sellersList: Seller[] = (() => {
+    try {
+      const saved = localStorage.getItem('pampero_sellers');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return [
+      { id: 'sel-1', name: 'Itatí', branch: 'Maipú', active: true },
+      { id: 'sel-2', name: 'Guada', branch: 'Ciudad', active: true },
+      { id: 'sel-3', name: 'Carolina', branch: 'Luján', active: true },
+    ];
+  })();
+
+  const activeStaffUser = userSession?.clientData?.fullName || (userSession?.role === 'admin' ? 'Administrador General' : userSession?.email?.split('@')[0] || 'Personal Pampero');
+
+  const [activeTab, setActiveTab] = useState<'visits' | 'board' | 'suppliers' | 'sizing' | 'simulator'>('visits');
+  const [sellerFilter, setSellerFilter] = useState(() => {
+    if (crmScope === 'own_only' && assignedSellerName) return assignedSellerName.toLowerCase();
+    return 'todos';
+  });
+
+  // Promote visit that passes "Previo a cotización" directly into "Seguimiento empresas"
+  const handlePromoteVisitToCompanyOrder = async (visit: LeadVisit) => {
+    try {
+      const orderId = `COT-VIS-${Date.now().toString().slice(-6)}`;
+      const newOrder: CRMOrder = {
+        id: orderId,
+        date: new Date().toISOString(),
+        quoteId: orderId,
+        clientName: visit.companyName,
+        clientType: 'empresa',
+        status: 'cotizacion',
+        seller: visit.seller || 'Itatí',
+        branch: visit.branch || 'Maipú',
+        totalUnits: visit.estimatedUnits || 1,
+        totalEstimated: 0,
+        observations: `[Avanzado desde Visitas Comerciales] Contacto: ${visit.contactName || '-'} · Tel: ${visit.phone || '-'} · Objetivo: ${visit.objective || '-'} · Notas: ${visit.notes || '-'}`,
+        updatedAt: new Date().toISOString(),
+      };
+
+      await saveCRMOrder(newOrder);
+      setActiveTab('board');
+    } catch (err) {
+      console.error('Error promoviendo visita a orden:', err);
+    }
+  };
+  const [branchFilter, setBranchFilter] = useState(() => {
+    if (crmScope !== 'all' && assignedBranch) return assignedBranch.toLowerCase();
+    return 'todos';
+  });
   const [searchQuery, setSearchQuery] = useState('');
   const [filterDelayedOnly, setFilterDelayedOnly] = useState(false);
   const [showNewOrderModal, setShowNewOrderModal] = useState(false);
@@ -91,33 +165,6 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
   const [selectedOrderForDetail, setSelectedOrderForDetail] = useState<CRMOrder | null>(null);
 
   const accent = theme?.accentColor || '#FDB813';
-
-  // Permission: Admins and Employees or demo authorized
-  const canAccess = userSession?.role === 'admin' || userSession?.role === 'employee' || Boolean(demoRole);
-
-  const handleAuthorizeStaff = (role: 'admin' | 'employee', name: string) => {
-    setDemoRole(role);
-    setActiveStaffUser(name);
-    if (name.includes('Itatí')) setSellerFilter('itatí');
-    else if (name.includes('Guada')) setSellerFilter('guada');
-    else if (name.includes('Carolina')) setSellerFilter('carolina');
-    else setSellerFilter('todos');
-
-    if (onSetSession) {
-      onSetSession({
-        email: role === 'admin' ? 'admin@pamperomaipu.com.ar' : 'itatinievas@pamperomaipu.com.ar',
-        role: role,
-        clientType: 'empresa',
-        clientData: {
-          fullName: name,
-          companyName: 'Pampero Gran Mendoza',
-          cuit: '30-71549821-3',
-          phone: '261 527-6713',
-          deliveryAddress: 'Lateral Este Acceso Sur 1280, Maipú',
-        } as any,
-      });
-    }
-  };
 
   // Real-time Firestore Subscriptions
   useEffect(() => {
@@ -172,10 +219,22 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
   const blockedOrdersCount = orders.filter((o) => Boolean(o.blockReason)).length;
   const totalAlertsCount = delayedOrdersCount + blockedOrdersCount;
 
-  // Filtered orders
+  // Filtered orders with strict multi-role and local permissions enforcement
   const filteredOrders = orders.filter((o) => {
-    const matchesSeller = sellerFilter === 'todos' || (o.seller || '').toLowerCase().includes(sellerFilter);
-    const matchesBranch = branchFilter === 'todos' || (o.branch || '').toLowerCase().includes(branchFilter);
+    // 1. RBAC Branch & Seller Scope Enforcements
+    if (crmScope === 'branch_only' && assignedBranch) {
+      if ((o.branch || '').toLowerCase() !== assignedBranch.toLowerCase()) {
+        return false;
+      }
+    } else if (crmScope === 'own_only' && assignedSellerName) {
+      if ((o.seller || '').toLowerCase() !== assignedSellerName.toLowerCase()) {
+        return false;
+      }
+    }
+
+    // 2. Interactive UI Filters
+    const matchesSeller = sellerFilter === 'todos' || (o.seller || '').toLowerCase().includes(sellerFilter.toLowerCase());
+    const matchesBranch = branchFilter === 'todos' || (o.branch || '').toLowerCase().includes(branchFilter.toLowerCase());
     const matchesSearch =
       !searchQuery ||
       (o.clientName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -197,8 +256,8 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
       clientName: formData.clientName,
       clientType: formData.clientType || 'empresa',
       status: 'cotizacion',
-      seller: formData.seller || 'Sin Asignar',
-      branch: formData.branch || 'Ciudad',
+      seller: formData.seller || assignedSellerName || 'Sin Asignar',
+      branch: formData.branch || assignedBranch || 'Ciudad',
       totalUnits: Number(formData.totalUnits) || 0,
       totalEstimated: Number(formData.totalEstimated) || 0,
       observations: formData.observations || '',
@@ -206,6 +265,53 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
     };
     saveCRMOrder(newOrder);
     setShowNewOrderModal(false);
+  };
+
+  // Safe operator simulator switcher for Admin only
+  const handleSwitchStaffRole = (newRole: 'admin' | 'employee', operatorName: string) => {
+    if (!onSetSession) return;
+    if (newRole === 'admin') {
+      const adminSession: UserSession = {
+        id: 'admin-1',
+        email: 'admin@pamperogm.com.ar',
+        role: 'admin',
+        clientData: {
+          fullName: 'Administrador General',
+          companyName: 'Pampero Gran Mendoza',
+          cuitDni: '30-71234567-8',
+          phone: '261-5276713',
+          address: 'Av. San Martín 1234',
+          city: 'Mendoza',
+          province: 'Mendoza',
+          clientType: 'empresa',
+          isTaxExempt: false,
+        }
+      };
+      localStorage.setItem('pampero_session', JSON.stringify(adminSession));
+      onSetSession(adminSession);
+    } else {
+      const seller = sellersList.find((s) => operatorName.toLowerCase().includes(s.name.toLowerCase())) || sellersList[0];
+      const empSession: UserSession = {
+        id: `emp-${seller?.id || 'demo'}`,
+        email: `${seller?.name.toLowerCase() || 'empleado'}@pamperogm.com.ar`,
+        role: 'employee',
+        clientData: {
+          fullName: `${seller?.name || 'Empleado'} (${seller?.branch || 'Mendoza'})`,
+          companyName: 'Pampero Gran Mendoza',
+          cuitDni: '20-11223344-5',
+          phone: '261-5550000',
+          address: `Sucursal ${seller?.branch || 'Mendoza'}`,
+          city: 'Mendoza',
+          province: 'Mendoza',
+          clientType: 'consumidor_final',
+          isTaxExempt: false,
+        }
+      };
+      (empSession as any).branch = seller?.branch || 'Maipú';
+      (empSession as any).sellerName = seller?.name || 'Itatí';
+      localStorage.setItem('pampero_session', JSON.stringify(empSession));
+      onSetSession(empSession);
+    }
   };
 
   if (!canAccess) {
@@ -223,68 +329,29 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
               Gestión Pampero · CRM
             </h2>
             <p className="text-xs text-[#6F6860] mt-1.5 leading-relaxed">
-              Sistema de seguimiento Kanban de cotizaciones, presupuestos, visitas comerciales, pedidos a fábrica y entregas para el equipo de Mendoza.
+              El Tablero de Gestión y los datos de pedidos, clientes y visitas son estrictamente confidenciales. Debés iniciar sesión con una cuenta de administrador o personal autorizado para acceder.
             </p>
           </div>
 
-          {/* Quick Staff 1-Click Access for evaluation & staff */}
-          <div className="space-y-2 pt-2 text-left">
-            <span className="text-[10px] font-bold text-[#8C827A] uppercase tracking-wider block text-center">
-              Acceso Rápido de Personal:
-            </span>
+          <div className="space-y-3 pt-2">
             <button
               type="button"
-              onClick={() => handleAuthorizeStaff('admin', 'Administrador General')}
-              className="w-full py-2.5 px-4 bg-[#18231C] hover:bg-black text-[#F5F2EC] rounded-xs text-xs font-bold uppercase tracking-wider flex items-center justify-between transition-all cursor-pointer shadow-xs"
+              onClick={() => {
+                onClose();
+                if (onOpenAuth) onOpenAuth();
+              }}
+              className="w-full py-3 px-4 bg-[#18231C] hover:bg-black text-[#F5F2EC] rounded-xs text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer shadow-md transition-all hover:scale-[1.01]"
             >
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                <span>Administrador General</span>
-              </div>
-              <span className="text-[10px] text-[#FDB813] font-mono">Control Total</span>
+              <ShieldCheck className="w-4 h-4 text-emerald-400" />
+              <span>Iniciar Sesión de Personal Pampero</span>
             </button>
-            <button
-              type="button"
-              onClick={() => handleAuthorizeStaff('employee', 'Itatí - Vendedora Maipú')}
-              className="w-full py-2.5 px-4 bg-[#FAF8F5] hover:bg-[#ECE5DC] border border-[#DCD4C9] text-[#18231C] rounded-xs text-xs font-bold uppercase tracking-wider flex items-center justify-between transition-all cursor-pointer"
-            >
-              <div className="flex items-center gap-2">
-                <User className="w-4 h-4 text-[#B9522F]" />
-                <span>Vendedora: Itatí</span>
-              </div>
-              <span className="text-[10px] text-[#6F6860] font-mono">Suc. Maipú</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => handleAuthorizeStaff('employee', 'Guada - Vendedora Ciudad')}
-              className="w-full py-2.5 px-4 bg-[#FAF8F5] hover:bg-[#ECE5DC] border border-[#DCD4C9] text-[#18231C] rounded-xs text-xs font-bold uppercase tracking-wider flex items-center justify-between transition-all cursor-pointer"
-            >
-              <div className="flex items-center gap-2">
-                <User className="w-4 h-4 text-[#B9522F]" />
-                <span>Vendedora: Guada</span>
-              </div>
-              <span className="text-[10px] text-[#6F6860] font-mono">Suc. Ciudad</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => handleAuthorizeStaff('employee', 'Carolina - Vendedora Luján')}
-              className="w-full py-2.5 px-4 bg-[#FAF8F5] hover:bg-[#ECE5DC] border border-[#DCD4C9] text-[#18231C] rounded-xs text-xs font-bold uppercase tracking-wider flex items-center justify-between transition-all cursor-pointer"
-            >
-              <div className="flex items-center gap-2">
-                <User className="w-4 h-4 text-[#B9522F]" />
-                <span>Vendedora: Carolina</span>
-              </div>
-              <span className="text-[10px] text-[#6F6860] font-mono">Suc. Luján</span>
-            </button>
-          </div>
 
-          <div className="pt-2 border-t border-[#DCD4C9]">
             <button
               type="button"
               onClick={onClose}
-              className="text-xs text-[#6F6860] hover:text-[#18231C] underline font-medium cursor-pointer"
+              className="w-full py-2.5 px-4 bg-[#FAF8F5] hover:bg-[#ECE5DC] border border-[#DCD4C9] text-[#18231C] rounded-xs text-xs font-bold uppercase tracking-wider transition-all cursor-pointer"
             >
-              ← Volver al Catálogo Público
+              ← Volver al Inicio
             </button>
           </div>
         </div>
@@ -304,9 +371,9 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
 
           <div className="flex bg-[#ECE5DC] rounded-xs p-1 flex-wrap gap-0.5">
             {[
-              { key: 'board', label: 'Tablero Kanban', icon: LayoutDashboard },
-              { key: 'visits', label: 'Visitas Comerciales', icon: Building2 },
-              { key: 'suppliers', label: 'Pedidos Proveedor', icon: Truck },
+              { key: 'visits', label: '1. Visitas Comerciales', icon: Building2 },
+              { key: 'board', label: '2. Seguimiento Empresas', icon: LayoutDashboard },
+              { key: 'suppliers', label: '3. Pedidos Proveedor', icon: Truck },
               { key: 'sizing', label: 'Portal de Talles', icon: Shirt },
               { key: 'simulator', label: 'Simulador Bordado', icon: Sparkles },
             ].map((tab) => {
@@ -330,24 +397,41 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
         </div>
 
         <div className="flex items-center gap-2.5 sm:gap-3 flex-wrap w-full lg:w-auto justify-between lg:justify-end">
-          {/* Active staff switcher for RBAC demonstration */}
-          <div className="flex items-center gap-1.5 text-xs bg-[#FAF8F5] border border-[#DCD4C9] px-2.5 py-1 rounded-xs">
-            <span className="text-[10px] text-[#8C827A] uppercase font-bold">Operador:</span>
-            <select
-              value={activeStaffUser}
-              onChange={(e) => {
-                const name = e.target.value;
-                const role = name.includes('Admin') ? 'admin' : 'employee';
-                handleAuthorizeStaff(role, name);
-              }}
-              className="font-bold text-[#18231C] bg-transparent outline-none cursor-pointer text-xs"
-            >
-              <option value="Administrador General">Administrador General (Todo)</option>
-              <option value="Itatí - Vendedora Maipú">Itatí (Suc. Maipú)</option>
-              <option value="Guada - Vendedora Ciudad">Guada (Suc. Ciudad)</option>
-              <option value="Carolina - Vendedora Luján">Carolina (Suc. Luján)</option>
-            </select>
-          </div>
+          {/* Active staff switcher / identity badge */}
+          {userSession?.role === 'admin' && onSetSession ? (
+            <div className="flex items-center gap-1.5 text-xs bg-[#FAF8F5] border border-[#DCD4C9] px-2.5 py-1 rounded-xs">
+              <span className="text-[10px] text-[#8C827A] uppercase font-bold">Operador:</span>
+              <select
+                value={activeStaffUser}
+                onChange={(e) => {
+                  const name = e.target.value;
+                  const role = name.includes('Admin') ? 'admin' : 'employee';
+                  handleSwitchStaffRole(role, name);
+                }}
+                className="font-bold text-[#18231C] bg-transparent outline-none cursor-pointer text-xs"
+                title="Simular vista de operador (Exclusivo Administrador)"
+              >
+                <option value="Administrador General">Administrador General (Todo)</option>
+                {sellersList.map((s) => (
+                  <option key={s.id} value={`${s.name} (${s.branch})`}>
+                    {s.name} ({s.branch})
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 text-xs bg-[#FAF8F5] border border-[#DCD4C9] px-2.5 py-1 rounded-xs">
+              <span className="text-[10px] text-[#8C827A] uppercase font-bold">Operador:</span>
+              <span className="font-bold text-[#18231C] text-xs">
+                {activeStaffUser}
+              </span>
+              {assignedBranch && (
+                <span className="text-[10px] bg-blue-50 text-blue-900 border border-blue-200 px-1 py-0.2 rounded-xs font-semibold">
+                  {assignedBranch}
+                </span>
+              )}
+            </div>
+          )}
 
           {/* Notifications Bell */}
           <button
@@ -375,7 +459,7 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
             onClick={onClose}
             className="text-[#6F6860] hover:text-[#18231C] text-xs font-bold underline cursor-pointer"
           >
-            Volver al Catálogo
+            Volver al menú principal
           </button>
         </div>
       </div>
@@ -425,28 +509,51 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
             <div className="flex flex-wrap items-center gap-3 bg-white p-3 rounded-xs border border-[#DCD4C9] shadow-xs">
               <Filter className="w-4 h-4 text-[#8C827A]" />
 
-              <select
-                value={sellerFilter}
-                onChange={(e) => setSellerFilter(e.target.value)}
-                className="text-xs border border-[#DCD4C9] rounded-xs px-2.5 py-1.5 outline-none bg-white font-medium text-[#18231C] cursor-pointer"
-              >
-                <option value="todos">Vendedor: Todos</option>
-                <option value="itatí">Itatí</option>
-                <option value="guada">Guada</option>
-                <option value="carolina">Carolina</option>
-                <option value="gustavo">Gustavo</option>
-              </select>
+              <div className="flex items-center gap-1.5">
+                <select
+                  value={sellerFilter}
+                  disabled={crmScope === 'own_only'}
+                  onChange={(e) => setSellerFilter(e.target.value)}
+                  className={`text-xs border border-[#DCD4C9] rounded-xs px-2.5 py-1.5 outline-none font-medium text-[#18231C] ${
+                    crmScope === 'own_only' ? 'bg-neutral-100 cursor-not-allowed opacity-80' : 'bg-white cursor-pointer'
+                  }`}
+                  title={crmScope === 'own_only' ? 'Restringido a tus pedidos asignados' : 'Filtrar por vendedor'}
+                >
+                  {crmScope !== 'own_only' && <option value="todos">Vendedor: Todos</option>}
+                  {sellersList.map((s) => (
+                    <option key={s.id} value={s.name.toLowerCase()}>
+                      {s.name} ({s.branch})
+                    </option>
+                  ))}
+                </select>
+                {crmScope === 'own_only' && (
+                  <span className="text-[10px] bg-amber-100 text-amber-900 font-bold px-1.5 py-0.5 rounded-xs border border-amber-300">
+                    Solo mis pedidos
+                  </span>
+                )}
+              </div>
 
-              <select
-                value={branchFilter}
-                onChange={(e) => setBranchFilter(e.target.value)}
-                className="text-xs border border-[#DCD4C9] rounded-xs px-2.5 py-1.5 outline-none bg-white font-medium text-[#18231C] cursor-pointer"
-              >
-                <option value="todos">Sucursal: Todas</option>
-                <option value="ciudad">Ciudad</option>
-                <option value="maipú">Maipú</option>
-                <option value="luján">Luján</option>
-              </select>
+              <div className="flex items-center gap-1.5">
+                <select
+                  value={branchFilter}
+                  disabled={crmScope === 'branch_only' || crmScope === 'own_only'}
+                  onChange={(e) => setBranchFilter(e.target.value)}
+                  className={`text-xs border border-[#DCD4C9] rounded-xs px-2.5 py-1.5 outline-none font-medium text-[#18231C] ${
+                    crmScope !== 'all' ? 'bg-neutral-100 cursor-not-allowed opacity-80' : 'bg-white cursor-pointer'
+                  }`}
+                  title={crmScope !== 'all' ? `Restringido a sucursal ${assignedBranch}` : 'Filtrar por sucursal'}
+                >
+                  {crmScope === 'all' && <option value="todos">Sucursal: Todas</option>}
+                  <option value="maipú">Sucursal Maipú</option>
+                  <option value="ciudad">Sucursal Ciudad</option>
+                  <option value="luján">Sucursal Luján</option>
+                </select>
+                {crmScope === 'branch_only' && (
+                  <span className="text-[10px] bg-blue-100 text-blue-900 font-bold px-1.5 py-0.5 rounded-xs border border-blue-300">
+                    Sucursal: {assignedBranch}
+                  </span>
+                )}
+              </div>
 
               <button
                 type="button"
@@ -649,9 +756,13 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
           </div>
         )}
 
-        {/* === TAB 2: VISITAS COMERCIALES === */}
+        {/* === TAB 1: VISITAS COMERCIALES (KANBAN) === */}
         {activeTab === 'visits' && (
-          <CRMVisitsTab visits={visits} accentColor={accent} />
+          <CRMVisitsTab
+            visits={visits}
+            accentColor={accent}
+            onPromoteToCompanies={handlePromoteVisitToCompanyOrder}
+          />
         )}
 
         {/* === TAB 3: PEDIDOS A PROVEEDOR === */}

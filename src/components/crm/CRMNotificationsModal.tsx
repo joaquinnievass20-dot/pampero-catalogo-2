@@ -19,17 +19,44 @@ export const CRMNotificationsModal: React.FC<CRMNotificationsModalProps> = ({
 }) => {
   if (!isOpen) return null;
 
-  // 1. Identify delayed orders (> 7 days in cotizacion or sena_50)
-  const delayedOrders = orders.filter((o) => {
-    const daysOld = Math.floor((Date.now() - new Date(o.date).getTime()) / (1000 * 60 * 60 * 24));
-    return daysOld > 7 && (o.status === 'cotizacion' || o.status === 'sena_50');
-  });
+  // Read configurable notification settings from Admin Panel
+  let settings = {
+    staleQuoteDays: 7,
+    notifyNewQuotes: true,
+    notifyStaleOrders: true,
+    notifyBlockedOrders: true,
+    notifyPendingVisits: true,
+  };
+  try {
+    const saved = localStorage.getItem('pampero_notification_settings');
+    if (saved) settings = { ...settings, ...JSON.parse(saved) };
+  } catch {}
+
+  // 1. Identify delayed orders based on configured staleQuoteDays
+  const delayedOrders = settings.notifyStaleOrders
+    ? orders.filter((o) => {
+        const daysOld = Math.floor((Date.now() - new Date(o.date).getTime()) / (1000 * 60 * 60 * 24));
+        return daysOld >= settings.staleQuoteDays && (o.status === 'cotizacion' || o.status === 'sena_50');
+      })
+    : [];
 
   // 2. Identify blocked orders
-  const blockedOrders = orders.filter((o) => Boolean(o.blockReason));
+  const blockedOrders = settings.notifyBlockedOrders
+    ? orders.filter((o) => Boolean(o.blockReason))
+    : [];
 
   // 3. Identify visits requiring follow-up
-  const pendingVisits = visits.filter((v) => v.status === 'programada' || v.status === 'presupuesto_enviado');
+  const pendingVisits = settings.notifyPendingVisits
+    ? visits.filter((v) => v.status === 'programada' || v.status === 'presupuesto_enviado')
+    : [];
+
+  // 4. Identify recent new quotes (< 2 days)
+  const newQuotes = settings.notifyNewQuotes
+    ? orders.filter((o) => {
+        const daysOld = Math.floor((Date.now() - new Date(o.date).getTime()) / (1000 * 60 * 60 * 24));
+        return daysOld <= 2 && o.status === 'cotizacion';
+      })
+    : [];
 
   const totalAlerts = delayedOrders.length + blockedOrders.length + pendingVisits.length;
 

@@ -13,6 +13,14 @@ import {
   Firestore,
 } from 'firebase/firestore';
 import {
+  getStorage,
+  ref,
+  uploadBytes,
+  uploadString,
+  getDownloadURL,
+  FirebaseStorage,
+} from 'firebase/storage';
+import {
   Product,
   Promotion,
   ThemeConfig,
@@ -21,6 +29,8 @@ import {
   VolumeDiscountRule,
   CategoryHierarchyItem,
   LookbookItem,
+  RegisteredUser,
+  EmployeeAccount,
 } from '../types';
 
 /**
@@ -39,6 +49,7 @@ export const firebaseConfig = {
 };
 
 export let db: Firestore | null = null;
+export let storage: FirebaseStorage | null = null;
 let isInitialized = false;
 
 function createFirestoreInstance(): Firestore | null {
@@ -59,8 +70,21 @@ function createFirestoreInstance(): Firestore | null {
   }
 }
 
+export function getFirebaseStorage(): FirebaseStorage | null {
+  if (storage) return storage;
+  try {
+    const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+    storage = getStorage(app);
+    return storage;
+  } catch (err) {
+    console.warn('[FIREBASE STORAGE] Initialization warning:', err);
+    return null;
+  }
+}
+
 try {
   db = createFirestoreInstance();
+  storage = getFirebaseStorage();
   isInitialized = db !== null;
   if (db) {
     console.log('[FIREBASE] Cloud Firestore connected to project:', firebaseConfig.projectId);
@@ -68,6 +92,7 @@ try {
 } catch (error) {
   console.warn('[FIREBASE] Initialization warning (offline/fallback mode):', error);
   db = null;
+  storage = null;
   isInitialized = false;
 }
 
@@ -80,6 +105,55 @@ export function getFirebaseDb(): Firestore | null {
 
 export function isFirebaseReady(): boolean {
   return (isInitialized && db !== null) || getFirebaseDb() !== null;
+}
+
+/**
+ * Uploads an image File, Blob, or base64 data URL EXCLUSIVELY to Firebase Storage
+ * and returns the public accessible download URL with cache-busting timestamp.
+ */
+export async function uploadImageToStorage(
+  fileOrDataUrl: File | Blob | string,
+  folder: string = 'catalog'
+): Promise<string> {
+  const stor = storage || getFirebaseStorage();
+  if (!stor) {
+    throw new Error('Firebase Storage no disponible.');
+  }
+
+  const timestamp = Date.now();
+  const randomSuffix = Math.random().toString(36).substring(2, 8);
+
+  // If already an external persistent URL (and not base64 / blob / local upload), keep it
+  if (typeof fileOrDataUrl === 'string' && (fileOrDataUrl.startsWith('http://') || fileOrDataUrl.startsWith('https://')) && !fileOrDataUrl.includes('/uploads/')) {
+    return fileOrDataUrl;
+  }
+
+  if (typeof fileOrDataUrl === 'string' && fileOrDataUrl.startsWith('data:image/')) {
+    // Base64 Data URL
+    let ext = 'jpg';
+    if (fileOrDataUrl.includes('image/png')) ext = 'png';
+    else if (fileOrDataUrl.includes('image/webp')) ext = 'webp';
+    const filePath = `${folder}/${timestamp}_${randomSuffix}.${ext}`;
+    const storageRef = ref(stor, filePath);
+    const result = await uploadString(storageRef, fileOrDataUrl, 'data_url');
+    const downloadUrl = await getDownloadURL(result.ref);
+    return `${downloadUrl}${downloadUrl.includes('?') ? '&' : '?'}v=${timestamp}`;
+  } else if (fileOrDataUrl instanceof File || fileOrDataUrl instanceof Blob) {
+    const originalName = (fileOrDataUrl as File).name || 'image.jpg';
+    const cleanName = originalName.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const filePath = `${folder}/${timestamp}_${cleanName}`;
+    const storageRef = ref(stor, filePath);
+    const result = await uploadBytes(storageRef, fileOrDataUrl, {
+      contentType: (fileOrDataUrl as File).type || 'image/jpeg',
+    });
+    const downloadUrl = await getDownloadURL(result.ref);
+    return `${downloadUrl}${downloadUrl.includes('?') ? '&' : '?'}v=${timestamp}`;
+  } else if (typeof fileOrDataUrl === 'string' && fileOrDataUrl.startsWith('/uploads/')) {
+    // Legacy local path migration: cannot re-read file if erased, return as-is
+    return fileOrDataUrl;
+  }
+
+  throw new Error('Formato de imagen inválido para subir a Firebase Storage.');
 }
 
 /**
@@ -254,6 +328,48 @@ export async function deleteFirestoreProductDoc(productId: string): Promise<{ su
     const errorMsg = err?.message || String(err);
     console.error(`[FIREBASE ERROR] No se pudo eliminar el producto ${productId}:`, err);
     return { success: false, error: errorMsg };
+  }
+}
+
+/**
+ * Real-time listener for products collection in Cloud Firestore
+ */
+export function subscribeToFirestoreProducts(
+  onProductsChange: (products: Product[]) => void
+): () => void {
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return () => {};
+  try {
+    const colRef = collection(firestoreDb, 'productos');
+    const unsubscribe = onSnapshot(
+      colRef,
+      (snapshot) => {
+        if (!snapshot.empty) {
+          const products: Product[] = [];
+          const seenIds = new Set<string>();
+          snapshot.forEach((docSnap) => {
+            const data = docSnap.data() as Product;
+            const sku = docSnap.id || data.code || data.id;
+            if (!seenIds.has(sku)) {
+              seenIds.add(sku);
+              products.push({
+                ...data,
+                id: sku,
+                code: data.code || sku,
+              });
+            }
+          });
+          onProductsChange(products);
+        }
+      },
+      (error) => {
+        console.warn('[FIREBASE] Real-time products listener offline warning:', error.message);
+      }
+    );
+    return unsubscribe;
+  } catch (err: any) {
+    console.warn('[FIREBASE] Error attaching real-time products listener:', err?.message || err);
+    return () => {};
   }
 }
 
@@ -634,4 +750,257 @@ export const subscribeToEmployeeSizeEntries = (campaignId: string, onUpdate: (en
     console.warn('Error listening to employee size entries:', error);
   });
 };
+
+// ==========================================
+// REGISTERED USERS PERSISTENCE (Cloud Firestore)
+// ==========================================
+
+export const saveFirestoreUser = async (user: RegisteredUser): Promise<{ success: boolean; error?: string }> => {
+  const firestoreDb = db || getFirebaseDb();
+  const userId = user.id || (user.email ? user.email.replace(/[^a-zA-Z0-9_-]/g, '_') : `user-${Date.now()}`);
+  const sanitizedUser: RegisteredUser = {
+    ...user,
+    id: userId,
+  };
+
+  // Keep local backup as safety
+  try {
+    const local: RegisteredUser[] = JSON.parse(localStorage.getItem('pampero_registered_users') || '[]');
+    const updated = [sanitizedUser, ...local.filter((u) => u.id !== userId && u.email?.toLowerCase() !== user.email?.toLowerCase())];
+    localStorage.setItem('pampero_registered_users', JSON.stringify(updated));
+  } catch {}
+
+  if (!firestoreDb) {
+    return { success: true };
+  }
+
+  try {
+    const docRef = doc(firestoreDb, 'usuarios', userId);
+    const cleaned = JSON.parse(JSON.stringify(sanitizedUser, (k, v) => (v === undefined ? null : v)));
+    await setDoc(docRef, { ...cleaned, updatedAt: new Date().toISOString() }, { merge: true });
+
+    // Also mirror to 'users' collection for international consistency
+    const docRefMirror = doc(firestoreDb, 'users', userId);
+    await setDoc(docRefMirror, { ...cleaned, updatedAt: new Date().toISOString() }, { merge: true }).catch(() => {});
+
+    console.log('[FIREBASE] Registered User Saved in Cloud Firestore:', sanitizedUser.email || userId);
+    return { success: true };
+  } catch (err: any) {
+    console.error('[FIREBASE ERROR] Could not save user to Firestore:', err);
+    return { success: false, error: err?.message || String(err) };
+  }
+};
+
+export const deleteFirestoreUser = async (userId: string): Promise<{ success: boolean; error?: string }> => {
+  try {
+    const local: RegisteredUser[] = JSON.parse(localStorage.getItem('pampero_registered_users') || '[]');
+    const updated = local.filter((u) => u.id !== userId);
+    localStorage.setItem('pampero_registered_users', JSON.stringify(updated));
+  } catch {}
+
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return { success: true };
+
+  try {
+    await deleteDoc(doc(firestoreDb, 'usuarios', userId));
+    await deleteDoc(doc(firestoreDb, 'users', userId)).catch(() => {});
+    console.log('[FIREBASE] User Deleted from Cloud Firestore:', userId);
+    return { success: true };
+  } catch (err: any) {
+    console.error('[FIREBASE ERROR] Could not delete user from Firestore:', err);
+    return { success: false, error: err?.message || String(err) };
+  }
+};
+
+export const subscribeToFirestoreUsers = (
+  onUpdate: (users: RegisteredUser[]) => void
+): () => void => {
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return () => {};
+
+  try {
+    const colRef = collection(firestoreDb, 'usuarios');
+    const unsubscribe = onSnapshot(
+      colRef,
+      (snapshot) => {
+        if (!snapshot.empty) {
+          const list: RegisteredUser[] = [];
+          const seen = new Set<string>();
+          snapshot.docs.forEach((d) => {
+            const data = d.data() as RegisteredUser;
+            const uId = d.id || data.id;
+            const emailKey = (data.email || '').toLowerCase().trim();
+            const dedupeKey = emailKey || uId;
+            if (!seen.has(dedupeKey)) {
+              seen.add(dedupeKey);
+              list.push({
+                ...data,
+                id: uId,
+              });
+            }
+          });
+          try {
+            localStorage.setItem('pampero_registered_users', JSON.stringify(list));
+          } catch {}
+          onUpdate(list);
+        }
+      },
+      (error) => {
+        console.warn('[FIREBASE] Real-time users listener offline notice:', error.message);
+      }
+    );
+    return unsubscribe;
+  } catch (err: any) {
+    console.warn('[FIREBASE] Error subscribing to usuarios:', err?.message || err);
+    return () => {};
+  }
+};
+
+export const seedInitialFirestoreUsersIfEmpty = async (initialUsers: RegisteredUser[]): Promise<void> => {
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb || !Array.isArray(initialUsers) || initialUsers.length === 0) return;
+
+  try {
+    const snap = await getDocs(collection(firestoreDb, 'usuarios'));
+    if (snap.empty) {
+      console.log('[FIREBASE] Seeding initial registered users to Cloud Firestore...');
+      const batch = writeBatch(firestoreDb);
+      initialUsers.forEach((u) => {
+        const uId = u.id || (u.email ? u.email.replace(/[^a-zA-Z0-9_-]/g, '_') : `user-${Math.random().toString(36).slice(2)}`);
+        const docRef = doc(firestoreDb, 'usuarios', uId);
+        const cleaned = JSON.parse(JSON.stringify(u, (k, v) => (v === undefined ? null : v)));
+        batch.set(docRef, { ...cleaned, createdAt: u.createdAt || new Date().toISOString() }, { merge: true });
+      });
+      await batch.commit();
+      console.log('[FIREBASE] Initial registered users seeded successfully.');
+    }
+  } catch (err) {
+    console.warn('[FIREBASE] Error checking or seeding registered users:', err);
+  }
+};
+
+// ==========================================
+// OPERADORES Y LOCALES (Cloud Firestore)
+// ==========================================
+
+export const saveFirestoreEmployee = async (employee: EmployeeAccount): Promise<{ success: boolean; error?: string }> => {
+  const empId = employee.id || `emp-${Date.now()}`;
+  const sanitized: EmployeeAccount = {
+    ...employee,
+    id: empId,
+  };
+
+  // Local mirror
+  try {
+    const local: EmployeeAccount[] = JSON.parse(localStorage.getItem('pampero_employees') || '[]');
+    const updated = [sanitized, ...local.filter((e) => e.id !== empId)];
+    localStorage.setItem('pampero_employees', JSON.stringify(updated));
+  } catch {}
+
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return { success: true };
+
+  try {
+    const docRef = doc(firestoreDb, 'empleados', empId);
+    const cleaned = JSON.parse(JSON.stringify(sanitized, (k, v) => (v === undefined ? null : v)));
+    await setDoc(docRef, { ...cleaned, updatedAt: new Date().toISOString() }, { merge: true });
+
+    // Mirror to 'employees' collection
+    const docRefMirror = doc(firestoreDb, 'employees', empId);
+    await setDoc(docRefMirror, { ...cleaned, updatedAt: new Date().toISOString() }, { merge: true }).catch(() => {});
+
+    console.log('[FIREBASE] Employee / Operator saved in Firestore:', sanitized.name);
+    return { success: true };
+  } catch (err: any) {
+    console.error('[FIREBASE ERROR] Could not save employee to Firestore:', err);
+    return { success: false, error: err?.message || String(err) };
+  }
+};
+
+export const deleteFirestoreEmployee = async (empId: string): Promise<{ success: boolean; error?: string }> => {
+  try {
+    const local: EmployeeAccount[] = JSON.parse(localStorage.getItem('pampero_employees') || '[]');
+    const updated = local.filter((e) => e.id !== empId);
+    localStorage.setItem('pampero_employees', JSON.stringify(updated));
+  } catch {}
+
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return { success: true };
+
+  try {
+    await deleteDoc(doc(firestoreDb, 'empleados', empId));
+    await deleteDoc(doc(firestoreDb, 'employees', empId)).catch(() => {});
+    console.log('[FIREBASE] Employee / Operator deleted from Firestore:', empId);
+    return { success: true };
+  } catch (err: any) {
+    console.error('[FIREBASE ERROR] Could not delete employee from Firestore:', err);
+    return { success: false, error: err?.message || String(err) };
+  }
+};
+
+export const subscribeToFirestoreEmployees = (
+  onUpdate: (employees: EmployeeAccount[]) => void
+): () => void => {
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return () => {};
+
+  try {
+    const colRef = collection(firestoreDb, 'empleados');
+    const unsubscribe = onSnapshot(
+      colRef,
+      (snapshot) => {
+        if (!snapshot.empty) {
+          const list: EmployeeAccount[] = [];
+          const seen = new Set<string>();
+          snapshot.docs.forEach((d) => {
+            const data = d.data() as EmployeeAccount;
+            const empId = d.id || data.id;
+            if (!seen.has(empId)) {
+              seen.add(empId);
+              list.push({
+                ...data,
+                id: empId,
+              });
+            }
+          });
+          try {
+            localStorage.setItem('pampero_employees', JSON.stringify(list));
+          } catch {}
+          onUpdate(list);
+        }
+      },
+      (error) => {
+        console.warn('[FIREBASE] Real-time employees listener offline notice:', error.message);
+      }
+    );
+    return unsubscribe;
+  } catch (err: any) {
+    console.warn('[FIREBASE] Error subscribing to empleados:', err?.message || err);
+    return () => {};
+  }
+};
+
+export const seedInitialFirestoreEmployeesIfEmpty = async (initialEmployees: EmployeeAccount[]): Promise<void> => {
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb || !Array.isArray(initialEmployees) || initialEmployees.length === 0) return;
+
+  try {
+    const snap = await getDocs(collection(firestoreDb, 'empleados'));
+    if (snap.empty) {
+      console.log('[FIREBASE] Seeding initial employees to Cloud Firestore...');
+      const batch = writeBatch(firestoreDb);
+      initialEmployees.forEach((emp) => {
+        const docRef = doc(firestoreDb, 'empleados', emp.id);
+        const cleaned = JSON.parse(JSON.stringify(emp, (k, v) => (v === undefined ? null : v)));
+        batch.set(docRef, { ...cleaned, createdAt: emp.createdAt || new Date().toISOString() }, { merge: true });
+      });
+      await batch.commit();
+      console.log('[FIREBASE] Initial employees seeded successfully.');
+    }
+  } catch (err) {
+    console.warn('[FIREBASE] Error seeding employees to Firestore:', err);
+  }
+};
+
+
 

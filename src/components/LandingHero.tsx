@@ -3,6 +3,7 @@ import { MainCategory, UserSession, ThemeConfig, Promotion, PromotionButton, Cat
 import { PamperoLogo } from './PamperoLogo';
 import { CategoryMenuNav } from './CategoryMenuNav';
 import { UserNavMenu } from './UserNavMenu';
+import { CorporateServicesDropdown } from './CorporateServicesDropdown';
 import { 
   ArrowRight, 
   ChevronLeft, 
@@ -28,6 +29,7 @@ interface LandingHeroProps {
   onLogout: () => void;
   onOpenAdmin?: () => void;
   onOpenCRM?: () => void;
+  onOpenHub?: () => void;
   onOpenUniformSimulator?: () => void;
   onOpenSizingPortal?: () => void;
   onOpenProfile?: () => void;
@@ -66,6 +68,7 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
   onLogout,
   onOpenAdmin,
   onOpenCRM,
+  onOpenHub,
   onOpenUniformSimulator,
   onOpenSizingPortal,
   onOpenProfile,
@@ -324,16 +327,12 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
               onSelectPromo={(tag) => onOpenCatalog(tag, null)}
               theme={theme}
             />
-            {onOpenLookbook && (
-              <button
-                type="button"
-                onClick={onOpenLookbook}
-                className="px-3.5 py-1.5 rounded-xs border border-[#18231C]/30 hover:border-[#18231C] text-[11px] font-bold uppercase tracking-wider text-[#18231C] hover:bg-[#18231C] hover:text-[#F5F2EC] transition-all cursor-pointer select-none"
-                title="Catálogo Interactivo"
-              >
-                Catálogo Interactivo
-              </button>
-            )}
+            <CorporateServicesDropdown
+              onOpenLookbook={onOpenLookbook || (() => {})}
+              onOpenSizingPortal={onOpenSizingPortal || (() => {})}
+              onOpenUniformSimulator={onOpenUniformSimulator || (() => {})}
+              theme={theme}
+            />
           </div>
 
           {/* User / Session State & Quote Cart (Harmonized Dropdown Menu) */}
@@ -345,11 +344,11 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
             onLogout={onLogout}
             onOpenAdmin={onOpenAdmin}
             onOpenCRM={onOpenCRM}
+            onOpenHub={onOpenHub}
             onOpenUniformSimulator={onOpenUniformSimulator}
             onOpenSizingPortal={onOpenSizingPortal}
             onOpenProfile={onOpenProfile}
             onOpenCatalog={() => onOpenCatalog(null, null)}
-            showCatalogBtn={true}
             theme={theme}
           />
         </div>

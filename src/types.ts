@@ -34,15 +34,35 @@ export interface UserSession {
   quoteHistory?: ReceivedQuote[];
 }
 
+export interface Seller {
+  id: string;
+  name: string;
+  branch: string; // 'Maipú' | 'Ciudad' | 'Luján' | 'Todas'
+  phone?: string;
+  email?: string;
+  active: boolean;
+}
+
 export interface EmployeeAccount {
   id: string;
   name: string;
   email: string;
   password?: string;
   role: 'employee';
-  allowedTabs: string[]; // e.g. ['promos', 'mass_images', 'prices', 'coupons', 'variants', 'products', 'branches', 'quotes', 'users', 'analytics']
+  allowedTabs: string[]; // e.g. ['promos', 'mass_images', 'prices', 'coupons', 'variants', 'products', 'branches', 'quotes', 'users', 'analytics', 'crm']
+  branch?: string; // 'Maipú' | 'Ciudad' | 'Luján' | 'Todas'
+  sellerName?: string;
+  crmScope?: 'all' | 'branch_only' | 'own_only'; // 'all': todas las empresas, 'branch_only': sucursal, 'own_only': solo su cartera
   createdAt: string;
   active: boolean;
+}
+
+export interface NotificationSettings {
+  staleQuoteDays: number; // default 7
+  notifyNewQuotes: boolean; // default true
+  notifyStaleOrders: boolean; // default true
+  notifyBlockedOrders: boolean; // default true
+  notifyPendingVisits: boolean; // default true
 }
 
 export interface ReceivedQuote {
