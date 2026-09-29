@@ -83,7 +83,7 @@ export function ensureMasterAdminInitialized(): RegisteredUser[] {
     (u) => u.email?.toLowerCase().trim() !== 'admin@pampero.com' && u.email?.toLowerCase().trim() !== 'admin@pampero.com.ar'
   );
 
-  // Check if joaquinnievass20@gmail.com exists
+  // Check if master admin exists
   const hasMasterAdmin = users.some(
     (u) => u.email?.toLowerCase().trim() === MASTER_ADMIN_EMAIL.toLowerCase()
   );

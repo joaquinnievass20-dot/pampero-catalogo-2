@@ -142,57 +142,8 @@ export const Footer: React.FC<FooterProps> = ({
         </div>
 
         {/* Footer bottom bar */}
-        <div className="pt-6 border-t border-neutral-800 flex flex-col sm:flex-row items-center justify-between gap-4 text-[11px] text-neutral-400">
-          <div className="flex items-center gap-4 flex-wrap">
-            <span>© {new Date().getFullYear()} Pampero Gran Mendoza · Distribución Oficial</span>
-            {onOpenUniformSimulator && (
-              <button
-                type="button"
-                onClick={onOpenUniformSimulator}
-                className="hover:text-white uppercase tracking-wider font-semibold cursor-pointer underline underline-offset-4"
-              >
-                Armador de Uniformes
-              </button>
-            )}
-            {onOpenSizingPortal && (
-              <button
-                type="button"
-                onClick={onOpenSizingPortal}
-                className="hover:text-white uppercase tracking-wider font-semibold cursor-pointer underline underline-offset-4"
-              >
-                Portal de Talles
-              </button>
-            )}
-            {onOpenCRM && (
-              <button
-                type="button"
-                onClick={onOpenCRM}
-                className="hover:text-white uppercase tracking-wider font-bold cursor-pointer underline underline-offset-4 text-amber-400"
-              >
-                Gestión / CRM
-              </button>
-            )}
-            {onOpenLookbook && (
-              <button
-                type="button"
-                onClick={onOpenLookbook}
-                className="hover:text-white uppercase tracking-wider font-semibold cursor-pointer underline underline-offset-4"
-                style={{ color: accent }}
-              >
-                Catálogo Interactivo / Lookbook
-              </button>
-            )}
-          </div>
-
-          <button
-            id="btn-footer-admin-login"
-            type="button"
-            onClick={onOpenAdmin}
-            className="text-neutral-400 hover:text-white flex items-center gap-1.5 transition-colors cursor-pointer"
-          >
-            <ShieldCheck className="w-3.5 h-3.5" style={{ color: iconColor }} />
-            <span>Acceso Administrador (Panel de Control)</span>
-          </button>
+        <div className="pt-6 border-t border-neutral-800 text-center text-xs text-neutral-400">
+          <p>© 2026 Pampero Gran Mendoza - Distribución Oficial</p>
         </div>
       </div>
     </footer>

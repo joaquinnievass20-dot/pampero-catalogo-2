@@ -200,7 +200,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
         role: 'admin',
         clientType: 'empresa',
         clientData: {
-          fullName: 'Administrador Maestro Joaquín Nievas',
+          fullName: 'Administrador General',
           companyName: 'Pampero Indumentaria Oficial',
         },
       };
@@ -315,7 +315,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
         role: 'admin',
         clientType: 'empresa',
         clientData: {
-          fullName: 'Administrador Maestro Joaquín Nievas',
+          fullName: 'Administrador General',
           companyName: 'Pampero Indumentaria Oficial',
         },
       };
@@ -568,7 +568,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
                         type="text"
                         value={adminUser}
                         onChange={(e) => setAdminUser(e.target.value)}
-                        placeholder="admin@pamperogm.com.ar"
+                        placeholder="ejemplo@empresa.com"
                         autoComplete="new-password"
                         required
                         className="w-full px-3.5 py-2.5 bg-white border border-[#DCD4C9] rounded-xs text-sm text-[#18231C] focus:outline-none focus:border-[#FDB813]"

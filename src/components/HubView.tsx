@@ -24,7 +24,7 @@ export const HubView: React.FC<HubViewProps> = ({
 
   const operatorName =
     userSession.clientData?.fullName ||
-    (userSession.role === 'admin' ? 'Administrador General' : userSession.email?.split('@')[0] || 'Operador');
+    (userSession.role === 'admin' ? 'Administrador General' : userSession.email?.split('@')[0] || 'Personal Pampero');
 
   const operatorBranch = (userSession as any).branch || 'Gran Mendoza';
 
@@ -49,7 +49,7 @@ export const HubView: React.FC<HubViewProps> = ({
             />
             <div className="border-l border-white/20 pl-3.5 hidden sm:block">
               <span className="text-[10px] tracking-[0.25em] font-extrabold uppercase text-amber-400 block leading-tight">
-                HUB DE TRABAJO INTERNO
+                MENÚ PRINCIPAL
               </span>
               <span className="text-xs text-[#DCD4C9]/80 font-medium">
                 Pampero Gran Mendoza · Sistema Operativo
@@ -62,7 +62,7 @@ export const HubView: React.FC<HubViewProps> = ({
               <div className="hidden md:block">
                 <p className="text-xs font-bold text-white leading-tight">{operatorName}</p>
                 <p className="text-[10px] text-neutral-400">
-                  {userSession.role === 'admin' ? 'Super Administrador' : `Sucursal: ${operatorBranch}`}
+                  {userSession.role === 'admin' ? 'Administrador' : `Sucursal: ${operatorBranch}`}
                 </p>
               </div>
               <div
@@ -96,10 +96,10 @@ export const HubView: React.FC<HubViewProps> = ({
         <div className="text-center mb-10 sm:mb-14">
           <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-[#18231C] text-amber-400 text-xs font-extrabold uppercase tracking-widest mb-4 shadow-xs">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span>Sesión Autorizada · {userSession.role === 'admin' ? 'Modo Administración' : 'Modo Operador'}</span>
+            <span>{userSession.role === 'admin' ? 'MODO ADMINISTRADOR' : 'MODO EMPLEADO'}</span>
           </div>
           <h1 className="text-2xl sm:text-4xl font-extrabold text-[#18231C] uppercase tracking-wide">
-            Hub de Trabajo Interno
+            Menú Principal
           </h1>
           <p className="text-sm sm:text-base text-[#6F6860] max-w-xl mx-auto mt-2">
             Bienvenido/a, <strong className="text-[#18231C]">{operatorName}</strong>. Seleccioná el área a la que deseás ingresar:

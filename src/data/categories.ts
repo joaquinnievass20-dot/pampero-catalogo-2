@@ -99,7 +99,7 @@ export const INITIAL_CATEGORY_HIERARCHY: CategoryStructure[] = [
   },
   {
     name: 'Venta Corporativa',
-    description: 'Equipamiento mayorista para empresas, petroleras, minería, construcción y servicios.',
+    description: 'Equipamiento corporativo para empresas, petroleras, minería, construcción y servicios.',
     sections: [
       {
         name: 'Empresas & Dotaciones',
