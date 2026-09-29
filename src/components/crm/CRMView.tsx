@@ -252,14 +252,14 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, onOpenHu
     e.dataTransfer.effectAllowed = 'move';
   };
 
-  const handleDrop = (e: React.DragEvent, newStatus: CRMOrderStatus) => {
+  const handleDrop = (e: React.DragEvent, newStatus: CRMOrderStatus | string) => {
     e.preventDefault();
     setDragOverColumn(null);
     const orderId = e.dataTransfer.getData('orderId');
     if (!orderId) return;
     const order = orders.find((o) => o.id === orderId);
     if (order && order.status !== newStatus) {
-      saveCRMOrder({ ...order, status: newStatus, updatedAt: new Date().toISOString() });
+      saveCRMOrder({ ...order, status: newStatus as CRMOrderStatus, updatedAt: new Date().toISOString() });
     }
   };
 

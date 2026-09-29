@@ -385,6 +385,8 @@ export interface FirestoreStoreConfig {
   coupons?: DiscountCoupon[];
   volumeDiscounts?: VolumeDiscountRule[];
   lookbook?: LookbookItem[];
+  sizingPortalConfig?: any;
+  simulatorConfig?: any;
   updatedAt?: string;
 }
 

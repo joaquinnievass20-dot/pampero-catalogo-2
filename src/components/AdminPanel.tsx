@@ -30,6 +30,7 @@ import { AdminQuotesTab } from './admin/AdminQuotesTab';
 import { AdminBulkExcelImportModal } from './admin/AdminBulkExcelImportModal';
 import { AdminNotificationsTab } from './admin/AdminNotificationsTab';
 import { AdminSellersTab } from './admin/AdminSellersTab';
+import { AdminErrorBoundary } from './admin/AdminErrorBoundary';
 import { compressImage } from '../utils/imageCompressor';
 import { parseImageFileName } from '../utils/imageNamingParser';
 import { PamperoLogo } from './PamperoLogo';
@@ -74,7 +75,8 @@ import {
   EyeOff,
   AlertTriangle,
   AlertCircle,
-  Bell
+  Bell,
+  Shirt
 } from 'lucide-react';
 
 export type AdminTabKey = 
@@ -119,11 +121,13 @@ interface AdminPanelProps {
   onUpdateCategories?: (newCats: CategoryHierarchyItem[]) => void;
   volumeDiscounts?: QuantityDiscountRule[];
   onUpdateVolumeDiscounts?: (newRules: QuantityDiscountRule[]) => void;
+  onOpenHub?: () => void;
 }
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({
   isOpen = true,
   onClose,
+  onOpenHub,
   products,
   onUpdateProducts,
   onDeleteProduct,
@@ -163,7 +167,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   const isTabVisible = (tabKey: AdminTabKey) => {
     if (!isEmployee) return true;
-    if (tabKey === 'security' || tabKey === 'employees') return false;
+    if (tabKey === 'security') return false;
     return employeePermissions.includes(tabKey);
   };
 
@@ -200,12 +204,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     sizes: string;
     price: number | '';
     corporatePrice: number | '';
+    minSize?: string;
+    maxSize?: string;
   }>({
     suffix: '-1',
     sizeRangeLabel: 'Talles 50 al 58',
     sizes: '50, 52, 54, 56, 58',
     price: '',
     corporatePrice: '',
+    minSize: '50',
+    maxSize: '58',
   });
   const [productForm, setProductForm] = useState<Partial<Product>>({
     code: '',
@@ -1043,6 +1051,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
         {/* Tab Content Body */}
         <div className="flex-1 overflow-y-auto bg-neutral-50/50">
+          <AdminErrorBoundary key={activeTab} tabName={activeTab}>
           
           {/* TAB 1: PROMOCIONES */}
           {activeTab === 'promos' && (
@@ -1594,6 +1603,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                             setNewRangeForm({
                               suffix: `-${nextSuffixNum + 1}`,
                               sizeRangeLabel: 'Talles 60 al 66',
+                              sizes: '60, 62, 64, 66',
                               minSize: '60',
                               maxSize: '66',
                               price: '',
@@ -2588,6 +2598,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             />
           )}
 
+          </AdminErrorBoundary>
         </div>
       </div>
 

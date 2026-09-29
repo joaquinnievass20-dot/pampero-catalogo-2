@@ -54,7 +54,7 @@ async function startServer() {
 
   let catalogUpdatedAt = new Date().toISOString();
 
-  function readJsonSafe<T>(filePath: string, fallback: T): T {
+  function readJsonSafe<T = any>(filePath: string, fallback: T): any {
     try {
       if (fs.existsSync(filePath)) {
         const raw = fs.readFileSync(filePath, 'utf-8');

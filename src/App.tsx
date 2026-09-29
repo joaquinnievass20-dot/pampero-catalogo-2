@@ -877,7 +877,7 @@ export default function App() {
             onSearchChange={setSearchQuery}
             onViewProduct={handleSelectProduct}
             onViewProductDetail={handleSelectProduct}
-            onQuickAdd={(prod) => handleAddToCart(prod, 1)}
+            onQuickAdd={(prod: Product) => handleAddToCart(prod, 1)}
             onBackToHome={() => setViewMode('landing')}
             activePromoFilter={activePromoFilter}
             onClearPromoFilter={() => setActivePromoFilter(null)}

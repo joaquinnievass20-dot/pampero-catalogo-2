@@ -136,6 +136,8 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
           nextStep: getField(['Próximo Paso', 'Proximo Paso', 'Acción']) || 'Enviar catálogo digital',
           estimatedUnits: Number(getField(['Prendas', 'Unidades', 'Cantidad Estimada'])) || 20,
           notes: getField(['Notas', 'Observaciones', 'Detalle']) || 'Importado masivamente vía Excel',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
         };
 
         await saveLeadVisit(newVisit);
