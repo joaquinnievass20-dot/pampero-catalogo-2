@@ -178,7 +178,6 @@ export const AuthView: React.FC<AuthViewProps> = ({
     const legacyPass = localStorage.getItem('pampero_admin_pass');
 
     const validAdminUser = 
-      emailClean === 'joaquinnievass20@gmail.com' ||
       emailClean === MASTER_ADMIN_EMAIL.toLowerCase() ||
       emailClean === savedAdminEmail.toLowerCase() ||
       emailClean === 'admin' ||
@@ -294,7 +293,6 @@ export const AuthView: React.FC<AuthViewProps> = ({
 
     // Check against authorized admin credentials
     const validUser = 
-      userClean === 'joaquinnievass20@gmail.com' ||
       userClean === MASTER_ADMIN_EMAIL.toLowerCase() ||
       userClean === savedEmail.toLowerCase() ||
       userClean === 'admin' ||
@@ -570,7 +568,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
                         type="text"
                         value={adminUser}
                         onChange={(e) => setAdminUser(e.target.value)}
-                        placeholder="joaquinnievass20@gmail.com"
+                        placeholder="admin@pamperogm.com.ar"
                         autoComplete="new-password"
                         required
                         className="w-full px-3.5 py-2.5 bg-white border border-[#DCD4C9] rounded-xs text-sm text-[#18231C] focus:outline-none focus:border-[#FDB813]"

@@ -89,8 +89,9 @@ export type AdminTabKey =
   | 'variants' 
   | 'branches' 
   | 'quotes' 
-  | 'employees' 
   | 'sellers'
+  | 'sizing'
+  | 'simulator'
   | 'notifications'
   | 'users' 
   | 'security' 
@@ -922,25 +923,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 </button>
               )}
 
-              {/* Operadores y Locales (Solo Administrador) */}
-              {isTabVisible('employees') && (
-                <button
-                  id="admin-tab-operators"
-                  onClick={() => setActiveTab('employees')}
-                  style={{
-                    borderTopColor: activeTab === 'employees' ? activeBorderColor : 'transparent',
-                  }}
-                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                    activeTab === 'employees'
-                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
-                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
-                  }`}
-                >
-                  <Building2 className="w-4 h-4" style={{ color: iconColor }} />
-                  Operadores y Locales
-                </button>
-              )}
-
               {/* Vendedores & Locales */}
               {isTabVisible('sellers') && (
                 <button
@@ -957,6 +939,44 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 >
                   <Users className="w-4 h-4" style={{ color: iconColor }} />
                   Vendedores & Locales
+                </button>
+              )}
+
+              {/* Configuración Portal de Talles */}
+              {isTabVisible('sizing') && (
+                <button
+                  id="admin-tab-sizing-config"
+                  onClick={() => setActiveTab('sizing')}
+                  style={{
+                    borderTopColor: activeTab === 'sizing' ? activeBorderColor : 'transparent',
+                  }}
+                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                    activeTab === 'sizing'
+                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
+                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
+                  }`}
+                >
+                  <Shirt className="w-4 h-4" style={{ color: iconColor }} />
+                  Portal de Talles
+                </button>
+              )}
+
+              {/* Configuración Simulador de Bordado */}
+              {isTabVisible('simulator') && (
+                <button
+                  id="admin-tab-simulator-config"
+                  onClick={() => setActiveTab('simulator')}
+                  style={{
+                    borderTopColor: activeTab === 'simulator' ? activeBorderColor : 'transparent',
+                  }}
+                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                    activeTab === 'simulator'
+                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
+                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
+                  }`}
+                >
+                  <Sparkles className="w-4 h-4" style={{ color: iconColor }} />
+                  Simulador Bordado
                 </button>
               )}
 
@@ -1627,7 +1647,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         </label>
                         <input
                           type="text"
-                          placeholder="Ej: 38, 40, 42 o S, M, L, XL"
+                          placeholder="Ej: CH, M, G, MG, XG o 38, 40, 42"
                           value={standardSizesInput}
                           onChange={(e) => {
                             const val = e.target.value;
@@ -1645,10 +1665,25 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           className="w-full px-3 py-1.5 border border-[#DCD4C9] rounded-xs text-xs bg-white font-medium focus:border-[#18231C] outline-none"
                         />
                         <span className="text-[10px] text-[#6F6860] block mt-0.5">
-                          Permite letras, números, comas y espacios (ej: "38, 40, 42" o "S, M, L, XL").
+                          Permite letras en escala español (CH, M, G, MG, XG), números, comas y espacios.
                         </span>
                         {/* Quick Presets */}
                         <div className="flex flex-wrap gap-1 mt-1.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const v = 'CH, M, G, MG, XG, XXG';
+                              setStandardSizesInput(v);
+                              setProductForm({
+                                ...productForm,
+                                standardSizes: v,
+                                availableSizes: v.split(',').map((s) => s.trim()),
+                              });
+                            }}
+                            className="text-[9px] px-2 py-0.5 bg-amber-100 hover:bg-amber-200 text-amber-950 font-bold rounded-xs cursor-pointer border border-amber-300"
+                          >
+                            + Letras Español (CH a XXG)
+                          </button>
                           <button
                             type="button"
                             onClick={() => {
@@ -1677,7 +1712,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                             }}
                             className="text-[9px] px-1.5 py-0.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 rounded-xs font-medium cursor-pointer"
                           >
-                            + Letras (S a XXL)
+                            + Letras Internacional (S a XXL)
                           </button>
                           <button
                             type="button"
@@ -2512,9 +2547,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             <AdminQuotesTab />
           )}
 
-          {/* TAB 11: GESTIÓN DE EMPLEADOS & PERMISOS */}
-          {activeTab === 'employees' && (
-            <AdminEmployeesTab
+          {/* TAB 11: CONFIGURACIÓN PORTAL DE TALLES */}
+          {activeTab === 'sizing' && (
+            <AdminSizingPortalConfigTab
+              triggerSaveNotice={triggerSaveNotice}
+            />
+          )}
+
+          {/* TAB 12: CONFIGURACIÓN SIMULADOR DE BORDADO */}
+          {activeTab === 'simulator' && (
+            <AdminUniformSimulatorConfigTab
               triggerSaveNotice={triggerSaveNotice}
             />
           )}

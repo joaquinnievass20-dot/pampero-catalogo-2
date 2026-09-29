@@ -68,7 +68,8 @@ import {
   Search,
   Sparkles,
   Shirt,
-  LayoutDashboard
+  LayoutDashboard,
+  Compass
 } from 'lucide-react';
 
 export default function App() {
@@ -565,7 +566,7 @@ export default function App() {
   const handleLogin = (session: UserSession) => {
     setUserSession(session);
     localStorage.setItem('pampero_user_session', JSON.stringify(session));
-    if (session.role === 'admin' || session.role === 'employee' || session.email?.toLowerCase() === 'joaquinnievass20@gmail.com') {
+    if (session.role === 'admin' || session.role === 'employee' || session.email?.toLowerCase().includes('admin')) {
       setViewMode('hub');
     } else {
       setViewMode('catalog');
@@ -927,7 +928,14 @@ export default function App() {
             onUpdateCoupons={handleUpdateCoupons}
             onUpdateLookbook={handleUpdateLookbook}
             userSession={userSession}
-            onClose={() => setViewMode('catalog')}
+            onClose={() => {
+              if (userSession?.role === 'admin' || userSession?.role === 'employee') {
+                setViewMode('hub');
+              } else {
+                setViewMode('catalog');
+              }
+            }}
+            onOpenHub={() => setViewMode('hub')}
             onSelectPromoFilter={(promo) => {
               setActivePromoFilter(promo.tagFilter || promo.title);
               setViewMode('catalog');
@@ -940,7 +948,14 @@ export default function App() {
           {viewMode === 'crm' && (
             <CRMView
               userSession={userSession}
-              onClose={() => setViewMode('landing')}
+              onClose={() => {
+                if (userSession?.role === 'admin' || userSession?.role === 'employee') {
+                  setViewMode('hub');
+                } else {
+                  setViewMode('landing');
+                }
+              }}
+              onOpenHub={() => setViewMode('hub')}
               theme={theme}
               onSetSession={(s) => setUserSession(s)}
               onOpenAuth={() => openAuthScreen('admin', 'empresa')}
@@ -994,22 +1009,35 @@ export default function App() {
         onOpenLookbook={() => setViewMode('lookbook')}
       />
 
-      {/* Admin Floating Quick Access Button */}
-      {userSession?.role === 'admin' && viewMode !== 'admin' && (
-        <button
-          id="btn-admin-floating-quick"
-          type="button"
-          onClick={() => setViewMode('admin')}
-          className="fixed bottom-6 left-6 z-40 px-4 py-2.5 rounded-xs bg-[#18231C] text-[#F5F2EC] border-2 shadow-2xl hover:bg-black transition-all flex items-center gap-2 text-xs font-bold uppercase tracking-wider group"
-          style={{ borderColor: theme.accentColor || '#FDB813' }}
-          title="Panel de Control de Administrador"
-        >
-          <Settings 
-            className="w-4 h-4 group-hover:rotate-45 transition-transform" 
-            style={{ color: theme.accentColor || '#FDB813' }} 
-          />
-          <span>Panel de Control</span>
-        </button>
+      {/* Staff Floating Quick Access Button (Menú Principal as Primary) */}
+      {(userSession?.role === 'admin' || userSession?.role === 'employee') && viewMode !== 'hub' && (
+        <div className="fixed bottom-6 left-6 z-40 flex items-center gap-1.5 shadow-2xl">
+          <button
+            id="btn-admin-floating-quick"
+            type="button"
+            onClick={() => setViewMode('hub')}
+            className="px-4 py-2.5 rounded-xs bg-[#18231C] text-[#F5F2EC] border-2 shadow-2xl hover:bg-black transition-all flex items-center gap-2 text-xs font-bold uppercase tracking-wider group cursor-pointer"
+            style={{ borderColor: theme.accentColor || '#FDB813' }}
+            title="Ir al Menú Principal de Personal"
+          >
+            <Compass 
+              className="w-4 h-4 group-hover:rotate-45 transition-transform" 
+              style={{ color: theme.accentColor || '#FDB813' }} 
+            />
+            <span>Menú Principal</span>
+          </button>
+          {userSession?.role === 'admin' && viewMode !== 'admin' && (
+            <button
+              type="button"
+              onClick={() => setViewMode('admin')}
+              className="px-3 py-2.5 rounded-xs bg-white text-[#18231C] border border-[#DCD4C9] hover:bg-[#FAF8F5] transition-all flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider cursor-pointer shadow-md"
+              title="Abrir Panel de Control"
+            >
+              <Settings className="w-3.5 h-3.5 text-[#6F6860]" />
+              <span className="hidden sm:inline">Panel</span>
+            </button>
+          )}
+        </div>
       )}
 
       {/* Floating WhatsApp Contact Button */}
@@ -1044,6 +1072,14 @@ export default function App() {
         userSession={userSession}
         onUpdateSession={(updatedSession) => {
           setUserSession(updatedSession);
+        }}
+        onOpenHub={() => {
+          setIsProfileOpen(false);
+          setViewMode('hub');
+        }}
+        onOpenAdmin={() => {
+          setIsProfileOpen(false);
+          setViewMode('admin');
         }}
         theme={theme}
       />
