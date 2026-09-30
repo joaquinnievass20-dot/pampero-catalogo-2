@@ -31,6 +31,7 @@ import {
   LookbookItem,
   RegisteredUser,
   EmployeeAccount,
+  CRMExpense,
 } from '../types';
 
 /**
@@ -117,7 +118,7 @@ export async function uploadImageToStorage(
 ): Promise<string> {
   const stor = storage || getFirebaseStorage();
   if (!stor) {
-    throw new Error('Firebase Storage no disponible.');
+    throw new Error('Firebase Storage no disponible. Verificá la configuración del proyecto Firebase.');
   }
 
   const timestamp = Date.now();
@@ -135,18 +136,23 @@ export async function uploadImageToStorage(
     else if (fileOrDataUrl.includes('image/webp')) ext = 'webp';
     const filePath = `${folder}/${timestamp}_${randomSuffix}.${ext}`;
     const storageRef = ref(stor, filePath);
-    const result = await uploadString(storageRef, fileOrDataUrl, 'data_url');
-    const downloadUrl = await getDownloadURL(result.ref);
+    const uploadOp = async () => {
+      const result = await uploadString(storageRef, fileOrDataUrl, 'data_url');
+      return await getDownloadURL(result.ref);
+    };
+    const downloadUrl = await withTimeout(uploadOp(), 15000);
     return `${downloadUrl}${downloadUrl.includes('?') ? '&' : '?'}v=${timestamp}`;
   } else if (fileOrDataUrl instanceof File || fileOrDataUrl instanceof Blob) {
     const originalName = (fileOrDataUrl as File).name || 'image.jpg';
     const cleanName = originalName.replace(/[^a-zA-Z0-9._-]/g, '_');
     const filePath = `${folder}/${timestamp}_${cleanName}`;
     const storageRef = ref(stor, filePath);
-    const result = await uploadBytes(storageRef, fileOrDataUrl, {
-      contentType: (fileOrDataUrl as File).type || 'image/jpeg',
-    });
-    const downloadUrl = await getDownloadURL(result.ref);
+    const contentType = (fileOrDataUrl as File).type || 'image/jpeg';
+    const uploadOp = async () => {
+      const result = await uploadBytes(storageRef, fileOrDataUrl, { contentType });
+      return await getDownloadURL(result.ref);
+    };
+    const downloadUrl = await withTimeout(uploadOp(), 20000);
     return `${downloadUrl}${downloadUrl.includes('?') ? '&' : '?'}v=${timestamp}`;
   } else if (typeof fileOrDataUrl === 'string' && fileOrDataUrl.startsWith('/uploads/')) {
     // Legacy local path migration: cannot re-read file if erased, return as-is
@@ -1003,6 +1009,94 @@ export const seedInitialFirestoreEmployeesIfEmpty = async (initialEmployees: Emp
     console.warn('[FIREBASE] Error seeding employees to Firestore:', err);
   }
 };
+
+// ==========================================
+// CRM EXPENSES (CONTROL DE COSTOS)
+// Collection: crm_expenses
+// Strictly Cloud Firestore SDK without localStorage or fetch
+// ==========================================
+
+export async function saveCRMExpense(expense: CRMExpense): Promise<{ success: boolean; id: string; error?: string }> {
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) {
+    throw new Error('Cloud Firestore no está disponible para registrar el gasto.');
+  }
+  try {
+    const expenseId = expense.id || `exp-${Date.now()}`;
+    const docRef = doc(firestoreDb, 'crm_expenses', expenseId);
+    const cleaned = JSON.parse(
+      JSON.stringify(
+        {
+          ...expense,
+          id: expenseId,
+          amount: Number(expense.amount) || 0,
+          updatedAt: new Date().toISOString(),
+          createdAt: expense.createdAt || new Date().toISOString(),
+        },
+        (k, v) => (v === undefined ? null : v)
+      )
+    );
+    await setDoc(docRef, cleaned, { merge: true });
+    return { success: true, id: expenseId };
+  } catch (err: any) {
+    const errorMsg = err?.message || String(err);
+    console.error('[FIREBASE ERROR] No se pudo guardar el gasto en crm_expenses:', err);
+    throw new Error(errorMsg);
+  }
+}
+
+export async function deleteCRMExpense(expenseId: string): Promise<{ success: boolean; error?: string }> {
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) {
+    throw new Error('Cloud Firestore no está disponible.');
+  }
+  try {
+    const docRef = doc(firestoreDb, 'crm_expenses', expenseId);
+    await deleteDoc(docRef);
+    return { success: true };
+  } catch (err: any) {
+    const errorMsg = err?.message || String(err);
+    console.error('[FIREBASE ERROR] No se pudo eliminar el gasto de crm_expenses:', err);
+    throw new Error(errorMsg);
+  }
+}
+
+export function subscribeToCRMExpenses(
+  onUpdate: (expenses: CRMExpense[]) => void,
+  onError?: (err: Error) => void
+): () => void {
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return () => {};
+
+  try {
+    const colRef = collection(firestoreDb, 'crm_expenses');
+    const unsubscribe = onSnapshot(
+      colRef,
+      (snapshot) => {
+        const list: CRMExpense[] = [];
+        snapshot.forEach((d) => {
+          const data = d.data() as CRMExpense;
+          list.push({
+            ...data,
+            id: d.id,
+            amount: Number(data.amount) || 0,
+          });
+        });
+        // Sort by date descending
+        list.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+        onUpdate(list);
+      },
+      (error) => {
+        console.warn('[FIREBASE] Real-time crm_expenses listener error:', error.message);
+        if (onError) onError(error);
+      }
+    );
+    return unsubscribe;
+  } catch (err: any) {
+    console.warn('[FIREBASE] Error subscribing to crm_expenses:', err);
+    return () => {};
+  }
+}
 
 
 

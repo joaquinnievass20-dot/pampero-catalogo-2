@@ -30,7 +30,6 @@ import { AdminQuotesTab } from './admin/AdminQuotesTab';
 import { AdminBulkExcelImportModal } from './admin/AdminBulkExcelImportModal';
 import { AdminNotificationsTab } from './admin/AdminNotificationsTab';
 import { AdminSellersTab } from './admin/AdminSellersTab';
-import { AdminErrorBoundary } from './admin/AdminErrorBoundary';
 import { compressImage } from '../utils/imageCompressor';
 import { parseImageFileName } from '../utils/imageNamingParser';
 import { PamperoLogo } from './PamperoLogo';
@@ -75,8 +74,7 @@ import {
   EyeOff,
   AlertTriangle,
   AlertCircle,
-  Bell,
-  Shirt
+  Bell
 } from 'lucide-react';
 
 export type AdminTabKey = 
@@ -92,8 +90,6 @@ export type AdminTabKey =
   | 'branches' 
   | 'quotes' 
   | 'sellers'
-  | 'sizing'
-  | 'simulator'
   | 'notifications'
   | 'users' 
   | 'security' 
@@ -121,13 +117,11 @@ interface AdminPanelProps {
   onUpdateCategories?: (newCats: CategoryHierarchyItem[]) => void;
   volumeDiscounts?: QuantityDiscountRule[];
   onUpdateVolumeDiscounts?: (newRules: QuantityDiscountRule[]) => void;
-  onOpenHub?: () => void;
 }
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({
   isOpen = true,
   onClose,
-  onOpenHub,
   products,
   onUpdateProducts,
   onDeleteProduct,
@@ -204,16 +198,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     sizes: string;
     price: number | '';
     corporatePrice: number | '';
-    minSize?: string;
-    maxSize?: string;
   }>({
     suffix: '-1',
     sizeRangeLabel: 'Talles 50 al 58',
     sizes: '50, 52, 54, 56, 58',
     price: '',
     corporatePrice: '',
-    minSize: '50',
-    maxSize: '58',
   });
   const [productForm, setProductForm] = useState<Partial<Product>>({
     code: '',
@@ -242,73 +232,107 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   const [activePhotoGalleryTab, setActivePhotoGalleryTab] = useState<'general' | 'men' | 'women'>('general');
   const [isUploadingPhotos, setIsUploadingPhotos] = useState(false);
+  const [photoUploadError, setPhotoUploadError] = useState<string | null>(null);
 
-  // Multi-photo upload processor with automatic compression, filename parsing, and categorization
+  // Multi-photo upload processor: Subida directa a Firebase Storage (uploadBytes/getDownloadURL)
+  // Actualización automática del documento en Cloud Firestore con try/catch robusto
   const handleUploadPhotos = async (
     filesList: FileList | File[],
     targetScope: 'general' | 'men' | 'women' | 'auto' = 'auto'
   ) => {
     if (!filesList || filesList.length === 0) return;
     setIsUploadingPhotos(true);
-    const files = Array.from(filesList);
+    setPhotoUploadError(null);
 
+    const files = Array.from(filesList);
     const newGeneral: string[] = [];
     const newMen: string[] = [];
     const newWomen: string[] = [];
+    const targetSku = (productForm.code || (editingProduct ? editingProduct.code : '') || 'producto').trim();
+    const skuPrefix = targetSku.replace(/[^a-zA-Z0-9_-]/g, '_');
 
-    for (const file of files) {
-      try {
-        const compressed = await compressImage(file, {
-          maxWidth: 1200,
-          maxHeight: 1200,
-          quality: 0.82,
-        });
+    try {
+      for (const file of files) {
+        try {
+          // Subida DIRECTA a Firebase Storage usando uploadBytes y getDownloadURL
+          const publicUrl = await uploadImageToStorage(file, `products/${skuPrefix}`);
 
-        // Subir EXCLUSIVAMENTE a Firebase Storage para sincronizar con todos los usuarios
-        const skuPrefix = (productForm.code || (editingProduct ? editingProduct.code : '') || 'producto').replace(/[^a-zA-Z0-9_-]/g, '_');
-        const publicUrl = await uploadImageToStorage(compressed, `products/${skuPrefix}`);
+          const parsed = parseImageFileName(file.name);
+          let determined = targetScope;
 
-        const parsed = parseImageFileName(file.name);
-        let determined = targetScope;
-
-        if (determined === 'auto') {
-          if (parsed.gender === 'Mujer') {
-            determined = 'women';
-          } else if (parsed.gender === 'Hombre') {
-            determined = 'men';
-          } else {
-            determined = activePhotoGalleryTab;
+          if (determined === 'auto') {
+            if (parsed.gender === 'Mujer') {
+              determined = 'women';
+            } else if (parsed.gender === 'Hombre') {
+              determined = 'men';
+            } else {
+              determined = activePhotoGalleryTab;
+            }
           }
-        }
 
-        if (determined === 'women') {
-          newWomen.push(publicUrl);
-        } else if (determined === 'men') {
-          newMen.push(publicUrl);
-        } else {
-          newGeneral.push(publicUrl);
+          if (determined === 'women') {
+            newWomen.push(publicUrl);
+          } else if (determined === 'men') {
+            newMen.push(publicUrl);
+          } else {
+            newGeneral.push(publicUrl);
+          }
+        } catch (fileErr: any) {
+          console.error('[CARGA FOTO] Error al procesar archivo:', file.name, fileErr);
+          throw new Error(`Error al subir la imagen "${file.name}" a Firebase Storage: ${fileErr?.message || fileErr}`);
         }
-      } catch (err) {
-        console.error('Error processing image:', file.name, err);
       }
-    }
 
-    setProductForm((prev) => {
-      const updatedGeneral = [...(prev.images || (prev.image ? [prev.image] : [])), ...newGeneral];
-      const updatedMen = [...(prev.imagesMen || []), ...newMen];
-      const updatedWomen = [...(prev.imagesWomen || []), ...newWomen];
-      const primary = prev.image || updatedGeneral[0] || updatedMen[0] || updatedWomen[0] || '';
+      // Preparar nuevos arreglos de fotos
+      const updatedGeneral = [...(productForm.images || (productForm.image ? [productForm.image] : [])), ...newGeneral];
+      const updatedMen = [...(productForm.imagesMen || []), ...newMen];
+      const updatedWomen = [...(productForm.imagesWomen || []), ...newWomen];
+      const primary = productForm.image || updatedGeneral[0] || updatedMen[0] || updatedWomen[0] || '';
 
-      return {
+      // 1. Actualizar estado local del formulario
+      setProductForm((prev) => ({
         ...prev,
         image: primary,
         images: updatedGeneral,
         imagesMen: updatedMen,
         imagesWomen: updatedWomen,
-      };
-    });
+      }));
 
-    setIsUploadingPhotos(false);
+      // 2. Si es un producto existente o con SKU, actualizar automáticamente el documento en Cloud Firestore
+      if (editingProduct || (productForm.code && productForm.name)) {
+        const productSku = (editingProduct?.code || productForm.code || editingProduct?.id || targetSku).trim();
+        const updatedProduct: Product = {
+          ...(editingProduct || (productForm as Product)),
+          ...productForm,
+          id: productSku,
+          code: productSku,
+          image: primary,
+          images: updatedGeneral,
+          imagesMen: updatedMen,
+          imagesWomen: updatedWomen,
+        };
+
+        const saveRes = await saveSingleFirestoreProduct(updatedProduct);
+        if (!saveRes.success) {
+          console.warn('[FIREBASE WARNING] No se pudo guardar foto directamente en Firestore:', saveRes.error);
+        } else {
+          // Sincronizar catálogo visual en memoria
+          const updatedCatalog = products.map((p) =>
+            p.code === productSku || p.id === productSku ? updatedProduct : p
+          );
+          onUpdateProducts(updatedCatalog);
+          triggerSaveNotice();
+        }
+      }
+    } catch (err: any) {
+      console.error('[CARGA FOTOS PRODUCTO ERROR]:', err);
+      const errorMsg = err?.message || 'Error al subir las imágenes a Firebase Storage.';
+      setPhotoUploadError(errorMsg);
+      alert(errorMsg);
+    } finally {
+      // Garantizar siempre que el loading se detenga para no congelar la pantalla
+      setIsUploadingPhotos(false);
+    }
   };
 
   // Branches Tab internal state
@@ -950,44 +974,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 </button>
               )}
 
-              {/* Configuración Portal de Talles */}
-              {isTabVisible('sizing') && (
-                <button
-                  id="admin-tab-sizing-config"
-                  onClick={() => setActiveTab('sizing')}
-                  style={{
-                    borderTopColor: activeTab === 'sizing' ? activeBorderColor : 'transparent',
-                  }}
-                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                    activeTab === 'sizing'
-                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
-                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
-                  }`}
-                >
-                  <Shirt className="w-4 h-4" style={{ color: iconColor }} />
-                  Portal de Talles
-                </button>
-              )}
-
-              {/* Configuración Simulador de Bordado */}
-              {isTabVisible('simulator') && (
-                <button
-                  id="admin-tab-simulator-config"
-                  onClick={() => setActiveTab('simulator')}
-                  style={{
-                    borderTopColor: activeTab === 'simulator' ? activeBorderColor : 'transparent',
-                  }}
-                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                    activeTab === 'simulator'
-                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
-                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
-                  }`}
-                >
-                  <Sparkles className="w-4 h-4" style={{ color: iconColor }} />
-                  Simulador Bordado
-                </button>
-              )}
-
               {/* Notificaciones & Alertas */}
               {isTabVisible('notifications') && (
                 <button
@@ -1051,7 +1037,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
         {/* Tab Content Body */}
         <div className="flex-1 overflow-y-auto bg-neutral-50/50">
-          <AdminErrorBoundary key={activeTab} tabName={activeTab}>
           
           {/* TAB 1: PROMOCIONES */}
           {activeTab === 'promos' && (
@@ -1603,7 +1588,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                             setNewRangeForm({
                               suffix: `-${nextSuffixNum + 1}`,
                               sizeRangeLabel: 'Talles 60 al 66',
-                              sizes: '60, 62, 64, 66',
                               minSize: '60',
                               maxSize: '66',
                               price: '',
@@ -1657,7 +1641,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         </label>
                         <input
                           type="text"
-                          placeholder="Ej: CH, M, G, MG, XG o 38, 40, 42"
+                          placeholder="Ej: 38, 40, 42 o S, M, L, XL"
                           value={standardSizesInput}
                           onChange={(e) => {
                             const val = e.target.value;
@@ -1675,25 +1659,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           className="w-full px-3 py-1.5 border border-[#DCD4C9] rounded-xs text-xs bg-white font-medium focus:border-[#18231C] outline-none"
                         />
                         <span className="text-[10px] text-[#6F6860] block mt-0.5">
-                          Permite letras en escala español (CH, M, G, MG, XG), números, comas y espacios.
+                          Permite letras, números, comas y espacios (ej: "38, 40, 42" o "S, M, L, XL").
                         </span>
                         {/* Quick Presets */}
                         <div className="flex flex-wrap gap-1 mt-1.5">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const v = 'CH, M, G, MG, XG, XXG';
-                              setStandardSizesInput(v);
-                              setProductForm({
-                                ...productForm,
-                                standardSizes: v,
-                                availableSizes: v.split(',').map((s) => s.trim()),
-                              });
-                            }}
-                            className="text-[9px] px-2 py-0.5 bg-amber-100 hover:bg-amber-200 text-amber-950 font-bold rounded-xs cursor-pointer border border-amber-300"
-                          >
-                            + Letras Español (CH a XXG)
-                          </button>
                           <button
                             type="button"
                             onClick={() => {
@@ -1722,7 +1691,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                             }}
                             className="text-[9px] px-1.5 py-0.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 rounded-xs font-medium cursor-pointer"
                           >
-                            + Letras Internacional (S a XXL)
+                            + Letras (S a XXL)
                           </button>
                           <button
                             type="button"
@@ -2557,21 +2526,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             <AdminQuotesTab />
           )}
 
-          {/* TAB 11: CONFIGURACIÓN PORTAL DE TALLES */}
-          {activeTab === 'sizing' && (
-            <AdminSizingPortalConfigTab
-              triggerSaveNotice={triggerSaveNotice}
-            />
-          )}
-
-          {/* TAB 12: CONFIGURACIÓN SIMULADOR DE BORDADO */}
-          {activeTab === 'simulator' && (
-            <AdminUniformSimulatorConfigTab
-              triggerSaveNotice={triggerSaveNotice}
-            />
-          )}
-
-          {/* TAB 12: SEGURIDAD & CLAVES */}
+          {/* TAB 11: SEGURIDAD & CLAVES */}
           {activeTab === 'security' && (
             <AdminSecurityTab
               triggerSaveNotice={triggerSaveNotice}
@@ -2598,7 +2553,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             />
           )}
 
-          </AdminErrorBoundary>
         </div>
       </div>
 

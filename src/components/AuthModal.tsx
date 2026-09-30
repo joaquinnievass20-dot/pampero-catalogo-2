@@ -386,7 +386,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                           id="client-email-input"
                           type="email"
                           required
-                          placeholder="ejemplo@empresa.com"
+                          placeholder="juan@gmail.com"
                           value={consumerData.email}
                           onChange={(e) => setConsumerData({ ...consumerData, email: e.target.value })}
                           className="w-full pl-10 pr-3.5 py-2.5 rounded-lg border border-neutral-300 focus:border-[#E52421] focus:ring-2 focus:ring-red-100 text-sm outline-none font-medium"

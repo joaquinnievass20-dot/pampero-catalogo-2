@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { LeadVisit } from '../../types';
 import { saveLeadVisit, deleteLeadVisit } from '../../services/firebase';
-import * as XLSX from 'xlsx';
 import { 
   Plus, 
   Search, 
@@ -21,9 +20,7 @@ import {
   Clock,
   Sparkles,
   Layers,
-  ArrowRightCircle,
-  FileSpreadsheet,
-  Upload
+  ArrowRightCircle
 } from 'lucide-react';
 
 interface CRMVisitsTabProps {
@@ -70,8 +67,6 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
   const [branchFilter, setBranchFilter] = useState('todos');
   const [searchQuery, setSearchQuery] = useState('');
   const [showModal, setShowModal] = useState(false);
-  const [showExcelImport, setShowExcelImport] = useState(false);
-  const [importNotice, setImportNotice] = useState<string | null>(null);
   const [editingVisit, setEditingVisit] = useState<LeadVisit | null>(null);
   const [draggedVisitId, setDraggedVisitId] = useState<string | null>(null);
   const [dragOverCol, setDragOverCol] = useState<string | null>(null);
@@ -89,71 +84,6 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
   const [nextStep, setNextStep] = useState('');
   const [estimatedUnits, setEstimatedUnits] = useState('');
   const [notes, setNotes] = useState('');
-
-  // Handle mass Excel file import for visits
-  const handleImportExcelFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    try {
-      const data = await file.arrayBuffer();
-      const workbook = XLSX.read(data, { type: 'array' });
-      const sheetName = workbook.SheetNames[0];
-      const sheet = workbook.Sheets[sheetName];
-      const json: any[] = XLSX.utils.sheet_to_json(sheet);
-
-      if (!json || json.length === 0) {
-        alert('La planilla Excel no contiene filas con datos.');
-        return;
-      }
-
-      let count = 0;
-      for (const row of json) {
-        const getField = (keys: string[]) => {
-          for (const k of keys) {
-            if (row[k] !== undefined && row[k] !== null && String(row[k]).trim() !== '') {
-              return String(row[k]).trim();
-            }
-          }
-          return '';
-        };
-
-        const compName = getField(['Empresa', 'Razón Social', 'Razon Social', 'Cliente', 'Nombre de Empresa', 'Nombre']);
-        if (!compName) continue;
-
-        const newVisit: LeadVisit = {
-          id: `VIS-${Date.now().toString().slice(-6)}-${count}`,
-          date: getField(['Fecha', 'Dia']) || new Date().toISOString().split('T')[0],
-          companyName: compName,
-          contactName: getField(['Contacto', 'Responsable', 'Nombre de Contacto']),
-          phone: getField(['Teléfono', 'Telefono', 'WhatsApp', 'Celular']),
-          email: getField(['Email', 'Correo', 'Mail']),
-          seller: getField(['Vendedor', 'Asesor']) || 'Itatí',
-          branch: getField(['Local', 'Sucursal']) || 'Maipú',
-          status: 'programada',
-          step: 'primer_contacto',
-          objective: getField(['Objetivo', 'Interés', 'Interes', 'Motivo']) || 'Contacto inicial para cotización',
-          nextStep: getField(['Próximo Paso', 'Proximo Paso', 'Acción']) || 'Enviar catálogo digital',
-          estimatedUnits: Number(getField(['Prendas', 'Unidades', 'Cantidad Estimada'])) || 20,
-          notes: getField(['Notas', 'Observaciones', 'Detalle']) || 'Importado masivamente vía Excel',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-
-        await saveLeadVisit(newVisit);
-        count++;
-      }
-
-      setImportNotice(`¡Se importaron ${count} clientes/visitas exitosamente!`);
-      setTimeout(() => {
-        setImportNotice(null);
-        setShowExcelImport(false);
-      }, 2000);
-    } catch (err: any) {
-      console.error('Error importando Excel de visitas:', err);
-      alert('Error al leer el archivo Excel: ' + (err.message || 'Formato no soportado'));
-    }
-  };
 
   // Normalize visit step
   const getVisitStep = (v: LeadVisit): VisitKanbanStep => {
@@ -305,26 +235,14 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
           </p>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
-          <button
-            type="button"
-            onClick={() => setShowExcelImport(true)}
-            className="px-3.5 py-2 bg-[#1E7145] hover:bg-[#155734] text-white text-xs font-bold uppercase tracking-wider rounded-xs transition-all flex items-center gap-1.5 shadow-sm cursor-pointer shrink-0"
-            title="Importar contactos y clientes desde archivo Excel (.xlsx)"
-          >
-            <FileSpreadsheet className="w-4 h-4" />
-            <span>Importar Planilla Excel</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => openNewModal('primer_contacto')}
-            className="px-4 py-2 bg-[#B9522F] hover:bg-[#9E3E1E] text-white text-xs font-bold uppercase tracking-wider rounded-xs transition-all flex items-center gap-1.5 shadow-sm cursor-pointer shrink-0 self-start sm:self-auto"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Nueva Visita / Contacto</span>
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() => openNewModal('primer_contacto')}
+          className="px-4 py-2 bg-[#B9522F] hover:bg-[#9E3E1E] text-white text-xs font-bold uppercase tracking-wider rounded-xs transition-all flex items-center gap-1.5 shadow-sm cursor-pointer shrink-0 self-start sm:self-auto"
+        >
+          <Plus className="w-4 h-4" />
+          <span>Nueva Visita / Contacto</span>
+        </button>
       </div>
 
       {/* Filters Bar */}
@@ -584,7 +502,7 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
                   required
                   value={companyName}
                   onChange={(e) => setCompanyName(e.target.value)}
-                  placeholder="Razón social o nombre de la empresa"
+                  placeholder="Ej: Bodegas Salentein / Constructora Mendoza"
                   className="w-full px-3 py-2 border border-[#DCD4C9] rounded-xs outline-none focus:border-[#B9522F]"
                 />
               </div>
@@ -596,7 +514,7 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
                     type="text"
                     value={contactName}
                     onChange={(e) => setContactName(e.target.value)}
-                    placeholder="Nombre y apellido del contacto"
+                    placeholder="Ej: Ing. Martín Gómez"
                     className="w-full px-3 py-2 border border-[#DCD4C9] rounded-xs outline-none focus:border-[#B9522F]"
                   />
                 </div>
@@ -606,7 +524,7 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
                     type="text"
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
-                    placeholder="Teléfono o WhatsApp de contacto"
+                    placeholder="261 555-1234"
                     className="w-full px-3 py-2 border border-[#DCD4C9] rounded-xs outline-none focus:border-[#B9522F]"
                   />
                 </div>
@@ -660,7 +578,7 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
                   type="text"
                   value={objective}
                   onChange={(e) => setObjective(e.target.value)}
-                  placeholder="Objetivo de la visita o cotización de indumentaria"
+                  placeholder="Ej: Renovar camisas y calzado para 40 operarios de vendimia"
                   className="w-full px-3 py-2 border border-[#DCD4C9] rounded-xs outline-none focus:border-[#B9522F]"
                 />
               </div>
@@ -672,7 +590,7 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
                     type="text"
                     value={nextStep}
                     onChange={(e) => setNextStep(e.target.value)}
-                    placeholder="Acción acordada con el cliente"
+                    placeholder="Ej: Enviar muestras de talle y cotización"
                     className="w-full px-3 py-2 border border-[#DCD4C9] rounded-xs outline-none focus:border-[#B9522F]"
                   />
                 </div>
@@ -682,7 +600,7 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
                     type="number"
                     value={estimatedUnits}
                     onChange={(e) => setEstimatedUnits(e.target.value)}
-                    placeholder="Cantidad de prendas"
+                    placeholder="40"
                     className="w-full px-3 py-2 border border-[#DCD4C9] rounded-xs outline-none focus:border-[#B9522F]"
                   />
                 </div>
@@ -694,7 +612,7 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   rows={2}
-                  placeholder="Detalles sobre bordados de logo, plazos, requerimientos especiales..."
+                  placeholder="Detalles sobre bordados de logo, plazos urgentes, etc."
                   className="w-full p-2.5 border border-[#DCD4C9] rounded-xs outline-none focus:border-[#B9522F] resize-none"
                 />
               </div>
@@ -715,72 +633,6 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
-
-      {/* Modal: Importar Planilla Excel de Clientes */}
-      {showExcelImport && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn">
-          <div className="bg-white rounded-xs border border-[#DCD4C9] shadow-2xl max-w-lg w-full p-6 space-y-4">
-            <div className="flex items-center justify-between border-b pb-3">
-              <div className="flex items-center gap-2">
-                <FileSpreadsheet className="w-5 h-5 text-[#1E7145]" />
-                <h3 className="font-bold text-base text-[#18231C] uppercase tracking-wider">
-                  Importar Clientes / Visitas desde Excel
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowExcelImport(false)}
-                className="text-neutral-400 hover:text-black cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <p className="text-xs text-[#6F6860] leading-relaxed">
-              Cargá tu planilla Excel (<strong>.xlsx</strong> o <strong>.csv</strong>) con los datos de clientes para incorporarlos instantáneamente al tablero Kanban de Visitas Comerciales.
-            </p>
-
-            <div className="p-3 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-[11px] text-[#4A453F] space-y-1">
-              <span className="font-bold text-[#18231C] block">Columnas reconocidas automáticamente:</span>
-              <p>• Empresa / Razón Social (obligatoria)</p>
-              <p>• Contacto, Teléfono / Celular, Email</p>
-              <p>• Vendedor, Local / Sucursal, Cantidad Estimada</p>
-              <p>• Objetivo, Próximo Paso, Observaciones</p>
-            </div>
-
-            {importNotice && (
-              <div className="p-3 bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs font-bold rounded-xs flex items-center gap-2">
-                <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>{importNotice}</span>
-              </div>
-            )}
-
-            <div className="pt-2">
-              <label className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-[#DCD4C9] hover:border-[#1E7145] rounded-xs bg-[#FAF8F5] hover:bg-[#F0FDF4] transition-colors cursor-pointer">
-                <Upload className="w-8 h-8 text-[#1E7145] mb-2" />
-                <span className="text-xs font-bold text-[#18231C]">Seleccionar archivo Excel (.xlsx / .csv)</span>
-                <span className="text-[10px] text-[#6F6860] mt-1">Haz clic para buscar en tu computadora</span>
-                <input
-                  type="file"
-                  accept=".xlsx, .xls, .csv"
-                  onChange={handleImportExcelFile}
-                  className="hidden"
-                />
-              </label>
-            </div>
-
-            <div className="flex justify-end pt-2 border-t">
-              <button
-                type="button"
-                onClick={() => setShowExcelImport(false)}
-                className="px-4 py-2 text-xs font-bold text-neutral-600 hover:text-black uppercase tracking-wider cursor-pointer"
-              >
-                Cerrar
-              </button>
-            </div>
           </div>
         </div>
       )}

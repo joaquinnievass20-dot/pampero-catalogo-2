@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Product, UserSession, ThemeConfig, MainCategory, Promotion, CategoryHierarchyItem } from '../types';
+import { Product, UserSession, ThemeConfig, MainCategory, Promotion } from '../types';
 import { ProductCard } from './ProductCard';
 import { CATEGORY_HIERARCHY, CategoryStructure, loadStoredCategoryHierarchy } from '../data/categories';
 import { getColorHex } from '../utils/colorUtils';
@@ -35,14 +35,13 @@ interface CatalogViewProps {
   onViewProductDetail?: (product: Product) => void;
   onViewProduct?: (product: Product) => void;
   onQuickAddProduct?: (product: Product) => void;
-  onQuickAdd?: (product: Product) => void;
   onOpenPromos: () => void;
   onBackToHome: () => void;
   currentSection?: string;
   onSelectSection?: (s: string) => void;
   currentSubCategory?: string;
   onSelectSubCategory?: (sub: string) => void;
-  categoryHierarchy?: CategoryHierarchyItem[] | CategoryStructure[];
+  categoryHierarchy?: CategoryStructure[];
 }
 
 export const CatalogView: React.FC<CatalogViewProps> = ({
@@ -59,7 +58,6 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
   onViewProductDetail,
   onViewProduct,
   onQuickAddProduct,
-  onQuickAdd,
   onOpenPromos,
   onBackToHome,
   categoryHierarchy,
@@ -1049,7 +1047,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                     theme={theme}
                     promotions={promotions}
                     onViewDetail={handleOpenProduct}
-                    onQuickAdd={onQuickAdd || onQuickAddProduct}
+                    onQuickAdd={onQuickAddProduct}
                   />
                 ))}
               </div>

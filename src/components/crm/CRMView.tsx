@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import * as XLSX from 'xlsx';
 import { 
   UserSession, 
   ThemeConfig, 
@@ -48,97 +47,37 @@ import {
   Phone,
   ArrowRight,
   ShieldCheck,
-  FileSpreadsheet,
-  Upload,
-  Sliders,
-  Settings2,
-  Trash2,
-  Edit3,
-  Copy
+  DollarSign
 } from 'lucide-react';
 import { CRMNotificationsModal } from './CRMNotificationsModal';
 import { CRMVisitsTab } from './CRMVisitsTab';
 import { CRMSupplierOrdersTab } from './CRMSupplierOrdersTab';
-import { CRMBoardConfigModal } from './CRMBoardConfigModal';
-import { CRMExcelImportModal } from './CRMExcelImportModal';
-
-export interface DynamicBoardColumn {
-  id: string;
-  label: string;
-  color: string;
-  bgColor: string;
-}
-
-export interface BoardFieldConfig {
-  showObservations: boolean;
-  showDeliveryDate: boolean;
-  showEmbroideryNotes: boolean;
-  showBranch: boolean;
-  showSeller: boolean;
-  showEstimatedUnits: boolean;
-  showEstimatedAmount: boolean;
-  showOrderNumber: boolean;
-}
-
-const DEFAULT_BOARD_COLUMNS: DynamicBoardColumn[] = [
-  { id: 'cotizacion', label: '1. Cotización Recibida', color: '#FDB813', bgColor: '#FFF8E1' },
-  { id: 'sena_50', label: '2. Aprobado / Seña 50%', color: '#F97316', bgColor: '#FFF7ED' },
-  { id: 'produccion', label: '3. En Bordados / Taller', color: '#8B5CF6', bgColor: '#F5F3FF' },
-  { id: 'listo', label: '4. Listo para Retirar', color: '#10B981', bgColor: '#ECFDF5' },
-  { id: 'entregado', label: '5. Entregado / Cerrado', color: '#3B82F6', bgColor: '#EFF6FF' },
-];
-
-const DEFAULT_FIELD_CONFIG: BoardFieldConfig = {
-  showObservations: true,
-  showDeliveryDate: true,
-  showEmbroideryNotes: true,
-  showBranch: true,
-  showSeller: true,
-  showEstimatedUnits: true,
-  showEstimatedAmount: true,
-  showOrderNumber: true,
-};
+import { CRMSizingPortalTab } from './CRMSizingPortalTab';
+import { CRMUniformSimulatorTab } from './CRMUniformSimulatorTab';
+import { CRMCostsTab } from './CRMCostsTab';
 
 interface CRMViewProps {
   userSession: UserSession | null;
   onClose: () => void;
-  onOpenHub?: () => void;
   theme: ThemeConfig;
   onSetSession?: (session: UserSession) => void;
   onOpenAuth?: () => void;
 }
 
-export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, onOpenHub, theme, onSetSession, onOpenAuth }) => {
+const STATUS_COLUMNS: { id: CRMOrderStatus; label: string; color: string; bgColor: string }[] = [
+  { id: 'cotizacion', label: 'Cotización Recibida', color: '#FDB813', bgColor: '#FFF8E1' },
+  { id: 'sena_50', label: 'Aprobado / Seña 50%', color: '#F97316', bgColor: '#FFF7ED' },
+  { id: 'produccion', label: 'En Bordados / Taller', color: '#8B5CF6', bgColor: '#F5F3FF' },
+  { id: 'listo', label: 'Listo para Retirar', color: '#10B981', bgColor: '#ECFDF5' },
+  { id: 'entregado', label: 'Entregado / Cerrado', color: '#3B82F6', bgColor: '#EFF6FF' },
+];
+
+export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, onSetSession, onOpenAuth }) => {
   const [orders, setOrders] = useState<CRMOrder[]>([]);
   const [visits, setVisits] = useState<LeadVisit[]>([]);
   const [supplierOrders, setSupplierOrders] = useState<SupplierOrder[]>([]);
   const [sizingCampaigns, setSizingCampaigns] = useState<SizingCampaign[]>([]);
   const [employeeSizes, setEmployeeSizes] = useState<EmployeeSizeEntry[]>([]);
-
-  // Dynamic Board Columns (Permite agregar, editar y quitar pasos)
-  const [boardColumns, setBoardColumns] = useState<DynamicBoardColumn[]>(() => {
-    try {
-      const saved = localStorage.getItem('pampero_crm_board_steps');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch {}
-    return DEFAULT_BOARD_COLUMNS;
-  });
-
-  // Dynamic Order Fields configuration
-  const [fieldConfig, setFieldConfig] = useState<BoardFieldConfig>(() => {
-    try {
-      const saved = localStorage.getItem('pampero_crm_field_config');
-      if (saved) return JSON.parse(saved);
-    } catch {}
-    return DEFAULT_FIELD_CONFIG;
-  });
-
-  const [showConfigModal, setShowConfigModal] = useState(false);
-  const [showExcelImportModal, setShowExcelImportModal] = useState(false);
-  const [importResultNotice, setImportResultNotice] = useState<string | null>(null);
 
   // RBAC Access Control: Check if logged in staff has CRM permissions
   const currentEmployee: EmployeeAccount | null = (() => {
@@ -185,7 +124,7 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, onOpenHu
 
   const activeStaffUser = userSession?.clientData?.fullName || (userSession?.role === 'admin' ? 'Administrador General' : userSession?.email?.split('@')[0] || 'Personal Pampero');
 
-  const [activeTab, setActiveTab] = useState<'visits' | 'board' | 'suppliers'>('visits');
+  const [activeTab, setActiveTab] = useState<'visits' | 'board' | 'suppliers' | 'costs' | 'sizing' | 'simulator'>('visits');
   const [sellerFilter, setSellerFilter] = useState(() => {
     if (crmScope === 'own_only' && assignedSellerName) return assignedSellerName.toLowerCase();
     return 'todos';
@@ -252,14 +191,14 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, onOpenHu
     e.dataTransfer.effectAllowed = 'move';
   };
 
-  const handleDrop = (e: React.DragEvent, newStatus: CRMOrderStatus | string) => {
+  const handleDrop = (e: React.DragEvent, newStatus: CRMOrderStatus) => {
     e.preventDefault();
     setDragOverColumn(null);
     const orderId = e.dataTransfer.getData('orderId');
     if (!orderId) return;
     const order = orders.find((o) => o.id === orderId);
     if (order && order.status !== newStatus) {
-      saveCRMOrder({ ...order, status: newStatus as CRMOrderStatus, updatedAt: new Date().toISOString() });
+      saveCRMOrder({ ...order, status: newStatus, updatedAt: new Date().toISOString() });
     }
   };
 
@@ -437,6 +376,9 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, onOpenHu
               { key: 'visits', label: '1. Visitas Comerciales', icon: Building2 },
               { key: 'board', label: '2. Seguimiento Empresas', icon: LayoutDashboard },
               { key: 'suppliers', label: '3. Pedidos Proveedor', icon: Truck },
+              { key: 'costs', label: 'Control de Costos', icon: DollarSign },
+              { key: 'sizing', label: 'Portal de Talles', icon: Shirt },
+              { key: 'simulator', label: 'Simulador Bordado', icon: Sparkles },
             ].map((tab) => {
               const Icon = tab.icon;
               return (
@@ -517,13 +459,10 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, onOpenHu
           </button>
 
           <button
-            onClick={() => {
-              if (onOpenHub) onOpenHub();
-              else onClose();
-            }}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#FAF8F5] hover:bg-[#ECE5DC] border border-[#DCD4C9] text-[#18231C] rounded-xs text-xs font-bold uppercase transition-colors cursor-pointer shadow-2xs"
+            onClick={onClose}
+            className="text-[#6F6860] hover:text-[#18231C] text-xs font-bold underline cursor-pointer"
           >
-            ← Volver al Menú Principal
+            Volver al menú principal
           </button>
         </div>
       </div>
@@ -643,37 +582,14 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, onOpenHu
                 />
               </div>
 
-              {/* Board Actions: Excel Import and Steps & Fields Configuration */}
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowExcelImportModal(true)}
-                  className="px-3 py-1.5 bg-[#1E7145] hover:bg-[#155734] text-white rounded-xs text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
-                  title="Importar empresas y pedidos desde archivo Excel (.xlsx)"
-                >
-                  <FileSpreadsheet className="w-3.5 h-3.5" />
-                  <span>Importar Excel</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setShowConfigModal(true)}
-                  className="px-3 py-1.5 bg-[#FAF8F5] hover:bg-[#ECE5DC] border border-[#DCD4C9] text-[#18231C] rounded-xs text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-colors cursor-pointer"
-                  title="Editar nombres de pasos, agregar o quitar etapas y configurar campos de las tarjetas"
-                >
-                  <Settings2 className="w-3.5 h-3.5 text-[#B9522F]" />
-                  <span>Configurar Pasos & Campos</span>
-                </button>
-              </div>
-
               <div className="ml-auto text-[10px] font-bold text-[#8C827A] uppercase">
                 {filteredOrders.length} pedidos mostrados
               </div>
             </div>
 
-            {/* Kanban Board Columns (Dinámicas y editables) */}
+            {/* Kanban Board Columns */}
             <div className="flex gap-4 flex-1 overflow-x-auto pb-4">
-              {boardColumns.map((col) => {
+              {STATUS_COLUMNS.map((col) => {
                 const columnOrders = filteredOrders.filter((o) => o.status === col.id);
                 const isDragOver = dragOverColumn === col.id;
                 return (
@@ -728,28 +644,19 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, onOpenHu
                             }`}
                           >
                             {/* Card Top */}
-                            <div className="flex justify-between items-start mb-1.5 gap-2">
-                              <div className="flex items-center gap-1.5 flex-wrap">
+                            <div className="flex justify-between items-start mb-1.5">
+                              <div className="flex items-center gap-1">
                                 {order.clientType === 'empresa' ? (
-                                  <Building2 className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                  <Building2 className="w-3 h-3 text-amber-600" />
                                 ) : (
-                                  <User className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                  <User className="w-3 h-3 text-emerald-600" />
                                 )}
-                                {fieldConfig.showOrderNumber && (
-                                  <span 
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      navigator.clipboard.writeText(order.quoteId || order.id);
-                                    }}
-                                    className="text-[10px] text-[#18231C] font-mono font-bold bg-[#FAF8F5] border border-[#DCD4C9] px-1.5 py-0.2 rounded-xs hover:border-[#18231C] transition-colors cursor-pointer"
-                                    title="Hacé clic para copiar el número de pedido oficial"
-                                  >
-                                    {order.quoteId || order.id}
-                                  </span>
-                                )}
+                                <span className="text-[10px] text-[#8C827A] font-mono">
+                                  #{order.id.slice(-6)}
+                                </span>
                               </div>
                               {isDelayed && (
-                                <span className="text-[9px] font-bold px-1.5 py-0.5 bg-red-100 text-red-700 rounded-xs uppercase flex items-center gap-0.5 animate-pulse shrink-0">
+                                <span className="text-[9px] font-bold px-1.5 py-0.5 bg-red-100 text-red-700 rounded-xs uppercase flex items-center gap-0.5 animate-pulse">
                                   <AlertTriangle className="w-2.5 h-2.5" />
                                   {daysOld}d demorado
                                 </span>
@@ -760,11 +667,9 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, onOpenHu
                             <h4 className="font-bold text-sm text-[#18231C] leading-tight">
                               {order.clientName}
                             </h4>
-                            {fieldConfig.showEstimatedUnits && (
-                              <p className="text-[11px] text-[#6F6860] mt-0.5">
-                                {order.totalUnits} prendas
-                              </p>
-                            )}
+                            <p className="text-[11px] text-[#6F6860] mt-0.5">
+                              {order.totalUnits} prendas
+                            </p>
 
                             {/* Block Reason */}
                             {order.blockReason && (
@@ -774,7 +679,7 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, onOpenHu
                             )}
 
                             {/* Observations */}
-                            {fieldConfig.showObservations && order.observations && !order.blockReason && (
+                            {order.observations && !order.blockReason && (
                               <div className="mt-2 text-[10px] bg-amber-50 text-amber-800 p-1.5 rounded-xs">
                                 {order.observations.slice(0, 80)}
                                 {order.observations.length > 80 ? '...' : ''}
@@ -784,31 +689,25 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, onOpenHu
                             {/* Card Footer */}
                             <div className="mt-2.5 flex justify-between items-center border-t border-[#ECE5DC] pt-2">
                               <div className="flex items-center gap-1.5">
-                                {fieldConfig.showSeller && (
-                                  <>
-                                    <Clock className="w-3 h-3 text-[#8C827A]" />
-                                    <span className="text-[10px] font-bold text-[#8C827A]">
-                                      {order.seller || 'Sin asignar'}
-                                    </span>
-                                  </>
-                                )}
-                                {fieldConfig.showBranch && order.branch && (
+                                <Clock className="w-3 h-3 text-[#8C827A]" />
+                                <span className="text-[10px] font-bold text-[#8C827A]">
+                                  {order.seller || 'Sin asignar'}
+                                </span>
+                                {order.branch && (
                                   <span className="text-[9px] px-1 py-0.2 rounded-xs bg-[#FAF8F5] border border-[#DCD4C9] text-[#6F6860]">
                                     {order.branch}
                                   </span>
                                 )}
                               </div>
-                              {fieldConfig.showEstimatedAmount && (
-                                <span className="font-bold text-emerald-700 text-sm">
-                                  $ {(order.totalEstimated || 0).toLocaleString('es-AR')}
-                                </span>
-                              )}
+                              <span className="font-bold text-emerald-700 text-sm">
+                                $ {(order.totalEstimated || 0).toLocaleString('es-AR')}
+                              </span>
                             </div>
 
                             {/* Card Action Shortcuts */}
                             <div className="mt-2 pt-1.5 border-t border-dashed border-[#ECE5DC] flex items-center justify-between gap-1">
                               <a
-                                href={`https://wa.me/?text=${encodeURIComponent(`Hola ${order.clientName}, te escribimos de Pampero Gran Mendoza para actualizarte sobre tu solicitud ${order.quoteId || order.id} (Estado: ${col.label}). Total: $${(order.totalEstimated || 0).toLocaleString('es-AR')}. ¿Tenés alguna consulta?`)}`}
+                                href={`https://wa.me/?text=${encodeURIComponent(`Hola ${order.clientName}, te escribimos de Pampero Gran Mendoza para actualizarte sobre tu solicitud #${order.id.slice(-6)} (Estado: ${col.label}). Total: $${(order.totalEstimated || 0).toLocaleString('es-AR')}. ¿Tenés alguna consulta?`)}`}
                                 target="_blank"
                                 rel="noreferrer"
                                 onClick={(e) => e.stopPropagation()}
@@ -820,20 +719,20 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, onOpenHu
                               </a>
 
                               {(() => {
-                                const currentIndex = boardColumns.findIndex((c) => c.id === order.status);
-                                const nextCol = currentIndex >= 0 && currentIndex < boardColumns.length - 1 ? boardColumns[currentIndex + 1] : null;
+                                const currentIndex = STATUS_COLUMNS.findIndex((c) => c.id === order.status);
+                                const nextCol = currentIndex >= 0 && currentIndex < STATUS_COLUMNS.length - 1 ? STATUS_COLUMNS[currentIndex + 1] : null;
                                 if (!nextCol) return null;
                                 return (
                                   <button
                                     type="button"
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      saveCRMOrder({ ...order, status: nextCol.id as any, updatedAt: new Date().toISOString() });
+                                      saveCRMOrder({ ...order, status: nextCol.id, updatedAt: new Date().toISOString() });
                                     }}
                                     className="px-2 py-1 bg-[#18231C] hover:bg-[#B9522F] text-white rounded-xs text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 transition-colors cursor-pointer"
                                     title={`Avanzar a ${nextCol.label}`}
                                   >
-                                    <span>Avanzar</span>
+                                    <span>{nextCol.label.split('/')[0].split(' ')[0]}</span>
                                     <ArrowRight className="w-2.5 h-2.5" />
                                   </button>
                                 );
@@ -873,37 +772,25 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, onOpenHu
         {activeTab === 'suppliers' && (
           <CRMSupplierOrdersTab orders={supplierOrders} accentColor={accent} />
         )}
+
+        {/* === TAB: CONTROL DE COSTOS (SIN NÚMEROS) === */}
+        {activeTab === 'costs' && (
+          <CRMCostsTab accentColor={accent} />
+        )}
+
+        {/* === TAB 4: PORTAL DE TALLES === */}
+        {activeTab === 'sizing' && (
+          <CRMSizingPortalTab
+            campaigns={sizingCampaigns}
+            entries={employeeSizes}
+            onSaveCampaign={(c) => saveSizingCampaign(c)}
+            onSaveEntry={(e) => saveEmployeeSizeEntry(e)}
+          />
+        )}
+
+        {/* === TAB 5: ARMADOR DE UNIFORMES VIRTUAL === */}
+        {activeTab === 'simulator' && <CRMUniformSimulatorTab />}
       </div>
-
-      {/* Modal: Dynamic Steps & Fields Configuration */}
-      {showConfigModal && (
-        <CRMBoardConfigModal
-          boardColumns={boardColumns}
-          fieldConfig={fieldConfig}
-          onClose={() => setShowConfigModal(false)}
-          onSave={(updatedCols, updatedFields) => {
-            setBoardColumns(updatedCols);
-            setFieldConfig(updatedFields);
-            try {
-              localStorage.setItem('pampero_crm_board_steps', JSON.stringify(updatedCols));
-              localStorage.setItem('pampero_crm_field_config', JSON.stringify(updatedFields));
-            } catch {}
-            setShowConfigModal(false);
-          }}
-        />
-      )}
-
-      {/* Modal: Bulk Excel Import for Companies */}
-      {showExcelImportModal && (
-        <CRMExcelImportModal
-          boardColumns={boardColumns}
-          onClose={() => setShowExcelImportModal(false)}
-          onImported={(newOrders) => {
-            setOrders((prev) => [...newOrders, ...prev]);
-            setShowExcelImportModal(false);
-          }}
-        />
-      )}
 
       {/* Notifications Drawer Modal */}
       <CRMNotificationsModal
@@ -918,7 +805,6 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, onOpenHu
       {selectedOrderForDetail && (
         <OrderDetailModal
           order={selectedOrderForDetail}
-          boardColumns={boardColumns}
           onClose={() => setSelectedOrderForDetail(null)}
           onSave={(updated) => {
             saveCRMOrder(updated);
@@ -948,11 +834,10 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, onOpenHu
 /* ============================================ */
 const OrderDetailModal: React.FC<{
   order: CRMOrder;
-  boardColumns: DynamicBoardColumn[];
   onClose: () => void;
   onSave: (order: CRMOrder) => void;
   onDelete: (id: string) => void;
-}> = ({ order, boardColumns, onClose, onSave, onDelete }) => {
+}> = ({ order, onClose, onSave, onDelete }) => {
   const [status, setStatus] = useState<CRMOrderStatus>(order.status);
   const [seller, setSeller] = useState(order.seller || 'Sin asignar');
   const [branch, setBranch] = useState(order.branch || 'Ciudad');
@@ -1009,9 +894,11 @@ const OrderDetailModal: React.FC<{
                 onChange={(e) => setStatus(e.target.value as any)}
                 className="w-full px-2.5 py-1.5 text-xs border border-[#DCD4C9] rounded-xs bg-[#FAF8F5] outline-none font-bold"
               >
-                {boardColumns.map((col) => (
-                  <option key={col.id} value={col.id}>{col.label}</option>
-                ))}
+                <option value="cotizacion">Cotización Recibida</option>
+                <option value="sena_50">Aprobado / Seña 50%</option>
+                <option value="produccion">En Bordados / Taller</option>
+                <option value="listo">Listo para Retirar</option>
+                <option value="entregado">Entregado / Cerrado</option>
                 <option value="cancelado">Cancelado</option>
               </select>
             </div>
@@ -1181,7 +1068,7 @@ const NewOrderModal: React.FC<{
               type="text"
               value={clientName}
               onChange={(e) => setClientName(e.target.value)}
-              placeholder="Nombre de la empresa o cliente"
+              placeholder="Ej: PIZZOLON, VALMEN JCB, BODEGA NORTON..."
               className="w-full px-3 py-2 text-xs bg-white rounded-xs border border-[#DCD4C9] outline-none"
               required
             />

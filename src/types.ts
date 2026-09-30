@@ -248,7 +248,6 @@ export interface LookbookItem {
 
 export interface ThemeConfig {
   primaryColor: string; // e.g., #18231C
-  primaryTextColor?: string; // e.g., #F5F2EC
   accentColor: string;  // e.g., #FDB813
   secondaryColor: string; // e.g., #DCD4C9
   backgroundColor?: string; // e.g., #F5F2EC
@@ -368,7 +367,6 @@ export interface LeadVisit {
   seller: string; // 'Itatí' | 'Guada' | 'Carolina' | 'Gustavo'
   branch: string;
   status: LeadVisitStatus;
-  step?: string;
   objective: string;
   nextStep: string;
   nextStepDate?: string;
@@ -426,4 +424,31 @@ export interface SizingCampaign {
   createdAt: string;
   expiresAt: string;
   entriesCount?: number;
+}
+
+// --- COST CONTROL & EXPENSES (CONTROL DE COSTOS) ---
+export type ExpenseType = 'Fijo' | 'Variable';
+
+export type ExpenseCategory = 
+  | 'Alquiler' 
+  | 'Sueldos' 
+  | 'Impuestos' 
+  | 'Servicios (Luz/Gas/Agua/Internet)' 
+  | 'Mercadería e Insumos' 
+  | 'Logística y Envíos' 
+  | 'Marketing y Publicidad' 
+  | 'Mantenimiento' 
+  | 'Otros Gastos';
+
+export interface CRMExpense {
+  id: string;
+  date: string; // YYYY-MM-DD
+  branch: 'Maipú' | 'Ciudad' | 'Luján' | string;
+  type: ExpenseType; // 'Fijo' | 'Variable'
+  category: ExpenseCategory | string;
+  amount: number;
+  detail: string;
+  registeredBy?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }

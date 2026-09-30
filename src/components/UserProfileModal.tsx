@@ -13,13 +13,7 @@ import {
   ShoppingBag,
   Calendar,
   Clock,
-  Package,
-  Compass,
-  Settings,
-  Search,
-  CheckCircle2,
-  AlertCircle,
-  Truck
+  Package
 } from 'lucide-react';
 
 interface UserProfileModalProps {
@@ -27,8 +21,6 @@ interface UserProfileModalProps {
   onClose: () => void;
   userSession: UserSession | null;
   onUpdateSession: (updatedSession: UserSession) => void;
-  onOpenHub?: () => void;
-  onOpenAdmin?: () => void;
   theme: ThemeConfig;
 }
 
@@ -37,20 +29,16 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   onClose,
   userSession,
   onUpdateSession,
-  onOpenHub,
-  onOpenAdmin,
   theme,
 }) => {
   if (!isOpen || !userSession) return null;
 
   const accent = theme?.accentColor || '#FDB813';
   const isCompany = userSession.clientType === 'empresa';
-  const isStaff = userSession.role === 'admin' || userSession.role === 'employee';
   const d = userSession.clientData || {};
 
   const [activeTab, setActiveTab] = useState<'profile' | 'quotes'>('profile');
   const [quoteHistory, setQuoteHistory] = useState<any[]>([]);
-  const [orderSearchQuery, setOrderSearchQuery] = useState('');
 
   // Extract initial address parts
   let initialStreet = '';
@@ -74,43 +62,6 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   const [streetNumber, setStreetNumber] = useState(initialNumber);
   const [city, setCity] = useState(initialCity);
   const [savedSuccess, setSavedSuccess] = useState(false);
-
-  // Load quotes and live sync with CRM orders
-  useEffect(() => {
-    try {
-      const savedQuotesRaw = localStorage.getItem('pampero_received_quotes');
-      const crmOrdersRaw = localStorage.getItem('pampero_crm_orders');
-      const crmOrders: any[] = crmOrdersRaw ? JSON.parse(crmOrdersRaw) : [];
-      let list: any[] = savedQuotesRaw ? JSON.parse(savedQuotesRaw) : [];
-
-      // Filter by current user or company
-      const userEmail = (userSession.email || '').toLowerCase().trim();
-      const userClientName = (userSession.clientData?.fullName || (userSession.clientData as any)?.companyName || '').toLowerCase().trim();
-
-      const userQuotes = list.filter((q: any) => {
-        if (!userEmail && !userClientName) return true;
-        const qEmail = (q.clientEmail || '').toLowerCase().trim();
-        const qName = (q.clientName || '').toLowerCase().trim();
-        return (userEmail && qEmail === userEmail) || (userClientName && qName.includes(userClientName));
-      });
-
-      // Synchronize with CRM status
-      const merged = (userQuotes.length > 0 ? userQuotes : list).map((q: any) => {
-        const crmMatch = crmOrders.find(
-          (o: any) => o.id === q.id || o.quoteId === q.id || (q.id && o.id?.includes(q.id))
-        );
-        return {
-          ...q,
-          liveStatus: crmMatch?.status || q.status || 'cotizacion',
-          crmOrder: crmMatch,
-        };
-      });
-
-      setQuoteHistory(merged);
-    } catch {
-      setQuoteHistory([]);
-    }
-  }, [userSession]);
 
   // Load quote history for this user
   useEffect(() => {
@@ -232,39 +183,6 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
             <X className="w-5 h-5" />
           </button>
         </div>
-
-        {/* Staff Quick Action Bar: Primary "Menú Principal" vs Secondary "Panel de Control" */}
-        {isStaff && (
-          <div className="p-3 bg-amber-50 border-b border-amber-200 flex flex-wrap items-center justify-between gap-2">
-            <span className="text-[11px] font-bold text-amber-950 uppercase">
-              Accesos de {userSession.role === 'admin' ? 'Administrador' : 'Personal Pampero'}:
-            </span>
-            <div className="flex items-center gap-2">
-              {onOpenHub && (
-                <button
-                  type="button"
-                  onClick={onOpenHub}
-                  className="px-3.5 py-1.5 bg-[#18231C] hover:bg-black text-[#FDB813] rounded-xs text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
-                  title="Ir al Menú Principal de Personal"
-                >
-                  <Compass className="w-3.5 h-3.5 text-[#FDB813]" />
-                  <span>Menú Principal</span>
-                </button>
-              )}
-              {onOpenAdmin && (
-                <button
-                  type="button"
-                  onClick={onOpenAdmin}
-                  className="px-2.5 py-1.5 bg-white hover:bg-[#FAF8F5] border border-[#DCD4C9] text-[#18231C] rounded-xs text-xs font-semibold uppercase tracking-wider flex items-center gap-1 cursor-pointer transition-colors"
-                  title="Abrir Panel de Control"
-                >
-                  <Settings className="w-3.5 h-3.5 text-[#6F6860]" />
-                  <span>Panel de Control</span>
-                </button>
-              )}
-            </div>
-          </div>
-        )}
 
         {/* Tab switcher */}
         <div className="flex border-b border-[#DCD4C9] bg-[#ECE5DC]/60 px-6 pt-2 gap-2">
@@ -475,27 +393,9 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
         </form>
         )}
 
-        {/* TAB 2: Quote History & Live CRM Tracking */}
+        {/* TAB 2: Quote History */}
         {activeTab === 'quotes' && (
           <div className="p-6 overflow-y-auto space-y-4 flex-1">
-            {/* Quick Order Number Search Box */}
-            <div className="bg-white p-3 rounded-xs border border-[#DCD4C9] shadow-2xs space-y-2">
-              <label className="block text-[11px] font-bold text-[#18231C] uppercase tracking-wider flex items-center justify-between">
-                <span>Consultar Estado de Mi Pedido por Número</span>
-                <span className="text-[10px] text-[#B9522F] font-semibold">En tiempo real</span>
-              </label>
-              <div className="relative">
-                <Search className="w-4 h-4 text-[#8C827A] absolute left-3 top-2.5" />
-                <input
-                  type="text"
-                  value={orderSearchQuery}
-                  onChange={(e) => setOrderSearchQuery(e.target.value)}
-                  placeholder="Ingresá tu número de pedido (ej: COT-892101 o PED-...)"
-                  className="w-full pl-9 pr-3 py-2 text-xs font-mono font-bold bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs outline-none focus:border-[#FDB813]"
-                />
-              </div>
-            </div>
-
             {quoteHistory.length === 0 ? (
               <div className="text-center py-10 space-y-3">
                 <div className="w-12 h-12 rounded-full bg-[#ECE5DC] flex items-center justify-center mx-auto text-[#6F6860]">
@@ -512,21 +412,14 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
               <div className="space-y-3">
                 <div className="flex items-center justify-between pb-1 border-b border-[#DCD4C9]">
                   <span className="text-xs font-bold uppercase tracking-wider text-[#4A453F]">
-                    {quoteHistory.length} {quoteHistory.length === 1 ? 'Cotización registrada' : 'Cotizaciones registradas'}
+                    {quoteHistory.length} {quoteHistory.length === 1 ? 'Cotización enviada' : 'Cotizaciones enviadas'}
                   </span>
                   <span className="text-[11px] text-[#6F6860]">
-                    Sincronizado con Seguimiento Empresas
+                    Ordenado por fecha más reciente
                   </span>
                 </div>
 
-                {quoteHistory
-                  .filter((q) => {
-                    if (!orderSearchQuery.trim()) return true;
-                    const qId = (q.id || '').toLowerCase();
-                    const s = orderSearchQuery.trim().toLowerCase();
-                    return qId.includes(s);
-                  })
-                  .map((q, idx) => {
+                {quoteHistory.map((q, idx) => {
                   const dateStr = q.date ? new Date(q.date).toLocaleDateString('es-AR', {
                     day: '2-digit',
                     month: '2-digit',
@@ -535,17 +428,6 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                     minute: '2-digit',
                   }) : 'Fecha reciente';
 
-                  const currentStep = q.liveStatus || q.status || 'cotizacion';
-                  const stepOrder = ['cotizacion', 'sena_50', 'produccion', 'listo', 'entregado'];
-                  const stepIndex = stepOrder.indexOf(currentStep);
-                  const stepLabels: Record<string, string> = {
-                    cotizacion: '1. Cotización Recibida',
-                    sena_50: '2. Aprobado / Seña 50%',
-                    produccion: '3. En Bordados / Taller',
-                    listo: '4. Listo para Retirar',
-                    entregado: '5. Entregado / Cerrado',
-                  };
-
                   return (
                     <div
                       key={q.id || idx}
@@ -553,15 +435,15 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                     >
                       <div className="flex items-start justify-between gap-2 border-b border-[#ECE5DC] pb-2">
                         <div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-mono font-bold text-xs text-[#18231C] px-2 py-0.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono font-bold text-xs text-[#18231C]">
                               {q.id || `COT-#${idx + 1}`}
                             </span>
-                            <span className="px-2 py-0.5 bg-amber-50 border border-amber-300 text-amber-900 text-[10px] font-bold uppercase rounded-xs">
-                              {stepLabels[currentStep] || currentStep}
+                            <span className="px-1.5 py-0.5 bg-emerald-50 border border-emerald-200 text-emerald-800 text-[10px] font-bold uppercase rounded-xs">
+                              {q.status === 'enviada_whatsapp' ? 'Enviada por WhatsApp' : 'Recibida en Ventas'}
                             </span>
                           </div>
-                          <div className="flex items-center gap-1.5 text-[11px] text-[#6F6860] mt-1.5">
+                          <div className="flex items-center gap-1.5 text-[11px] text-[#6F6860] mt-1">
                             <Clock className="w-3 h-3" style={{ color: accent }} />
                             <span>{dateStr}</span>
                           </div>
@@ -572,33 +454,6 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                           <span className="font-mono font-bold text-sm text-[#18231C]">
                             ${(q.totalEstimated || 0).toLocaleString('es-AR')}
                           </span>
-                        </div>
-                      </div>
-
-                      {/* Live Step Progress Bar */}
-                      <div className="space-y-1.5 pt-1">
-                        <div className="flex justify-between text-[10px] font-bold text-[#6F6860] uppercase">
-                          <span>Estado actual:</span>
-                          <span className="text-[#B9522F]">{stepLabels[currentStep] || 'En Proceso'}</span>
-                        </div>
-                        <div className="grid grid-cols-5 gap-1">
-                          {stepOrder.map((stepKey, sIdx) => {
-                            const isCompleted = stepIndex >= sIdx;
-                            const isCurrent = stepIndex === sIdx;
-                            return (
-                              <div
-                                key={stepKey}
-                                className={`h-2 rounded-full transition-all ${
-                                  isCurrent
-                                    ? 'bg-[#B9522F] ring-2 ring-[#B9522F]/30 animate-pulse'
-                                    : isCompleted
-                                    ? 'bg-[#18231C]'
-                                    : 'bg-[#ECE5DC]'
-                                }`}
-                                title={stepLabels[stepKey]}
-                              />
-                            );
-                          })}
                         </div>
                       </div>
 

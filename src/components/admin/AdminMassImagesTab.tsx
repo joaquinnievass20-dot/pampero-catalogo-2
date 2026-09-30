@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { Product } from '../../types';
 import { parseImageFileName, ParsedImageInfo } from '../../utils/imageNamingParser';
 import { compressImage } from '../../utils/imageCompressor';
-import { uploadImageToStorage } from '../../services/firebase';
+import { uploadImageToStorage, saveFirestoreProducts, saveSingleFirestoreProduct } from '../../services/firebase';
 import { 
   Images, 
   Upload, 
@@ -88,26 +88,34 @@ export const AdminMassImagesTab: React.FC<AdminMassImagesTabProps> = ({
     parsedInfo: ParsedImageInfo;
   }>>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [processingStatus, setProcessingStatus] = useState<string>('');
+  const [batchErrorNotice, setBatchErrorNotice] = useState<string | null>(null);
   const fileBatchInputRef = useRef<HTMLInputElement>(null);
 
-  // 1. Batch upload multiple files from local disk (con soporte de código#color#género#posición)
+  // 1. Carga masiva: Subida directa a Firebase Storage (uploadBytes/getDownloadURL)
+  // con seguimiento paso a paso y try/catch robusto para evitar bloqueos
   const handleBatchFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
     setIsProcessing(true);
+    setBatchErrorNotice(null);
     const fileList = Array.from(files) as File[];
+    const successfulPreviews: Array<{
+      name: string;
+      dataUrl: string;
+      matchedCode?: string;
+      matchedProduct?: Product;
+      parsedInfo: ParsedImageInfo;
+    }> = [];
 
     try {
-      const readPromises = fileList.map(async (file) => {
+      for (let i = 0; i < fileList.length; i++) {
+        const file = fileList[i];
+        setProcessingStatus(`Subiendo archivo ${i + 1} de ${fileList.length}: ${file.name}...`);
+
         try {
           const parsedInfo = parseImageFileName(file.name);
-          const compressed = await compressImage(file, {
-            maxWidth: 1200,
-            maxHeight: 1200,
-            quality: 0.85,
-          });
-
           const codeToMatch = (parsedInfo.productCode || '').toLowerCase().trim();
           const fileNameWithoutExt = file.name.substring(0, file.name.lastIndexOf('.')).toLowerCase();
 
@@ -123,41 +131,43 @@ export const AdminMassImagesTab: React.FC<AdminMassImagesTabProps> = ({
             );
           });
 
-          // Subir a Firebase Storage para obtener URL pública permanente
+          // Subida DIRECTA del archivo a Firebase Storage con uploadBytes y getDownloadURL
           const skuPrefix = (codeToMatch || matched?.code || 'lote').replace(/[^a-zA-Z0-9_-]/g, '_');
-          const publicUrl = await uploadImageToStorage(compressed, `products/${skuPrefix}`);
+          const publicUrl = await uploadImageToStorage(file, `products/${skuPrefix}`);
 
-          return {
+          successfulPreviews.push({
             name: file.name,
             dataUrl: publicUrl,
             matchedCode: matched?.code,
             matchedProduct: matched,
             parsedInfo,
-          };
-        } catch (err) {
-          console.error('Error subiendo archivo batch a Firebase Storage:', file.name, err);
-          const parsedInfo = parseImageFileName(file.name);
-          return {
-            name: file.name,
-            dataUrl: '',
-            matchedCode: undefined,
-            matchedProduct: undefined,
-            parsedInfo,
-          };
+          });
+        } catch (fileErr: any) {
+          console.error(`[CARGA MASIVA ERROR] Error subiendo ${file.name}:`, fileErr);
+          // Continuar con los siguientes archivos sin trabar la pantalla
         }
-      });
+      }
 
-      const results = await Promise.all(readPromises);
-      setUploadedFilesPreview(results.filter((r) => Boolean(r.dataUrl)));
-    } catch (err) {
-      console.error('Error reading batch files:', err);
+      setUploadedFilesPreview(successfulPreviews);
+      if (successfulPreviews.length === 0) {
+        setBatchErrorNotice('No se pudo subir ninguna de las imágenes seleccionadas a Firebase Storage.');
+      }
+    } catch (err: any) {
+      console.error('[CARGA MASIVA] Error general procesando archivos:', err);
+      const msg = err?.message || 'Error al procesar el lote de imágenes.';
+      setBatchErrorNotice(msg);
+      alert(msg);
     } finally {
+      // Garantizar SIEMPRE que el spinner de carga se detenga
       setIsProcessing(false);
+      setProcessingStatus('');
+      // Limpiar el input para permitir seleccionar de nuevo los mismos archivos si se desea
+      if (e.target) e.target.value = '';
     }
   };
 
-  // Apply batch files to products (Soporta múltiples fotos por producto, Mujer, Hombre y orden)
-  const handleApplyBatchFiles = () => {
+  // Apply batch files to products y persistencia automática en Cloud Firestore
+  const handleApplyBatchFiles = async () => {
     if (uploadedFilesPreview.length === 0) return;
 
     // Group files by matched product ID
@@ -176,63 +186,81 @@ export const AdminMassImagesTab: React.FC<AdminMassImagesTabProps> = ({
       return;
     }
 
-    let updatedCount = 0;
-    const updated = products.map((p) => {
-      const itemsForProduct = productGroups.get(p.id);
-      if (!itemsForProduct || itemsForProduct.length === 0) return p;
+    setIsProcessing(true);
+    setProcessingStatus('Guardando cambios en Cloud Firestore...');
 
-      updatedCount++;
+    try {
+      let updatedCount = 0;
+      const updated = products.map((p) => {
+        const itemsForProduct = productGroups.get(p.id);
+        if (!itemsForProduct || itemsForProduct.length === 0) return p;
 
-      // Sort items by position if provided
-      const sorted = [...itemsForProduct].sort((a, b) => {
-        const posA = a.parsedInfo.position ?? 999;
-        const posB = b.parsedInfo.position ?? 999;
-        return posA - posB;
+        updatedCount++;
+
+        // Sort items by position if provided
+        const sorted = [...itemsForProduct].sort((a, b) => {
+          const posA = a.parsedInfo.position ?? 999;
+          const posB = b.parsedInfo.position ?? 999;
+          return posA - posB;
+        });
+
+        const womenPhotos: string[] = Array.isArray(p.imagesWomen) ? [...p.imagesWomen] : [];
+        const menPhotos: string[] = Array.isArray(p.imagesMen) ? [...p.imagesMen] : [];
+        const generalPhotos: string[] = Array.isArray(p.images) && p.images.length > 0 
+          ? [...p.images] 
+          : (p.image ? [p.image] : []);
+
+        let hasGenderSpecific = false;
+
+        sorted.forEach((item) => {
+          const gender = item.parsedInfo.gender;
+          if (gender === 'Mujer') {
+            hasGenderSpecific = true;
+            if (!womenPhotos.includes(item.dataUrl)) womenPhotos.push(item.dataUrl);
+          } else if (gender === 'Hombre') {
+            hasGenderSpecific = true;
+            if (!menPhotos.includes(item.dataUrl)) menPhotos.push(item.dataUrl);
+          } else {
+            if (!generalPhotos.includes(item.dataUrl)) generalPhotos.push(item.dataUrl);
+          }
+        });
+
+        const isUnisex = Boolean(p.isUnisex || hasGenderSpecific || (womenPhotos.length > 0 && menPhotos.length > 0));
+
+        const finalGeneral = generalPhotos.length > 0
+          ? generalPhotos
+          : (menPhotos.length > 0 ? menPhotos : womenPhotos);
+
+        const primaryImage = finalGeneral[0] || p.image;
+
+        return {
+          ...p,
+          image: primaryImage,
+          images: finalGeneral,
+          imagesMen: menPhotos,
+          imagesWomen: womenPhotos,
+          isUnisex,
+        };
       });
 
-      const womenPhotos: string[] = Array.isArray(p.imagesWomen) ? [...p.imagesWomen] : [];
-      const menPhotos: string[] = Array.isArray(p.imagesMen) ? [...p.imagesMen] : [];
-      const generalPhotos: string[] = Array.isArray(p.images) && p.images.length > 0 
-        ? [...p.images] 
-        : (p.image ? [p.image] : []);
+      // 1. Guardar automáticamente en Cloud Firestore
+      const fireResult = await saveFirestoreProducts(updated);
+      if (!fireResult.success) {
+        console.warn('[FIREBASE WARNING] Guardado masivo Firestore reportó:', fireResult.error);
+      }
 
-      let hasGenderSpecific = false;
-
-      sorted.forEach((item) => {
-        const gender = item.parsedInfo.gender;
-        if (gender === 'Mujer') {
-          hasGenderSpecific = true;
-          if (!womenPhotos.includes(item.dataUrl)) womenPhotos.push(item.dataUrl);
-        } else if (gender === 'Hombre') {
-          hasGenderSpecific = true;
-          if (!menPhotos.includes(item.dataUrl)) menPhotos.push(item.dataUrl);
-        } else {
-          if (!generalPhotos.includes(item.dataUrl)) generalPhotos.push(item.dataUrl);
-        }
-      });
-
-      const isUnisex = Boolean(p.isUnisex || hasGenderSpecific || (womenPhotos.length > 0 && menPhotos.length > 0));
-
-      const finalGeneral = generalPhotos.length > 0
-        ? generalPhotos
-        : (menPhotos.length > 0 ? menPhotos : womenPhotos);
-
-      const primaryImage = finalGeneral[0] || p.image;
-
-      return {
-        ...p,
-        image: primaryImage,
-        images: finalGeneral,
-        imagesMen: menPhotos,
-        imagesWomen: womenPhotos,
-        isUnisex,
-      };
-    });
-
-    onUpdateProducts(updated);
-    alert(`¡Éxito! Se actualizaron las fotos de ${updatedCount} productos del catálogo con soporte múltiple y galerías.`);
-    triggerSaveNotice();
-    setUploadedFilesPreview([]);
+      // 2. Actualizar estado de React y disparar aviso
+      onUpdateProducts(updated);
+      triggerSaveNotice();
+      alert(`¡Éxito! Se actualizaron y guardaron en Cloud Firestore las fotos de ${updatedCount} productos del catálogo.`);
+      setUploadedFilesPreview([]);
+    } catch (err: any) {
+      console.error('[APLICAR FOTOS MASIVAS ERROR]:', err);
+      alert(`Ocurrió un error al guardar los productos en Cloud Firestore: ${err?.message || err}`);
+    } finally {
+      setIsProcessing(false);
+      setProcessingStatus('');
+    }
   };
 
   // 2. Process Google Drive links pasted line by line
@@ -534,11 +562,27 @@ export const AdminMassImagesTab: React.FC<AdminMassImagesTabProps> = ({
             </div>
           </div>
 
-          {/* Status message */}
+          {/* Status and Error messages */}
           {isProcessing && (
             <div className="p-4 bg-amber-50 border border-amber-300 text-amber-900 text-xs rounded-xs font-semibold flex items-center gap-2 animate-pulse">
-              <Sparkles className="w-4 h-4 text-amber-600" />
-              Procesando y emparejando archivos de imagen con los productos...
+              <Sparkles className="w-4 h-4 text-amber-600 animate-spin" />
+              <span>{processingStatus || 'Subiendo y procesando imágenes en Firebase Storage...'}</span>
+            </div>
+          )}
+
+          {batchErrorNotice && !isProcessing && (
+            <div className="p-4 bg-red-50 border border-red-300 text-red-900 text-xs rounded-xs font-semibold flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+                <span>{batchErrorNotice}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setBatchErrorNotice(null)}
+                className="text-red-700 hover:text-red-900 text-xs underline font-bold"
+              >
+                Cerrar
+              </button>
             </div>
           )}
 
