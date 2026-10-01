@@ -80,7 +80,7 @@ export function getFirebaseStorage(): FirebaseStorage | null {
     const rawBucket = (import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || firebaseConfig.storageBucket || '').trim();
     const cleanBucket = rawBucket.replace(/^gs:\/\//, '');
 
-    // Conexión Directa: inicializa Firebase Storage consumiendo VITE_FIREBASE_STORAGE_BUCKET
+    // ConexiÃ³n Directa: inicializa Firebase Storage consumiendo VITE_FIREBASE_STORAGE_BUCKET
     storage = cleanBucket ? getStorage(app, `gs://${cleanBucket}`) : getStorage(app);
 
     // Evitar que el SDK de Firebase Storage se cuelgue en reintentos infinitos
@@ -119,7 +119,7 @@ export function isFirebaseReady(): boolean {
 }
 
 /**
- * Conexión Directa: Sube archivos directo a Firebase Storage utilizando uploadBytes y getDownloadURL.
+ * ConexiÃ³n Directa: Sube archivos directo a Firebase Storage utilizando uploadBytes y getDownloadURL.
  * Inicializado correctamente consumiendo VITE_FIREBASE_STORAGE_BUCKET.
  * Bloque try/catch robusto: si la imagen no sube, reporta console.error y no se congela.
  */
@@ -160,50 +160,97 @@ export async function uploadImageToStorage(
   fileOrDataUrl: File | Blob | string,
   folder: string = 'catalog'
 ): Promise<string> {
-  // Si ya es una URL persistente accesible (http/https y no blob/base64), mantenerla
-  if (typeof fileOrDataUrl === 'string' && (fileOrDataUrl.startsWith('http://') || fileOrDataUrl.startsWith('https://')) && !fileOrDataUrl.includes('/uploads/')) {
+  if (
+    typeof fileOrDataUrl === 'string' &&
+    (fileOrDataUrl.startsWith('http://') || fileOrDataUrl.startsWith('https://')) &&
+    !fileOrDataUrl.startsWith('blob:') &&
+    !fileOrDataUrl.startsWith('data:')
+  ) {
     return fileOrDataUrl;
   }
 
-  const stor = storage || getFirebaseStorage();
-  if (!stor) {
-    console.error('[STORAGE ERROR] Firebase Storage no está disponible. Verificá VITE_FIREBASE_STORAGE_BUCKET.');
-    throw new Error('Firebase Storage no disponible. Verificá la variable VITE_FIREBASE_STORAGE_BUCKET.');
-  }
-
-  const timestamp = Date.now();
-  const randomSuffix = Math.random().toString(36).substring(2, 8);
+  let dataUrl = '';
+  let filename = 'foto.jpg';
 
   try {
-    let storageRef;
-    let uploadPromise;
-
-    if (typeof fileOrDataUrl === 'string' && fileOrDataUrl.startsWith('data:image/')) {
-      let ext = 'jpg';
-      if (fileOrDataUrl.includes('image/png')) ext = 'png';
-      else if (fileOrDataUrl.includes('image/webp')) ext = 'webp';
-      const filePath = `${folder}/${timestamp}_${randomSuffix}.${ext}`;
-      storageRef = ref(stor, filePath);
-      uploadPromise = uploadString(storageRef, fileOrDataUrl, 'data_url');
-    } else if (fileOrDataUrl instanceof File || fileOrDataUrl instanceof Blob) {
-      const originalName = (fileOrDataUrl as File).name || 'image.jpg';
-      const cleanName = originalName.replace(/[^a-zA-Z0-9._-]/g, '_');
-      const filePath = `${folder}/${timestamp}_${cleanName}`;
-      storageRef = ref(stor, filePath);
-      const contentType = (fileOrDataUrl as File).type || 'image/jpeg';
-      uploadPromise = uploadBytes(storageRef, fileOrDataUrl, { contentType });
-    } else {
-      throw new Error('Formato de imagen inválido para subir a Firebase Storage.');
+    if (fileOrDataUrl instanceof File) {
+      filename = fileOrDataUrl.name || 'foto.jpg';
+      dataUrl = await compressToBase64(fileOrDataUrl, 50);
+    } else if (fileOrDataUrl instanceof Blob) {
+      filename = 'imagen.jpg';
+      dataUrl = await compressToBase64(fileOrDataUrl, 50);
+    } else if (typeof fileOrDataUrl === 'string') {
+      filename = 'foto.jpg';
+      dataUrl = await compressToBase64(fileOrDataUrl, 50);
     }
+  } catch (prepErr) {
+    console.warn('[STORAGE] Error optimizando imagen previa:', prepErr);
+  }
 
-    // Direct upload with uploadBytes / uploadString
-    const uploadResult = await uploadPromise;
-    // Direct getDownloadURL
-    const downloadUrl = await getDownloadURL(uploadResult.ref);
-    return downloadUrl;
-  } catch (err: any) { console.warn("[STORAGE WARN] Fall� Storage, usando fallback base64", err); } } console.log("[STORAGE FALLBACK] Comprimiendo a base64..."); if (fileOrDataUrl instanceof File) { return await compressToBase64(fileOrDataUrl); } else if (typeof fileOrDataUrl === "string" && fileOrDataUrl.startsWith("data:")) { return fileOrDataUrl; } throw new Error("No se pudo subir imagen");
+  // CANAL 1: Subida al Servidor Local (/api/upload -> /uploads/...)
+  if (dataUrl && dataUrl.startsWith('data:image/')) {
+    try {
+      const response = await fetch('/api/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dataUrl, filename, folder }),
+      });
+      const cType = response.headers.get('content-type') || '';
+      if (response.ok && cType.includes('application/json')) {
+        const resJson = await response.json();
+        if (resJson && resJson.success && resJson.url) {
+          return resJson.url;
+        }
+      }
+    } catch {
+      // Ignorar y continuar a canales siguientes
+    }
+  }
+
+  // CANAL 2: Firebase Storage (con timeout de 3.5s para no trabar si el bucket no está activado)
+  try {
+    const stor = storage || getFirebaseStorage();
+    if (stor) {
+      const timestamp = Date.now();
+      const randomSuffix = Math.random().toString(36).substring(2, 8);
+      const cleanName = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const filePath = `${folder}/${timestamp}_${randomSuffix}_${cleanName}`;
+      const storageRef = ref(stor, filePath);
+
+      const storagePromise = (async () => {
+        if (typeof fileOrDataUrl === 'string' && fileOrDataUrl.startsWith('data:image/')) {
+          await uploadString(storageRef, fileOrDataUrl, 'data_url');
+        } else if (fileOrDataUrl instanceof File || fileOrDataUrl instanceof Blob) {
+          const contentType = (fileOrDataUrl as File).type || 'image/jpeg';
+          await uploadBytes(storageRef, fileOrDataUrl, { contentType });
+        } else if (dataUrl) {
+          await uploadString(storageRef, dataUrl, 'data_url');
+        }
+        return await getDownloadURL(storageRef);
+      })();
+
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Firebase Storage timeout')), 3500)
+      );
+
+      const downloadUrl = await Promise.race([storagePromise, timeoutPromise]);
+      return downloadUrl;
+    }
+  } catch (storageErr: any) {
+    console.warn('[STORAGE WARN] Firebase Storage no disponible o sin bucket:', storageErr?.message || storageErr);
+  }
+
+  // CANAL 3: Fallback Base64 ultraliviano (~40KB)
+  if (dataUrl) {
+    return dataUrl;
+  }
+
+  if (typeof fileOrDataUrl === 'string') {
+    return fileOrDataUrl;
+  }
+
+  throw new Error('No se pudo procesar la imagen seleccionada.');
 }
-
 /**
  * Executes a promise with an automatic timeout to prevent stalling
  * if the device or network connection is offline or unstable.
@@ -212,7 +259,7 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs = 8000): Promise<T> {
   return Promise.race([
     promise,
     new Promise<T>((_, reject) =>
-      setTimeout(() => reject(new Error(`Operación de Firestore cancelada por timeout (${timeoutMs}ms)`)), timeoutMs)
+      setTimeout(() => reject(new Error(`OperaciÃ³n de Firestore cancelada por timeout (${timeoutMs}ms)`)), timeoutMs)
     ),
   ]);
 }
@@ -261,12 +308,12 @@ export async function fetchFirestoreProducts(): Promise<Product[] | null> {
 export async function saveFirestoreProducts(products: Product[]): Promise<{ success: boolean; error?: string }> {
   const firestoreDb = db || getFirebaseDb();
   if (!firestoreDb) {
-    const msg = 'La conexión a Cloud Firestore no está inicializada.';
+    const msg = 'La conexiÃ³n a Cloud Firestore no estÃ¡ inicializada.';
     console.warn('[FIREBASE]', msg);
     return { success: false, error: msg };
   }
   if (!Array.isArray(products) || products.length === 0) {
-    return { success: false, error: 'Lista de productos vacía.' };
+    return { success: false, error: 'Lista de productos vacÃ­a.' };
   }
   try {
     // Firestore writeBatch has a maximum limit of 500 operations per batch
@@ -323,14 +370,14 @@ export async function saveFirestoreProducts(products: Product[]): Promise<{ succ
 export async function saveSingleFirestoreProduct(product: Product): Promise<{ success: boolean; error?: string }> {
   const firestoreDb = db || getFirebaseDb();
   if (!firestoreDb) {
-    const msg = 'No hay conexión activa con Cloud Firestore de Firebase.';
+    const msg = 'No hay conexiÃ³n activa con Cloud Firestore de Firebase.';
     console.error('[FIREBASE ERROR]', msg);
     return { success: false, error: msg };
   }
   try {
     const sku = (product.code || product.id || '').trim();
     if (!sku) {
-      throw new Error('El producto no tiene un código o SKU válido.');
+      throw new Error('El producto no tiene un cÃ³digo o SKU vÃ¡lido.');
     }
     const docRefEs = doc(firestoreDb, 'productos', sku);
     const docRefEn = doc(firestoreDb, 'products', sku);
@@ -352,7 +399,7 @@ export async function saveSingleFirestoreProduct(product: Product): Promise<{ su
     return { success: true };
   } catch (err: any) {
     const errorMsg = err?.message || String(err);
-    console.error(`[FIREBASE ERROR] Falló la promesa de guardado para el producto ${product.name}:`, err);
+    console.error(`[FIREBASE ERROR] FallÃ³ la promesa de guardado para el producto ${product.name}:`, err);
     return { success: false, error: errorMsg };
   }
 }
@@ -449,7 +496,7 @@ export async function fetchFirestoreStoreConfig(): Promise<FirestoreStoreConfig 
     }
     return docSnap.data() as FirestoreStoreConfig;
   } catch (err: any) {
-    console.warn('[FIREBASE] Aviso de lectura de configuración (modo offline/fallback activo):', err?.message || err);
+    console.warn('[FIREBASE] Aviso de lectura de configuraciÃ³n (modo offline/fallback activo):', err?.message || err);
     return null;
   }
 }
@@ -1061,7 +1108,7 @@ export const seedInitialFirestoreEmployeesIfEmpty = async (initialEmployees: Emp
 export async function saveCRMExpense(expense: CRMExpense): Promise<{ success: boolean; id: string; error?: string }> {
   const firestoreDb = db || getFirebaseDb();
   if (!firestoreDb) {
-    throw new Error('Cloud Firestore no está disponible para registrar el gasto.');
+    throw new Error('Cloud Firestore no estÃ¡ disponible para registrar el gasto.');
   }
   try {
     const expenseId = expense.id || `exp-${Date.now()}`;
@@ -1090,7 +1137,7 @@ export async function saveCRMExpense(expense: CRMExpense): Promise<{ success: bo
 export async function deleteCRMExpense(expenseId: string): Promise<{ success: boolean; error?: string }> {
   const firestoreDb = db || getFirebaseDb();
   if (!firestoreDb) {
-    throw new Error('Cloud Firestore no está disponible.');
+    throw new Error('Cloud Firestore no estÃ¡ disponible.');
   }
   try {
     const docRef = doc(firestoreDb, 'crm_expenses', expenseId);
@@ -1168,7 +1215,7 @@ export async function getNextCorrelativeOrderNumber(): Promise<{ number: number;
       localStorage.setItem(storageKey, String(nextNum));
       return { number: nextNum, formatted: `#${nextNum}` };
     } catch (err) {
-      console.warn('[FIREBASE COUNTER] Error en transacción correlativa, usando respaldo:', err);
+      console.warn('[FIREBASE COUNTER] Error en transacciÃ³n correlativa, usando respaldo:', err);
     }
   }
 
@@ -1185,7 +1232,7 @@ export async function getNextCorrelativeOrderNumber(): Promise<{ number: number;
 }
 
 // ==========================================
-// COST CATEGORIES PERSISTENCE (Categorías de Costos Fijo / Variable)
+// COST CATEGORIES PERSISTENCE (CategorÃ­as de Costos Fijo / Variable)
 // ==========================================
 
 export const DEFAULT_COST_CATEGORIES: CostCategoryConfig[] = [
@@ -1195,7 +1242,7 @@ export const DEFAULT_COST_CATEGORIES: CostCategoryConfig[] = [
   { id: 'cat-fletes', name: 'Fletes', defaultType: 'Variable', isSystem: true },
   { id: 'cat-insumos-embalaje', name: 'Insumos/Embalaje', defaultType: 'Variable', isSystem: true },
   { id: 'cat-mantenimiento', name: 'Mantenimiento', defaultType: 'Variable', isSystem: true },
-  { id: 'cat-viaticos', name: 'Viáticos', defaultType: 'Variable', isSystem: true },
+  { id: 'cat-viaticos', name: 'ViÃ¡ticos', defaultType: 'Variable', isSystem: true },
   { id: 'cat-comisiones', name: 'Comisiones', defaultType: 'Variable', isSystem: true },
   { id: 'cat-marketing', name: 'Marketing y Publicidad', defaultType: 'Variable', isSystem: true },
   { id: 'cat-otros', name: 'Otros Gastos', defaultType: 'Variable', isSystem: true },
@@ -1272,16 +1319,16 @@ export interface KanbanColumnConfig {
 }
 
 export const DEFAULT_VISIT_COLUMNS: KanbanColumnConfig[] = [
-  { id: 'primer_contacto', label: '1. Primer Contacto', color: '#3B82F6', description: 'Contacto inicial telefónico, WhatsApp o prospección' },
-  { id: 'reunion', label: '2. Reunión / Visita', color: '#8B5CF6', description: 'Visita en planta/oficina o presentación en local' },
-  { id: 'previo_cotizacion', label: '3. Previo a Cotización', color: '#F97316', description: 'Relevamiento de prendas, talles y muestras físicas' },
-  { id: 'convertida', label: '4. Pasado a Seguimiento', color: '#10B981', description: 'Avanzado con éxito al tablero de Seguimiento Empresas' },
+  { id: 'primer_contacto', label: '1. Primer Contacto', color: '#3B82F6', description: 'Contacto inicial telefÃ³nico, WhatsApp o prospecciÃ³n' },
+  { id: 'reunion', label: '2. ReuniÃ³n / Visita', color: '#8B5CF6', description: 'Visita en planta/oficina o presentaciÃ³n en local' },
+  { id: 'previo_cotizacion', label: '3. Previo a CotizaciÃ³n', color: '#F97316', description: 'Relevamiento de prendas, talles y muestras fÃ­sicas' },
+  { id: 'convertida', label: '4. Pasado a Seguimiento', color: '#10B981', description: 'Avanzado con Ã©xito al tablero de Seguimiento Empresas' },
 ];
 
 export const DEFAULT_COMPANY_COLUMNS: KanbanColumnConfig[] = [
-  { id: 'cotizacion', label: 'Cotización Recibida', color: '#FDB813', description: 'Solicitud ingresada desde la web o mostrador' },
-  { id: 'sena_50', label: 'Aprobado / Seña 50%', color: '#F97316', description: 'Confirmado por el cliente con pago de anticipo' },
-  { id: 'produccion', label: 'En Bordados / Taller', color: '#8B5CF6', description: 'Prendas confeccionándose o estampándose' },
+  { id: 'cotizacion', label: 'CotizaciÃ³n Recibida', color: '#FDB813', description: 'Solicitud ingresada desde la web o mostrador' },
+  { id: 'sena_50', label: 'Aprobado / SeÃ±a 50%', color: '#F97316', description: 'Confirmado por el cliente con pago de anticipo' },
+  { id: 'produccion', label: 'En Bordados / Taller', color: '#8B5CF6', description: 'Prendas confeccionÃ¡ndose o estampÃ¡ndose' },
   { id: 'listo', label: 'Listo para Retirar', color: '#10B981', description: 'Control de calidad aprobado en sucursal' },
   { id: 'entregado', label: 'Entregado / Cerrado', color: '#3B82F6', description: 'Retirado por el cliente o despachado con remito' },
 ];
