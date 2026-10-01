@@ -300,7 +300,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       const updatedGeneral = [...(productForm.images || (productForm.image ? [productForm.image] : [])), ...newGeneral];
       const updatedMen = [...(productForm.imagesMen || []), ...newMen];
       const updatedWomen = [...(productForm.imagesWomen || []), ...newWomen];
-      const primary = productForm.image || updatedGeneral[0] || updatedMen[0] || updatedWomen[0] || '';
+      const isPlaceholder = !productForm.image || productForm.image.includes('images.unsplash.com');
+      const primary = (isPlaceholder ? (newGeneral[0] || newMen[0] || newWomen[0]) : productForm.image) 
+        || updatedGeneral[0] || updatedMen[0] || updatedWomen[0] || '';
 
       // 1. Actualizar estado local del formulario
       setProductForm((prev) => ({
