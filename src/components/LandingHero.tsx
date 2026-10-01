@@ -13,8 +13,7 @@ import {
   Settings,
   Tag,
   Sparkles,
-  Shirt,
-  LayoutDashboard
+  Shirt
 } from 'lucide-react';
 
 interface LandingHeroProps {
@@ -595,9 +594,9 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
         </section>
       )}
 
-      {/* 3.5. Interactive Tools Spotlight Section (Armador, Portal de Talles, CRM) */}
+      {/* 3.5. Interactive Tools Spotlight Section (Armador & Portal de Talles - Clientes) */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-2 mb-10">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           {/* Card 1: Armador de Uniformes */}
           <div 
             onClick={onOpenUniformSimulator}
@@ -644,31 +643,6 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
             </div>
             <div className="pt-4 mt-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-[#18231C]">
               <span>Abrir Portal de Talles</span>
-              <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-1" />
-            </div>
-          </div>
-
-          {/* Card 3: Gestión / CRM */}
-          <div 
-            onClick={onOpenCRM}
-            className="group relative p-6 bg-[#18231C] border border-[#2B3B30] rounded-xs shadow-xs hover:shadow-xl hover:border-[#FDB813] transition-all cursor-pointer flex flex-col justify-between overflow-hidden text-white"
-          >
-            <div className="space-y-2">
-              <div className="w-10 h-10 rounded-xs bg-white/10 border border-white/20 flex items-center justify-center text-[#FDB813] group-hover:bg-[#FDB813] group-hover:text-[#18231C] transition-colors">
-                <LayoutDashboard className="w-5 h-5 text-[#FDB813] group-hover:text-[#18231C]" />
-              </div>
-              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[#FDB813] block">
-                Sistema Interno Pampero
-              </span>
-              <h3 className="font-display font-bold text-xl uppercase tracking-wider text-white group-hover:text-[#FDB813] transition-colors">
-                Tablero de Gestión & CRM
-              </h3>
-              <p className="text-xs text-[#DCD4C9]/80 leading-relaxed">
-                Reemplazo del Excel: Tablero Kanban de cotizaciones, seña 50%, taller de bordados y avisos con alertas de demora.
-              </p>
-            </div>
-            <div className="pt-4 mt-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-[#FDB813]">
-              <span>Ingresar a Gestión / CRM</span>
               <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-1" />
             </div>
           </div>

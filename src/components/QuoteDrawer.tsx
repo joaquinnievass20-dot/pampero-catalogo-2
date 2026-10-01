@@ -18,7 +18,7 @@ import {
   Copy
 } from 'lucide-react';
 import { trackWhatsAppQuote } from '../utils/analytics';
-import { saveCRMOrder } from '../services/firebase';
+import { saveCRMOrder, getNextCorrelativeOrderNumber } from '../services/firebase';
 
 interface QuoteDrawerProps {
   isOpen: boolean;
@@ -52,6 +52,8 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
   const [hasError, setHasError] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [copied, setCopied] = useState(false);
+  const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
+  const [orderNotice, setOrderNotice] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
@@ -153,14 +155,17 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
     };
 
     // Text format for WhatsApp
-    const buildQuoteText = () => {
+    const buildQuoteText = (orderNumberStr?: string) => {
       const d = (userSession?.clientData || {}) as any;
       const empresa = d.companyName || (userSession?.clientType === 'empresa' ? (d.fullName || 'Empresa') : (d.fullName || 'Consumidor Final'));
       const contacto = d.fullName || (userSession?.email ? userSession.email.split('@')[0] : 'Cliente');
       const telefono = d.phone || '-';
 
-      let text = `*SOLICITUD DE COTIZACIÓN - PAMPERO GRAN MENDOZA*\n\n`;
-      text += `*Cliente / Empresa:* ${empresa}\n`;
+      let text = `*SOLICITUD DE COTIZACIÓN / PEDIDO - PAMPERO GRAN MENDOZA*\n`;
+      if (orderNumberStr) {
+        text += `*N° DE PEDIDO:* ${orderNumberStr}\n`;
+      }
+      text += `\n*Cliente / Empresa:* ${empresa}\n`;
       text += `*Contacto:* ${contacto}\n`;
       text += `*Teléfono:* ${telefono}\n`;
       text += `*Total de Prendas:* ${totalUnits} unidades\n\n`;
@@ -186,15 +191,57 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
       }
 
       text += `*ESTIMADO TOTAL:* $${finalTotal.toLocaleString('es-AR')}\n`;
+      if (orderNumberStr) {
+        text += `*Seguimiento:* Tu pedido quedó registrado con el código ${orderNumberStr} en el sistema oficial.\n`;
+      }
       text += `_Cotización generada desde el catálogo oficial Pampero Gran Mendoza_`;
 
       return text;
     };
 
-    // 1. Export to Excel (.xlsx)
-    const handleExportToExcel = () => {
+    // Helper to get first Kanban column ID dynamically
+    const getFirstKanbanColId = (): string => {
       try {
-        if (safeItems.length === 0) return;
+        const raw = localStorage.getItem('pampero_kanban_company_cols');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length > 0 && parsed[0]?.id) {
+            return parsed[0].id;
+          }
+        }
+      } catch {}
+      return 'cotizacion';
+    };
+
+    // 1. Export to Excel (.xlsx) con numeración progresiva y sincronización automática a Kanban
+    const handleExportToExcel = async () => {
+      if (safeItems.length === 0 || isSubmittingOrder) return;
+      setIsSubmittingOrder(true);
+      try {
+        // Obtener número correlativo de pedido (#1, #2, #3...)
+        const { number: orderNum, formatted: formattedOrderNum } = await getNextCorrelativeOrderNumber();
+        const orderDocId = `PED-${orderNum}`;
+        const firstColId = getFirstKanbanColId();
+
+        // Sincronizar automáticamente con el Tablero Kanban (primera columna del tablero)
+        await saveCRMOrder({
+          id: orderDocId,
+          orderNumber: formattedOrderNum,
+          date: new Date().toISOString(),
+          quoteId: formattedOrderNum,
+          clientName: userSession?.clientData?.fullName || (userSession?.clientData as any)?.companyName || 'Cliente Catálogo',
+          clientPhone: (userSession?.clientData as any)?.phone || '',
+          clientEmail: userSession?.email || '',
+          clientType: isCompany ? 'empresa' : 'consumidor_final',
+          channel: 'Excel',
+          status: firstColId,
+          seller: 'Sin Asignar',
+          branch: 'Maipú',
+          totalUnits,
+          totalEstimated: finalTotal,
+          observations: observations.trim(),
+          items: safeItems,
+        });
 
         const dataRows = safeItems.map((it) => {
           const prod = it.product;
@@ -202,6 +249,7 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
           const price = calculateItemPrice(it);
           const sub = price * it.quantity;
           return {
+            'N° Pedido': formattedOrderNum,
             'Código': code,
             'Artículo': prod.name,
             'Color Seleccionado': it.selectedColor || 'Estándar',
@@ -215,6 +263,7 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
 
         // Add summary row
         dataRows.push({
+          'N° Pedido': formattedOrderNum,
           'Código': 'TOTAL',
           'Artículo': 'Total General Estimado',
           'Color Seleccionado': '-',
@@ -227,10 +276,11 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
 
         const worksheet = XLSX.utils.json_to_sheet(dataRows);
         const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, 'Pedido Pampero');
+        XLSX.utils.book_append_sheet(workbook, worksheet, `Pedido ${formattedOrderNum}`);
 
         // Column widths
         worksheet['!cols'] = [
+          { wch: 14 },
           { wch: 15 },
           { wch: 35 },
           { wch: 20 },
@@ -242,18 +292,25 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
         ];
 
         const dateStr = new Date().toISOString().split('T')[0];
-        XLSX.writeFile(workbook, `Pedido_Pampero_${dateStr}.xlsx`);
+        const cleanNum = formattedOrderNum.replace(/[^0-9]/g, '');
+        XLSX.writeFile(workbook, `Pedido_Pampero_${cleanNum}_${dateStr}.xlsx`);
+
+        setOrderNotice(`¡Pedido ${formattedOrderNum} generado en Excel y sincronizado en el tablero de Gestión!`);
+        setTimeout(() => setOrderNotice(null), 5000);
       } catch (err: any) {
         console.error('Error exportando Excel:', err);
-        alert('Hubo un error al generar el archivo Excel. Por favor reintentá.');
+        setOrderNotice(`Error al generar Excel: ${err?.message || 'Fallo inesperado'}`);
+        setTimeout(() => setOrderNotice(null), 5000);
+      } finally {
+        setIsSubmittingOrder(false);
       }
     };
 
-    // 2. Send via WhatsApp
-    const handleSendWhatsApp = () => {
+    // 2. Send via WhatsApp con numeración progresiva y sincronización automática a Kanban
+    const handleSendWhatsApp = async () => {
+      if (safeItems.length === 0 || isSubmittingOrder) return;
+      setIsSubmittingOrder(true);
       try {
-        if (safeItems.length === 0) return;
-
         trackWhatsAppQuote({
           totalUnits,
           totalEstimated: finalTotal,
@@ -263,27 +320,38 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
           hasCoupon: Boolean(appliedCoupon),
         });
 
-        const quoteId = `COT-${Date.now().toString().slice(-6)}`;
-        const text = buildQuoteText();
-        const rawPhone = theme?.whatsappNumber || '5492615276713';
-        const cleanPhone = rawPhone.replace(/\D/g, '');
-        const whatsappUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(text)}`;
+        // Obtener número correlativo progresivo (#1, #2, #3...)
+        const { number: orderNum, formatted: formattedOrderNum } = await getNextCorrelativeOrderNumber();
+        const orderDocId = `PED-${orderNum}`;
+        const firstColId = getFirstKanbanColId();
 
-        // Sync with CRM Orders in Firestore
-        saveCRMOrder({
-          id: quoteId,
+        // Sincronizar automáticamente con el Tablero Kanban (primera columna del tablero)
+        await saveCRMOrder({
+          id: orderDocId,
+          orderNumber: formattedOrderNum,
           date: new Date().toISOString(),
-          quoteId,
+          quoteId: formattedOrderNum,
           clientName: userSession?.clientData?.fullName || (userSession?.clientData as any)?.companyName || 'Cliente Catálogo',
+          clientPhone: (userSession?.clientData as any)?.phone || '',
+          clientEmail: userSession?.email || '',
           clientType: isCompany ? 'empresa' : 'consumidor_final',
-          status: 'cotizacion',
+          channel: 'WhatsApp',
+          status: firstColId,
           seller: 'Sin Asignar',
-          branch: 'Gran Mendoza',
+          branch: 'Maipú',
           totalUnits,
           totalEstimated: finalTotal,
           observations: observations.trim(),
           items: safeItems,
-        }).catch(console.warn);
+        });
+
+        const text = buildQuoteText(formattedOrderNum);
+        const rawPhone = theme?.whatsappNumber || '5492615276713';
+        const cleanPhone = rawPhone.replace(/\D/g, '');
+        const whatsappUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(text)}`;
+
+        setOrderNotice(`¡Pedido ${formattedOrderNum} vinculado al Tablero Kanban de Gestión!`);
+        setTimeout(() => setOrderNotice(null), 5000);
 
         // Open WhatsApp
         if (typeof window !== 'undefined') {
@@ -294,6 +362,10 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
         }
       } catch (err: any) {
         console.error('Error enviando a WhatsApp:', err);
+        setOrderNotice(`Error enviando a WhatsApp: ${err?.message || 'Fallo inesperado'}`);
+        setTimeout(() => setOrderNotice(null), 5000);
+      } finally {
+        setIsSubmittingOrder(false);
       }
     };
 

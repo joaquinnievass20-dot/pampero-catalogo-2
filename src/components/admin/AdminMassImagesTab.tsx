@@ -156,7 +156,6 @@ export const AdminMassImagesTab: React.FC<AdminMassImagesTabProps> = ({
       console.error('[CARGA MASIVA] Error general procesando archivos:', err);
       const msg = err?.message || 'Error al procesar el lote de imágenes.';
       setBatchErrorNotice(msg);
-      alert(msg);
     } finally {
       // Garantizar SIEMPRE que el spinner de carga se detenga
       setIsProcessing(false);

@@ -197,7 +197,7 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
 
               {/* Menu Links */}
               <div className="p-1.5 space-y-0.5">
-                {/* Staff Main Hub (for admin & employee) */}
+                {/* Staff Main Hub - Botón Principal */}
                 {(userSession.role === 'admin' || userSession.role === 'employee') && onOpenHub && (
                   <button
                     type="button"
@@ -205,34 +205,14 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
                       setDropdownOpen(false);
                       onOpenHub();
                     }}
-                    className="w-full flex items-center justify-between px-3 py-2 text-left text-xs font-bold text-[#18231C] bg-amber-50/60 hover:bg-amber-100/70 rounded-xs transition-colors cursor-pointer group"
+                    className="w-full flex items-center justify-between px-3 py-2 text-left text-xs font-bold text-[#18231C] bg-amber-50/80 hover:bg-amber-100 rounded-xs transition-colors cursor-pointer group"
                   >
                     <div className="flex items-center gap-2">
                       <Compass className="w-4 h-4 text-[#B9522F]" />
-                      <span>Menú Principal de Personal</span>
+                      <span>Menú Principal</span>
                     </div>
                     <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded-xs bg-[#B9522F] text-white">
-                      Inicio
-                    </span>
-                  </button>
-                )}
-
-                {/* CRM Dashboard */}
-                {(userSession.role === 'admin' || userSession.role === 'employee') && onOpenCRM && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDropdownOpen(false);
-                      onOpenCRM();
-                    }}
-                    className="w-full flex items-center justify-between px-3 py-2 text-left text-xs font-bold text-[#18231C] hover:bg-[#FAF8F5] rounded-xs transition-colors cursor-pointer group"
-                  >
-                    <div className="flex items-center gap-2">
-                      <LayoutDashboard className="w-4 h-4 text-[#B9522F]" />
-                      <span>Tablero Gestión / CRM</span>
-                    </div>
-                    <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded-xs bg-[#B9522F]/10 text-[#B9522F]">
-                      Activo
+                      Hub
                     </span>
                   </button>
                 )}
@@ -274,7 +254,7 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
                   </button>
                 )}
 
-                {/* Admin or Employee Panel */}
+                {/* Admin or Employee Panel (Opción Secundaria) */}
                 {(userSession.role === 'admin' || userSession.role === 'employee') && onOpenAdmin && (
                   <button
                     type="button"

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { RegisteredUser } from '../../types';
+import { RegisteredUser, BranchLocation, UserSession } from '../../types';
 import { MASTER_ADMIN_USER, ensureMasterAdminInitialized } from '../../utils/authInit';
+import { AdminSellersTab } from './AdminSellersTab';
 import {
   subscribeToFirestoreUsers,
   saveFirestoreUser,
@@ -25,11 +26,14 @@ import {
   FileText, 
   CheckCircle2, 
   Filter,
-  RefreshCw
+  RefreshCw,
+  UserCheck
 } from 'lucide-react';
 
 interface AdminUsersTabProps {
   triggerSaveNotice: () => void;
+  branches?: BranchLocation[];
+  userSession?: UserSession | null;
 }
 
 export const INITIAL_REGISTERED_USERS: RegisteredUser[] = [
@@ -121,7 +125,9 @@ export const INITIAL_REGISTERED_USERS: RegisteredUser[] = [
   },
 ];
 
-export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice }) => {
+export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice, branches, userSession }) => {
+  const [mainSubTab, setMainSubTab] = useState<'sellers' | 'clients'>('sellers');
+
   // Real-time Firestore driven users list
   const [users, setUsers] = useState<RegisteredUser[]>(() => {
     try {
@@ -225,8 +231,45 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice 
 
   return (
     <div className="p-4 sm:p-6 space-y-6">
-      {/* Top Banner */}
-      <div className="bg-white p-5 rounded-xs border border-[#DCD4C9] shadow-2xs">
+      {/* Subtab Switcher: Vendedores y Cuentas Creadas */}
+      <div className="flex border-b border-[#DCD4C9] bg-white px-4 pt-3 gap-2 rounded-t-xs">
+        <button
+          type="button"
+          onClick={() => setMainSubTab('sellers')}
+          className={`py-2 px-4 border-b-2 text-xs font-bold uppercase tracking-wider flex items-center gap-2 cursor-pointer transition-colors ${
+            mainSubTab === 'sellers'
+              ? 'border-[#B9522F] text-[#B9522F] bg-[#FAF8F5]'
+              : 'border-transparent text-[#6F6860] hover:text-[#18231C]'
+          }`}
+        >
+          <UserCheck className="w-4 h-4" />
+          <span>Vendedores & Equipo Comercial</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setMainSubTab('clients')}
+          className={`py-2 px-4 border-b-2 text-xs font-bold uppercase tracking-wider flex items-center gap-2 cursor-pointer transition-colors ${
+            mainSubTab === 'clients'
+              ? 'border-[#B9522F] text-[#B9522F] bg-[#FAF8F5]'
+              : 'border-transparent text-[#6F6860] hover:text-[#18231C]'
+          }`}
+        >
+          <Building2 className="w-4 h-4" />
+          <span>Cuentas Creadas & Clientes Corporativos ({users.length})</span>
+        </button>
+      </div>
+
+      {mainSubTab === 'sellers' ? (
+        <AdminSellersTab
+          branches={branches || []}
+          triggerSaveNotice={triggerSaveNotice}
+          userSession={userSession}
+        />
+      ) : (
+        <>
+          {/* Top Banner */}
+          <div className="bg-white p-5 rounded-xs border border-[#DCD4C9] shadow-2xs">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#DCD4C9] pb-4">
           <div className="flex items-start gap-3">
             <div className="p-2.5 bg-[#18231C] text-[#F5F2EC] rounded-xs shrink-0 mt-0.5">
@@ -494,6 +537,8 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice 
           </table>
         </div>
       </div>
-    </div>
+    </>
+    )}
+  </div>
   );
 };

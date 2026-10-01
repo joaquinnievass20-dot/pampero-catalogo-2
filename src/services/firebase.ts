@@ -10,6 +10,7 @@ import {
   deleteDoc,
   writeBatch,
   onSnapshot,
+  runTransaction,
   Firestore,
 } from 'firebase/firestore';
 import {
@@ -32,6 +33,7 @@ import {
   RegisteredUser,
   EmployeeAccount,
   CRMExpense,
+  CostCategoryConfig,
 } from '../types';
 
 /**
@@ -110,7 +112,7 @@ export function isFirebaseReady(): boolean {
 
 /**
  * Uploads an image File, Blob, or base64 data URL EXCLUSIVELY to Firebase Storage
- * and returns the public accessible download URL with cache-busting timestamp.
+ * (uploadBytes, getDownloadURL) and returns the public accessible download URL.
  */
 export async function uploadImageToStorage(
   fileOrDataUrl: File | Blob | string,
@@ -129,37 +131,49 @@ export async function uploadImageToStorage(
     return fileOrDataUrl;
   }
 
-  if (typeof fileOrDataUrl === 'string' && fileOrDataUrl.startsWith('data:image/')) {
-    // Base64 Data URL
-    let ext = 'jpg';
-    if (fileOrDataUrl.includes('image/png')) ext = 'png';
-    else if (fileOrDataUrl.includes('image/webp')) ext = 'webp';
-    const filePath = `${folder}/${timestamp}_${randomSuffix}.${ext}`;
-    const storageRef = ref(stor, filePath);
-    const uploadOp = async () => {
+  const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+
+  const attemptUpload = async (storageInstance: FirebaseStorage): Promise<string> => {
+    if (typeof fileOrDataUrl === 'string' && fileOrDataUrl.startsWith('data:image/')) {
+      let ext = 'jpg';
+      if (fileOrDataUrl.includes('image/png')) ext = 'png';
+      else if (fileOrDataUrl.includes('image/webp')) ext = 'webp';
+      const filePath = `${folder}/${timestamp}_${randomSuffix}.${ext}`;
+      const storageRef = ref(storageInstance, filePath);
       const result = await uploadString(storageRef, fileOrDataUrl, 'data_url');
       return await getDownloadURL(result.ref);
-    };
-    const downloadUrl = await withTimeout(uploadOp(), 15000);
-    return `${downloadUrl}${downloadUrl.includes('?') ? '&' : '?'}v=${timestamp}`;
-  } else if (fileOrDataUrl instanceof File || fileOrDataUrl instanceof Blob) {
-    const originalName = (fileOrDataUrl as File).name || 'image.jpg';
-    const cleanName = originalName.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const filePath = `${folder}/${timestamp}_${cleanName}`;
-    const storageRef = ref(stor, filePath);
-    const contentType = (fileOrDataUrl as File).type || 'image/jpeg';
-    const uploadOp = async () => {
+    } else if (fileOrDataUrl instanceof File || fileOrDataUrl instanceof Blob) {
+      const originalName = (fileOrDataUrl as File).name || 'image.jpg';
+      const cleanName = originalName.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const filePath = `${folder}/${timestamp}_${cleanName}`;
+      const storageRef = ref(storageInstance, filePath);
+      const contentType = (fileOrDataUrl as File).type || 'image/jpeg';
       const result = await uploadBytes(storageRef, fileOrDataUrl, { contentType });
       return await getDownloadURL(result.ref);
-    };
-    const downloadUrl = await withTimeout(uploadOp(), 20000);
-    return `${downloadUrl}${downloadUrl.includes('?') ? '&' : '?'}v=${timestamp}`;
-  } else if (typeof fileOrDataUrl === 'string' && fileOrDataUrl.startsWith('/uploads/')) {
-    // Legacy local path migration: cannot re-read file if erased, return as-is
-    return fileOrDataUrl;
-  }
+    } else if (typeof fileOrDataUrl === 'string' && fileOrDataUrl.startsWith('/uploads/')) {
+      return fileOrDataUrl;
+    }
+    throw new Error('Formato de imagen inválido para subir a Firebase Storage.');
+  };
 
-  throw new Error('Formato de imagen inválido para subir a Firebase Storage.');
+  try {
+    const downloadUrl = await withTimeout(attemptUpload(stor), 25000);
+    return `${downloadUrl}${downloadUrl.includes('?') ? '&' : '?'}v=${timestamp}`;
+  } catch (primaryErr: any) {
+    console.warn('[STORAGE] Primer intento falló, intentando con bucket alternativo...', primaryErr?.message || primaryErr);
+    try {
+      const currentBucket = firebaseConfig.storageBucket || 'pampero-catalogo.firebasestorage.app';
+      const altBucket = currentBucket.includes('firebasestorage.app')
+        ? currentBucket.replace('.firebasestorage.app', '.appspot.com')
+        : currentBucket.replace('.appspot.com', '.firebasestorage.app');
+      const altStor = getStorage(app, `gs://${altBucket}`);
+      const downloadUrl = await withTimeout(attemptUpload(altStor), 25000);
+      return `${downloadUrl}${downloadUrl.includes('?') ? '&' : '?'}v=${timestamp}`;
+    } catch (altErr: any) {
+      console.error('[STORAGE ERROR DEFINITIVO]:', altErr);
+      throw new Error(`Error en Firebase Storage: ${primaryErr?.message || altErr?.message || 'Fallo de conexión'}`);
+    }
+  }
 }
 
 /**
@@ -1097,6 +1111,218 @@ export function subscribeToCRMExpenses(
     return () => {};
   }
 }
+
+// ==========================================
+// CORRELATIVE ORDER NUMBER (Transaction-based #1, #2, #3...)
+// ==========================================
+
+export async function getNextCorrelativeOrderNumber(): Promise<{ number: number; formatted: string }> {
+  const firestoreDb = db || getFirebaseDb();
+  const storageKey = 'pampero_last_correlative_order';
+
+  if (firestoreDb) {
+    try {
+      const counterRef = doc(firestoreDb, 'counters', 'orders');
+      const nextNum = await runTransaction(firestoreDb, async (transaction) => {
+        const snap = await transaction.get(counterRef);
+        let current = 0;
+        if (snap.exists()) {
+          current = Number(snap.data()?.lastOrderNumber) || 0;
+        }
+        const updated = current + 1;
+        transaction.set(counterRef, {
+          lastOrderNumber: updated,
+          updatedAt: new Date().toISOString(),
+        }, { merge: true });
+        return updated;
+      });
+
+      localStorage.setItem(storageKey, String(nextNum));
+      return { number: nextNum, formatted: `#${nextNum}` };
+    } catch (err) {
+      console.warn('[FIREBASE COUNTER] Error en transacción correlativa, usando respaldo:', err);
+    }
+  }
+
+  // Local fallback
+  let localCount = 1;
+  try {
+    const saved = localStorage.getItem(storageKey);
+    if (saved) {
+      localCount = (parseInt(saved, 10) || 0) + 1;
+    }
+  } catch {}
+  localStorage.setItem(storageKey, String(localCount));
+  return { number: localCount, formatted: `#${localCount}` };
+}
+
+// ==========================================
+// COST CATEGORIES PERSISTENCE (Categorías de Costos Fijo / Variable)
+// ==========================================
+
+export const DEFAULT_COST_CATEGORIES: CostCategoryConfig[] = [
+  { id: 'cat-alquiler', name: 'Alquiler', defaultType: 'Fijo', isSystem: true },
+  { id: 'cat-sueldos-base', name: 'Sueldos base', defaultType: 'Fijo', isSystem: true },
+  { id: 'cat-impuestos-servicios', name: 'Impuestos/Servicios', defaultType: 'Fijo', isSystem: true },
+  { id: 'cat-fletes', name: 'Fletes', defaultType: 'Variable', isSystem: true },
+  { id: 'cat-insumos-embalaje', name: 'Insumos/Embalaje', defaultType: 'Variable', isSystem: true },
+  { id: 'cat-mantenimiento', name: 'Mantenimiento', defaultType: 'Variable', isSystem: true },
+  { id: 'cat-viaticos', name: 'Viáticos', defaultType: 'Variable', isSystem: true },
+  { id: 'cat-comisiones', name: 'Comisiones', defaultType: 'Variable', isSystem: true },
+  { id: 'cat-marketing', name: 'Marketing y Publicidad', defaultType: 'Variable', isSystem: true },
+  { id: 'cat-otros', name: 'Otros Gastos', defaultType: 'Variable', isSystem: true },
+];
+
+export async function fetchCostCategories(): Promise<CostCategoryConfig[]> {
+  const firestoreDb = db || getFirebaseDb();
+  if (firestoreDb) {
+    try {
+      const docRef = doc(firestoreDb, 'store_config', 'cost_categories');
+      const snap = await getDoc(docRef);
+      if (snap.exists() && Array.isArray(snap.data()?.categories)) {
+        return snap.data().categories as CostCategoryConfig[];
+      }
+    } catch (err) {
+      console.warn('[COST CATEGORIES] Fallback a local:', err);
+    }
+  }
+  try {
+    const saved = localStorage.getItem('pampero_cost_categories');
+    if (saved) return JSON.parse(saved);
+  } catch {}
+  return DEFAULT_COST_CATEGORIES;
+}
+
+export async function saveCostCategories(categories: CostCategoryConfig[]): Promise<boolean> {
+  try {
+    localStorage.setItem('pampero_cost_categories', JSON.stringify(categories));
+    const firestoreDb = db || getFirebaseDb();
+    if (firestoreDb) {
+      const docRef = doc(firestoreDb, 'store_config', 'cost_categories');
+      await setDoc(docRef, {
+        categories,
+        updatedAt: new Date().toISOString(),
+      }, { merge: true });
+    }
+    return true;
+  } catch (err) {
+    console.error('[COST CATEGORIES ERROR]:', err);
+    return false;
+  }
+}
+
+export function subscribeToCostCategories(onUpdate: (cats: CostCategoryConfig[]) => void): () => void {
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) {
+    onUpdate(DEFAULT_COST_CATEGORIES);
+    return () => {};
+  }
+  try {
+    const docRef = doc(firestoreDb, 'store_config', 'cost_categories');
+    return onSnapshot(docRef, (snap) => {
+      if (snap.exists() && Array.isArray(snap.data()?.categories)) {
+        onUpdate(snap.data().categories);
+      } else {
+        onUpdate(DEFAULT_COST_CATEGORIES);
+      }
+    });
+  } catch {
+    onUpdate(DEFAULT_COST_CATEGORIES);
+    return () => {};
+  }
+}
+
+// ==========================================
+// KANBAN COLUMNS PERSISTENCE (Visitas y Seguimiento Empresas)
+// ==========================================
+
+export interface KanbanColumnConfig {
+  id: string;
+  label: string;
+  color: string;
+  description?: string;
+}
+
+export const DEFAULT_VISIT_COLUMNS: KanbanColumnConfig[] = [
+  { id: 'primer_contacto', label: '1. Primer Contacto', color: '#3B82F6', description: 'Contacto inicial telefónico, WhatsApp o prospección' },
+  { id: 'reunion', label: '2. Reunión / Visita', color: '#8B5CF6', description: 'Visita en planta/oficina o presentación en local' },
+  { id: 'previo_cotizacion', label: '3. Previo a Cotización', color: '#F97316', description: 'Relevamiento de prendas, talles y muestras físicas' },
+  { id: 'convertida', label: '4. Pasado a Seguimiento', color: '#10B981', description: 'Avanzado con éxito al tablero de Seguimiento Empresas' },
+];
+
+export const DEFAULT_COMPANY_COLUMNS: KanbanColumnConfig[] = [
+  { id: 'cotizacion', label: 'Cotización Recibida', color: '#FDB813', description: 'Solicitud ingresada desde la web o mostrador' },
+  { id: 'sena_50', label: 'Aprobado / Seña 50%', color: '#F97316', description: 'Confirmado por el cliente con pago de anticipo' },
+  { id: 'produccion', label: 'En Bordados / Taller', color: '#8B5CF6', description: 'Prendas confeccionándose o estampándose' },
+  { id: 'listo', label: 'Listo para Retirar', color: '#10B981', description: 'Control de calidad aprobado en sucursal' },
+  { id: 'entregado', label: 'Entregado / Cerrado', color: '#3B82F6', description: 'Retirado por el cliente o despachado con remito' },
+];
+
+export async function saveKanbanColumns(config: { visits?: KanbanColumnConfig[]; companies?: KanbanColumnConfig[] }): Promise<boolean> {
+  try {
+    if (config.visits) {
+      localStorage.setItem('pampero_kanban_visits_cols', JSON.stringify(config.visits));
+    }
+    if (config.companies) {
+      localStorage.setItem('pampero_kanban_company_cols', JSON.stringify(config.companies));
+    }
+    const firestoreDb = db || getFirebaseDb();
+    if (firestoreDb) {
+      const docRef = doc(firestoreDb, 'store_config', 'kanban_columns');
+      await setDoc(docRef, {
+        ...config,
+        updatedAt: new Date().toISOString(),
+      }, { merge: true });
+    }
+    return true;
+  } catch (err) {
+    console.error('[KANBAN COLUMNS SAVE ERROR]:', err);
+    return false;
+  }
+}
+
+export function subscribeToKanbanColumns(onUpdate: (data: { visits: KanbanColumnConfig[]; companies: KanbanColumnConfig[] }) => void): () => void {
+  const getInitial = () => {
+    let visits = DEFAULT_VISIT_COLUMNS;
+    let companies = DEFAULT_COMPANY_COLUMNS;
+    try {
+      const v = localStorage.getItem('pampero_kanban_visits_cols');
+      if (v) visits = JSON.parse(v);
+      const c = localStorage.getItem('pampero_kanban_company_cols');
+      if (c) companies = JSON.parse(c);
+    } catch {}
+    return { visits, companies };
+  };
+
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) {
+    onUpdate(getInitial());
+    return () => {};
+  }
+
+  try {
+    const docRef = doc(firestoreDb, 'store_config', 'kanban_columns');
+    return onSnapshot(docRef, (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        const visits = Array.isArray(data?.visits) && data.visits.length > 0 ? data.visits : DEFAULT_VISIT_COLUMNS;
+        const companies = Array.isArray(data?.companies) && data.companies.length > 0 ? data.companies : DEFAULT_COMPANY_COLUMNS;
+        localStorage.setItem('pampero_kanban_visits_cols', JSON.stringify(visits));
+        localStorage.setItem('pampero_kanban_company_cols', JSON.stringify(companies));
+        onUpdate({ visits, companies });
+      } else {
+        onUpdate(getInitial());
+      }
+    }, () => {
+      onUpdate(getInitial());
+    });
+  } catch {
+    onUpdate(getInitial());
+    return () => {};
+  }
+}
+
+
 
 
 

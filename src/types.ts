@@ -50,6 +50,7 @@ export interface EmployeeAccount {
   password?: string;
   role: 'employee';
   allowedTabs: string[]; // e.g. ['promos', 'mass_images', 'prices', 'coupons', 'variants', 'products', 'branches', 'quotes', 'users', 'analytics', 'crm']
+  crmTabs?: ('visits' | 'board' | 'suppliers' | 'costs')[]; // CRM specific tab permissions: visits, board, suppliers, costs
   branch?: string; // 'Maipú' | 'Ciudad' | 'Luján' | 'Todas'
   sellerName?: string;
   crmScope?: 'all' | 'branch_only' | 'own_only'; // 'all': todas las empresas, 'branch_only': sucursal, 'own_only': solo su cartera
@@ -339,10 +340,14 @@ export type CRMOrderStatus = 'cotizacion' | 'sena_50' | 'produccion' | 'listo' |
 
 export interface CRMOrder {
   id: string;
+  orderNumber?: string; // Correlative integer order #1, #2, #3...
   date: string;
   quoteId?: string;
   clientName: string;
   clientType: 'consumidor_final' | 'empresa';
+  clientPhone?: string;
+  clientEmail?: string;
+  channel?: 'WhatsApp' | 'Excel' | 'Web';
   status: CRMOrderStatus;
   seller: string;
   branch: string;
@@ -431,13 +436,19 @@ export type ExpenseType = 'Fijo' | 'Variable';
 
 export type ExpenseCategory = 
   | 'Alquiler' 
+  | 'Sueldos base'
   | 'Sueldos' 
+  | 'Impuestos/Servicios'
   | 'Impuestos' 
   | 'Servicios (Luz/Gas/Agua/Internet)' 
+  | 'Fletes'
+  | 'Insumos/Embalaje'
+  | 'Mantenimiento' 
+  | 'Viáticos'
+  | 'Comisiones'
   | 'Mercadería e Insumos' 
   | 'Logística y Envíos' 
   | 'Marketing y Publicidad' 
-  | 'Mantenimiento' 
   | 'Otros Gastos';
 
 export interface CRMExpense {
@@ -451,4 +462,12 @@ export interface CRMExpense {
   registeredBy?: string;
   createdAt?: string;
   updatedAt?: string;
+}
+
+export interface CostCategoryConfig {
+  id: string;
+  name: string;
+  defaultType: ExpenseType; // 'Fijo' | 'Variable'
+  isSystem?: boolean;
+  createdAt?: string;
 }

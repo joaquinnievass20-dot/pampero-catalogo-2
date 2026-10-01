@@ -1,6 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { LeadVisit } from '../../types';
-import { saveLeadVisit, deleteLeadVisit } from '../../services/firebase';
+import { 
+  saveLeadVisit, 
+  deleteLeadVisit, 
+  subscribeToKanbanColumns, 
+  DEFAULT_VISIT_COLUMNS, 
+  KanbanColumnConfig 
+} from '../../services/firebase';
 import { 
   Plus, 
   Search, 
@@ -63,6 +69,23 @@ export const VISIT_COLUMNS: { id: VisitKanbanStep; label: string; description: s
 ];
 
 export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor, onPromoteToCompanies }) => {
+  const [columns, setColumns] = useState<KanbanColumnConfig[]>(() => {
+    try {
+      const saved = localStorage.getItem('pampero_kanban_visits_cols');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return DEFAULT_VISIT_COLUMNS;
+  });
+
+  useEffect(() => {
+    const unsub = subscribeToKanbanColumns((data) => {
+      if (Array.isArray(data.visits) && data.visits.length > 0) {
+        setColumns(data.visits);
+      }
+    });
+    return () => unsub();
+  }, []);
+
   const [sellerFilter, setSellerFilter] = useState('todos');
   const [branchFilter, setBranchFilter] = useState('todos');
   const [searchQuery, setSearchQuery] = useState('');
@@ -85,21 +108,25 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
   const [estimatedUnits, setEstimatedUnits] = useState('');
   const [notes, setNotes] = useState('');
 
-  // Normalize visit step
-  const getVisitStep = (v: LeadVisit): VisitKanbanStep => {
+  // Normalize visit step dynamically
+  const getVisitStep = (v: LeadVisit): string => {
     const raw = (v as any).step || (v as any).kanbanStep;
+    if (raw && columns.some((c) => c.id === raw)) {
+      return raw;
+    }
     if (raw === 'primer_contacto' || raw === 'reunion' || raw === 'previo_cotizacion' || raw === 'convertida') {
       return raw;
     }
     // Fallback from legacy LeadVisitStatus
-    if (v.status === 'programada') return 'primer_contacto';
-    if (v.status === 'realizada') return 'reunion';
-    if (v.status === 'presupuesto_enviado') return 'previo_cotizacion';
-    if (v.status === 'cerrada') return 'convertida';
-    return 'primer_contacto';
+    if (v.status === 'programada') return columns[0]?.id || 'primer_contacto';
+    if (v.status === 'realizada') return columns[1]?.id || 'reunion';
+    if (v.status === 'presupuesto_enviado') return columns[2]?.id || 'previo_cotizacion';
+    if (v.status === 'cerrada') return columns[columns.length - 1]?.id || 'convertida';
+    return columns[0]?.id || 'primer_contacto';
   };
 
-  const openNewModal = (defaultStep: VisitKanbanStep = 'primer_contacto') => {
+  const openNewModal = (defaultStep?: string) => {
+    const targetStep = defaultStep || columns[0]?.id || 'primer_contacto';
     setEditingVisit(null);
     setCompanyName('');
     setContactName('');
@@ -107,7 +134,7 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
     setEmail('');
     setSeller('Itatí');
     setBranch('Maipú');
-    setStep(defaultStep);
+    setStep(targetStep as any);
     setDate(new Date().toISOString().split('T')[0]);
     setObjective('');
     setNextStep('');
@@ -289,10 +316,13 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
         </div>
       </div>
 
-      {/* Kanban Board with 4 Columns */}
+      {/* Kanban Board with Dynamic Columns */}
       <div className="flex-1 overflow-x-auto pb-4">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 min-w-[1000px]">
-          {VISIT_COLUMNS.map((col) => {
+        <div 
+          className="grid gap-4 min-w-[1000px]"
+          style={{ gridTemplateColumns: `repeat(${columns.length}, minmax(240px, 1fr))` }}
+        >
+          {columns.map((col) => {
             const colVisits = filteredVisits.filter((v) => getVisitStep(v) === col.id);
             const isDragTarget = dragOverCol === col.id;
 
@@ -316,7 +346,7 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
                       {col.label}
                     </h4>
                     <span 
-                      style={{ backgroundColor: col.bgColor, color: col.color }}
+                      style={{ backgroundColor: `${col.color}22`, color: col.color }}
                       className="w-5 h-5 rounded-full text-[11px] font-black flex items-center justify-center border border-current"
                     >
                       {colVisits.length}
@@ -424,46 +454,45 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
 
                             {/* Column Navigation Buttons */}
                             <div className="flex items-center gap-1">
-                              {currentStep === 'primer_contacto' && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleMoveStep(visit, 'reunion')}
-                                  className="text-[10px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded-xs border border-blue-200 flex items-center gap-1"
-                                >
-                                  <span>A Reunión</span>
-                                  <ArrowRight className="w-3 h-3" />
-                                </button>
-                              )}
+                              {(() => {
+                                const currentIndex = columns.findIndex((c) => c.id === currentStep);
+                                const nextCol = currentIndex >= 0 && currentIndex < columns.length - 1 ? columns[currentIndex + 1] : null;
+                                const isLastCol = currentIndex === columns.length - 1 || currentStep === 'convertida';
 
-                              {currentStep === 'reunion' && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleMoveStep(visit, 'previo_cotizacion')}
-                                  className="text-[10px] font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 px-2 py-1 rounded-xs border border-amber-200 flex items-center gap-1"
-                                >
-                                  <span>A Previo Cotiz.</span>
-                                  <ArrowRight className="w-3 h-3" />
-                                </button>
-                              )}
+                                if (nextCol) {
+                                  const isConverting = currentIndex === columns.length - 2;
+                                  return (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleMoveStep(visit, nextCol.id as any)}
+                                      className={`text-[10px] px-2 py-1 rounded-xs flex items-center gap-1 cursor-pointer transition-colors ${
+                                        isConverting
+                                          ? 'font-black text-white bg-emerald-600 hover:bg-emerald-700 shadow-xs'
+                                          : 'font-bold text-neutral-800 bg-amber-50 hover:bg-amber-100 border border-amber-300'
+                                      }`}
+                                      title={`Avanzar a ${nextCol.label}`}
+                                    >
+                                      <span>A {nextCol.label}</span>
+                                      {isConverting ? (
+                                        <ArrowRightCircle className="w-3.5 h-3.5" />
+                                      ) : (
+                                        <ArrowRight className="w-3 h-3 text-[#B9522F]" />
+                                      )}
+                                    </button>
+                                  );
+                                }
 
-                              {currentStep === 'previo_cotizacion' && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleMoveStep(visit, 'convertida')}
-                                  className="text-[10px] font-black text-white bg-emerald-600 hover:bg-emerald-700 px-2 py-1 rounded-xs shadow-xs flex items-center gap-1"
-                                  title="Supera la etapa previo a cotización y pasa automáticamente al tablero de Seguimiento Empresas"
-                                >
-                                  <ArrowRightCircle className="w-3.5 h-3.5" />
-                                  <span>Pasar a Seguimiento</span>
-                                </button>
-                              )}
+                                if (isLastCol) {
+                                  return (
+                                    <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-xs flex items-center gap-1">
+                                      <CheckCircle className="w-3 h-3 text-emerald-600" />
+                                      <span>En Seguimiento</span>
+                                    </span>
+                                  );
+                                }
 
-                              {currentStep === 'convertida' && (
-                                <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-xs flex items-center gap-1">
-                                  <CheckCircle className="w-3 h-3 text-emerald-600" />
-                                  <span>En Seguimiento</span>
-                                </span>
-                              )}
+                                return null;
+                              })()}
                             </div>
                           </div>
                         </div>
@@ -564,10 +593,11 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
                     onChange={(e) => setStep(e.target.value as any)}
                     className="w-full px-2.5 py-2 border border-[#DCD4C9] rounded-xs bg-white outline-none font-bold text-[#18231C]"
                   >
-                    <option value="primer_contacto">1. Primer Contacto</option>
-                    <option value="reunion">2. Reunión / Visita</option>
-                    <option value="previo_cotizacion">3. Previo a Cotización</option>
-                    <option value="convertida">4. Pasado a Seguimiento</option>
+                    {columns.map((col) => (
+                      <option key={col.id} value={col.id}>
+                        {col.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>

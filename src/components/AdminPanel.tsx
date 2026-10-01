@@ -29,7 +29,9 @@ import { AdminUniformSimulatorConfigTab } from './admin/AdminUniformSimulatorCon
 import { AdminQuotesTab } from './admin/AdminQuotesTab';
 import { AdminBulkExcelImportModal } from './admin/AdminBulkExcelImportModal';
 import { AdminNotificationsTab } from './admin/AdminNotificationsTab';
-import { AdminSellersTab } from './admin/AdminSellersTab';
+import { AdminPermissionsTab } from './admin/AdminPermissionsTab';
+import { AdminKanbanConfigTab } from './admin/AdminKanbanConfigTab';
+import { AdminCostCategoriesTab } from './admin/AdminCostCategoriesTab';
 import { compressImage } from '../utils/imageCompressor';
 import { parseImageFileName } from '../utils/imageNamingParser';
 import { PamperoLogo } from './PamperoLogo';
@@ -74,7 +76,10 @@ import {
   EyeOff,
   AlertTriangle,
   AlertCircle,
-  Bell
+  Bell,
+  Shirt,
+  Receipt,
+  DollarSign
 } from 'lucide-react';
 
 export type AdminTabKey = 
@@ -89,9 +94,13 @@ export type AdminTabKey =
   | 'variants' 
   | 'branches' 
   | 'quotes' 
-  | 'sellers'
-  | 'notifications'
   | 'users' 
+  | 'permissions'
+  | 'kanban_config'
+  | 'cost_categories'
+  | 'sizing_portal'
+  | 'uniform_simulator'
+  | 'notifications'
   | 'security' 
   | 'analytics';
 
@@ -161,7 +170,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   const isTabVisible = (tabKey: AdminTabKey) => {
     if (!isEmployee) return true;
-    if (tabKey === 'security') return false;
+    if (tabKey === 'security' || tabKey === 'permissions' || tabKey === 'kanban_config') return false;
     return employeePermissions.includes(tabKey);
   };
 
@@ -328,7 +337,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       console.error('[CARGA FOTOS PRODUCTO ERROR]:', err);
       const errorMsg = err?.message || 'Error al subir las imágenes a Firebase Storage.';
       setPhotoUploadError(errorMsg);
-      alert(errorMsg);
     } finally {
       // Garantizar siempre que el loading se detenga para no congelar la pantalla
       setIsUploadingPhotos(false);
@@ -700,6 +708,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
           <div className="flex items-center gap-2.5">
             <button
+              id="btn-return-hub-admin"
+              type="button"
+              onClick={onClose}
+              className="px-3.5 py-1.5 bg-[#2B3B30] hover:bg-[#3d5244] text-[#F5F2EC] rounded-xs text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-colors cursor-pointer"
+              title="Volver al menú principal (Hub de Trabajo Interno)"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>Volver al menú principal</span>
+            </button>
+            <button
               id="btn-global-save-admin"
               type="button"
               onClick={handleGlobalSave}
@@ -712,8 +730,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             <button
               id="btn-close-admin-panel"
               onClick={onClose}
-              className="opacity-75 hover:opacity-100 p-1.5 rounded-xs hover:bg-white/10 transition-colors"
-              title="Cerrar panel de control y volver al catálogo"
+              className="opacity-75 hover:opacity-100 p-1.5 rounded-xs hover:bg-white/10 transition-colors cursor-pointer"
+              title="Volver al menú principal"
             >
               <X className="w-5 h-5" />
             </button>
@@ -917,7 +935,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 </button>
               )}
 
-              {/* Sucursales */}
+              {/* Sucursales & Locales (Base unificada) */}
               {isTabVisible('branches') && (
                 <button
                   id="admin-tab-branches"
@@ -932,7 +950,121 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   }`}
                 >
                   <Building2 className="w-4 h-4" style={{ color: iconColor }} />
-                  Sucursales ({branches.length})
+                  Sucursales & Locales ({branches.length})
+                </button>
+              )}
+
+              {/* Vendedores & Cuentas Creadas (Fusionado) */}
+              {isTabVisible('users') && (
+                <button
+                  id="admin-tab-users"
+                  onClick={() => setActiveTab('users')}
+                  style={{
+                    borderTopColor: activeTab === 'users' ? activeBorderColor : 'transparent',
+                  }}
+                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                    activeTab === 'users'
+                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
+                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
+                  }`}
+                >
+                  <Users className="w-4 h-4" style={{ color: iconColor }} />
+                  Vendedores & Cuentas
+                </button>
+              )}
+
+              {/* Permisos del CRM */}
+              {isTabVisible('permissions') && (
+                <button
+                  id="admin-tab-permissions"
+                  onClick={() => setActiveTab('permissions')}
+                  style={{
+                    borderTopColor: activeTab === 'permissions' ? activeBorderColor : 'transparent',
+                  }}
+                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                    activeTab === 'permissions'
+                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
+                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
+                  }`}
+                >
+                  <ShieldCheck className="w-4 h-4" style={{ color: iconColor }} />
+                  Permisos CRM
+                </button>
+              )}
+
+              {/* Editar Gestión (Restaurado para modificar columnas Kanban) */}
+              {isTabVisible('kanban_config') && (
+                <button
+                  id="admin-tab-kanban-config"
+                  onClick={() => setActiveTab('kanban_config')}
+                  style={{
+                    borderTopColor: activeTab === 'kanban_config' ? activeBorderColor : 'transparent',
+                  }}
+                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                    activeTab === 'kanban_config'
+                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
+                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
+                  }`}
+                >
+                  <Sliders className="w-4 h-4" style={{ color: iconColor }} />
+                  Editar Gestión
+                </button>
+              )}
+
+              {/* Categorías de Costos (Fijo / Variable) */}
+              {isTabVisible('cost_categories') && (
+                <button
+                  id="admin-tab-cost-categories"
+                  onClick={() => setActiveTab('cost_categories')}
+                  style={{
+                    borderTopColor: activeTab === 'cost_categories' ? activeBorderColor : 'transparent',
+                  }}
+                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                    activeTab === 'cost_categories'
+                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
+                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
+                  }`}
+                >
+                  <Receipt className="w-4 h-4" style={{ color: iconColor }} />
+                  Categorías de Costos
+                </button>
+              )}
+
+              {/* Configuración Portal de Talles */}
+              {isTabVisible('sizing_portal') && (
+                <button
+                  id="admin-tab-sizing-portal"
+                  onClick={() => setActiveTab('sizing_portal')}
+                  style={{
+                    borderTopColor: activeTab === 'sizing_portal' ? activeBorderColor : 'transparent',
+                  }}
+                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                    activeTab === 'sizing_portal'
+                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
+                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
+                  }`}
+                >
+                  <Shirt className="w-4 h-4" style={{ color: iconColor }} />
+                  Portal de Talles
+                </button>
+              )}
+
+              {/* Configuración Armador de Uniformes */}
+              {isTabVisible('uniform_simulator') && (
+                <button
+                  id="admin-tab-uniform-simulator"
+                  onClick={() => setActiveTab('uniform_simulator')}
+                  style={{
+                    borderTopColor: activeTab === 'uniform_simulator' ? activeBorderColor : 'transparent',
+                  }}
+                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                    activeTab === 'uniform_simulator'
+                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
+                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
+                  }`}
+                >
+                  <Sparkles className="w-4 h-4" style={{ color: iconColor }} />
+                  Armador de Uniformes
                 </button>
               )}
 
@@ -955,25 +1087,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 </button>
               )}
 
-              {/* Vendedores & Locales */}
-              {isTabVisible('sellers') && (
-                <button
-                  id="admin-tab-sellers"
-                  onClick={() => setActiveTab('sellers')}
-                  style={{
-                    borderTopColor: activeTab === 'sellers' ? activeBorderColor : 'transparent',
-                  }}
-                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                    activeTab === 'sellers'
-                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
-                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
-                  }`}
-                >
-                  <Users className="w-4 h-4" style={{ color: iconColor }} />
-                  Vendedores & Locales
-                </button>
-              )}
-
               {/* Notificaciones & Alertas */}
               {isTabVisible('notifications') && (
                 <button
@@ -990,25 +1103,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 >
                   <Bell className="w-4 h-4" style={{ color: iconColor }} />
                   Notificaciones
-                </button>
-              )}
-
-              {/* Cuentas Creadas */}
-              {isTabVisible('users') && (
-                <button
-                  id="admin-tab-users"
-                  onClick={() => setActiveTab('users')}
-                  style={{
-                    borderTopColor: activeTab === 'users' ? activeBorderColor : 'transparent',
-                  }}
-                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                    activeTab === 'users'
-                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
-                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
-                  }`}
-                >
-                  <Users className="w-4 h-4" style={{ color: iconColor }} />
-                  Cuentas Creadas
                 </button>
               )}
 
@@ -1830,13 +1924,29 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       </div>
                     </div>
 
+                    {photoUploadError && (
+                      <div className="p-3 bg-red-50 border border-red-300 text-red-900 text-xs rounded-xs font-semibold flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+                          <span>{photoUploadError}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setPhotoUploadError(null)}
+                          className="text-red-700 hover:text-red-900 text-xs underline font-bold cursor-pointer"
+                        >
+                          Cerrar
+                        </button>
+                      </div>
+                    )}
+
                     {/* Upload Controls Row */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       {/* From PC */}
                       <label className="border-2 border-dashed border-[#DCD4C9] hover:border-[#18231C] bg-white p-3.5 rounded-xs flex flex-col items-center justify-center gap-1.5 cursor-pointer text-center group transition-colors">
                         <Upload className="w-5 h-5 text-[#6F6860] group-hover:scale-110 group-hover:text-[#18231C] transition-all" />
                         <span className="text-xs font-bold text-[#18231C]">
-                          {isUploadingPhotos ? 'Optimizando fotos...' : `Subir fotos a ${activePhotoGalleryTab === 'men' ? 'Hombre' : activePhotoGalleryTab === 'women' ? 'Mujer' : 'General'}`}
+                          {isUploadingPhotos ? 'Subiendo fotos a Firebase Storage...' : `Subir fotos a ${activePhotoGalleryTab === 'men' ? 'Hombre' : activePhotoGalleryTab === 'women' ? 'Mujer' : 'General'}`}
                         </span>
                         <span className="text-[10px] text-[#6F6860]">
                           Podés seleccionar múltiples fotos juntas (JPG, PNG, WebP)
@@ -1848,9 +1958,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           disabled={isUploadingPhotos}
                           className="hidden"
                           onChange={(e) => {
-                            if (e.target.files) {
+                            if (e.target.files && e.target.files.length > 0) {
                               handleUploadPhotos(e.target.files, 'auto');
                             }
+                            e.target.value = '';
                           }}
                         />
                       </label>
@@ -2504,10 +2615,48 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             </div>
           )}
 
-          {/* TAB 8: CUENTAS CREADAS */}
+          {/* TAB 8: VENDEDORES Y CUENTAS CREADAS (FUSIONADO) */}
           {activeTab === 'users' && (
             <AdminUsersTab
               triggerSaveNotice={triggerSaveNotice}
+              branches={branches}
+              userSession={userSession}
+            />
+          )}
+
+          {/* TAB: PERMISOS DEL CRM */}
+          {activeTab === 'permissions' && (
+            <AdminPermissionsTab
+              triggerSaveNotice={triggerSaveNotice}
+            />
+          )}
+
+          {/* TAB: EDITAR GESTIÓN (COLUMNAS KANBAN) */}
+          {activeTab === 'kanban_config' && (
+            <AdminKanbanConfigTab
+              triggerSaveNotice={triggerSaveNotice}
+            />
+          )}
+
+          {/* TAB: CATEGORÍAS DE COSTOS (FIJO / VARIABLE) */}
+          {activeTab === 'cost_categories' && (
+            <AdminCostCategoriesTab
+              triggerSaveNotice={triggerSaveNotice}
+            />
+          )}
+
+          {/* TAB: CONFIGURACIÓN PORTAL DE TALLES */}
+          {activeTab === 'sizing_portal' && (
+            <AdminSizingPortalConfigTab
+              triggerSaveNotice={triggerSaveNotice}
+            />
+          )}
+
+          {/* TAB: CONFIGURACIÓN ARMADOR DE UNIFORMES */}
+          {activeTab === 'uniform_simulator' && (
+            <AdminUniformSimulatorConfigTab
+              triggerSaveNotice={triggerSaveNotice}
+              products={products}
             />
           )}
 
@@ -2536,14 +2685,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           {/* TAB 13: MÉTRICAS & BÚSQUEDAS */}
           {activeTab === 'analytics' && (
             <AdminAnalyticsTab />
-          )}
-
-          {/* TAB 14: VENDEDORES & LOCALES */}
-          {activeTab === 'sellers' && (
-            <AdminSellersTab
-              branches={branches}
-              triggerSaveNotice={triggerSaveNotice}
-            />
           )}
 
           {/* TAB 15: CONFIGURACIÓN DE NOTIFICACIONES */}

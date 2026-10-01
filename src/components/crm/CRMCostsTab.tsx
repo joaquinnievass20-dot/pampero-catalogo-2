@@ -1,9 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { CRMExpense, ExpenseType, ExpenseCategory } from '../../types';
+import { CRMExpense, ExpenseType, ExpenseCategory, CostCategoryConfig, BranchLocation } from '../../types';
 import { 
   saveCRMExpense, 
   deleteCRMExpense, 
-  subscribeToCRMExpenses 
+  subscribeToCRMExpenses,
+  subscribeToCostCategories,
+  DEFAULT_COST_CATEGORIES,
+  fetchFirestoreStoreConfig,
 } from '../../services/firebase';
 import { 
   DollarSign, 
@@ -28,21 +31,25 @@ interface CRMCostsTabProps {
   accentColor?: string;
 }
 
-export const BRANCH_OPTIONS = ['Maipú', 'Ciudad', 'Luján'];
-
-export const CATEGORY_OPTIONS: ExpenseCategory[] = [
-  'Alquiler',
-  'Sueldos',
-  'Impuestos',
-  'Servicios (Luz/Gas/Agua/Internet)',
-  'Mercadería e Insumos',
-  'Logística y Envíos',
-  'Marketing y Publicidad',
-  'Mantenimiento',
-  'Otros Gastos',
-];
-
 export const CRMCostsTab: React.FC<CRMCostsTabProps> = ({ accentColor = '#FDB813' }) => {
+  // Dynamic Branches from Firestore / config
+  const [dynamicBranches, setDynamicBranches] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('pampero_catalog_branches');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const names = parsed.map((b: any) => b.name || b.branchName).filter(Boolean);
+          if (names.length > 0) return Array.from(new Set(names));
+        }
+      }
+    } catch {}
+    return ['Maipú', 'Ciudad', 'Luján'];
+  });
+
+  // Dynamic Cost Categories from Firestore
+  const [costCategories, setCostCategories] = useState<CostCategoryConfig[]>(DEFAULT_COST_CATEGORIES);
+
   // State for expenses - Loaded EXCLUSIVELY from Cloud Firestore via Firebase SDK
   const [expenses, setExpenses] = useState<CRMExpense[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -58,11 +65,36 @@ export const CRMCostsTab: React.FC<CRMCostsTabProps> = ({ accentColor = '#FDB813
   const [formDate, setFormDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [formBranch, setFormBranch] = useState<string>('Maipú');
   const [formType, setFormType] = useState<ExpenseType>('Fijo');
-  const [formCategory, setFormCategory] = useState<ExpenseCategory>('Alquiler');
+  const [formCategory, setFormCategory] = useState<string>('Alquiler');
   const [formAmount, setFormAmount] = useState<string>('');
   const [formDetail, setFormDetail] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedbackNotice, setFeedbackNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  // Load dynamic branches from Firestore store config
+  useEffect(() => {
+    fetchFirestoreStoreConfig().then((cfg) => {
+      if (cfg && Array.isArray(cfg.branches) && cfg.branches.length > 0) {
+        const names = Array.from(new Set(cfg.branches.map((b) => b.name).filter(Boolean)));
+        if (names.length > 0) {
+          setDynamicBranches(names);
+          if (!names.includes(formBranch) && names.length > 0) {
+            setFormBranch(names[0]);
+          }
+        }
+      }
+    }).catch(console.warn);
+  }, []);
+
+  // Subscribe to dynamic cost categories from Firestore
+  useEffect(() => {
+    const unsub = subscribeToCostCategories((remoteCats) => {
+      if (Array.isArray(remoteCats) && remoteCats.length > 0) {
+        setCostCategories(remoteCats);
+      }
+    });
+    return () => unsub();
+  }, []);
 
   // 1. Subscribe to Firebase Firestore collection 'crm_expenses' in real-time
   useEffect(() => {
@@ -72,6 +104,12 @@ export const CRMCostsTab: React.FC<CRMCostsTabProps> = ({ accentColor = '#FDB813
         setExpenses(remoteExpenses);
         setIsLoading(false);
         setSyncError(null);
+
+        // Also incorporate any branch name present in expenses
+        const expenseBranches = remoteExpenses.map((e) => e.branch).filter(Boolean);
+        if (expenseBranches.length > 0) {
+          setDynamicBranches((prev) => Array.from(new Set([...prev, ...expenseBranches])));
+        }
       },
       (err) => {
         console.error('[CRMCostsTab] Error en suscripción a crm_expenses:', err);
@@ -129,11 +167,22 @@ export const CRMCostsTab: React.FC<CRMCostsTabProps> = ({ accentColor = '#FDB813
     let totalFijos = 0;
     let totalVariables = 0;
 
+    const branchTotals: Record<string, number> = {};
+    dynamicBranches.forEach((b) => { branchTotals[b] = 0; });
+
     filteredExpenses.forEach((exp) => {
       const amt = Number(exp.amount) || 0;
       totalGeneral += amt;
 
       const br = (exp.branch || '').toLowerCase();
+      // Match with dynamic branches
+      const matched = dynamicBranches.find(
+        (b) => b.toLowerCase() === br || br.includes(b.toLowerCase()) || b.toLowerCase().includes(br)
+      );
+      if (matched) {
+        branchTotals[matched] = (branchTotals[matched] || 0) + amt;
+      }
+
       if (br.includes('maip')) totalMaipu += amt;
       else if (br.includes('ciudad')) totalCiudad += amt;
       else if (br.includes('luj')) totalLujan += amt;
@@ -153,12 +202,31 @@ export const CRMCostsTab: React.FC<CRMCostsTabProps> = ({ accentColor = '#FDB813
       totalMaipu,
       totalCiudad,
       totalLujan,
+      branchTotals,
       totalFijos,
       totalVariables,
       percentFijos,
       percentVariables,
     };
-  }, [filteredExpenses]);
+  }, [filteredExpenses, dynamicBranches]);
+
+  const handleCategoryChange = (newCat: string) => {
+    setFormCategory(newCat);
+    // Categorías Editables y Lógica Fijo/Variable:
+    // Al cargar un costo, cuando el usuario seleccione una categoría, el campo "Tipo"
+    // debe autocompletarse según esa regla, permitiendo modificación manual.
+    const matched = costCategories.find((c) => c.name.toLowerCase() === newCat.toLowerCase());
+    if (matched) {
+      setFormType(matched.defaultType);
+    } else {
+      const structural = ['Alquiler', 'Sueldos base', 'Impuestos/Servicios', 'Sueldos', 'Impuestos', 'Servicios'];
+      if (structural.some((s) => newCat.toLowerCase().includes(s.toLowerCase()))) {
+        setFormType('Fijo');
+      } else {
+        setFormType('Variable');
+      }
+    }
+  };
 
   // Form submit: Save or update in Firestore
   const handleSubmit = async (e: React.FormEvent) => {
@@ -302,7 +370,7 @@ export const CRMCostsTab: React.FC<CRMCostsTabProps> = ({ accentColor = '#FDB813
               className="bg-transparent font-bold text-[#18231C] outline-none cursor-pointer"
             >
               <option value="todas">Todas las Sucursales</option>
-              {BRANCH_OPTIONS.map((b) => (
+              {dynamicBranches.map((b) => (
                 <option key={b} value={b}>{b}</option>
               ))}
             </select>
@@ -478,7 +546,7 @@ export const CRMCostsTab: React.FC<CRMCostsTabProps> = ({ accentColor = '#FDB813
                 onChange={(e) => setFormBranch(e.target.value)}
                 className="w-full px-2.5 py-2 border border-[#DCD4C9] rounded-xs bg-[#FAF8F5] outline-none font-bold text-[#18231C] focus:border-[#B9522F]"
               >
-                {BRANCH_OPTIONS.map((b) => (
+                {dynamicBranches.map((b) => (
                   <option key={b} value={b}>{b}</option>
                 ))}
               </select>
@@ -502,11 +570,11 @@ export const CRMCostsTab: React.FC<CRMCostsTabProps> = ({ accentColor = '#FDB813
               <label className="block font-bold text-neutral-700 mb-1">Categoría *</label>
               <select
                 value={formCategory}
-                onChange={(e) => setFormCategory(e.target.value as ExpenseCategory)}
+                onChange={(e) => handleCategoryChange(e.target.value)}
                 className="w-full px-2.5 py-2 border border-[#DCD4C9] rounded-xs bg-[#FAF8F5] outline-none font-medium text-[#18231C] focus:border-[#B9522F]"
               >
-                {CATEGORY_OPTIONS.map((cat) => (
-                  <option key={cat} value={cat}>{cat}</option>
+                {costCategories.map((cat) => (
+                  <option key={cat.id} value={cat.name}>{cat.name} ({cat.defaultType})</option>
                 ))}
               </select>
             </div>

@@ -332,10 +332,17 @@ export default function App() {
   // 6. User Session - strictly null at initial start as requested
   const [userSession, setUserSession] = useState<UserSession | null>(null);
 
-  // 7. Quotation Cart (strictly sanitized to prevent malformed localStorage items from freezing the app)
-  const [cart, setCart] = useState<CartItem[]>(() => {
+  // Helper functions for isolated cart persistence per active user ID
+  const getCartStorageKey = (session: UserSession | null): string => {
+    if (session?.id) return `pampero_cart_${session.id}`;
+    if (session?.email) return `pampero_cart_${session.email.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+    return 'pampero_cart_guest';
+  };
+
+  const loadCartFromStorage = (session: UserSession | null): CartItem[] => {
     try {
-      const saved = localStorage.getItem('pampero_quote_cart');
+      const key = getCartStorageKey(session);
+      const saved = localStorage.getItem(key);
       if (!saved) return [];
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed)) {
@@ -345,6 +352,11 @@ export default function App() {
     } catch {
       return [];
     }
+  };
+
+  // 7. Quotation Cart (isolated per user ID, guest fallback)
+  const [cart, setCart] = useState<CartItem[]>(() => {
+    return loadCartFromStorage(null);
   });
 
   const [isProfileOpen, setIsProfileOpen] = useState(false);
@@ -565,6 +577,11 @@ export default function App() {
   const handleLogin = (session: UserSession) => {
     setUserSession(session);
     localStorage.setItem('pampero_user_session', JSON.stringify(session));
+
+    // Cargar carrito específico del usuario autenticado
+    const userCart = loadCartFromStorage(session);
+    setCart(userCart);
+
     if (session.role === 'admin' || session.role === 'employee' || session.email?.toLowerCase() === 'joaquinnievass20@gmail.com') {
       setViewMode('hub');
     } else {
@@ -573,12 +590,21 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    // Aislamiento del Carrito: Vaciar y limpiar caché del carrito del usuario activo y temporal
+    const currentKey = getCartStorageKey(userSession);
+    try {
+      localStorage.removeItem(currentKey);
+      localStorage.removeItem('pampero_cart_guest');
+      localStorage.removeItem('pampero_quote_cart');
+    } catch {}
+
+    setCart([]);
     setUserSession(null);
     localStorage.removeItem('pampero_user_session');
     setViewMode('landing');
   };
 
-  // Cart operations
+  // Cart operations (isolated per active user key)
   const handleAddToCart = (
     product: Product,
     quantity = 1,
@@ -622,7 +648,10 @@ export default function App() {
           },
         ];
       }
-      localStorage.setItem('pampero_quote_cart', JSON.stringify(updated));
+      try {
+        const storageKey = getCartStorageKey(userSession);
+        localStorage.setItem(storageKey, JSON.stringify(updated));
+      } catch {}
       return updated;
     });
   };
@@ -648,7 +677,10 @@ export default function App() {
           return it;
         })
         .filter(Boolean) as CartItem[];
-      localStorage.setItem('pampero_quote_cart', JSON.stringify(updated));
+      try {
+        const storageKey = getCartStorageKey(userSession);
+        localStorage.setItem(storageKey, JSON.stringify(updated));
+      } catch {}
       return updated;
     });
   };
@@ -667,14 +699,21 @@ export default function App() {
         const matchCode = !codeWithSuffix || (it.codeWithSuffix || it.product.code) === codeWithSuffix;
         return !(matchProduct && matchColor && matchSize && matchCode);
       });
-      localStorage.setItem('pampero_quote_cart', JSON.stringify(updated));
+      try {
+        const storageKey = getCartStorageKey(userSession);
+        localStorage.setItem(storageKey, JSON.stringify(updated));
+      } catch {}
       return updated;
     });
   };
 
   const handleClearCart = () => {
     setCart([]);
-    localStorage.removeItem('pampero_quote_cart');
+    try {
+      const storageKey = getCartStorageKey(userSession);
+      localStorage.removeItem(storageKey);
+      localStorage.removeItem('pampero_cart_guest');
+    } catch {}
   };
 
   // Navigation: Open Auth with specific config
@@ -927,7 +966,7 @@ export default function App() {
             onUpdateCoupons={handleUpdateCoupons}
             onUpdateLookbook={handleUpdateLookbook}
             userSession={userSession}
-            onClose={() => setViewMode('catalog')}
+            onClose={() => setViewMode('hub')}
             onSelectPromoFilter={(promo) => {
               setActivePromoFilter(promo.tagFilter || promo.title);
               setViewMode('catalog');
@@ -940,7 +979,7 @@ export default function App() {
           {viewMode === 'crm' && (
             <CRMView
               userSession={userSession}
-              onClose={() => setViewMode('landing')}
+              onClose={() => setViewMode('hub')}
               theme={theme}
               onSetSession={(s) => setUserSession(s)}
               onOpenAuth={() => openAuthScreen('admin', 'empresa')}
@@ -960,6 +999,7 @@ export default function App() {
             <ClientSizingPortalView
               onBackToHome={() => setViewMode('landing')}
               theme={theme}
+              userSession={userSession}
             />
           )}
 

@@ -22,7 +22,10 @@ import {
   subscribeToSizingCampaigns,
   saveSizingCampaign,
   subscribeToEmployeeSizeEntries,
-  saveEmployeeSizeEntry
+  saveEmployeeSizeEntry,
+  subscribeToKanbanColumns,
+  DEFAULT_COMPANY_COLUMNS,
+  KanbanColumnConfig
 } from '../../services/firebase';
 import { 
   LayoutDashboard, 
@@ -52,8 +55,6 @@ import {
 import { CRMNotificationsModal } from './CRMNotificationsModal';
 import { CRMVisitsTab } from './CRMVisitsTab';
 import { CRMSupplierOrdersTab } from './CRMSupplierOrdersTab';
-import { CRMSizingPortalTab } from './CRMSizingPortalTab';
-import { CRMUniformSimulatorTab } from './CRMUniformSimulatorTab';
 import { CRMCostsTab } from './CRMCostsTab';
 
 interface CRMViewProps {
@@ -78,6 +79,24 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
   const [supplierOrders, setSupplierOrders] = useState<SupplierOrder[]>([]);
   const [sizingCampaigns, setSizingCampaigns] = useState<SizingCampaign[]>([]);
   const [employeeSizes, setEmployeeSizes] = useState<EmployeeSizeEntry[]>([]);
+
+  // Dynamic Kanban Columns for Seguimiento Empresas
+  const [companyColumns, setCompanyColumns] = useState<KanbanColumnConfig[]>(() => {
+    try {
+      const saved = localStorage.getItem('pampero_kanban_company_cols');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return DEFAULT_COMPANY_COLUMNS;
+  });
+
+  useEffect(() => {
+    const unsub = subscribeToKanbanColumns((data) => {
+      if (Array.isArray(data.companies) && data.companies.length > 0) {
+        setCompanyColumns(data.companies);
+      }
+    });
+    return () => unsub();
+  }, []);
 
   // RBAC Access Control: Check if logged in staff has CRM permissions
   const currentEmployee: EmployeeAccount | null = (() => {
@@ -124,7 +143,23 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
 
   const activeStaffUser = userSession?.clientData?.fullName || (userSession?.role === 'admin' ? 'Administrador General' : userSession?.email?.split('@')[0] || 'Personal Pampero');
 
-  const [activeTab, setActiveTab] = useState<'visits' | 'board' | 'suppliers' | 'costs' | 'sizing' | 'simulator'>('visits');
+  // Allowed CRM tabs based on Admin or Employee Permissions
+  const allowedCrmTabs: ('visits' | 'board' | 'suppliers' | 'costs')[] = (() => {
+    if (userSession?.role === 'admin') return ['visits', 'board', 'suppliers', 'costs'];
+    if (currentEmployee?.crmTabs && Array.isArray(currentEmployee.crmTabs) && currentEmployee.crmTabs.length > 0) {
+      return currentEmployee.crmTabs as ('visits' | 'board' | 'suppliers' | 'costs')[];
+    }
+    return ['visits', 'board', 'suppliers'];
+  })();
+
+  const [activeTab, setActiveTab] = useState<'visits' | 'board' | 'suppliers' | 'costs'>('visits');
+
+  useEffect(() => {
+    if (allowedCrmTabs.length > 0 && !allowedCrmTabs.includes(activeTab)) {
+      setActiveTab(allowedCrmTabs[0]);
+    }
+  }, [allowedCrmTabs, activeTab]);
+
   const [sellerFilter, setSellerFilter] = useState(() => {
     if (crmScope === 'own_only' && assignedSellerName) return assignedSellerName.toLowerCase();
     return 'todos';
@@ -373,29 +408,29 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
 
           <div className="flex bg-[#ECE5DC] rounded-xs p-1 flex-wrap gap-0.5">
             {[
-              { key: 'visits', label: '1. Visitas Comerciales', icon: Building2 },
-              { key: 'board', label: '2. Seguimiento Empresas', icon: LayoutDashboard },
-              { key: 'suppliers', label: '3. Pedidos Proveedor', icon: Truck },
-              { key: 'costs', label: 'Control de Costos', icon: DollarSign },
-              { key: 'sizing', label: 'Portal de Talles', icon: Shirt },
-              { key: 'simulator', label: 'Simulador Bordado', icon: Sparkles },
-            ].map((tab) => {
-              const Icon = tab.icon;
-              return (
-                <button
-                  key={tab.key}
-                  onClick={() => setActiveTab(tab.key as any)}
-                  className={`px-3 py-1.5 text-xs font-bold uppercase rounded-xs transition-colors cursor-pointer flex items-center gap-1.5 ${
-                    activeTab === tab.key
-                      ? 'bg-white shadow-xs text-[#18231C]'
-                      : 'text-[#6F6860] hover:text-[#18231C]'
-                  }`}
-                >
-                  <Icon className="w-3.5 h-3.5 text-[#B9522F]" />
-                  <span>{tab.label}</span>
-                </button>
-              );
-            })}
+              { key: 'visits' as const, label: '1. Visitas Comerciales', icon: Building2 },
+              { key: 'board' as const, label: '2. Seguimiento Empresas', icon: LayoutDashboard },
+              { key: 'suppliers' as const, label: 'Pedidos Proveedor', icon: Truck },
+              { key: 'costs' as const, label: 'Control de Costos', icon: DollarSign },
+            ]
+              .filter((tab) => allowedCrmTabs.includes(tab.key))
+              .map((tab) => {
+                const Icon = tab.icon;
+                return (
+                  <button
+                    key={tab.key}
+                    onClick={() => setActiveTab(tab.key)}
+                    className={`px-3 py-1.5 text-xs font-bold uppercase rounded-xs transition-colors cursor-pointer flex items-center gap-1.5 ${
+                      activeTab === tab.key
+                        ? 'bg-white shadow-xs text-[#18231C]'
+                        : 'text-[#6F6860] hover:text-[#18231C]'
+                    }`}
+                  >
+                    <Icon className="w-3.5 h-3.5 text-[#B9522F]" />
+                    <span>{tab.label}</span>
+                  </button>
+                );
+              })}
           </div>
         </div>
 
@@ -589,8 +624,12 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
 
             {/* Kanban Board Columns */}
             <div className="flex gap-4 flex-1 overflow-x-auto pb-4">
-              {STATUS_COLUMNS.map((col) => {
-                const columnOrders = filteredOrders.filter((o) => o.status === col.id);
+              {companyColumns.map((col) => {
+                const columnOrders = filteredOrders.filter((o) => {
+                  if (o.status === col.id) return true;
+                  if (col.id === companyColumns[0]?.id && !companyColumns.some((c) => c.id === o.status)) return true;
+                  return false;
+                });
                 const isDragOver = dragOverColumn === col.id;
                 return (
                   <div
@@ -606,17 +645,17 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
                   >
                     {/* Column Header */}
                     <div
-                      className="p-3 border-b border-[#DCD4C9] rounded-t-xs font-bold text-xs uppercase text-[#18231C] flex justify-between items-center"
+                      className="p-3 border-b border-[#DCD4C9] rounded-t-xs font-bold text-xs uppercase text-[#18231C] flex justify-between items-center bg-white"
                       style={{
-                        backgroundColor: col.bgColor,
                         borderLeftColor: col.color,
-                        borderLeftWidth: '3px',
+                        borderLeftWidth: '4px',
+                        borderTop: `2px solid ${col.color}40`,
                       }}
                     >
                       <span>{col.label}</span>
                       <span
                         className="px-2 py-0.5 rounded-full text-[10px] font-black"
-                        style={{ backgroundColor: col.color + '20', color: col.color }}
+                        style={{ backgroundColor: col.color + '22', color: col.color }}
                       >
                         {columnOrders.length}
                       </span>
@@ -651,8 +690,8 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
                                 ) : (
                                   <User className="w-3 h-3 text-emerald-600" />
                                 )}
-                                <span className="text-[10px] text-[#8C827A] font-mono">
-                                  #{order.id.slice(-6)}
+                                <span className="text-[11px] text-[#18231C] font-black font-mono">
+                                  {order.orderNumber || `#${order.id.slice(-6)}`}
                                 </span>
                               </div>
                               {isDelayed && (
@@ -707,7 +746,7 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
                             {/* Card Action Shortcuts */}
                             <div className="mt-2 pt-1.5 border-t border-dashed border-[#ECE5DC] flex items-center justify-between gap-1">
                               <a
-                                href={`https://wa.me/?text=${encodeURIComponent(`Hola ${order.clientName}, te escribimos de Pampero Gran Mendoza para actualizarte sobre tu solicitud #${order.id.slice(-6)} (Estado: ${col.label}). Total: $${(order.totalEstimated || 0).toLocaleString('es-AR')}. ¿Tenés alguna consulta?`)}`}
+                                href={`https://wa.me/?text=${encodeURIComponent(`Hola ${order.clientName}, te escribimos de Pampero Gran Mendoza para actualizarte sobre tu pedido ${order.orderNumber || `#${order.id.slice(-6)}`} (Estado: ${col.label}). Total: $${(order.totalEstimated || 0).toLocaleString('es-AR')}. ¿Tenés alguna consulta?`)}`}
                                 target="_blank"
                                 rel="noreferrer"
                                 onClick={(e) => e.stopPropagation()}
@@ -719,8 +758,8 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
                               </a>
 
                               {(() => {
-                                const currentIndex = STATUS_COLUMNS.findIndex((c) => c.id === order.status);
-                                const nextCol = currentIndex >= 0 && currentIndex < STATUS_COLUMNS.length - 1 ? STATUS_COLUMNS[currentIndex + 1] : null;
+                                const currentIndex = companyColumns.findIndex((c) => c.id === order.status);
+                                const nextCol = currentIndex >= 0 && currentIndex < companyColumns.length - 1 ? companyColumns[currentIndex + 1] : null;
                                 if (!nextCol) return null;
                                 return (
                                   <button
@@ -773,23 +812,10 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
           <CRMSupplierOrdersTab orders={supplierOrders} accentColor={accent} />
         )}
 
-        {/* === TAB: CONTROL DE COSTOS (SIN NÚMEROS) === */}
+        {/* === TAB 4: CONTROL DE COSTOS === */}
         {activeTab === 'costs' && (
           <CRMCostsTab accentColor={accent} />
         )}
-
-        {/* === TAB 4: PORTAL DE TALLES === */}
-        {activeTab === 'sizing' && (
-          <CRMSizingPortalTab
-            campaigns={sizingCampaigns}
-            entries={employeeSizes}
-            onSaveCampaign={(c) => saveSizingCampaign(c)}
-            onSaveEntry={(e) => saveEmployeeSizeEntry(e)}
-          />
-        )}
-
-        {/* === TAB 5: ARMADOR DE UNIFORMES VIRTUAL === */}
-        {activeTab === 'simulator' && <CRMUniformSimulatorTab />}
       </div>
 
       {/* Notifications Drawer Modal */}
