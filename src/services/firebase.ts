@@ -77,10 +77,18 @@ export function getFirebaseStorage(): FirebaseStorage | null {
   if (storage) return storage;
   try {
     const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-    storage = getStorage(app);
+    const rawBucket = (import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || firebaseConfig.storageBucket || '').trim();
+    const cleanBucket = rawBucket.replace(/^gs:\/\//, '');
+
+    // Conexión Directa: inicializa Firebase Storage consumiendo VITE_FIREBASE_STORAGE_BUCKET
+    storage = cleanBucket ? getStorage(app, `gs://${cleanBucket}`) : getStorage(app);
+
+    // Evitar que el SDK de Firebase Storage se cuelgue en reintentos infinitos
+    storage.maxUploadRetryTime = 10000;
+    storage.maxOperationRetryTime = 10000;
     return storage;
   } catch (err) {
-    console.warn('[FIREBASE STORAGE] Initialization warning:', err);
+    console.error('[FIREBASE STORAGE] Error al inicializar Storage con VITE_FIREBASE_STORAGE_BUCKET:', err);
     return null;
   }
 }
@@ -111,68 +119,58 @@ export function isFirebaseReady(): boolean {
 }
 
 /**
- * Uploads an image File, Blob, or base64 data URL EXCLUSIVELY to Firebase Storage
- * (uploadBytes, getDownloadURL) and returns the public accessible download URL.
+ * Conexión Directa: Sube archivos directo a Firebase Storage utilizando uploadBytes y getDownloadURL.
+ * Inicializado correctamente consumiendo VITE_FIREBASE_STORAGE_BUCKET.
+ * Bloque try/catch robusto: si la imagen no sube, reporta console.error y no se congela.
  */
 export async function uploadImageToStorage(
   fileOrDataUrl: File | Blob | string,
   folder: string = 'catalog'
 ): Promise<string> {
+  // Si ya es una URL persistente accesible (http/https y no blob/base64), mantenerla
+  if (typeof fileOrDataUrl === 'string' && (fileOrDataUrl.startsWith('http://') || fileOrDataUrl.startsWith('https://')) && !fileOrDataUrl.includes('/uploads/')) {
+    return fileOrDataUrl;
+  }
+
   const stor = storage || getFirebaseStorage();
   if (!stor) {
-    throw new Error('Firebase Storage no disponible. Verificá la configuración del proyecto Firebase.');
+    console.error('[STORAGE ERROR] Firebase Storage no está disponible. Verificá VITE_FIREBASE_STORAGE_BUCKET.');
+    throw new Error('Firebase Storage no disponible. Verificá la variable VITE_FIREBASE_STORAGE_BUCKET.');
   }
 
   const timestamp = Date.now();
   const randomSuffix = Math.random().toString(36).substring(2, 8);
 
-  // If already an external persistent URL (and not base64 / blob / local upload), keep it
-  if (typeof fileOrDataUrl === 'string' && (fileOrDataUrl.startsWith('http://') || fileOrDataUrl.startsWith('https://')) && !fileOrDataUrl.includes('/uploads/')) {
-    return fileOrDataUrl;
-  }
+  try {
+    let storageRef;
+    let uploadPromise;
 
-  const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-
-  const attemptUpload = async (storageInstance: FirebaseStorage): Promise<string> => {
     if (typeof fileOrDataUrl === 'string' && fileOrDataUrl.startsWith('data:image/')) {
       let ext = 'jpg';
       if (fileOrDataUrl.includes('image/png')) ext = 'png';
       else if (fileOrDataUrl.includes('image/webp')) ext = 'webp';
       const filePath = `${folder}/${timestamp}_${randomSuffix}.${ext}`;
-      const storageRef = ref(storageInstance, filePath);
-      const result = await uploadString(storageRef, fileOrDataUrl, 'data_url');
-      return await getDownloadURL(result.ref);
+      storageRef = ref(stor, filePath);
+      uploadPromise = uploadString(storageRef, fileOrDataUrl, 'data_url');
     } else if (fileOrDataUrl instanceof File || fileOrDataUrl instanceof Blob) {
       const originalName = (fileOrDataUrl as File).name || 'image.jpg';
       const cleanName = originalName.replace(/[^a-zA-Z0-9._-]/g, '_');
       const filePath = `${folder}/${timestamp}_${cleanName}`;
-      const storageRef = ref(storageInstance, filePath);
+      storageRef = ref(stor, filePath);
       const contentType = (fileOrDataUrl as File).type || 'image/jpeg';
-      const result = await uploadBytes(storageRef, fileOrDataUrl, { contentType });
-      return await getDownloadURL(result.ref);
-    } else if (typeof fileOrDataUrl === 'string' && fileOrDataUrl.startsWith('/uploads/')) {
-      return fileOrDataUrl;
+      uploadPromise = uploadBytes(storageRef, fileOrDataUrl, { contentType });
+    } else {
+      throw new Error('Formato de imagen inválido para subir a Firebase Storage.');
     }
-    throw new Error('Formato de imagen inválido para subir a Firebase Storage.');
-  };
 
-  try {
-    const downloadUrl = await withTimeout(attemptUpload(stor), 25000);
-    return `${downloadUrl}${downloadUrl.includes('?') ? '&' : '?'}v=${timestamp}`;
-  } catch (primaryErr: any) {
-    console.warn('[STORAGE] Primer intento falló, intentando con bucket alternativo...', primaryErr?.message || primaryErr);
-    try {
-      const currentBucket = firebaseConfig.storageBucket || 'pampero-catalogo.firebasestorage.app';
-      const altBucket = currentBucket.includes('firebasestorage.app')
-        ? currentBucket.replace('.firebasestorage.app', '.appspot.com')
-        : currentBucket.replace('.appspot.com', '.firebasestorage.app');
-      const altStor = getStorage(app, `gs://${altBucket}`);
-      const downloadUrl = await withTimeout(attemptUpload(altStor), 25000);
-      return `${downloadUrl}${downloadUrl.includes('?') ? '&' : '?'}v=${timestamp}`;
-    } catch (altErr: any) {
-      console.error('[STORAGE ERROR DEFINITIVO]:', altErr);
-      throw new Error(`Error en Firebase Storage: ${primaryErr?.message || altErr?.message || 'Fallo de conexión'}`);
-    }
+    // Direct upload with uploadBytes / uploadString
+    const uploadResult = await uploadPromise;
+    // Direct getDownloadURL
+    const downloadUrl = await getDownloadURL(uploadResult.ref);
+    return downloadUrl;
+  } catch (err: any) {
+    console.error('[STORAGE ERROR EXACTO]:', err?.code || err?.name, err?.message || err);
+    throw err;
   }
 }
 

@@ -142,6 +142,24 @@ export const AdminMassImagesTab: React.FC<AdminMassImagesTabProps> = ({
             matchedProduct: matched,
             parsedInfo,
           });
+
+          // Actualización del Documento: Guardar inmediatamente la URL en el producto en Cloud Firestore
+          if (matched) {
+            const updatedItem: Product = {
+              ...matched,
+              image: publicUrl,
+              images: Array.from(new Set([...(matched.images || (matched.image ? [matched.image] : [])), publicUrl])),
+            };
+            saveSingleFirestoreProduct(updatedItem).then((res) => {
+              if (res.success) {
+                console.log(`[STORAGE -> FIRESTORE] Foto de ${matched.code} guardada en Firestore:`, publicUrl);
+              } else {
+                console.error('[FIRESTORE ERROR] No se pudo guardar foto de producto en Firestore:', res.error);
+              }
+            }).catch((err) => {
+              console.error('[FIRESTORE ERROR] Excepción guardando foto en Firestore:', err);
+            });
+          }
         } catch (fileErr: any) {
           console.error(`[CARGA MASIVA ERROR] Error subiendo ${file.name}:`, fileErr);
           // Continuar con los siguientes archivos sin trabar la pantalla

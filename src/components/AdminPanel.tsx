@@ -323,7 +323,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
         const saveRes = await saveSingleFirestoreProduct(updatedProduct);
         if (!saveRes.success) {
-          console.warn('[FIREBASE WARNING] No se pudo guardar foto directamente en Firestore:', saveRes.error);
+          console.error('[FIRESTORE ERROR] No se pudo guardar foto en Firestore:', saveRes.error);
         } else {
           // Sincronizar catálogo visual en memoria
           const updatedCatalog = products.map((p) =>
