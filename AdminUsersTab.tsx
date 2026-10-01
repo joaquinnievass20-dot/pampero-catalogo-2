@@ -1,6 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { RegisteredUser } from '../../types';
 import { MASTER_ADMIN_USER, ensureMasterAdminInitialized } from '../../utils/authInit';
+import {
+  subscribeToFirestoreUsers,
+  saveFirestoreUser,
+  deleteFirestoreUser,
+  seedInitialFirestoreUsersIfEmpty,
+  isFirebaseReady,
+} from '../../services/firebase';
 import { 
   Users, 
   Building2, 
@@ -17,7 +24,8 @@ import {
   Plus, 
   FileText, 
   CheckCircle2, 
-  Filter
+  Filter,
+  RefreshCw
 } from 'lucide-react';
 
 interface AdminUsersTabProps {
@@ -114,67 +122,60 @@ export const INITIAL_REGISTERED_USERS: RegisteredUser[] = [
 ];
 
 export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice }) => {
+  // Real-time Firestore driven users list
   const [users, setUsers] = useState<RegisteredUser[]>(() => {
     try {
-      const initialized = ensureMasterAdminInitialized();
-      if (Array.isArray(initialized) && initialized.length > 0) return initialized;
       const stored = localStorage.getItem('pampero_registered_users');
       if (stored) {
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       }
-      // Also check leads pool
-      const storedLeads = localStorage.getItem('pampero_registered_leads');
-      if (storedLeads) {
-        const parsedLeads = JSON.parse(storedLeads);
-        if (Array.isArray(parsedLeads) && parsedLeads.length > 0) {
-          const formattedFromLeads: RegisteredUser[] = parsedLeads.map((l: any, idx: number) => ({
-            id: l.id || `lead-${idx}`,
-            type: l.type === 'empresa' ? 'empresa' : 'consumidor',
-            name: l.data?.companyName || l.data?.fullName || 'Cliente Registrado',
-            repName: l.data?.repFullName,
-            email: l.data?.institutionalEmail || l.data?.email || '',
-            phone: l.data?.institutionalPhone || l.data?.phone || '',
-            cuitOrDni: l.data?.cuit || l.data?.dni || '',
-            address: typeof l.data?.address === 'object' 
-              ? `${l.data?.address?.street || ''} ${l.data?.address?.number || ''}`.trim() 
-              : String(l.data?.address || ''),
-            city: l.data?.address?.city || 'Gran Mendoza',
-            createdAt: l.date || 'Reciente',
-            status: 'active',
-            pricingTier: l.type === 'empresa' ? 'Corporativo / Mayorista' : 'Consumidor Final',
-          }));
-          return [...formattedFromLeads, ...INITIAL_REGISTERED_USERS];
-        }
-      }
-    } catch {
-      // ignore
-    }
+    } catch {}
     return INITIAL_REGISTERED_USERS;
   });
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Subscribe to Cloud Firestore collection 'usuarios' in real time
+  useEffect(() => {
+    // 1. Ensure master admin and seed users exist in Firestore if collection is empty
+    seedInitialFirestoreUsersIfEmpty(INITIAL_REGISTERED_USERS).catch((err) => {
+      console.warn('[FIREBASE] Error sembrando usuarios iniciales:', err);
+    });
+
+    // 2. Real-time Firebase SDK listener (onSnapshot)
+    const unsubscribe = subscribeToFirestoreUsers((remoteUsers) => {
+      if (Array.isArray(remoteUsers) && remoteUsers.length > 0) {
+        setUsers(remoteUsers);
+      }
+      setIsLoading(false);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'empresa' | 'consumidor' | 'admin'>('all');
   const [selectedUser, setSelectedUser] = useState<RegisteredUser | null>(null);
 
-  // Sync to localStorage
-  const saveUsers = (newUsers: RegisteredUser[]) => {
-    // Always preserve master admin account in the pool
-    const hasAdmin = newUsers.some((u) => u.email?.toLowerCase().trim() === 'admin@pampero.com');
-    const finalUsers = hasAdmin ? newUsers : [MASTER_ADMIN_USER, ...newUsers];
-    setUsers(finalUsers);
-    localStorage.setItem('pampero_registered_users', JSON.stringify(finalUsers));
+  // Real-time Save to Cloud Firestore
+  const saveUsers = async (newUsers: RegisteredUser[]) => {
+    for (const u of newUsers) {
+      await saveFirestoreUser(u);
+    }
     triggerSaveNotice();
   };
 
-  const handleDeleteUser = (id: string, name: string) => {
+  // Real-time Delete from Cloud Firestore
+  const handleDeleteUser = async (id: string, name: string) => {
     if (id === 'admin-master' || id === MASTER_ADMIN_USER.id) {
       alert('La cuenta administradora maestra (admin@pampero.com) está protegida por seguridad y no puede ser eliminada.');
       return;
     }
     if (confirm(`¿Estás seguro de eliminar la cuenta de "${name}"?`)) {
-      const filtered = users.filter((u) => u.id !== id);
-      saveUsers(filtered);
+      await deleteFirestoreUser(id);
+      triggerSaveNotice();
       if (selectedUser?.id === id) setSelectedUser(null);
     }
   };
@@ -232,11 +233,17 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice 
               <Users className="w-6 h-6 text-[#B9522F]" />
             </div>
             <div>
-              <h3 className="font-bold text-base text-[#18231C] uppercase tracking-wider">
-                Cuentas Creadas & Clientes Registrados
-              </h3>
+              <div className="flex items-center gap-2">
+                <h3 className="font-bold text-base text-[#18231C] uppercase tracking-wider">
+                  Cuentas Creadas & Clientes Registrados
+                </h3>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-xs bg-emerald-50 border border-emerald-300 text-emerald-800 text-[10px] font-black uppercase tracking-wider">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  Sincronizado Firestore SDK
+                </span>
+              </div>
               <p className="text-xs text-[#6F6860] mt-0.5">
-                Padrón oficial de empresas, industrias y consumidores finales registrados en Pampero Gran Mendoza.
+                Padrón oficial en tiempo real de empresas, industrias y consumidores finales en Cloud Firestore.
               </p>
             </div>
           </div>

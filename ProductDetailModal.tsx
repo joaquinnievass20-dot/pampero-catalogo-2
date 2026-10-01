@@ -385,12 +385,12 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               {addedSuccess ? (
                 <>
                   <Check className="w-4 h-4" />
-                  ¡Agregado a la Lista de Cotización!
+                  ¡Agregado a Mi Pedido!
                 </>
               ) : (
                 <>
                   <Plus className="w-4 h-4" />
-                  Agregar a Lista de Cotización
+                  Agregar a Mi Pedido
                 </>
               )}
             </button>

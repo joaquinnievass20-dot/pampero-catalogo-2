@@ -1,15 +1,15 @@
 import { RegisteredUser } from '../types';
 
-export const MASTER_ADMIN_EMAIL = 'joaquinnievass20@gmail.com';
+export const MASTER_ADMIN_EMAIL = 'admin@pamperogm.com.ar';
 export const MASTER_ADMIN_PASSWORD = 'Pampero2026';
 export const MASTER_ADMIN_ROLE = 'admin' as const;
 
 export const MASTER_ADMIN_USER: RegisteredUser = {
   id: 'admin-master',
   type: 'admin',
-  name: 'Administrador Maestro Joaquín Nievas',
+  name: 'Administrador General Pampero',
   repName: 'Administración Pampero Gran Mendoza',
-  email: 'joaquinnievass20@gmail.com',
+  email: 'admin@pamperogm.com.ar',
   phone: '2614980000',
   cuitOrDni: '30-11223344-9',
   address: 'Av. San Martín 1234',
@@ -83,7 +83,7 @@ export function ensureMasterAdminInitialized(): RegisteredUser[] {
     (u) => u.email?.toLowerCase().trim() !== 'admin@pampero.com' && u.email?.toLowerCase().trim() !== 'admin@pampero.com.ar'
   );
 
-  // Check if joaquinnievass20@gmail.com exists
+  // Check if master admin exists
   const hasMasterAdmin = users.some(
     (u) => u.email?.toLowerCase().trim() === MASTER_ADMIN_EMAIL.toLowerCase()
   );

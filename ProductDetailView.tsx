@@ -626,12 +626,12 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
                 {addedAnimation ? (
                   <>
                     <Check className="w-4 h-4 text-emerald-600" />
-                    <span>¡AGREGADO A LA COTIZACIÓN!</span>
+                    <span>¡AGREGADO A MI PEDIDO!</span>
                   </>
                 ) : (
                   <>
                     <ShoppingBag className="w-4 h-4" />
-                    <span>AGREGAR A MI LISTA DE COTIZACIÓN</span>
+                    <span>AGREGAR A MI PEDIDO</span>
                   </>
                 )}
               </button>

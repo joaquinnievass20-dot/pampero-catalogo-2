@@ -24,17 +24,20 @@ import { AdminUsersTab } from './admin/AdminUsersTab';
 import { AdminSecurityTab } from './admin/AdminSecurityTab';
 import { AdminAnalyticsTab } from './admin/AdminAnalyticsTab';
 import { AdminVariantsTab } from './admin/AdminVariantsTab';
-import { AdminEmployeesTab } from './admin/AdminEmployeesTab';
+import { AdminSizingPortalConfigTab } from './admin/AdminSizingPortalConfigTab';
+import { AdminUniformSimulatorConfigTab } from './admin/AdminUniformSimulatorConfigTab';
 import { AdminQuotesTab } from './admin/AdminQuotesTab';
 import { AdminBulkExcelImportModal } from './admin/AdminBulkExcelImportModal';
 import { AdminNotificationsTab } from './admin/AdminNotificationsTab';
-import { AdminSellersTab } from './admin/AdminSellersTab';
+import { AdminPermissionsTab } from './admin/AdminPermissionsTab';
+import { AdminKanbanConfigTab } from './admin/AdminKanbanConfigTab';
+import { AdminCostCategoriesTab } from './admin/AdminCostCategoriesTab';
 import { compressImage } from '../utils/imageCompressor';
 import { parseImageFileName } from '../utils/imageNamingParser';
 import { PamperoLogo } from './PamperoLogo';
 import { saveCatalogBackup } from '../utils/backupManager';
 import { doc, deleteDoc } from 'firebase/firestore';
-import { db, getFirebaseDb, saveSingleFirestoreProduct, deleteFirestoreProductDoc, isFirebaseReady } from '../services/firebase';
+import { db, getFirebaseDb, saveSingleFirestoreProduct, deleteFirestoreProductDoc, isFirebaseReady, uploadImageToStorage } from '../services/firebase';
 import { 
   Palette, 
   Tag, 
@@ -73,7 +76,10 @@ import {
   EyeOff,
   AlertTriangle,
   AlertCircle,
-  Bell
+  Bell,
+  Shirt,
+  Receipt,
+  DollarSign
 } from 'lucide-react';
 
 export type AdminTabKey = 
@@ -88,10 +94,13 @@ export type AdminTabKey =
   | 'variants' 
   | 'branches' 
   | 'quotes' 
-  | 'employees' 
-  | 'sellers'
-  | 'notifications'
   | 'users' 
+  | 'permissions'
+  | 'kanban_config'
+  | 'cost_categories'
+  | 'sizing_portal'
+  | 'uniform_simulator'
+  | 'notifications'
   | 'security' 
   | 'analytics';
 
@@ -161,7 +170,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   const isTabVisible = (tabKey: AdminTabKey) => {
     if (!isEmployee) return true;
-    if (tabKey === 'security' || tabKey === 'employees') return false;
+    if (tabKey === 'security' || tabKey === 'permissions' || tabKey === 'kanban_config') return false;
     return employeePermissions.includes(tabKey);
   };
 
@@ -196,12 +205,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     suffix: string;
     sizeRangeLabel: string;
     sizes: string;
+    minSize?: string;
+    maxSize?: string;
     price: number | '';
     corporatePrice: number | '';
   }>({
     suffix: '-1',
     sizeRangeLabel: 'Talles 50 al 58',
     sizes: '50, 52, 54, 56, 58',
+    minSize: '50',
+    maxSize: '58',
     price: '',
     corporatePrice: '',
   });
@@ -232,69 +245,105 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   const [activePhotoGalleryTab, setActivePhotoGalleryTab] = useState<'general' | 'men' | 'women'>('general');
   const [isUploadingPhotos, setIsUploadingPhotos] = useState(false);
+  const [photoUploadError, setPhotoUploadError] = useState<string | null>(null);
 
-  // Multi-photo upload processor with automatic compression, filename parsing, and categorization
+  // Multi-photo upload processor: Subida directa a Firebase Storage (uploadBytes/getDownloadURL)
+  // Actualización automática del documento en Cloud Firestore con try/catch robusto
   const handleUploadPhotos = async (
     filesList: FileList | File[],
     targetScope: 'general' | 'men' | 'women' | 'auto' = 'auto'
   ) => {
     if (!filesList || filesList.length === 0) return;
     setIsUploadingPhotos(true);
-    const files = Array.from(filesList);
+    setPhotoUploadError(null);
 
+    const files = Array.from(filesList);
     const newGeneral: string[] = [];
     const newMen: string[] = [];
     const newWomen: string[] = [];
+    const targetSku = (productForm.code || (editingProduct ? editingProduct.code : '') || 'producto').trim();
+    const skuPrefix = targetSku.replace(/[^a-zA-Z0-9_-]/g, '_');
 
-    for (const file of files) {
-      try {
-        const compressed = await compressImage(file, {
-          maxWidth: 1200,
-          maxHeight: 1200,
-          quality: 0.82,
-        });
+    try {
+      for (const file of files) {
+        try {
+          // Subida DIRECTA a Firebase Storage usando uploadBytes y getDownloadURL
+          const publicUrl = await uploadImageToStorage(file, `products/${skuPrefix}`);
 
-        const parsed = parseImageFileName(file.name);
-        let determined = targetScope;
+          const parsed = parseImageFileName(file.name);
+          let determined = targetScope;
 
-        if (determined === 'auto') {
-          if (parsed.gender === 'Mujer') {
-            determined = 'women';
-          } else if (parsed.gender === 'Hombre') {
-            determined = 'men';
-          } else {
-            determined = activePhotoGalleryTab;
+          if (determined === 'auto') {
+            if (parsed.gender === 'Mujer') {
+              determined = 'women';
+            } else if (parsed.gender === 'Hombre') {
+              determined = 'men';
+            } else {
+              determined = activePhotoGalleryTab;
+            }
           }
-        }
 
-        if (determined === 'women') {
-          newWomen.push(compressed);
-        } else if (determined === 'men') {
-          newMen.push(compressed);
-        } else {
-          newGeneral.push(compressed);
+          if (determined === 'women') {
+            newWomen.push(publicUrl);
+          } else if (determined === 'men') {
+            newMen.push(publicUrl);
+          } else {
+            newGeneral.push(publicUrl);
+          }
+        } catch (fileErr: any) {
+          console.error('[CARGA FOTO] Error al procesar archivo:', file.name, fileErr);
+          setPhotoUploadError(`Aviso sobre ${file.name}: ${fileErr?.message || fileErr}`);
         }
-      } catch (err) {
-        console.error('Error processing image:', file.name, err);
       }
-    }
 
-    setProductForm((prev) => {
-      const updatedGeneral = [...(prev.images || (prev.image ? [prev.image] : [])), ...newGeneral];
-      const updatedMen = [...(prev.imagesMen || []), ...newMen];
-      const updatedWomen = [...(prev.imagesWomen || []), ...newWomen];
-      const primary = prev.image || updatedGeneral[0] || updatedMen[0] || updatedWomen[0] || '';
+      // Preparar nuevos arreglos de fotos
+      const updatedGeneral = [...(productForm.images || (productForm.image ? [productForm.image] : [])), ...newGeneral];
+      const updatedMen = [...(productForm.imagesMen || []), ...newMen];
+      const updatedWomen = [...(productForm.imagesWomen || []), ...newWomen];
+      const primary = productForm.image || updatedGeneral[0] || updatedMen[0] || updatedWomen[0] || '';
 
-      return {
+      // 1. Actualizar estado local del formulario
+      setProductForm((prev) => ({
         ...prev,
         image: primary,
         images: updatedGeneral,
         imagesMen: updatedMen,
         imagesWomen: updatedWomen,
-      };
-    });
+      }));
 
-    setIsUploadingPhotos(false);
+      // 2. Si es un producto existente o con SKU, actualizar automáticamente el documento en Cloud Firestore
+      if (editingProduct || (productForm.code && productForm.name)) {
+        const productSku = (editingProduct?.code || productForm.code || editingProduct?.id || targetSku).trim();
+        const updatedProduct: Product = {
+          ...(editingProduct || (productForm as Product)),
+          ...productForm,
+          id: productSku,
+          code: productSku,
+          image: primary,
+          images: updatedGeneral,
+          imagesMen: updatedMen,
+          imagesWomen: updatedWomen,
+        };
+
+        // Sincronizar SIEMPRE catálogo visual en memoria
+        const updatedCatalog = products.map((p) =>
+          p.code === productSku || p.id === productSku ? updatedProduct : p
+        );
+        onUpdateProducts(updatedCatalog);
+        triggerSaveNotice();
+
+        saveSingleFirestoreProduct(updatedProduct).catch((err) => {
+          console.warn('[FIRESTORE] Guardado en segundo plano:', err);
+        });
+      }
+    } catch (err: any) {
+      console.error('[CARGA FOTOS PRODUCTO ERROR]:', err);
+      const errorMsg = err?.message || 'Error al subir las imágenes a Firebase Storage.';
+      setPhotoUploadError(errorMsg);
+    } finally {
+      // Garantizar siempre que el loading se detenga para no congelar la pantalla
+      setIsUploadingPhotos(false);
+    }
   };
 
   // Branches Tab internal state
@@ -662,6 +711,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
           <div className="flex items-center gap-2.5">
             <button
+              id="btn-return-hub-admin"
+              type="button"
+              onClick={onClose}
+              className="px-3.5 py-1.5 bg-[#2B3B30] hover:bg-[#3d5244] text-[#F5F2EC] rounded-xs text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-colors cursor-pointer"
+              title="Volver al menú principal (Hub de Trabajo Interno)"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>Volver al menú principal</span>
+            </button>
+            <button
               id="btn-global-save-admin"
               type="button"
               onClick={handleGlobalSave}
@@ -674,8 +733,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             <button
               id="btn-close-admin-panel"
               onClick={onClose}
-              className="opacity-75 hover:opacity-100 p-1.5 rounded-xs hover:bg-white/10 transition-colors"
-              title="Cerrar panel de control y volver al catálogo"
+              className="opacity-75 hover:opacity-100 p-1.5 rounded-xs hover:bg-white/10 transition-colors cursor-pointer"
+              title="Volver al menú principal"
             >
               <X className="w-5 h-5" />
             </button>
@@ -879,7 +938,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 </button>
               )}
 
-              {/* Sucursales */}
+              {/* Sucursales & Locales (Base unificada) */}
               {isTabVisible('branches') && (
                 <button
                   id="admin-tab-branches"
@@ -894,7 +953,121 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   }`}
                 >
                   <Building2 className="w-4 h-4" style={{ color: iconColor }} />
-                  Sucursales ({branches.length})
+                  Sucursales & Locales ({branches.length})
+                </button>
+              )}
+
+              {/* Empleados & Cuentas Creadas (Fusionado) */}
+              {isTabVisible('users') && (
+                <button
+                  id="admin-tab-users"
+                  onClick={() => setActiveTab('users')}
+                  style={{
+                    borderTopColor: activeTab === 'users' ? activeBorderColor : 'transparent',
+                  }}
+                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                    activeTab === 'users'
+                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
+                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
+                  }`}
+                >
+                  <Users className="w-4 h-4" style={{ color: iconColor }} />
+                  Empleados & Cuentas
+                </button>
+              )}
+
+              {/* Permisos del CRM */}
+              {isTabVisible('permissions') && (
+                <button
+                  id="admin-tab-permissions"
+                  onClick={() => setActiveTab('permissions')}
+                  style={{
+                    borderTopColor: activeTab === 'permissions' ? activeBorderColor : 'transparent',
+                  }}
+                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                    activeTab === 'permissions'
+                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
+                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
+                  }`}
+                >
+                  <ShieldCheck className="w-4 h-4" style={{ color: iconColor }} />
+                  Permisos CRM
+                </button>
+              )}
+
+              {/* Editar Gestión (Restaurado para modificar columnas Kanban) */}
+              {isTabVisible('kanban_config') && (
+                <button
+                  id="admin-tab-kanban-config"
+                  onClick={() => setActiveTab('kanban_config')}
+                  style={{
+                    borderTopColor: activeTab === 'kanban_config' ? activeBorderColor : 'transparent',
+                  }}
+                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                    activeTab === 'kanban_config'
+                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
+                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
+                  }`}
+                >
+                  <Sliders className="w-4 h-4" style={{ color: iconColor }} />
+                  Editar Gestión
+                </button>
+              )}
+
+              {/* Categorías de Costos (Fijo / Variable) */}
+              {isTabVisible('cost_categories') && (
+                <button
+                  id="admin-tab-cost-categories"
+                  onClick={() => setActiveTab('cost_categories')}
+                  style={{
+                    borderTopColor: activeTab === 'cost_categories' ? activeBorderColor : 'transparent',
+                  }}
+                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                    activeTab === 'cost_categories'
+                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
+                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
+                  }`}
+                >
+                  <Receipt className="w-4 h-4" style={{ color: iconColor }} />
+                  Categorías de Costos
+                </button>
+              )}
+
+              {/* Configuración Portal de Talles */}
+              {isTabVisible('sizing_portal') && (
+                <button
+                  id="admin-tab-sizing-portal"
+                  onClick={() => setActiveTab('sizing_portal')}
+                  style={{
+                    borderTopColor: activeTab === 'sizing_portal' ? activeBorderColor : 'transparent',
+                  }}
+                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                    activeTab === 'sizing_portal'
+                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
+                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
+                  }`}
+                >
+                  <Shirt className="w-4 h-4" style={{ color: iconColor }} />
+                  Portal de Talles
+                </button>
+              )}
+
+              {/* Configuración Armador de Uniformes */}
+              {isTabVisible('uniform_simulator') && (
+                <button
+                  id="admin-tab-uniform-simulator"
+                  onClick={() => setActiveTab('uniform_simulator')}
+                  style={{
+                    borderTopColor: activeTab === 'uniform_simulator' ? activeBorderColor : 'transparent',
+                  }}
+                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                    activeTab === 'uniform_simulator'
+                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
+                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
+                  }`}
+                >
+                  <Sparkles className="w-4 h-4" style={{ color: iconColor }} />
+                  Armador de Uniformes
                 </button>
               )}
 
@@ -917,44 +1090,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 </button>
               )}
 
-              {/* Gestión de Empleados (Solo Administrador) */}
-              {isTabVisible('employees') && (
-                <button
-                  id="admin-tab-employees"
-                  onClick={() => setActiveTab('employees')}
-                  style={{
-                    borderTopColor: activeTab === 'employees' ? activeBorderColor : 'transparent',
-                  }}
-                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                    activeTab === 'employees'
-                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
-                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
-                  }`}
-                >
-                  <UserCheck className="w-4 h-4" style={{ color: iconColor }} />
-                  Empleados & Permisos
-                </button>
-              )}
-
-              {/* Vendedores & Locales */}
-              {isTabVisible('sellers') && (
-                <button
-                  id="admin-tab-sellers"
-                  onClick={() => setActiveTab('sellers')}
-                  style={{
-                    borderTopColor: activeTab === 'sellers' ? activeBorderColor : 'transparent',
-                  }}
-                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                    activeTab === 'sellers'
-                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
-                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
-                  }`}
-                >
-                  <Users className="w-4 h-4" style={{ color: iconColor }} />
-                  Vendedores & Locales
-                </button>
-              )}
-
               {/* Notificaciones & Alertas */}
               {isTabVisible('notifications') && (
                 <button
@@ -971,25 +1106,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 >
                   <Bell className="w-4 h-4" style={{ color: iconColor }} />
                   Notificaciones
-                </button>
-              )}
-
-              {/* Cuentas Creadas */}
-              {isTabVisible('users') && (
-                <button
-                  id="admin-tab-users"
-                  onClick={() => setActiveTab('users')}
-                  style={{
-                    borderTopColor: activeTab === 'users' ? activeBorderColor : 'transparent',
-                  }}
-                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                    activeTab === 'users'
-                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
-                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
-                  }`}
-                >
-                  <Users className="w-4 h-4" style={{ color: iconColor }} />
-                  Cuentas Creadas
                 </button>
               )}
 
@@ -1569,6 +1685,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                             setNewRangeForm({
                               suffix: `-${nextSuffixNum + 1}`,
                               sizeRangeLabel: 'Talles 60 al 66',
+                              sizes: '60, 62, 64, 66',
                               minSize: '60',
                               maxSize: '66',
                               price: '',
@@ -1811,13 +1928,29 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       </div>
                     </div>
 
+                    {photoUploadError && (
+                      <div className="p-3 bg-red-50 border border-red-300 text-red-900 text-xs rounded-xs font-semibold flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+                          <span>{photoUploadError}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setPhotoUploadError(null)}
+                          className="text-red-700 hover:text-red-900 text-xs underline font-bold cursor-pointer"
+                        >
+                          Cerrar
+                        </button>
+                      </div>
+                    )}
+
                     {/* Upload Controls Row */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       {/* From PC */}
                       <label className="border-2 border-dashed border-[#DCD4C9] hover:border-[#18231C] bg-white p-3.5 rounded-xs flex flex-col items-center justify-center gap-1.5 cursor-pointer text-center group transition-colors">
                         <Upload className="w-5 h-5 text-[#6F6860] group-hover:scale-110 group-hover:text-[#18231C] transition-all" />
                         <span className="text-xs font-bold text-[#18231C]">
-                          {isUploadingPhotos ? 'Optimizando fotos...' : `Subir fotos a ${activePhotoGalleryTab === 'men' ? 'Hombre' : activePhotoGalleryTab === 'women' ? 'Mujer' : 'General'}`}
+                          {isUploadingPhotos ? 'Subiendo fotos a Firebase Storage...' : `Subir fotos a ${activePhotoGalleryTab === 'men' ? 'Hombre' : activePhotoGalleryTab === 'women' ? 'Mujer' : 'General'}`}
                         </span>
                         <span className="text-[10px] text-[#6F6860]">
                           Podés seleccionar múltiples fotos juntas (JPG, PNG, WebP)
@@ -1829,9 +1962,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           disabled={isUploadingPhotos}
                           className="hidden"
                           onChange={(e) => {
-                            if (e.target.files) {
+                            if (e.target.files && e.target.files.length > 0) {
                               handleUploadPhotos(e.target.files, 'auto');
                             }
+                            e.target.value = '';
                           }}
                         />
                       </label>
@@ -2485,10 +2619,48 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             </div>
           )}
 
-          {/* TAB 8: CUENTAS CREADAS */}
+          {/* TAB 8: VENDEDORES Y CUENTAS CREADAS (FUSIONADO) */}
           {activeTab === 'users' && (
             <AdminUsersTab
               triggerSaveNotice={triggerSaveNotice}
+              branches={branches}
+              userSession={userSession}
+            />
+          )}
+
+          {/* TAB: PERMISOS DEL CRM */}
+          {activeTab === 'permissions' && (
+            <AdminPermissionsTab
+              triggerSaveNotice={triggerSaveNotice}
+            />
+          )}
+
+          {/* TAB: EDITAR GESTIÓN (COLUMNAS KANBAN) */}
+          {activeTab === 'kanban_config' && (
+            <AdminKanbanConfigTab
+              triggerSaveNotice={triggerSaveNotice}
+            />
+          )}
+
+          {/* TAB: CATEGORÍAS DE COSTOS (FIJO / VARIABLE) */}
+          {activeTab === 'cost_categories' && (
+            <AdminCostCategoriesTab
+              triggerSaveNotice={triggerSaveNotice}
+            />
+          )}
+
+          {/* TAB: CONFIGURACIÓN PORTAL DE TALLES */}
+          {activeTab === 'sizing_portal' && (
+            <AdminSizingPortalConfigTab
+              triggerSaveNotice={triggerSaveNotice}
+            />
+          )}
+
+          {/* TAB: CONFIGURACIÓN ARMADOR DE UNIFORMES */}
+          {activeTab === 'uniform_simulator' && (
+            <AdminUniformSimulatorConfigTab
+              triggerSaveNotice={triggerSaveNotice}
+              products={products}
             />
           )}
 
@@ -2507,14 +2679,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             <AdminQuotesTab />
           )}
 
-          {/* TAB 11: GESTIÓN DE EMPLEADOS & PERMISOS */}
-          {activeTab === 'employees' && (
-            <AdminEmployeesTab
-              triggerSaveNotice={triggerSaveNotice}
-            />
-          )}
-
-          {/* TAB 12: SEGURIDAD & CLAVES */}
+          {/* TAB 11: SEGURIDAD & CLAVES */}
           {activeTab === 'security' && (
             <AdminSecurityTab
               triggerSaveNotice={triggerSaveNotice}
@@ -2524,14 +2689,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           {/* TAB 13: MÉTRICAS & BÚSQUEDAS */}
           {activeTab === 'analytics' && (
             <AdminAnalyticsTab />
-          )}
-
-          {/* TAB 14: VENDEDORES & LOCALES */}
-          {activeTab === 'sellers' && (
-            <AdminSellersTab
-              branches={branches}
-              triggerSaveNotice={triggerSaveNotice}
-            />
           )}
 
           {/* TAB 15: CONFIGURACIÓN DE NOTIFICACIONES */}

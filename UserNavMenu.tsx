@@ -29,7 +29,6 @@ interface UserNavMenuProps {
   onOpenSizingPortal?: () => void;
   onOpenProfile?: () => void;
   onOpenCatalog?: () => void;
-  showCatalogBtn?: boolean;
   theme?: ThemeConfig;
 }
 
@@ -46,7 +45,6 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
   onOpenSizingPortal,
   onOpenProfile,
   onOpenCatalog,
-  showCatalogBtn = false,
   theme,
 }) => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -95,34 +93,7 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
   return (
     <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
       
-      {/* 1. Optional Shortcut to Catalog */}
-      {showCatalogBtn && onOpenCatalog && (
-        <button
-          type="button"
-          onClick={onOpenCatalog}
-          style={{ backgroundColor: accent }}
-          className="hidden xl:flex items-center gap-1.5 px-3.5 py-2 rounded-xs text-[#18231C] text-[11px] uppercase tracking-[0.2em] font-extrabold transition-all shadow-2xs hover:brightness-105 cursor-pointer shrink-0"
-          title="Ver Catálogo Completo"
-        >
-          <Compass className="w-3.5 h-3.5" />
-          <span>Catálogo</span>
-        </button>
-      )}
-
-      {/* 2. Armador de Uniformes Shortcut (Desktop) */}
-      {onOpenUniformSimulator && (
-        <button
-          type="button"
-          onClick={onOpenUniformSimulator}
-          className="hidden lg:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xs border border-[#18231C]/20 hover:border-[#18231C] text-[#18231C] hover:bg-[#18231C] hover:text-[#F5F2EC] text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer select-none shrink-0"
-          title="Armador de Uniformes Virtual con tu logo bordado"
-        >
-          <Sparkles className="w-3.5 h-3.5 text-[#FDB813]" />
-          <span>Armador</span>
-        </button>
-      )}
-
-      {/* 3. Mi Pedido Button - EXCLUSIVO PARA CLIENTES Y VISITANTES (Oculto para personal porque es el carrito que arma el cliente) */}
+      {/* 1. Mi Pedido Button - EXCLUSIVO PARA CLIENTES Y VISITANTES (Oculto para personal porque es el carrito que arma el cliente) */}
       {(!userSession || userSession.role === 'client') && (
         <button
           id="btn-nav-cart-quote"
@@ -154,23 +125,7 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
         </button>
       )}
 
-      {/* 4. GESTIÓN / CRM Button - EXCLUSIVO PARA PERSONAL LOGUEADO (Admin o Empleado) */}
-      {(userSession?.role === 'admin' || userSession?.role === 'employee') && onOpenCRM && (
-        <button
-          id="btn-nav-open-crm"
-          type="button"
-          onClick={onOpenCRM}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-xs bg-[#B9522F] hover:bg-[#a04424] text-white text-xs font-bold uppercase tracking-wider transition-all shadow-xs cursor-pointer select-none shrink-0"
-          title="Abrir Tablero de Gestión / CRM Pampero"
-        >
-          <LayoutDashboard className="w-3.5 h-3.5 text-white" />
-          <span className="hidden sm:inline">Gestión / CRM</span>
-          <span className="sm:hidden">CRM</span>
-          <span className="w-2 h-2 rounded-full bg-amber-300 animate-pulse ml-0.5"></span>
-        </button>
-      )}
-
-      {/* 5. User Dropdown Menu or INGRESAR Button */}
+      {/* 3. User Dropdown Menu or INGRESAR Button */}
       {userSession ? (
         <div className="relative" ref={dropdownRef}>
           <button

@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { LookbookItem, LookbookHotspot, Product, ThemeConfig } from '../../types';
 import { CATEGORY_HIERARCHY } from '../../data/categories';
+import { compressImage } from '../../utils/imageCompressor';
+import { uploadImageToStorage } from '../../services/firebase';
 import { 
   Plus, 
   Trash2, 
@@ -92,15 +94,24 @@ export const AdminLookbookTab: React.FC<AdminLookbookTabProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      const dataUrl = event.target?.result as string;
-      if (!dataUrl) return;
+    try {
+      setIsSaving(true);
+      const compressed = await compressImage(file, {
+        maxWidth: 1600,
+        maxHeight: 1600,
+        quality: 0.85,
+      });
 
-      handleUpdateLookField('imageUrl', dataUrl);
-      notify('success', 'Imagen cargada con éxito.');
-    };
-    reader.readAsDataURL(file);
+      // Subir EXCLUSIVAMENTE a Firebase Storage y obtener URL pública
+      const publicUrl = await uploadImageToStorage(compressed, 'lookbook');
+      handleUpdateLookField('imageUrl', publicUrl);
+      notify('success', 'Imagen subida a Firebase Storage exitosamente.');
+    } catch (err: any) {
+      console.error('Error subiendo imagen de lookbook a Firebase Storage:', err);
+      notify('error', 'Error al subir a Firebase Storage: ' + (err?.message || 'Intente nuevamente'));
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   // 5. Click on image to add or reposition hotspot

@@ -186,7 +186,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               style={{ color: iconColor }}
               className="text-[9px] font-bold flex items-center gap-0.5 uppercase tracking-wider"
             >
-              <Building2 className="w-2.5 h-2.5" /> Mayorista
+              <Building2 className="w-2.5 h-2.5" /> Corporativo
             </span>
           )}
         </div>

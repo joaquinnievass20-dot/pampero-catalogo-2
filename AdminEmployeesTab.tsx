@@ -1,5 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { EmployeeAccount } from '../../types';
+import {
+  subscribeToFirestoreEmployees,
+  saveFirestoreEmployee,
+  deleteFirestoreEmployee,
+  seedInitialFirestoreEmployeesIfEmpty,
+} from '../../services/firebase';
 import { 
   UserCheck, 
   UserPlus, 
@@ -12,7 +18,8 @@ import {
   User, 
   ShieldCheck, 
   Sparkles,
-  Search
+  Search,
+  Building2
 } from 'lucide-react';
 
 interface AdminEmployeesTabProps {
@@ -34,25 +41,73 @@ export const AVAILABLE_TABS_FOR_EMPLOYEE = [
   { id: 'users', label: 'Cuentas Registradas' },
 ];
 
+export const INITIAL_EMPLOYEES: EmployeeAccount[] = [
+  {
+    id: 'emp-1',
+    name: 'Ventas Pampero Maipú',
+    email: 'ventas@pamperomaipu.com.ar',
+    password: 'ventas_pampero',
+    role: 'employee',
+    branch: 'Maipú',
+    sellerName: 'Ventas Maipú',
+    crmScope: 'branch_only',
+    allowedTabs: ['products', 'variants', 'prices', 'mass_images', 'promos', 'quotes', 'crm'],
+    createdAt: '2025-01-10',
+    active: true,
+  },
+  {
+    id: 'emp-2',
+    name: 'Operador Ciudad Mendoza',
+    email: 'ventas.ciudad@pampero.com.ar',
+    password: 'pampero_ciudad',
+    role: 'employee',
+    branch: 'Ciudad',
+    sellerName: 'Ventas Ciudad',
+    crmScope: 'branch_only',
+    allowedTabs: ['products', 'variants', 'prices', 'quotes', 'crm'],
+    createdAt: '2025-02-15',
+    active: true,
+  },
+  {
+    id: 'emp-3',
+    name: 'Operador Luján de Cuyo',
+    email: 'ventas.lujan@pampero.com.ar',
+    password: 'pampero_lujan',
+    role: 'employee',
+    branch: 'Luján',
+    sellerName: 'Ventas Luján',
+    crmScope: 'branch_only',
+    allowedTabs: ['products', 'variants', 'prices', 'quotes', 'crm'],
+    createdAt: '2025-03-01',
+    active: true,
+  },
+];
+
 export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSaveNotice }) => {
   const [employees, setEmployees] = useState<EmployeeAccount[]>(() => {
     try {
       const saved = localStorage.getItem('pampero_employees');
       if (saved) return JSON.parse(saved);
     } catch {}
-    return [
-      {
-        id: 'emp-1',
-        name: 'Ventas Pampero Maipú',
-        email: 'ventas@pamperomaipu.com.ar',
-        password: 'ventas_pampero',
-        role: 'employee',
-        allowedTabs: ['products', 'variants', 'prices', 'mass_images', 'promos', 'quotes'],
-        createdAt: '2025-01-10',
-        active: true,
-      },
-    ];
+    return INITIAL_EMPLOYEES;
   });
+
+  // Subscribe to Cloud Firestore collection 'empleados'
+  useEffect(() => {
+    seedInitialFirestoreEmployeesIfEmpty(INITIAL_EMPLOYEES).catch((err) => {
+      console.warn('[FIREBASE] Error sembrando operadores iniciales:', err);
+    });
+
+    const unsubscribe = subscribeToFirestoreEmployees((remote) => {
+      if (Array.isArray(remote) && remote.length > 0) {
+        setEmployees(remote);
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
 
   const [search, setSearch] = useState('');
   const [isEditing, setIsEditing] = useState<string | null>(null);
@@ -73,14 +128,6 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
     'quotes',
     'crm'
   ]);
-
-  const saveToStorage = (list: EmployeeAccount[]) => {
-    setEmployees(list);
-    try {
-      localStorage.setItem('pampero_employees', JSON.stringify(list));
-    } catch {}
-    triggerSaveNotice();
-  };
 
   const handleToggleTab = (tabId: string) => {
     setAllowedTabs((prev) =>
@@ -120,27 +167,27 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
     setShowCreateModal(true);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !email.trim()) return;
 
     if (isEditing) {
-      const updated = employees.map((emp) => {
-        if (emp.id === isEditing) {
-          return {
-            ...emp,
-            name: name.trim(),
-            email: email.trim().toLowerCase(),
-            password: password.trim() || emp.password,
-            branch,
-            sellerName: sellerName.trim(),
-            crmScope,
-            allowedTabs,
-          };
-        }
-        return emp;
-      });
-      saveToStorage(updated);
+      const existing = employees.find((emp) => emp.id === isEditing);
+      const updated: EmployeeAccount = {
+        ...existing,
+        id: isEditing,
+        name: name.trim(),
+        email: email.trim().toLowerCase(),
+        password: password.trim() || existing?.password || 'pampero123',
+        role: 'employee',
+        branch,
+        sellerName: sellerName.trim() || name.trim(),
+        crmScope,
+        allowedTabs,
+        createdAt: existing?.createdAt || new Date().toISOString().split('T')[0],
+        active: existing ? existing.active : true,
+      };
+      await saveFirestoreEmployee(updated);
     } else {
       const newEmp: EmployeeAccount = {
         id: `emp-${Date.now()}`,
@@ -149,27 +196,31 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
         password: password.trim() || 'pampero123',
         role: 'employee',
         branch,
-        sellerName: sellerName.trim(),
+        sellerName: sellerName.trim() || name.trim(),
         crmScope,
         allowedTabs,
         createdAt: new Date().toISOString().split('T')[0],
         active: true,
       };
-      saveToStorage([...employees, newEmp]);
+      await saveFirestoreEmployee(newEmp);
     }
 
+    triggerSaveNotice();
     setShowCreateModal(false);
   };
 
-  const handleToggleActive = (id: string) => {
-    const updated = employees.map((e) => (e.id === id ? { ...e, active: !e.active } : e));
-    saveToStorage(updated);
+  const handleToggleActive = async (id: string) => {
+    const emp = employees.find((e) => e.id === id);
+    if (emp) {
+      await saveFirestoreEmployee({ ...emp, active: !emp.active });
+      triggerSaveNotice();
+    }
   };
 
-  const handleDelete = (id: string) => {
-    if (confirm('¿Seguro que deseás dar de baja la cuenta de este empleado?')) {
-      const updated = employees.filter((e) => e.id !== id);
-      saveToStorage(updated);
+  const handleDelete = async (id: string) => {
+    if (confirm('¿Seguro que deseás dar de baja la cuenta de este operador?')) {
+      await deleteFirestoreEmployee(id);
+      triggerSaveNotice();
     }
   };
 
@@ -185,14 +236,20 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
       <div className="bg-white p-5 rounded-xs border border-[#DCD4C9] shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-start gap-3">
           <div className="p-2.5 bg-[#18231C] text-[#F5F2EC] rounded-xs shrink-0 mt-0.5">
-            <UserCheck className="w-6 h-6 text-[#B9522F]" />
+            <Building2 className="w-6 h-6 text-[#FDB813]" />
           </div>
           <div>
-            <h3 className="font-bold text-base text-[#18231C] uppercase tracking-wider">
-              Gestión de Empleados & Permisos Granulares
-            </h3>
+            <div className="flex items-center gap-2">
+              <h3 className="font-bold text-base text-[#18231C] uppercase tracking-wider">
+                Operadores y Locales
+              </h3>
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-xs bg-emerald-50 border border-emerald-300 text-emerald-800 text-[10px] font-black uppercase tracking-wider">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                Cloud Firestore SDK
+              </span>
+            </div>
             <p className="text-xs text-[#6F6860] mt-0.5">
-              Creá accesos individuales para el personal con permisos específicos por módulo (ej. solo precios, solo fotos, o solo cotizaciones).
+              Administración de operadores y empleados, asignación de locales/sucursales y configuración de permisos en tiempo real.
             </p>
           </div>
         </div>
@@ -203,7 +260,7 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
           className="px-4 py-2 bg-[#B9522F] hover:bg-[#A84323] text-white text-xs font-bold uppercase tracking-wider rounded-xs flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
         >
           <UserPlus className="w-4 h-4" />
-          Nuevo Empleado
+          Nuevo Operador
         </button>
       </div>
 

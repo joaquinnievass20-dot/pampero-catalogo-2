@@ -248,6 +248,7 @@ export interface LookbookItem {
 
 export interface ThemeConfig {
   primaryColor: string; // e.g., #18231C
+  primaryTextColor?: string; // e.g., #F5F2EC
   accentColor: string;  // e.g., #FDB813
   secondaryColor: string; // e.g., #DCD4C9
   backgroundColor?: string; // e.g., #F5F2EC
@@ -367,6 +368,7 @@ export interface LeadVisit {
   seller: string; // 'Itatí' | 'Guada' | 'Carolina' | 'Gustavo'
   branch: string;
   status: LeadVisitStatus;
+  step?: string;
   objective: string;
   nextStep: string;
   nextStepDate?: string;

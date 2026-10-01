@@ -34,6 +34,7 @@ import {
   fetchFirestoreStoreConfig,
   saveFirestoreStoreConfig,
   subscribeToFirestoreStoreConfig,
+  subscribeToFirestoreProducts,
   db,
   getFirebaseDb,
 } from './services/firebase';
@@ -49,12 +50,14 @@ import { AdminPanel } from './components/AdminPanel';
 import { CRMView } from './components/crm/CRMView';
 import { ClientUniformSimulatorView } from './components/client/ClientUniformSimulatorView';
 import { ClientSizingPortalView } from './components/client/ClientSizingPortalView';
+import { HubView } from './components/HubView';
 import { QuoteDrawer } from './components/QuoteDrawer';
 import { UserProfileModal } from './components/UserProfileModal';
 import { Footer } from './components/Footer';
 import { PamperoLogo } from './components/PamperoLogo';
 import { CategoryMenuNav } from './components/CategoryMenuNav';
 import { UserNavMenu } from './components/UserNavMenu';
+import { CorporateServicesDropdown } from './components/CorporateServicesDropdown';
 import { 
   Settings, 
   ShoppingBag, 
@@ -256,6 +259,20 @@ export default function App() {
       if (Array.isArray(remoteConfig.lookbook)) setLookbook(remoteConfig.lookbook);
     });
 
+    // Real-time Firestore products listener for instant cross-device image & catalog sync
+    const unsubscribeProducts = subscribeToFirestoreProducts((remoteProducts) => {
+      if (Array.isArray(remoteProducts) && remoteProducts.length > 0) {
+        const sanitized = remoteProducts.map((p) => ({
+          ...p,
+          category: sanitizeCategory(p.category),
+          section: p.section || '',
+          subCategory: p.subCategory || '',
+        }));
+        setProducts(sanitized);
+        saveCatalogBackup(sanitized);
+      }
+    });
+
     // Revalidate on window focus (e.g. when user returns to tab or opens browser)
     const handleFocus = () => {
       syncFromServer();
@@ -275,6 +292,7 @@ export default function App() {
 
     return () => {
       unsubscribeFirestore();
+      unsubscribeProducts();
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       clearInterval(interval);
@@ -314,10 +332,17 @@ export default function App() {
   // 6. User Session - strictly null at initial start as requested
   const [userSession, setUserSession] = useState<UserSession | null>(null);
 
-  // 7. Quotation Cart (strictly sanitized to prevent malformed localStorage items from freezing the app)
-  const [cart, setCart] = useState<CartItem[]>(() => {
+  // Helper functions for isolated cart persistence per active user ID
+  const getCartStorageKey = (session: UserSession | null): string => {
+    if (session?.id) return `pampero_cart_${session.id}`;
+    if (session?.email) return `pampero_cart_${session.email.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+    return 'pampero_cart_guest';
+  };
+
+  const loadCartFromStorage = (session: UserSession | null): CartItem[] => {
     try {
-      const saved = localStorage.getItem('pampero_quote_cart');
+      const key = getCartStorageKey(session);
+      const saved = localStorage.getItem(key);
       if (!saved) return [];
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed)) {
@@ -327,6 +352,11 @@ export default function App() {
     } catch {
       return [];
     }
+  };
+
+  // 7. Quotation Cart (isolated per user ID, guest fallback)
+  const [cart, setCart] = useState<CartItem[]>(() => {
+    return loadCartFromStorage(null);
   });
 
   const [isProfileOpen, setIsProfileOpen] = useState(false);
@@ -397,7 +427,8 @@ export default function App() {
   // 'crm'      -> Internal Kanban management system
   // 'uniform_simulator' -> Client 3D / live uniform embroidery simulator
   // 'sizing_portal'     -> Client digital employee sizing portal
-  const [viewMode, setViewMode] = useState<'landing' | 'auth' | 'catalog' | 'product_detail' | 'admin' | 'lookbook' | 'crm' | 'uniform_simulator' | 'sizing_portal'>('landing');
+  // 'hub'               -> Internal staff & admin hub with large action cards
+  const [viewMode, setViewMode] = useState<'landing' | 'auth' | 'catalog' | 'product_detail' | 'admin' | 'lookbook' | 'crm' | 'uniform_simulator' | 'sizing_portal' | 'hub'>('landing');
   const [authInitialTab, setAuthInitialTab] = useState<'login' | 'register' | 'admin'>('register');
   const [authInitialType, setAuthInitialType] = useState<'consumidor' | 'empresa'>('consumidor');
 
@@ -546,20 +577,34 @@ export default function App() {
   const handleLogin = (session: UserSession) => {
     setUserSession(session);
     localStorage.setItem('pampero_user_session', JSON.stringify(session));
+
+    // Cargar carrito específico del usuario autenticado
+    const userCart = loadCartFromStorage(session);
+    setCart(userCart);
+
     if (session.role === 'admin' || session.role === 'employee' || session.email?.toLowerCase() === 'joaquinnievass20@gmail.com') {
-      setViewMode('admin');
+      setViewMode('hub');
     } else {
       setViewMode('catalog');
     }
   };
 
   const handleLogout = () => {
+    // Aislamiento del Carrito: Vaciar y limpiar caché del carrito del usuario activo y temporal
+    const currentKey = getCartStorageKey(userSession);
+    try {
+      localStorage.removeItem(currentKey);
+      localStorage.removeItem('pampero_cart_guest');
+      localStorage.removeItem('pampero_quote_cart');
+    } catch {}
+
+    setCart([]);
     setUserSession(null);
     localStorage.removeItem('pampero_user_session');
     setViewMode('landing');
   };
 
-  // Cart operations
+  // Cart operations (isolated per active user key)
   const handleAddToCart = (
     product: Product,
     quantity = 1,
@@ -603,7 +648,10 @@ export default function App() {
           },
         ];
       }
-      localStorage.setItem('pampero_quote_cart', JSON.stringify(updated));
+      try {
+        const storageKey = getCartStorageKey(userSession);
+        localStorage.setItem(storageKey, JSON.stringify(updated));
+      } catch {}
       return updated;
     });
   };
@@ -629,7 +677,10 @@ export default function App() {
           return it;
         })
         .filter(Boolean) as CartItem[];
-      localStorage.setItem('pampero_quote_cart', JSON.stringify(updated));
+      try {
+        const storageKey = getCartStorageKey(userSession);
+        localStorage.setItem(storageKey, JSON.stringify(updated));
+      } catch {}
       return updated;
     });
   };
@@ -648,14 +699,21 @@ export default function App() {
         const matchCode = !codeWithSuffix || (it.codeWithSuffix || it.product.code) === codeWithSuffix;
         return !(matchProduct && matchColor && matchSize && matchCode);
       });
-      localStorage.setItem('pampero_quote_cart', JSON.stringify(updated));
+      try {
+        const storageKey = getCartStorageKey(userSession);
+        localStorage.setItem(storageKey, JSON.stringify(updated));
+      } catch {}
       return updated;
     });
   };
 
   const handleClearCart = () => {
     setCart([]);
-    localStorage.removeItem('pampero_quote_cart');
+    try {
+      const storageKey = getCartStorageKey(userSession);
+      localStorage.removeItem(storageKey);
+      localStorage.removeItem('pampero_cart_guest');
+    } catch {}
   };
 
   // Navigation: Open Auth with specific config
@@ -700,52 +758,6 @@ export default function App() {
   return (
     <div className="min-h-screen flex flex-col bg-[#F5F2EC] text-[#22201D] font-sans antialiased selection:bg-[#FDB813] selection:text-black">
       
-      {/* Admin & Staff Floating Bar if logged in as Admin or Employee */}
-      {(userSession?.role === 'admin' || userSession?.role === 'employee') && (
-        <div className="bg-[#18231C] text-[#F5F2EC] px-4 py-2 text-xs flex flex-wrap items-center justify-between gap-2 border-b border-amber-500/40 z-50">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="font-bold text-amber-300">
-              {userSession.role === 'admin' ? 'Modo Administrador Activo' : 'Portal de Personal / Empleado'}
-            </span>
-            <span className="text-neutral-300 hidden sm:inline">
-              · CRM Kanban, gestión de cotizaciones, pedidos y catálogo.
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setViewMode('crm')}
-              className="px-3 py-1 rounded-xs bg-[#B9522F] hover:bg-[#a04424] text-white font-bold flex items-center gap-1.5 uppercase tracking-wider text-[10px] transition-all shadow-xs cursor-pointer"
-            >
-              <LayoutDashboard className="w-3.5 h-3.5" />
-              Gestión / CRM
-            </button>
-            {userSession.role === 'admin' && (
-              <button
-                type="button"
-                onClick={() => setViewMode('admin')}
-                style={{
-                  backgroundColor: theme.accentColor || '#FDB813',
-                  color: theme.buttonTextColor || '#18231C',
-                }}
-                className="px-3 py-1 rounded-xs hover:opacity-90 font-bold flex items-center gap-1.5 uppercase tracking-wider text-[10px] transition-opacity cursor-pointer"
-              >
-                <Settings className="w-3.5 h-3.5" />
-                Panel de Control
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => setViewMode('catalog')}
-              className="px-2.5 py-1 rounded-xs bg-white/10 hover:bg-white/20 text-white text-[10px] uppercase tracking-wider font-semibold cursor-pointer"
-            >
-              Ver Catálogo
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Top Header shown on Catalog and Product Detail (Screenshot 3 & 4) */}
       {(viewMode === 'catalog' || viewMode === 'product_detail') && (
         <header className="sticky top-0 z-50 bg-white border-b border-[#DCD4C9] shadow-xs">
@@ -753,7 +765,7 @@ export default function App() {
           <div 
             style={{ 
               backgroundColor: theme.primaryColor || '#18231C',
-              color: theme.primaryTextColor || '#F5F2EC'
+              color: (theme as any).primaryTextColor || theme.headerTextColor || '#F5F2EC'
             }}
             className="text-[10px] sm:text-[11px] py-1.5 px-4 flex items-center justify-center gap-3 uppercase tracking-[0.25em] font-medium select-none"
           >
@@ -798,32 +810,12 @@ export default function App() {
                 }}
                 theme={theme}
               />
-              <button
-                type="button"
-                onClick={() => setViewMode('uniform_simulator')}
-                className="px-3 py-1.5 rounded-xs border border-[#FDB813]/40 hover:border-[#FDB813] text-[11px] font-bold uppercase tracking-wider text-[#18231C] bg-amber-50 hover:bg-[#FDB813] hover:text-[#18231C] transition-all cursor-pointer select-none flex items-center gap-1 shadow-2xs"
-                title="Armador de Uniformes Virtual con tu logo"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-[#B9522F]" />
-                <span>Armador</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode('sizing_portal')}
-                className="px-3 py-1.5 rounded-xs border border-[#18231C]/30 hover:border-[#18231C] text-[11px] font-bold uppercase tracking-wider text-[#18231C] hover:bg-[#18231C] hover:text-[#F5F2EC] transition-all cursor-pointer select-none flex items-center gap-1"
-                title="Portal de Talles para Empleados de Empresas"
-              >
-                <Shirt className="w-3.5 h-3.5 text-[#18231C]" />
-                <span>Portal Talles</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode('lookbook')}
-                className="px-3 py-1.5 rounded-xs border border-[#18231C]/30 hover:border-[#18231C] text-[11px] font-bold uppercase tracking-wider text-[#18231C] hover:bg-[#18231C] hover:text-[#F5F2EC] transition-all cursor-pointer select-none"
-                title="Catálogo Interactivo"
-              >
-                Catálogo Interactivo
-              </button>
+              <CorporateServicesDropdown
+                onOpenLookbook={() => setViewMode('lookbook')}
+                onOpenSizingPortal={() => setViewMode('sizing_portal')}
+                onOpenUniformSimulator={() => setViewMode('uniform_simulator')}
+                theme={theme}
+              />
             </div>
 
             {/* Quick Product Search in Header */}
@@ -860,6 +852,7 @@ export default function App() {
               onLogout={handleLogout}
               onOpenAdmin={() => setViewMode('admin')}
               onOpenCRM={() => setViewMode('crm')}
+              onOpenHub={() => setViewMode('hub')}
               onOpenUniformSimulator={() => setViewMode('uniform_simulator')}
               onOpenSizingPortal={() => setViewMode('sizing_portal')}
               onOpenProfile={() => setIsProfileOpen(true)}
@@ -886,6 +879,7 @@ export default function App() {
             onLogout={handleLogout}
             onOpenAdmin={() => setViewMode('admin')}
             onOpenCRM={() => setViewMode('crm')}
+            onOpenHub={() => setViewMode('hub')}
             onOpenUniformSimulator={() => setViewMode('uniform_simulator')}
             onOpenSizingPortal={() => setViewMode('sizing_portal')}
             onOpenProfile={() => setIsProfileOpen(true)}
@@ -914,14 +908,13 @@ export default function App() {
             currentSubCategory={currentSubCategory}
             onSelectSubCategory={setCurrentSubCategory}
             products={products}
-            categoryHierarchy={categories}
+            categoryHierarchy={categories as any}
             userSession={userSession}
             theme={theme}
             searchQuery={searchQuery}
             onSearchChange={setSearchQuery}
             onViewProduct={handleSelectProduct}
             onViewProductDetail={handleSelectProduct}
-            onQuickAdd={(prod) => handleAddToCart(prod, 1)}
             onBackToHome={() => setViewMode('landing')}
             activePromoFilter={activePromoFilter}
             onClearPromoFilter={() => setActivePromoFilter(null)}
@@ -972,7 +965,7 @@ export default function App() {
             onUpdateCoupons={handleUpdateCoupons}
             onUpdateLookbook={handleUpdateLookbook}
             userSession={userSession}
-            onClose={() => setViewMode('catalog')}
+            onClose={() => setViewMode('hub')}
             onSelectPromoFilter={(promo) => {
               setActivePromoFilter(promo.tagFilter || promo.title);
               setViewMode('catalog');
@@ -985,9 +978,10 @@ export default function App() {
           {viewMode === 'crm' && (
             <CRMView
               userSession={userSession}
-              onClose={() => setViewMode('landing')}
+              onClose={() => setViewMode('hub')}
               theme={theme}
               onSetSession={(s) => setUserSession(s)}
+              onOpenAuth={() => openAuthScreen('admin', 'empresa')}
             />
           )}
 
@@ -1004,6 +998,19 @@ export default function App() {
             <ClientSizingPortalView
               onBackToHome={() => setViewMode('landing')}
               theme={theme}
+              userSession={userSession}
+            />
+          )}
+
+          {/* VIEW 10: HUB DE TRABAJO (Admin & Employee Work Hub) */}
+          {viewMode === 'hub' && userSession && (
+            <HubView
+              userSession={userSession}
+              theme={theme}
+              onOpenCRM={() => setViewMode('crm')}
+              onOpenAdmin={() => setViewMode('admin')}
+              onOpenCatalog={() => setViewMode('catalog')}
+              onLogout={handleLogout}
             />
           )}
         </main>

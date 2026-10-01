@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { UserSession, ThemeConfig } from '../types';
+import { UserSession, ThemeConfig, RegisteredUser } from '../types';
 import { PamperoLogo } from './PamperoLogo';
 import { ShieldCheck, ArrowLeft, AlertCircle, CheckCircle2, Sparkles } from 'lucide-react';
 import { MASTER_ADMIN_EMAIL, MASTER_ADMIN_PASSWORD } from '../utils/authInit';
+import { saveFirestoreUser } from '../services/firebase';
 
 interface AuthViewProps {
   onLogin: (session: UserSession) => void;
@@ -82,26 +83,25 @@ export const AuthView: React.FC<AuthViewProps> = ({
       },
     };
 
-    // Save to registered users pool for AdminPanel
-    try {
-      const existing = JSON.parse(localStorage.getItem('pampero_registered_users') || '[]');
-      const newUser = {
-        id: session.id,
-        type: accountType === 'empresa' ? 'empresa' : 'consumidor',
-        name: accountType === 'empresa' ? companyName.trim() : (fullName.trim() || email.split('@')[0]),
-        repName: accountType === 'empresa' ? fullName.trim() : undefined,
-        email: email.trim(),
-        phone: phone.trim(),
-        cuitOrDni: cuit.trim(),
-        address: `${street.trim()} ${streetNumber.trim()}`.trim(),
-        city: 'Gran Mendoza',
-        createdAt: new Date().toISOString().split('T')[0],
-        status: 'active' as const,
-        pricingTier: accountType === 'empresa' ? 'Corporativo / Mayorista' : 'Consumidor Final',
-      };
-      existing.unshift(newUser);
-      localStorage.setItem('pampero_registered_users', JSON.stringify(existing));
-    } catch {}
+    // Save to Firestore & local registered users pool for AdminPanel
+    const newUser: RegisteredUser = {
+      id: session.id || `usr-${Date.now()}`,
+      type: accountType === 'empresa' ? 'empresa' : 'consumidor',
+      name: accountType === 'empresa' ? companyName.trim() : (fullName.trim() || (email ? email.split('@')[0] : 'Usuario')),
+      repName: accountType === 'empresa' ? fullName.trim() : undefined,
+      email: email.trim(),
+      phone: phone.trim(),
+      cuitOrDni: cuit.trim(),
+      address: `${street.trim()} ${streetNumber.trim()}`.trim(),
+      city: 'Gran Mendoza',
+      createdAt: new Date().toISOString().split('T')[0],
+      status: 'active' as const,
+      pricingTier: accountType === 'empresa' ? 'Corporativo / Mayorista' : 'Consumidor Final',
+    };
+
+    saveFirestoreUser(newUser).catch((err) => {
+      console.warn('[FIREBASE] Error guardando usuario registrado:', err);
+    });
 
     setSuccessMessage('¡Cuenta creada con éxito! Ingresando al catálogo...');
     setTimeout(() => {
@@ -152,7 +152,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
             companyName: 'Pampero Maipú - Empleado',
           },
         };
-        setSuccessMessage(`Bienvenido/a, ${matchedEmp.name}. Accediendo al Panel de Empleado...`);
+        setSuccessMessage(`Bienvenido/a, ${matchedEmp.name}. Redirigiendo al Hub de Trabajo Interno...`);
         setTimeout(() => {
           onLogin(empSession);
         }, 350);
@@ -178,7 +178,6 @@ export const AuthView: React.FC<AuthViewProps> = ({
     const legacyPass = localStorage.getItem('pampero_admin_pass');
 
     const validAdminUser = 
-      emailClean === 'joaquinnievass20@gmail.com' ||
       emailClean === MASTER_ADMIN_EMAIL.toLowerCase() ||
       emailClean === savedAdminEmail.toLowerCase() ||
       emailClean === 'admin' ||
@@ -201,12 +200,12 @@ export const AuthView: React.FC<AuthViewProps> = ({
         role: 'admin',
         clientType: 'empresa',
         clientData: {
-          fullName: 'Administrador Maestro Joaquín Nievas',
+          fullName: 'Administrador General',
           companyName: 'Pampero Indumentaria Oficial',
         },
       };
 
-      setSuccessMessage('Acceso autorizado como Administrador. Ingresando al panel...');
+      setSuccessMessage('Acceso autorizado como Administrador. Redirigiendo al Hub de Trabajo Interno...');
       setTimeout(() => {
         onLogin(adminSession);
       }, 350);
@@ -265,7 +264,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
             companyName: 'Pampero Maipú - Empleado',
           },
         };
-        setSuccessMessage(`Bienvenido/a, ${matchedEmp.name}. Accediendo al Panel de Empleado...`);
+        setSuccessMessage(`Bienvenido/a, ${matchedEmp.name}. Redirigiendo al Hub de Trabajo Interno...`);
         setTimeout(() => {
           onLogin(empSession);
         }, 350);
@@ -294,7 +293,6 @@ export const AuthView: React.FC<AuthViewProps> = ({
 
     // Check against authorized admin credentials
     const validUser = 
-      userClean === 'joaquinnievass20@gmail.com' ||
       userClean === MASTER_ADMIN_EMAIL.toLowerCase() ||
       userClean === savedEmail.toLowerCase() ||
       userClean === 'admin' ||
@@ -317,12 +315,12 @@ export const AuthView: React.FC<AuthViewProps> = ({
         role: 'admin',
         clientType: 'empresa',
         clientData: {
-          fullName: 'Administrador Maestro Joaquín Nievas',
+          fullName: 'Administrador General',
           companyName: 'Pampero Indumentaria Oficial',
         },
       };
 
-      setSuccessMessage('Acceso autorizado como Administrador. Ingresando al panel...');
+      setSuccessMessage('Acceso autorizado como Administrador. Redirigiendo al Hub de Trabajo Interno...');
       setTimeout(() => {
         onLogin(adminSession);
       }, 350);
@@ -570,7 +568,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
                         type="text"
                         value={adminUser}
                         onChange={(e) => setAdminUser(e.target.value)}
-                        placeholder="joaquinnievass20@gmail.com"
+                        placeholder="ejemplo@empresa.com"
                         autoComplete="new-password"
                         required
                         className="w-full px-3.5 py-2.5 bg-white border border-[#DCD4C9] rounded-xs text-sm text-[#18231C] focus:outline-none focus:border-[#FDB813]"
