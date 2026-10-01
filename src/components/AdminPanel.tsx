@@ -954,7 +954,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 </button>
               )}
 
-              {/* Vendedores & Cuentas Creadas (Fusionado) */}
+              {/* Empleados & Cuentas Creadas (Fusionado) */}
               {isTabVisible('users') && (
                 <button
                   id="admin-tab-users"
@@ -969,7 +969,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   }`}
                 >
                   <Users className="w-4 h-4" style={{ color: iconColor }} />
-                  Vendedores & Cuentas
+                  Empleados & Cuentas
                 </button>
               )}
 

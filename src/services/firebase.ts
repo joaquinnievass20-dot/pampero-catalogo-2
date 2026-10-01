@@ -123,6 +123,39 @@ export function isFirebaseReady(): boolean {
  * Inicializado correctamente consumiendo VITE_FIREBASE_STORAGE_BUCKET.
  * Bloque try/catch robusto: si la imagen no sube, reporta console.error y no se congela.
  */
+
+async function compressToBase64(file: File, maxKB = 800): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let { width, height } = img;
+        const MAX_DIM = 1200;
+        if (width > MAX_DIM || height > MAX_DIM) {
+          if (width > height) { height = Math.round(height * MAX_DIM / width); width = MAX_DIM; }
+          else { width = Math.round(width * MAX_DIM / height); height = MAX_DIM; }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d')!;
+        ctx.drawImage(img, 0, 0, width, height);
+        let quality = 0.85;
+        let result = canvas.toDataURL('image/jpeg', quality);
+        while (result.length > maxKB * 1024 * 1.37 && quality > 0.3) {
+          quality -= 0.1;
+          result = canvas.toDataURL('image/jpeg', quality);
+        }
+        resolve(result);
+      };
+      img.onerror = reject;
+      img.src = e.target?.result as string;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
 export async function uploadImageToStorage(
   fileOrDataUrl: File | Blob | string,
   folder: string = 'catalog'
@@ -168,10 +201,7 @@ export async function uploadImageToStorage(
     // Direct getDownloadURL
     const downloadUrl = await getDownloadURL(uploadResult.ref);
     return downloadUrl;
-  } catch (err: any) {
-    console.error('[STORAGE ERROR EXACTO]:', err?.code || err?.name, err?.message || err);
-    throw err;
-  }
+  } catch (err: any) { console.warn("[STORAGE WARN] Falló Storage, usando fallback base64", err); } } console.log("[STORAGE FALLBACK] Comprimiendo a base64..."); if (fileOrDataUrl instanceof File) { return await compressToBase64(fileOrDataUrl); } else if (typeof fileOrDataUrl === "string" && fileOrDataUrl.startsWith("data:")) { return fileOrDataUrl; } throw new Error("No se pudo subir imagen");
 }
 
 /**
@@ -1319,6 +1349,8 @@ export function subscribeToKanbanColumns(onUpdate: (data: { visits: KanbanColumn
     return () => {};
   }
 }
+
+
 
 
 

@@ -336,7 +336,7 @@ export type CategoryHierarchyItem = {
 
 
 // --- CRM & MANAGEMENT TYPES ---
-export type CRMOrderStatus = 'cotizacion' | 'sena_50' | 'produccion' | 'listo' | 'entregado' | 'cancelado';
+export type CRMOrderStatus = 'cotizacion' | 'sena_50' | 'produccion' | 'listo' | 'entregado' | 'cancelado' | 'pausa';
 
 export interface CRMOrder {
   id: string;

@@ -231,7 +231,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
 
   return (
     <div className="p-4 sm:p-6 space-y-6">
-      {/* Subtab Switcher: Vendedores y Cuentas Creadas */}
+      {/* Subtab Switcher: Empleados y Cuentas Creadas */}
       <div className="flex border-b border-[#DCD4C9] bg-white px-4 pt-3 gap-2 rounded-t-xs">
         <button
           type="button"
@@ -243,7 +243,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
           }`}
         >
           <UserCheck className="w-4 h-4" />
-          <span>Vendedores & Equipo Comercial</span>
+          <span>Empleados & Equipo Comercial</span>
         </button>
 
         <button
