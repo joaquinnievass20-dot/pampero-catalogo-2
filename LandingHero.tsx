@@ -13,8 +13,7 @@ import {
   Settings,
   Tag,
   Sparkles,
-  Shirt,
-  LayoutDashboard
+  Shirt
 } from 'lucide-react';
 
 interface LandingHeroProps {
@@ -551,48 +550,67 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
         </div>
       </section>
 
-      {/* 3.5. Herramientas y Servicios Oficiales (Catálogo Interactivo, Armador de Uniformes, Portal de Talles) */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-8 mb-10">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-          {/* Card 1: Catálogo Interactivo */}
+      {/* Modern & Minimalist Lookbook Banner */}
+      {onOpenLookbook && (
+        <section className="relative block max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-8 sm:mt-12 mb-8 sm:mb-12">
           <div 
             onClick={onOpenLookbook}
-            className="group relative p-6 bg-[#18231C] border border-[#2B3B30] rounded-xs shadow-xs hover:shadow-xl hover:border-[#FDB813] transition-all cursor-pointer flex flex-col justify-between overflow-hidden text-white"
+            className="group relative overflow-hidden rounded-xs bg-[#18231C] text-[#F5F2EC] border border-[#2B3B30] p-6 sm:p-8 shadow-lg cursor-pointer transition-all duration-300 hover:border-[#FDB813] hover:shadow-xl flex flex-col md:flex-row md:items-center md:justify-between gap-6"
           >
-            <div className="space-y-2">
-              <div className="w-10 h-10 rounded-xs bg-white/10 border border-white/20 flex items-center justify-center text-[#FDB813] group-hover:bg-[#FDB813] group-hover:text-[#18231C] transition-colors">
-                <Sparkles className="w-5 h-5 text-[#FDB813] group-hover:text-[#18231C]" />
+            <div className="max-w-2xl">
+              <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-xs bg-white/10 text-white text-[10px] sm:text-[11px] font-bold tracking-[0.25em] uppercase mb-3">
+                <Sparkles className="w-3.5 h-3.5" style={{ color: accent }} />
+                <span>Campaña Oficial 2026 · Experiencia Visual</span>
               </div>
-              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[#FDB813] block">
-                Campaña Oficial 2026
-              </span>
-              <h3 className="font-display font-bold text-xl uppercase tracking-wider text-white group-hover:text-[#FDB813] transition-colors">
+              <h2 className="font-display text-2xl sm:text-4xl uppercase tracking-tight font-bold text-white leading-tight">
                 Catálogo Interactivo
-              </h3>
-              <p className="text-xs text-[#DCD4C9]/90 leading-relaxed">
-                Prendas oficiales sobre modelos en situaciones reales. Tocá los puntos interactivos para ver detalles, talles y cotizar.
+              </h2>
+              <p className="mt-2 text-xs sm:text-sm text-[#DCD4C9] font-sans leading-relaxed max-w-xl">
+                Descubrí nuestras prendas oficiales sobre modelos en situaciones reales de trabajo y campo. Tocá los puntos interactivos para explorar detalles, talles y cotizar de inmediato.
               </p>
             </div>
-            <div className="pt-4 mt-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-[#FDB813]">
-              <span>Explorar Catálogo</span>
-              <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-1" />
-            </div>
-          </div>
 
-          {/* Card 2: Armador de Uniformes */}
+            <div className="shrink-0 flex items-center">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenLookbook();
+                }}
+                style={{ backgroundColor: accent }}
+                className="inline-flex items-center gap-2 px-6 py-3.5 rounded-xs text-xs uppercase tracking-[0.25em] font-bold text-white transition-all shadow-md group-hover:scale-[1.02] group-hover:brightness-110 cursor-pointer"
+              >
+                <span>Explorar Catálogo Interactivo</span>
+                <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
+              </button>
+            </div>
+
+            {/* Subtle background glow */}
+            <div 
+              className="absolute -right-16 -bottom-16 w-64 h-64 rounded-full blur-3xl opacity-15 pointer-events-none transition-opacity group-hover:opacity-30"
+              style={{ backgroundColor: accent }}
+            />
+          </div>
+        </section>
+      )}
+
+      {/* 3.5. Interactive Tools Spotlight Section (Armador & Portal de Talles - Clientes) */}
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-2 mb-10">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          {/* Card 1: Armador de Uniformes */}
           <div 
             onClick={onOpenUniformSimulator}
             className="group relative p-6 bg-white border border-[#DCD4C9] rounded-xs shadow-xs hover:shadow-xl hover:border-[#FDB813] transition-all cursor-pointer flex flex-col justify-between overflow-hidden"
           >
             <div className="space-y-2">
               <div className="w-10 h-10 rounded-xs bg-[#FAF8F5] border border-[#DCD4C9] flex items-center justify-center text-[#FDB813] group-hover:bg-[#18231C] transition-colors">
-                <Shirt className="w-5 h-5 text-[#B9522F] group-hover:text-[#FDB813]" />
+                <Sparkles className="w-5 h-5 text-[#B9522F] group-hover:text-[#FDB813]" />
               </div>
               <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[#B9522F] block">
                 Herramienta Corporativa
               </span>
               <h3 className="font-display font-bold text-xl uppercase tracking-wider text-[#18231C] group-hover:text-[#B9522F] transition-colors">
-                Armador de Uniformes
+                Armador de Uniformes Virtual
               </h3>
               <p className="text-xs text-[#6F6860] leading-relaxed">
                 Subí el logo de tu empresa y mirá el preview bordado en chombas, camisas y camperas Pampero en tiempo real.
@@ -604,7 +622,7 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
             </div>
           </div>
 
-          {/* Card 3: Portal de Talles para Empleados */}
+          {/* Card 2: Portal de Talles */}
           <div 
             onClick={onOpenSizingPortal}
             className="group relative p-6 bg-white border border-[#DCD4C9] rounded-xs shadow-xs hover:shadow-xl hover:border-[#18231C] transition-all cursor-pointer flex flex-col justify-between overflow-hidden"
@@ -620,7 +638,7 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
                 Portal de Talles para Empleados
               </h3>
               <p className="text-xs text-[#6F6860] leading-relaxed">
-                Enlace digital por empresa para que tus trabajadores carguen sus talles de calzado, pantalón y abrigo sin planillas.
+                Enlace digital único por empresa para que tus trabajadores carguen sus talles de calzado, pantalón y abrigo sin planillas.
               </p>
             </div>
             <div className="pt-4 mt-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-[#18231C]">

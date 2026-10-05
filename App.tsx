@@ -234,8 +234,8 @@ export default function App() {
             lookbook: INITIAL_LOOKBOOK,
           });
         }
-      } catch (fErr) {
-        console.warn('[FIREBASE SYNC] Cloud sync warning:', fErr);
+      } catch (_fErr) {
+        // Silent fallback to keep console clean and avoid spamming errors
       }
     }
   };
@@ -245,7 +245,7 @@ export default function App() {
     // 0. Ensure Master Admin Account ALWAYS exists (even on clean state / Vercel deployment)
     ensureMasterAdminInitialized();
 
-    // Initial sync
+    // Initial sync once on mount
     syncFromServer();
 
     // Real-time Firestore configuration updates listener
@@ -287,15 +287,11 @@ export default function App() {
     window.addEventListener('focus', handleFocus);
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
-    // Periodic background sync every 15 seconds so clients see changes live
-    const interval = setInterval(syncFromServer, 15000);
-
     return () => {
       unsubscribeFirestore();
       unsubscribeProducts();
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
-      clearInterval(interval);
     };
   }, []);
 
@@ -765,7 +761,7 @@ export default function App() {
           <div 
             style={{ 
               backgroundColor: theme.primaryColor || '#18231C',
-              color: (theme as any).primaryTextColor || theme.headerTextColor || '#F5F2EC'
+              color: theme.primaryTextColor || '#F5F2EC'
             }}
             className="text-[10px] sm:text-[11px] py-1.5 px-4 flex items-center justify-center gap-3 uppercase tracking-[0.25em] font-medium select-none"
           >
@@ -908,13 +904,14 @@ export default function App() {
             currentSubCategory={currentSubCategory}
             onSelectSubCategory={setCurrentSubCategory}
             products={products}
-            categoryHierarchy={categories as any}
+            categoryHierarchy={categories}
             userSession={userSession}
             theme={theme}
             searchQuery={searchQuery}
             onSearchChange={setSearchQuery}
             onViewProduct={handleSelectProduct}
             onViewProductDetail={handleSelectProduct}
+            onQuickAdd={(prod) => handleAddToCart(prod, 1)}
             onBackToHome={() => setViewMode('landing')}
             activePromoFilter={activePromoFilter}
             onClearPromoFilter={() => setActivePromoFilter(null)}

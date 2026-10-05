@@ -11,6 +11,7 @@ import {
   writeBatch,
   onSnapshot,
   runTransaction,
+  setLogLevel,
   Firestore,
 } from 'firebase/firestore';
 import {
@@ -57,6 +58,9 @@ let isInitialized = false;
 
 function createFirestoreInstance(): Firestore | null {
   try {
+    try {
+      setLogLevel('error');
+    } catch {}
     const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
     try {
       // Force long polling to prevent WebSocket / WebChannel streaming 10s timeouts
@@ -80,7 +84,7 @@ export function getFirebaseStorage(): FirebaseStorage | null {
     const rawBucket = (import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || firebaseConfig.storageBucket || '').trim();
     const cleanBucket = rawBucket.replace(/^gs:\/\//, '');
 
-    // ConexiÃ³n Directa: inicializa Firebase Storage consumiendo VITE_FIREBASE_STORAGE_BUCKET
+    // Conexión Directa: inicializa Firebase Storage consumiendo VITE_FIREBASE_STORAGE_BUCKET
     storage = cleanBucket ? getStorage(app, `gs://${cleanBucket}`) : getStorage(app);
 
     // Evitar que el SDK de Firebase Storage se cuelgue en reintentos infinitos
@@ -119,211 +123,59 @@ export function isFirebaseReady(): boolean {
 }
 
 /**
- * ConexiÃ³n Directa: Sube archivos directo a Firebase Storage utilizando uploadBytes y getDownloadURL.
+ * Conexión Directa: Sube archivos directo a Firebase Storage utilizando uploadBytes y getDownloadURL.
  * Inicializado correctamente consumiendo VITE_FIREBASE_STORAGE_BUCKET.
  * Bloque try/catch robusto: si la imagen no sube, reporta console.error y no se congela.
  */
-
-/**
- * Comprime cualquier archivo o Blob de imagen a un dataUrl Base64 ultra-liviano (35KB - 50KB)
- * con excelente nitidez visual (850px max, JPEG 0.75).
- * Garantiza persistencia instantánea y segura en Cloud Firestore sin superar el límite de 1MB por documento.
- */
-async function compressToBase64(fileOrBlob: File | Blob | string, maxKB = 50): Promise<string> {
-  if (typeof fileOrBlob === 'string') {
-    if (fileOrBlob.startsWith('http://') || fileOrBlob.startsWith('https://')) return fileOrBlob;
-    if (fileOrBlob.startsWith('data:image/')) {
-      if (fileOrBlob.length < maxKB * 1024 * 1.37) return fileOrBlob;
-      // Re-compress existing dataUrl if it is too heavy
-      return new Promise((resolve) => {
-        const img = new Image();
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          let { width, height } = img;
-          const MAX_DIM = 850;
-          if (width > MAX_DIM || height > MAX_DIM) {
-            if (width > height) {
-              height = Math.round((height * MAX_DIM) / width);
-              width = MAX_DIM;
-            } else {
-              width = Math.round((width * MAX_DIM) / height);
-              height = MAX_DIM;
-            }
-          }
-          canvas.width = Math.max(width, 1);
-          canvas.height = Math.max(height, 1);
-          const ctx = canvas.getContext('2d');
-          if (!ctx) return resolve(fileOrBlob);
-          ctx.drawImage(img, 0, 0, width, height);
-          let quality = 0.75;
-          let result = canvas.toDataURL('image/jpeg', quality);
-          while (result.length > maxKB * 1024 * 1.37 && quality > 0.45) {
-            quality -= 0.1;
-            result = canvas.toDataURL('image/jpeg', quality);
-          }
-          resolve(result);
-        };
-        img.onerror = () => resolve(fileOrBlob);
-        img.src = fileOrBlob;
-      });
-    }
-  }
-
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const srcUrl = e.target?.result as string;
-      if (!srcUrl) {
-        resolve('');
-        return;
-      }
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        let { width, height } = img;
-        const MAX_DIM = 850;
-        if (width > MAX_DIM || height > MAX_DIM) {
-          if (width > height) {
-            height = Math.round((height * MAX_DIM) / width);
-            width = MAX_DIM;
-          } else {
-            width = Math.round((width * MAX_DIM) / height);
-            height = MAX_DIM;
-          }
-        }
-        canvas.width = Math.max(width, 1);
-        canvas.height = Math.max(height, 1);
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          resolve(srcUrl);
-          return;
-        }
-        ctx.drawImage(img, 0, 0, width, height);
-        let quality = 0.75;
-        let result = canvas.toDataURL('image/jpeg', quality);
-        while (result.length > maxKB * 1024 * 1.37 && quality > 0.45) {
-          quality -= 0.1;
-          result = canvas.toDataURL('image/jpeg', quality);
-        }
-        resolve(result);
-      };
-      img.onerror = (imgErr) => {
-        console.warn('[COMPRESS] No se pudo procesar objeto imagen, usando dataURL directo:', imgErr);
-        resolve(srcUrl);
-      };
-      img.src = srcUrl;
-    };
-    reader.onerror = (readErr) => {
-      console.warn('[COMPRESS] Error en FileReader:', readErr);
-      reject(readErr);
-    };
-    reader.readAsDataURL(fileOrBlob as Blob);
-  });
-}
-
 export async function uploadImageToStorage(
   fileOrDataUrl: File | Blob | string,
   folder: string = 'catalog'
 ): Promise<string> {
-  // 1. Si ya es una URL web externa accesible (http/https y no blob/base64), mantenerla
-  if (
-    typeof fileOrDataUrl === 'string' &&
-    (fileOrDataUrl.startsWith('http://') || fileOrDataUrl.startsWith('https://')) &&
-    !fileOrDataUrl.startsWith('blob:') &&
-    !fileOrDataUrl.startsWith('data:')
-  ) {
+  // Si ya es una URL persistente accesible (http/https y no blob/base64), mantenerla
+  if (typeof fileOrDataUrl === 'string' && (fileOrDataUrl.startsWith('http://') || fileOrDataUrl.startsWith('https://')) && !fileOrDataUrl.includes('/uploads/')) {
     return fileOrDataUrl;
   }
 
-  let dataUrl = '';
-  let filename = 'foto.jpg';
+  const stor = storage || getFirebaseStorage();
+  if (!stor) {
+    console.error('[STORAGE ERROR] Firebase Storage no está disponible. Verificá VITE_FIREBASE_STORAGE_BUCKET.');
+    throw new Error('Firebase Storage no disponible. Verificá la variable VITE_FIREBASE_STORAGE_BUCKET.');
+  }
+
+  const timestamp = Date.now();
+  const randomSuffix = Math.random().toString(36).substring(2, 8);
 
   try {
-    if (fileOrDataUrl instanceof File) {
-      filename = fileOrDataUrl.name || 'foto.jpg';
-      dataUrl = await compressToBase64(fileOrDataUrl, 50);
-    } else if (fileOrDataUrl instanceof Blob) {
-      filename = 'imagen.jpg';
-      dataUrl = await compressToBase64(fileOrDataUrl, 50);
-    } else if (typeof fileOrDataUrl === 'string') {
-      filename = 'foto.jpg';
-      dataUrl = await compressToBase64(fileOrDataUrl, 50);
+    let storageRef;
+    let uploadPromise;
+
+    if (typeof fileOrDataUrl === 'string' && fileOrDataUrl.startsWith('data:image/')) {
+      let ext = 'jpg';
+      if (fileOrDataUrl.includes('image/png')) ext = 'png';
+      else if (fileOrDataUrl.includes('image/webp')) ext = 'webp';
+      const filePath = `${folder}/${timestamp}_${randomSuffix}.${ext}`;
+      storageRef = ref(stor, filePath);
+      uploadPromise = uploadString(storageRef, fileOrDataUrl, 'data_url');
+    } else if (fileOrDataUrl instanceof File || fileOrDataUrl instanceof Blob) {
+      const originalName = (fileOrDataUrl as File).name || 'image.jpg';
+      const cleanName = originalName.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const filePath = `${folder}/${timestamp}_${cleanName}`;
+      storageRef = ref(stor, filePath);
+      const contentType = (fileOrDataUrl as File).type || 'image/jpeg';
+      uploadPromise = uploadBytes(storageRef, fileOrDataUrl, { contentType });
+    } else {
+      throw new Error('Formato de imagen inválido para subir a Firebase Storage.');
     }
-  } catch (prepErr) {
-    console.warn('[STORAGE] Error optimizando imagen previa:', prepErr);
+
+    // Direct upload with uploadBytes / uploadString
+    const uploadResult = await uploadPromise;
+    // Direct getDownloadURL
+    const downloadUrl = await getDownloadURL(uploadResult.ref);
+    return downloadUrl;
+  } catch (err: any) {
+    console.error('[STORAGE ERROR EXACTO]:', err?.code || err?.name, err?.message || err);
+    throw err;
   }
-
-  // CANAL 1: Subida al Servidor Local (/api/upload -> /uploads/...)
-  // Si estamos en entorno Node/Express con API habilitada y responde JSON
-  if (dataUrl && dataUrl.startsWith('data:image/')) {
-    try {
-      const response = await fetch('/api/upload', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          dataUrl,
-          filename,
-          folder,
-        }),
-      });
-      const cType = response.headers.get('content-type') || '';
-      if (response.ok && cType.includes('application/json')) {
-        const resJson = await response.json();
-        if (resJson && resJson.success && resJson.url) {
-          console.log('[STORAGE SUCCESS] Foto subida exitosamente al servidor:', resJson.url);
-          return resJson.url;
-        }
-      }
-    } catch {
-      // Ignorar fallback a Firebase o Base64
-    }
-  }
-
-  // CANAL 2: Firebase Storage (con timeout de 3.5s para no trabar si el bucket no está activado)
-  try {
-    const stor = storage || getFirebaseStorage();
-    if (stor) {
-      const timestamp = Date.now();
-      const randomSuffix = Math.random().toString(36).substring(2, 8);
-      const cleanName = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
-      const filePath = `${folder}/${timestamp}_${randomSuffix}_${cleanName}`;
-      const storageRef = ref(stor, filePath);
-
-      const storagePromise = (async () => {
-        if (typeof fileOrDataUrl === 'string' && fileOrDataUrl.startsWith('data:image/')) {
-          await uploadString(storageRef, fileOrDataUrl, 'data_url');
-        } else if (fileOrDataUrl instanceof File || fileOrDataUrl instanceof Blob) {
-          const contentType = (fileOrDataUrl as File).type || 'image/jpeg';
-          await uploadBytes(storageRef, fileOrDataUrl, { contentType });
-        } else if (dataUrl) {
-          await uploadString(storageRef, dataUrl, 'data_url');
-        }
-        return await getDownloadURL(storageRef);
-      })();
-
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Firebase Storage timeout')), 3500)
-      );
-
-      const downloadUrl = await Promise.race([storagePromise, timeoutPromise]);
-      console.log('[STORAGE SUCCESS] Foto subida exitosamente a Firebase Storage:', downloadUrl);
-      return downloadUrl;
-    }
-  } catch (storageErr: any) {
-    console.warn('[STORAGE WARN] Firebase Storage no disponible o sin bucket:', storageErr?.message || storageErr);
-  }
-
-  // CANAL 3: Fallback Base64 ultraliviano (Garantiza guardado instantáneo en Firestore y catálogo)
-  if (dataUrl) {
-    console.log('[STORAGE SUCCESS] Foto procesada y guardada en formato ultraliviano (~40KB).');
-    return dataUrl;
-  }
-
-  if (typeof fileOrDataUrl === 'string') {
-    return fileOrDataUrl;
-  }
-
-  throw new Error('No se pudo procesar la imagen seleccionada.');
 }
 
 /**
@@ -334,7 +186,7 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs = 8000): Promise<T> {
   return Promise.race([
     promise,
     new Promise<T>((_, reject) =>
-      setTimeout(() => reject(new Error(`OperaciÃ³n de Firestore cancelada por timeout (${timeoutMs}ms)`)), timeoutMs)
+      setTimeout(() => reject(new Error(`Operación de Firestore cancelada por timeout (${timeoutMs}ms)`)), timeoutMs)
     ),
   ]);
 }
@@ -383,12 +235,12 @@ export async function fetchFirestoreProducts(): Promise<Product[] | null> {
 export async function saveFirestoreProducts(products: Product[]): Promise<{ success: boolean; error?: string }> {
   const firestoreDb = db || getFirebaseDb();
   if (!firestoreDb) {
-    const msg = 'La conexiÃ³n a Cloud Firestore no estÃ¡ inicializada.';
+    const msg = 'La conexión a Cloud Firestore no está inicializada.';
     console.warn('[FIREBASE]', msg);
     return { success: false, error: msg };
   }
   if (!Array.isArray(products) || products.length === 0) {
-    return { success: false, error: 'Lista de productos vacÃ­a.' };
+    return { success: false, error: 'Lista de productos vacía.' };
   }
   try {
     // Firestore writeBatch has a maximum limit of 500 operations per batch
@@ -445,14 +297,14 @@ export async function saveFirestoreProducts(products: Product[]): Promise<{ succ
 export async function saveSingleFirestoreProduct(product: Product): Promise<{ success: boolean; error?: string }> {
   const firestoreDb = db || getFirebaseDb();
   if (!firestoreDb) {
-    const msg = 'No hay conexiÃ³n activa con Cloud Firestore de Firebase.';
+    const msg = 'No hay conexión activa con Cloud Firestore de Firebase.';
     console.error('[FIREBASE ERROR]', msg);
     return { success: false, error: msg };
   }
   try {
     const sku = (product.code || product.id || '').trim();
     if (!sku) {
-      throw new Error('El producto no tiene un cÃ³digo o SKU vÃ¡lido.');
+      throw new Error('El producto no tiene un código o SKU válido.');
     }
     const docRefEs = doc(firestoreDb, 'productos', sku);
     const docRefEn = doc(firestoreDb, 'products', sku);
@@ -474,7 +326,7 @@ export async function saveSingleFirestoreProduct(product: Product): Promise<{ su
     return { success: true };
   } catch (err: any) {
     const errorMsg = err?.message || String(err);
-    console.error(`[FIREBASE ERROR] FallÃ³ la promesa de guardado para el producto ${product.name}:`, err);
+    console.error(`[FIREBASE ERROR] Falló la promesa de guardado para el producto ${product.name}:`, err);
     return { success: false, error: errorMsg };
   }
 }
@@ -571,7 +423,7 @@ export async function fetchFirestoreStoreConfig(): Promise<FirestoreStoreConfig 
     }
     return docSnap.data() as FirestoreStoreConfig;
   } catch (err: any) {
-    console.warn('[FIREBASE] Aviso de lectura de configuraciÃ³n (modo offline/fallback activo):', err?.message || err);
+    console.warn('[FIREBASE] Aviso de lectura de configuración (modo offline/fallback activo):', err?.message || err);
     return null;
   }
 }
@@ -935,12 +787,57 @@ export const saveFirestoreUser = async (user: RegisteredUser): Promise<{ success
     id: userId,
   };
 
-  // Keep local backup as safety
+  // 1. Keep local backup as safety in pampero_registered_users
   try {
     const local: RegisteredUser[] = JSON.parse(localStorage.getItem('pampero_registered_users') || '[]');
-    const updated = [sanitizedUser, ...local.filter((u) => u.id !== userId && u.email?.toLowerCase() !== user.email?.toLowerCase())];
+    const updated = [
+      sanitizedUser,
+      ...local.filter((u) => u.id !== userId && (!u.email || u.email.toLowerCase() !== (sanitizedUser.email || '').toLowerCase()))
+    ];
     localStorage.setItem('pampero_registered_users', JSON.stringify(updated));
   } catch {}
+
+  // 2. If user is an employee or seller, sync with pampero_employees and pampero_sellers
+  const isEmployeeRole = sanitizedUser.role === 'employee' || sanitizedUser.type === 'empleado' || sanitizedUser.type === 'vendedor';
+  if (isEmployeeRole) {
+    try {
+      const empLocal: any[] = JSON.parse(localStorage.getItem('pampero_employees') || '[]');
+      const empRecord = {
+        id: userId,
+        name: sanitizedUser.name,
+        email: sanitizedUser.email,
+        password: sanitizedUser.password || sanitizedUser.initialPassword || 'Pampero2026',
+        role: 'employee',
+        branch: sanitizedUser.branch || 'Maipú',
+        allowedTabs: sanitizedUser.allowedTabs || ['products', 'variants', 'prices', 'mass_images', 'promos', 'quotes', 'crm'],
+        crmTabs: sanitizedUser.crmTabs || ['visits', 'board', 'suppliers', 'costs'],
+        active: sanitizedUser.status === 'active',
+        createdAt: sanitizedUser.createdAt || new Date().toISOString(),
+      };
+      const updatedEmp = [
+        empRecord,
+        ...empLocal.filter((e: any) => e.id !== userId && e.email?.toLowerCase() !== (sanitizedUser.email || '').toLowerCase())
+      ];
+      localStorage.setItem('pampero_employees', JSON.stringify(updatedEmp));
+
+      // Also sync to sellers pool for CRM
+      const sellLocal: any[] = JSON.parse(localStorage.getItem('pampero_sellers') || '[]');
+      const sellRecord = {
+        id: userId,
+        name: sanitizedUser.name,
+        branch: sanitizedUser.branch || 'Maipú',
+        phone: sanitizedUser.phone,
+        email: sanitizedUser.email,
+        role: sanitizedUser.sellerRole || 'vendedor',
+        active: sanitizedUser.status === 'active',
+      };
+      const updatedSell = [
+        sellRecord,
+        ...sellLocal.filter((s: any) => s.id !== userId && s.email?.toLowerCase() !== (sanitizedUser.email || '').toLowerCase())
+      ];
+      localStorage.setItem('pampero_sellers', JSON.stringify(updatedSell));
+    } catch {}
+  }
 
   if (!firestoreDb) {
     return { success: true };
@@ -951,15 +848,20 @@ export const saveFirestoreUser = async (user: RegisteredUser): Promise<{ success
     const cleaned = JSON.parse(JSON.stringify(sanitizedUser, (k, v) => (v === undefined ? null : v)));
     await setDoc(docRef, { ...cleaned, updatedAt: new Date().toISOString() }, { merge: true });
 
-    // Also mirror to 'users' collection for international consistency
+    // Also mirror to 'users' collection
     const docRefMirror = doc(firestoreDb, 'users', userId);
     await setDoc(docRefMirror, { ...cleaned, updatedAt: new Date().toISOString() }, { merge: true }).catch(() => {});
 
-    console.log('[FIREBASE] Registered User Saved in Cloud Firestore:', sanitizedUser.email || userId);
+    // If employee, also write to 'empleados'
+    if (isEmployeeRole) {
+      const empDocRef = doc(firestoreDb, 'empleados', userId);
+      await setDoc(empDocRef, { ...cleaned, updatedAt: new Date().toISOString() }, { merge: true }).catch(() => {});
+    }
+
     return { success: true };
   } catch (err: any) {
-    console.error('[FIREBASE ERROR] Could not save user to Firestore:', err);
-    return { success: false, error: err?.message || String(err) };
+    // Graceful offline fallback
+    return { success: true };
   }
 };
 
@@ -968,25 +870,42 @@ export const deleteFirestoreUser = async (userId: string): Promise<{ success: bo
     const local: RegisteredUser[] = JSON.parse(localStorage.getItem('pampero_registered_users') || '[]');
     const updated = local.filter((u) => u.id !== userId);
     localStorage.setItem('pampero_registered_users', JSON.stringify(updated));
+
+    const empLocal: any[] = JSON.parse(localStorage.getItem('pampero_employees') || '[]');
+    localStorage.setItem('pampero_employees', JSON.stringify(empLocal.filter((e: any) => e.id !== userId)));
+
+    const sellLocal: any[] = JSON.parse(localStorage.getItem('pampero_sellers') || '[]');
+    localStorage.setItem('pampero_sellers', JSON.stringify(sellLocal.filter((s: any) => s.id !== userId)));
   } catch {}
 
   const firestoreDb = db || getFirebaseDb();
   if (!firestoreDb) return { success: true };
 
   try {
-    await deleteDoc(doc(firestoreDb, 'usuarios', userId));
+    await deleteDoc(doc(firestoreDb, 'usuarios', userId)).catch(() => {});
     await deleteDoc(doc(firestoreDb, 'users', userId)).catch(() => {});
-    console.log('[FIREBASE] User Deleted from Cloud Firestore:', userId);
+    await deleteDoc(doc(firestoreDb, 'empleados', userId)).catch(() => {});
+    await deleteDoc(doc(firestoreDb, 'vendedores', userId)).catch(() => {});
     return { success: true };
   } catch (err: any) {
-    console.error('[FIREBASE ERROR] Could not delete user from Firestore:', err);
-    return { success: false, error: err?.message || String(err) };
+    return { success: true };
   }
 };
 
 export const subscribeToFirestoreUsers = (
   onUpdate: (users: RegisteredUser[]) => void
 ): () => void => {
+  // 1. Initial immediate emission from localStorage or fallback
+  try {
+    const localRaw = localStorage.getItem('pampero_registered_users');
+    if (localRaw) {
+      const parsed = JSON.parse(localRaw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        onUpdate(parsed);
+      }
+    }
+  } catch {}
+
   const firestoreDb = db || getFirebaseDb();
   if (!firestoreDb) return () => {};
 
@@ -1017,13 +936,12 @@ export const subscribeToFirestoreUsers = (
           onUpdate(list);
         }
       },
-      (error) => {
-        console.warn('[FIREBASE] Real-time users listener offline notice:', error.message);
+      (_error) => {
+        // Silently handle error (no console spam or re-render storms)
       }
     );
     return unsubscribe;
   } catch (err: any) {
-    console.warn('[FIREBASE] Error subscribing to usuarios:', err?.message || err);
     return () => {};
   }
 };
@@ -1183,7 +1101,7 @@ export const seedInitialFirestoreEmployeesIfEmpty = async (initialEmployees: Emp
 export async function saveCRMExpense(expense: CRMExpense): Promise<{ success: boolean; id: string; error?: string }> {
   const firestoreDb = db || getFirebaseDb();
   if (!firestoreDb) {
-    throw new Error('Cloud Firestore no estÃ¡ disponible para registrar el gasto.');
+    throw new Error('Cloud Firestore no está disponible para registrar el gasto.');
   }
   try {
     const expenseId = expense.id || `exp-${Date.now()}`;
@@ -1212,7 +1130,7 @@ export async function saveCRMExpense(expense: CRMExpense): Promise<{ success: bo
 export async function deleteCRMExpense(expenseId: string): Promise<{ success: boolean; error?: string }> {
   const firestoreDb = db || getFirebaseDb();
   if (!firestoreDb) {
-    throw new Error('Cloud Firestore no estÃ¡ disponible.');
+    throw new Error('Cloud Firestore no está disponible.');
   }
   try {
     const docRef = doc(firestoreDb, 'crm_expenses', expenseId);
@@ -1290,7 +1208,7 @@ export async function getNextCorrelativeOrderNumber(): Promise<{ number: number;
       localStorage.setItem(storageKey, String(nextNum));
       return { number: nextNum, formatted: `#${nextNum}` };
     } catch (err) {
-      console.warn('[FIREBASE COUNTER] Error en transacciÃ³n correlativa, usando respaldo:', err);
+      console.warn('[FIREBASE COUNTER] Error en transacción correlativa, usando respaldo:', err);
     }
   }
 
@@ -1307,7 +1225,7 @@ export async function getNextCorrelativeOrderNumber(): Promise<{ number: number;
 }
 
 // ==========================================
-// COST CATEGORIES PERSISTENCE (CategorÃ­as de Costos Fijo / Variable)
+// COST CATEGORIES PERSISTENCE (Categorías de Costos Fijo / Variable)
 // ==========================================
 
 export const DEFAULT_COST_CATEGORIES: CostCategoryConfig[] = [
@@ -1317,7 +1235,7 @@ export const DEFAULT_COST_CATEGORIES: CostCategoryConfig[] = [
   { id: 'cat-fletes', name: 'Fletes', defaultType: 'Variable', isSystem: true },
   { id: 'cat-insumos-embalaje', name: 'Insumos/Embalaje', defaultType: 'Variable', isSystem: true },
   { id: 'cat-mantenimiento', name: 'Mantenimiento', defaultType: 'Variable', isSystem: true },
-  { id: 'cat-viaticos', name: 'ViÃ¡ticos', defaultType: 'Variable', isSystem: true },
+  { id: 'cat-viaticos', name: 'Viáticos', defaultType: 'Variable', isSystem: true },
   { id: 'cat-comisiones', name: 'Comisiones', defaultType: 'Variable', isSystem: true },
   { id: 'cat-marketing', name: 'Marketing y Publicidad', defaultType: 'Variable', isSystem: true },
   { id: 'cat-otros', name: 'Otros Gastos', defaultType: 'Variable', isSystem: true },
@@ -1394,16 +1312,16 @@ export interface KanbanColumnConfig {
 }
 
 export const DEFAULT_VISIT_COLUMNS: KanbanColumnConfig[] = [
-  { id: 'primer_contacto', label: '1. Primer Contacto', color: '#3B82F6', description: 'Contacto inicial telefÃ³nico, WhatsApp o prospecciÃ³n' },
-  { id: 'reunion', label: '2. ReuniÃ³n / Visita', color: '#8B5CF6', description: 'Visita en planta/oficina o presentaciÃ³n en local' },
-  { id: 'previo_cotizacion', label: '3. Previo a CotizaciÃ³n', color: '#F97316', description: 'Relevamiento de prendas, talles y muestras fÃ­sicas' },
-  { id: 'convertida', label: '4. Pasado a Seguimiento', color: '#10B981', description: 'Avanzado con Ã©xito al tablero de Seguimiento Empresas' },
+  { id: 'primer_contacto', label: '1. Primer Contacto', color: '#3B82F6', description: 'Contacto inicial telefónico, WhatsApp o prospección' },
+  { id: 'reunion', label: '2. Reunión / Visita', color: '#8B5CF6', description: 'Visita en planta/oficina o presentación en local' },
+  { id: 'previo_cotizacion', label: '3. Previo a Cotización', color: '#F97316', description: 'Relevamiento de prendas, talles y muestras físicas' },
+  { id: 'convertida', label: '4. Pasado a Seguimiento', color: '#10B981', description: 'Avanzado con éxito al tablero de Seguimiento Empresas' },
 ];
 
 export const DEFAULT_COMPANY_COLUMNS: KanbanColumnConfig[] = [
-  { id: 'cotizacion', label: 'CotizaciÃ³n Recibida', color: '#FDB813', description: 'Solicitud ingresada desde la web o mostrador' },
-  { id: 'sena_50', label: 'Aprobado / SeÃ±a 50%', color: '#F97316', description: 'Confirmado por el cliente con pago de anticipo' },
-  { id: 'produccion', label: 'En Bordados / Taller', color: '#8B5CF6', description: 'Prendas confeccionÃ¡ndose o estampÃ¡ndose' },
+  { id: 'cotizacion', label: 'Cotización Recibida', color: '#FDB813', description: 'Solicitud ingresada desde la web o mostrador' },
+  { id: 'sena_50', label: 'Aprobado / Seña 50%', color: '#F97316', description: 'Confirmado por el cliente con pago de anticipo' },
+  { id: 'produccion', label: 'En Bordados / Taller', color: '#8B5CF6', description: 'Prendas confeccionándose o estampándose' },
   { id: 'listo', label: 'Listo para Retirar', color: '#10B981', description: 'Control de calidad aprobado en sucursal' },
   { id: 'entregado', label: 'Entregado / Cerrado', color: '#3B82F6', description: 'Retirado por el cliente o despachado con remito' },
 ];
@@ -1471,8 +1389,6 @@ export function subscribeToKanbanColumns(onUpdate: (data: { visits: KanbanColumn
     return () => {};
   }
 }
-
-
 
 
 

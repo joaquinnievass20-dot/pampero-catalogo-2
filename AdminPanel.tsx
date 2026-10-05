@@ -205,16 +205,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     suffix: string;
     sizeRangeLabel: string;
     sizes: string;
-    minSize?: string;
-    maxSize?: string;
     price: number | '';
     corporatePrice: number | '';
   }>({
     suffix: '-1',
     sizeRangeLabel: 'Talles 50 al 58',
     sizes: '50, 52, 54, 56, 58',
-    minSize: '50',
-    maxSize: '58',
     price: '',
     corporatePrice: '',
   });
@@ -292,7 +288,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           }
         } catch (fileErr: any) {
           console.error('[CARGA FOTO] Error al procesar archivo:', file.name, fileErr);
-          setPhotoUploadError(`Aviso sobre ${file.name}: ${fileErr?.message || fileErr}`);
+          throw new Error(`Error al subir la imagen "${file.name}" a Firebase Storage: ${fileErr?.message || fileErr}`);
         }
       }
 
@@ -300,9 +296,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       const updatedGeneral = [...(productForm.images || (productForm.image ? [productForm.image] : [])), ...newGeneral];
       const updatedMen = [...(productForm.imagesMen || []), ...newMen];
       const updatedWomen = [...(productForm.imagesWomen || []), ...newWomen];
-      const isPlaceholder = !productForm.image || productForm.image.includes('images.unsplash.com');
-      const primary = (isPlaceholder ? (newGeneral[0] || newMen[0] || newWomen[0]) : productForm.image) 
-        || updatedGeneral[0] || updatedMen[0] || updatedWomen[0] || '';
+      const primary = productForm.image || updatedGeneral[0] || updatedMen[0] || updatedWomen[0] || '';
 
       // 1. Actualizar estado local del formulario
       setProductForm((prev) => ({
@@ -327,16 +321,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           imagesWomen: updatedWomen,
         };
 
-        // Sincronizar SIEMPRE catálogo visual en memoria
-        const updatedCatalog = products.map((p) =>
-          p.code === productSku || p.id === productSku ? updatedProduct : p
-        );
-        onUpdateProducts(updatedCatalog);
-        triggerSaveNotice();
-
-        saveSingleFirestoreProduct(updatedProduct).catch((err) => {
-          console.warn('[FIRESTORE] Guardado en segundo plano:', err);
-        });
+        const saveRes = await saveSingleFirestoreProduct(updatedProduct);
+        if (!saveRes.success) {
+          console.error('[FIRESTORE ERROR] No se pudo guardar foto en Firestore:', saveRes.error);
+        } else {
+          // Sincronizar catálogo visual en memoria
+          const updatedCatalog = products.map((p) =>
+            p.code === productSku || p.id === productSku ? updatedProduct : p
+          );
+          onUpdateProducts(updatedCatalog);
+          triggerSaveNotice();
+        }
       }
     } catch (err: any) {
       console.error('[CARGA FOTOS PRODUCTO ERROR]:', err);
@@ -959,7 +954,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 </button>
               )}
 
-              {/* Empleados & Cuentas Creadas (Fusionado) */}
+              {/* Vendedores & Cuentas Creadas (Fusionado) */}
               {isTabVisible('users') && (
                 <button
                   id="admin-tab-users"
@@ -974,7 +969,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   }`}
                 >
                   <Users className="w-4 h-4" style={{ color: iconColor }} />
-                  Empleados & Cuentas
+                  Cuentas & Vendedores
                 </button>
               )}
 
@@ -1687,7 +1682,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                             setNewRangeForm({
                               suffix: `-${nextSuffixNum + 1}`,
                               sizeRangeLabel: 'Talles 60 al 66',
-                              sizes: '60, 62, 64, 66',
                               minSize: '60',
                               maxSize: '66',
                               price: '',

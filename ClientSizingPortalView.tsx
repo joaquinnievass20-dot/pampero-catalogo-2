@@ -12,7 +12,7 @@ import {
   HelpCircle,
   FileSpreadsheet
 } from 'lucide-react';
-import { ThemeConfig, SizingCampaign, EmployeeSizeEntry } from '../../types';
+import { ThemeConfig, SizingCampaign, EmployeeSizeEntry, UserSession } from '../../types';
 import { 
   subscribeToSizingCampaigns, 
   saveEmployeeSizeEntry, 
@@ -22,17 +22,30 @@ import {
 interface ClientSizingPortalViewProps {
   onBackToHome: () => void;
   theme: ThemeConfig;
+  userSession?: UserSession | null;
 }
 
 export const ClientSizingPortalView: React.FC<ClientSizingPortalViewProps> = ({
   onBackToHome,
   theme,
+  userSession,
 }) => {
   const [campaigns, setCampaigns] = useState<SizingCampaign[]>([]);
   const [entries, setEntries] = useState<EmployeeSizeEntry[]>([]);
   const [selectedCampaignId, setSelectedCampaignId] = useState<string>('');
   const [copiedLink, setCopiedLink] = useState(false);
   const [submittedSuccess, setSubmittedSuccess] = useState(false);
+
+  // Enterprise logged-in detection for Strict RLS
+  const isCompanyUser = userSession?.role === 'client' && (
+    userSession?.clientType === 'empresa' || Boolean(userSession?.clientData?.companyName)
+  );
+  const loggedCompanyName = (
+    userSession?.clientData?.companyName || 
+    userSession?.clientData?.businessName || 
+    userSession?.clientData?.name || 
+    ''
+  ).trim();
 
   // Employee Entry Form
   const [empName, setEmpName] = useState('');
@@ -48,8 +61,8 @@ export const ClientSizingPortalView: React.FC<ClientSizingPortalViewProps> = ({
   useEffect(() => {
     const unsubCamp = subscribeToSizingCampaigns((camps) => {
       setCampaigns(camps);
-      if (camps.length > 0 && !selectedCampaignId) {
-        setSelectedCampaignId(camps[0].id);
+      if (camps.length > 0) {
+        setSelectedCampaignId((prev) => prev || camps[0].id);
       }
     });
 
@@ -61,10 +74,44 @@ export const ClientSizingPortalView: React.FC<ClientSizingPortalViewProps> = ({
       unsubCamp();
       unsubEntries();
     };
-  }, [selectedCampaignId]);
+  }, []);
 
-  const activeCampaign = campaigns.find((c) => c.id === selectedCampaignId) || campaigns[0];
-  const campaignEntries = entries.filter((e) => e.campaignId === activeCampaign?.id);
+  // Sincronización estricta (RLS/Filtro):
+  // La vista del Portal de Talles debe filtrar los datos para que cada empresa logueada
+  // vea única y exclusivamente a sus propios empleados.
+  const filteredCampaigns = campaigns.filter((c) => {
+    if (!isCompanyUser) return true;
+    if (!loggedCompanyName) return true;
+    const cName = (c.companyName || '').toLowerCase().trim();
+    const myName = loggedCompanyName.toLowerCase().trim();
+    return cName.includes(myName) || myName.includes(cName);
+  });
+
+  const activeCampaign: SizingCampaign | undefined = 
+    filteredCampaigns.find((c) => c.id === selectedCampaignId) || 
+    filteredCampaigns[0] || 
+    (isCompanyUser ? {
+      id: `camp-${loggedCompanyName.toLowerCase().replace(/[^a-z0-9]/g, '_') || 'empresa'}`,
+      companyName: loggedCompanyName || 'Mi Empresa',
+      contactName: userSession?.clientData?.fullName || (userSession?.clientData as any)?.repFullName || 'Responsable',
+      contactPhone: (userSession?.clientData as any)?.phone || '261 527-6713',
+      active: true,
+      requiredGarments: ['Camisa / Chomba', 'Pantalón Pampero', 'Calzado de Seguridad', 'Campera Térmica'],
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
+    } : campaigns[0]);
+
+  // Strict RLS on employee size entries: only show employees of the logged company
+  const campaignEntries = entries.filter((e) => {
+    if (isCompanyUser && loggedCompanyName) {
+      const eComp = (e.companyName || '').toLowerCase().trim();
+      const myComp = loggedCompanyName.toLowerCase().trim();
+      const matchesCompany = eComp.includes(myComp) || myComp.includes(eComp);
+      const matchesCampaign = Boolean(activeCampaign?.id && e.campaignId === activeCampaign.id);
+      return matchesCompany || matchesCampaign;
+    }
+    return activeCampaign ? e.campaignId === activeCampaign.id : true;
+  });
 
   const handleCopyShareLink = () => {
     const url = window.location.origin + '?portal_talles=' + (activeCampaign?.id || 'general');
@@ -149,28 +196,47 @@ export const ClientSizingPortalView: React.FC<ClientSizingPortalViewProps> = ({
             Este formulario digital permite a cada trabajador cargar su número de calzado, bombacha/pantalón, camisa y abrigo sin planillas de papel. Los datos quedan consolidados de inmediato para el pedido a fábrica Pampero.
           </p>
 
+          {/* Enterprise RLS Banner */}
+          {isCompanyUser && (
+            <div className="p-3 bg-emerald-50 border border-emerald-300 rounded-xs text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-emerald-950">
+              <div className="flex items-center gap-2 font-bold">
+                <Building2 className="w-4 h-4 text-emerald-700 shrink-0" />
+                <span>Sesión Empresarial: {loggedCompanyName}</span>
+              </div>
+              <span className="text-[10px] bg-emerald-200/80 text-emerald-900 px-2 py-0.5 rounded-xs font-mono font-bold uppercase tracking-wider self-start sm:self-auto">
+                Filtro Estricto RLS Activo
+              </span>
+            </div>
+          )}
+
           {/* Company Campaign Selector */}
           <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t border-[#DCD4C9]/60">
             <div className="flex items-center gap-2">
               <span className="text-xs font-bold text-[#18231C] uppercase">Empresa activa:</span>
-              <select
-                value={selectedCampaignId}
-                onChange={(e) => {
-                  setSelectedCampaignId(e.target.value);
-                  setSubmittedSuccess(false);
-                }}
-                className="text-xs font-bold bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs px-3 py-1.5 text-[#18231C] outline-none"
-              >
-                {campaigns.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.companyName} {c.cuit ? `(CUIT ${c.cuit})` : ''}
-                  </option>
-                ))}
-              </select>
+              {isCompanyUser ? (
+                <div className="px-3 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs font-bold text-[#18231C]">
+                  {activeCampaign?.companyName || loggedCompanyName}
+                </div>
+              ) : (
+                <select
+                  value={selectedCampaignId}
+                  onChange={(e) => {
+                    setSelectedCampaignId(e.target.value);
+                    setSubmittedSuccess(false);
+                  }}
+                  className="text-xs font-bold bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs px-3 py-1.5 text-[#18231C] outline-none"
+                >
+                  {filteredCampaigns.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.companyName} {c.cuit ? `(CUIT ${c.cuit})` : ''}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
 
             <div className="text-xs text-[#6F6860]">
-              Total cargados en esta empresa: <strong className="text-[#18231C]">{campaignEntries.length} empleados</strong>
+              Total colaboradores registrados: <strong className="text-[#18231C]">{campaignEntries.length} empleados</strong>
             </div>
           </div>
         </div>

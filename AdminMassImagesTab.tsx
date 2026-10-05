@@ -18,9 +18,7 @@ import {
   ExternalLink,
   CheckCircle2,
   Layers,
-  Shirt,
-  X,
-  Trash2
+  Shirt
 } from 'lucide-react';
 
 interface AdminMassImagesTabProps {
@@ -96,7 +94,6 @@ export const AdminMassImagesTab: React.FC<AdminMassImagesTabProps> = ({
 
   // 1. Carga masiva: Subida directa a Firebase Storage (uploadBytes/getDownloadURL)
   // con seguimiento paso a paso y try/catch robusto para evitar bloqueos
-  // 1. Carga masiva: Subida y compresión ultra-optimizada con emparejamiento inteligente
   const handleBatchFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -112,33 +109,30 @@ export const AdminMassImagesTab: React.FC<AdminMassImagesTabProps> = ({
       parsedInfo: ParsedImageInfo;
     }> = [];
 
-    const normalizeStr = (val: string) => (val || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-
     try {
       for (let i = 0; i < fileList.length; i++) {
         const file = fileList[i];
-        setProcessingStatus(`Procesando imagen ${i + 1} de ${fileList.length}: ${file.name}...`);
+        setProcessingStatus(`Subiendo archivo ${i + 1} de ${fileList.length}: ${file.name}...`);
 
         try {
           const parsedInfo = parseImageFileName(file.name);
-          const normCodeToMatch = normalizeStr(parsedInfo.productCode || '');
-          const fileNameWithoutExt = file.name.substring(0, file.name.lastIndexOf('.'));
-          const normFileName = normalizeStr(fileNameWithoutExt);
+          const codeToMatch = (parsedInfo.productCode || '').toLowerCase().trim();
+          const fileNameWithoutExt = file.name.substring(0, file.name.lastIndexOf('.')).toLowerCase();
 
-          // Emparejamiento inteligente: código exacto, prefijo, id o nombre
           const matched = products.find((p) => {
-            const normPCode = normalizeStr(p.code || '');
-            const normPId = normalizeStr(p.id || '');
-            const normPName = normalizeStr(p.name || '');
-
-            if (normCodeToMatch && (normPCode === normCodeToMatch || normPId === normCodeToMatch)) return true;
-            if (normPCode && (normFileName.includes(normPCode) || normPCode.includes(normFileName))) return true;
-            if (normPId && (normFileName.includes(normPId) || normPId.includes(normFileName))) return true;
-            if (normPName && (normFileName.includes(normPName) || normPName.includes(normFileName))) return true;
-            return false;
+            const codeLower = (p.code || '').toLowerCase().trim();
+            const nameLower = (p.name || '').toLowerCase().trim();
+            if (codeToMatch && codeLower === codeToMatch) return true;
+            return (
+              codeLower === fileNameWithoutExt ||
+              fileNameWithoutExt.includes(codeLower) ||
+              codeLower.includes(fileNameWithoutExt) ||
+              nameLower.includes(codeToMatch || fileNameWithoutExt)
+            );
           });
 
-          const skuPrefix = (normCodeToMatch || matched?.code || 'lote').replace(/[^a-zA-Z0-9_-]/g, '_');
+          // Subida DIRECTA del archivo a Firebase Storage con uploadBytes y getDownloadURL
+          const skuPrefix = (codeToMatch || matched?.code || 'lote').replace(/[^a-zA-Z0-9_-]/g, '_');
           const publicUrl = await uploadImageToStorage(file, `products/${skuPrefix}`);
 
           successfulPreviews.push({
@@ -148,22 +142,43 @@ export const AdminMassImagesTab: React.FC<AdminMassImagesTabProps> = ({
             matchedProduct: matched,
             parsedInfo,
           });
+
+          // Actualización del Documento: Guardar inmediatamente la URL en el producto en Cloud Firestore
+          if (matched) {
+            const updatedItem: Product = {
+              ...matched,
+              image: publicUrl,
+              images: Array.from(new Set([...(matched.images || (matched.image ? [matched.image] : [])), publicUrl])),
+            };
+            saveSingleFirestoreProduct(updatedItem).then((res) => {
+              if (res.success) {
+                console.log(`[STORAGE -> FIRESTORE] Foto de ${matched.code} guardada en Firestore:`, publicUrl);
+              } else {
+                console.error('[FIRESTORE ERROR] No se pudo guardar foto de producto en Firestore:', res.error);
+              }
+            }).catch((err) => {
+              console.error('[FIRESTORE ERROR] Excepción guardando foto en Firestore:', err);
+            });
+          }
         } catch (fileErr: any) {
-          console.error(`[CARGA MASIVA ERROR] Error al procesar ${file.name}:`, fileErr);
+          console.error(`[CARGA MASIVA ERROR] Error subiendo ${file.name}:`, fileErr);
+          // Continuar con los siguientes archivos sin trabar la pantalla
         }
       }
 
       setUploadedFilesPreview(successfulPreviews);
       if (successfulPreviews.length === 0) {
-        setBatchErrorNotice('No se pudo procesar ninguna de las imágenes seleccionadas.');
+        setBatchErrorNotice('No se pudo subir ninguna de las imágenes seleccionadas a Firebase Storage.');
       }
     } catch (err: any) {
       console.error('[CARGA MASIVA] Error general procesando archivos:', err);
       const msg = err?.message || 'Error al procesar el lote de imágenes.';
       setBatchErrorNotice(msg);
     } finally {
+      // Garantizar SIEMPRE que el spinner de carga se detenga
       setIsProcessing(false);
       setProcessingStatus('');
+      // Limpiar el input para permitir seleccionar de nuevo los mismos archivos si se desea
       if (e.target) e.target.value = '';
     }
   };
@@ -174,21 +189,17 @@ export const AdminMassImagesTab: React.FC<AdminMassImagesTabProps> = ({
 
     // Group files by matched product ID
     const productGroups = new Map<string, typeof uploadedFilesPreview>();
-    let unmatchedCount = 0;
-
     uploadedFilesPreview.forEach((item) => {
       if (item.matchedProduct) {
         const prodId = item.matchedProduct.id;
         const existing = productGroups.get(prodId) || [];
         existing.push(item);
         productGroups.set(prodId, existing);
-      } else {
-        unmatchedCount++;
       }
     });
 
     if (productGroups.size === 0) {
-      alert('Por favor seleccioná en el menú desplegable debajo de cada foto a qué producto corresponde antes de aplicar los cambios.');
+      alert('No se detectó coincidencia de código de producto en ninguno de los archivos. Asegurate de que el nombre del archivo contenga el código del producto (ej: 111108004#C1#Femenino#1.jpg o 111108004.jpg).');
       return;
     }
 
@@ -250,30 +261,15 @@ export const AdminMassImagesTab: React.FC<AdminMassImagesTabProps> = ({
       });
 
       // 1. Guardar automáticamente en Cloud Firestore
-      try {
-        const fireResult = await saveFirestoreProducts(updated);
-        if (!fireResult.success) {
-          console.warn('[FIREBASE WARNING] Guardado masivo Firestore reportó:', fireResult.error);
-        }
-      } catch (fErr) {
-        console.warn('[FIREBASE] Error guardando masivo en Firestore:', fErr);
+      const fireResult = await saveFirestoreProducts(updated);
+      if (!fireResult.success) {
+        console.warn('[FIREBASE WARNING] Guardado masivo Firestore reportó:', fireResult.error);
       }
 
-      // 2. Guardar en el servidor central /api/products
-      try {
-        await fetch('/api/products', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ products: updated }),
-        });
-      } catch (srvErr) {
-        console.warn('[SERVER SYNC] Fallback sync /api/products:', srvErr);
-      }
-
-      // 3. Actualizar estado de React y disparar aviso
+      // 2. Actualizar estado de React y disparar aviso
       onUpdateProducts(updated);
       triggerSaveNotice();
-      alert(`¡Éxito! Se actualizaron y guardaron las fotos de ${updatedCount} productos del catálogo.`);
+      alert(`¡Éxito! Se actualizaron y guardaron en Cloud Firestore las fotos de ${updatedCount} productos del catálogo.`);
       setUploadedFilesPreview([]);
     } catch (err: any) {
       console.error('[APLICAR FOTOS MASIVAS ERROR]:', err);
@@ -625,137 +621,31 @@ export const AdminMassImagesTab: React.FC<AdminMassImagesTabProps> = ({
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3.5">
+              <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-3">
                 {uploadedFilesPreview.map((item, idx) => (
-                  <div key={idx} className="bg-white p-2.5 rounded-xs border border-[#DCD4C9] space-y-2 shadow-2xs flex flex-col justify-between">
-                    <div className="space-y-1.5">
-                      <div className="aspect-[4/5] bg-neutral-100 rounded-xs overflow-hidden relative group">
-                        <img src={item.dataUrl} alt={item.name} className="w-full h-full object-cover" />
-                        
-                        {/* Gender badge */}
-                        {item.parsedInfo.gender && (
-                          <span className={`absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-xs text-[9px] font-bold text-white uppercase shadow-xs ${
-                            item.parsedInfo.gender === 'Mujer' ? 'bg-rose-600' : 'bg-blue-700'
-                          }`}>
-                            {item.parsedInfo.gender} {item.parsedInfo.position ? `#${item.parsedInfo.position}` : ''}
-                          </span>
-                        )}
-
-                        {/* Remove button */}
-                        <button
-                          type="button"
-                          title="Quitar foto del lote"
-                          onClick={() => {
-                            setUploadedFilesPreview((prev) => prev.filter((_, pIdx) => pIdx !== idx));
-                          }}
-                          className="absolute top-1.5 right-1.5 size-6 rounded-full bg-black/70 hover:bg-red-600 text-white flex items-center justify-center transition-colors cursor-pointer shadow-xs"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-
-                      {/* File name */}
-                      <div className="text-[10px] font-mono text-neutral-500 truncate" title={item.name}>
-                        📁 {item.name}
-                      </div>
-
-                      {/* Gender selector buttons */}
-                      <div className="flex items-center gap-1 text-[9px]">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setUploadedFilesPreview((prev) =>
-                              prev.map((pItem, pIdx) =>
-                                pIdx === idx
-                                  ? { ...pItem, parsedInfo: { ...pItem.parsedInfo, gender: undefined } }
-                                  : pItem
-                              )
-                            );
-                          }}
-                          className={`flex-1 py-1 rounded-xs font-bold transition-colors cursor-pointer ${
-                            !item.parsedInfo.gender
-                              ? 'bg-[#18231C] text-white'
-                              : 'bg-neutral-100 hover:bg-neutral-200 text-neutral-600'
-                          }`}
-                        >
-                          General
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setUploadedFilesPreview((prev) =>
-                              prev.map((pItem, pIdx) =>
-                                pIdx === idx
-                                  ? { ...pItem, parsedInfo: { ...pItem.parsedInfo, gender: 'Hombre' } }
-                                  : pItem
-                              )
-                            );
-                          }}
-                          className={`flex-1 py-1 rounded-xs font-bold transition-colors cursor-pointer ${
-                            item.parsedInfo.gender === 'Hombre'
-                              ? 'bg-blue-800 text-white'
-                              : 'bg-neutral-100 hover:bg-blue-100 text-blue-900'
-                          }`}
-                        >
-                          ♂ Hombre
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setUploadedFilesPreview((prev) =>
-                              prev.map((pItem, pIdx) =>
-                                pIdx === idx
-                                  ? { ...pItem, parsedInfo: { ...pItem.parsedInfo, gender: 'Mujer' } }
-                                  : pItem
-                              )
-                            );
-                          }}
-                          className={`flex-1 py-1 rounded-xs font-bold transition-colors cursor-pointer ${
-                            item.parsedInfo.gender === 'Mujer'
-                              ? 'bg-rose-800 text-white'
-                              : 'bg-neutral-100 hover:bg-rose-100 text-rose-900'
-                          }`}
-                        >
-                          ♀ Mujer
-                        </button>
-                      </div>
+                  <div key={idx} className="bg-white p-2 rounded-xs border border-[#DCD4C9] space-y-1.5 shadow-2xs">
+                    <div className="aspect-[4/5] bg-neutral-100 rounded-xs overflow-hidden relative">
+                      <img src={item.dataUrl} alt={item.name} className="w-full h-full object-cover" />
+                      {item.parsedInfo.gender && (
+                        <span className={`absolute top-1 left-1 px-1.5 py-0.2 rounded-xs text-[9px] font-bold text-white uppercase ${
+                          item.parsedInfo.gender === 'Mujer' ? 'bg-rose-600' : 'bg-blue-600'
+                        }`}>
+                          {item.parsedInfo.gender} {item.parsedInfo.position ? `#${item.parsedInfo.position}` : ''}
+                        </span>
+                      )}
                     </div>
-
-                    {/* Product Assignment Dropdown */}
-                    <div className="pt-1.5 border-t border-[#ECE5DC] space-y-1">
-                      <label className="block text-[9px] font-bold uppercase tracking-wider text-[#6F6860]">
-                        {item.matchedProduct ? 'Asignado a:' : 'Asignar a producto:'}
-                      </label>
-                      <select
-                        value={item.matchedProduct?.id || ''}
-                        onChange={(e) => {
-                          const chosen = products.find((p) => p.id === e.target.value || p.code === e.target.value);
-                          setUploadedFilesPreview((prev) =>
-                            prev.map((pItem, pIdx) =>
-                              pIdx === idx
-                                ? {
-                                    ...pItem,
-                                    matchedProduct: chosen,
-                                    matchedCode: chosen?.code,
-                                  }
-                                : pItem
-                            )
-                          );
-                        }}
-                        className={`w-full text-[11px] p-1.5 rounded-xs border font-medium outline-none cursor-pointer ${
-                          item.matchedProduct
-                            ? 'bg-emerald-50 border-emerald-300 text-emerald-950 font-bold'
-                            : 'bg-amber-50 border-amber-300 text-amber-950'
-                        }`}
-                      >
-                        <option value="">-- Seleccionar producto manual --</option>
-                        {products.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            [{p.code}] {p.name.length > 25 ? p.name.slice(0, 25) + '...' : p.name}
-                          </option>
-                        ))}
-                      </select>
+                    <div className="text-[10px] font-mono text-neutral-500 truncate" title={item.name}>
+                      {item.name}
                     </div>
+                    {item.matchedProduct ? (
+                      <div className="text-[10px] font-bold text-emerald-700 truncate" title={item.matchedProduct.name}>
+                        ✓ {item.matchedProduct.code}
+                      </div>
+                    ) : (
+                      <div className="text-[9px] font-bold text-amber-700">
+                        ⚠ Sin emparejar
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

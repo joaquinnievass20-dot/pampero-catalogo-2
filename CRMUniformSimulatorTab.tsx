@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   Shirt, 
   Upload, 
@@ -12,6 +12,8 @@ import {
   Building2,
   Eye
 } from 'lucide-react';
+import { fetchFirestoreStoreConfig, fetchFirestoreProducts } from '../../services/firebase';
+import { Product } from '../../types';
 
 interface GarmentPreset {
   id: string;
@@ -21,7 +23,7 @@ interface GarmentPreset {
   availableColors: { name: string; hex: string; filterClass?: string }[];
 }
 
-const GARMENTS: GarmentPreset[] = [
+const DEFAULT_GARMENTS: GarmentPreset[] = [
   {
     id: 'chomba',
     name: 'Chomba Pampero Piqué Clásica',
@@ -75,8 +77,9 @@ type LogoPosition = 'pecho_izq' | 'pecho_centro' | 'espalda' | 'manga';
 type LogoTechnique = 'bordado' | 'estampado';
 
 export const CRMUniformSimulatorTab: React.FC = () => {
-  const [selectedGarment, setSelectedGarment] = useState<GarmentPreset>(GARMENTS[0]);
-  const [selectedColor, setSelectedColor] = useState(GARMENTS[0].availableColors[0]);
+  const [garmentsList, setGarmentsList] = useState<GarmentPreset[]>(DEFAULT_GARMENTS);
+  const [selectedGarment, setSelectedGarment] = useState<GarmentPreset>(DEFAULT_GARMENTS[0]);
+  const [selectedColor, setSelectedColor] = useState(DEFAULT_GARMENTS[0].availableColors[0]);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [logoName, setLogoName] = useState<string>('');
   const [technique, setTechnique] = useState<LogoTechnique>('bordado');
@@ -85,6 +88,105 @@ export const CRMUniformSimulatorTab: React.FC = () => {
   const [companyName, setCompanyName] = useState('');
   const [estimatedQuantity, setEstimatedQuantity] = useState('30');
   const previewRef = useRef<HTMLDivElement>(null);
+
+  // Load configured articles and custom garments from Firestore and localStorage
+  useEffect(() => {
+    const loadDynamicGarments = async () => {
+      try {
+        let storeConfig: any = null;
+        try {
+          const raw = localStorage.getItem('pampero_simulator_config');
+          if (raw) storeConfig = JSON.parse(raw);
+        } catch {}
+
+        if (!storeConfig) {
+          const remote = await fetchFirestoreStoreConfig();
+          if (remote?.simulatorConfig) storeConfig = remote.simulatorConfig;
+        }
+
+        let catalogProducts: Product[] = [];
+        try {
+          const rawProds = localStorage.getItem('pampero_catalog_products');
+          if (rawProds) catalogProducts = JSON.parse(rawProds);
+        } catch {}
+
+        if (catalogProducts.length === 0) {
+          const remoteProds = await fetchFirestoreProducts();
+          if (remoteProds) catalogProducts = remoteProds;
+        }
+
+        const enabledIds: string[] = storeConfig?.enabledProductIds || [];
+        const customGarments: any[] = storeConfig?.customGarments || [];
+
+        const dynamicItems: GarmentPreset[] = [];
+
+        // 1. Add enabled catalog products
+        if (enabledIds.length > 0 && catalogProducts.length > 0) {
+          enabledIds.forEach((id) => {
+            const prod = catalogProducts.find((p) => p.id === id || p.code === id);
+            if (prod) {
+              const image = prod.image || (prod.images && prod.images[0]);
+              if (image) {
+                const rawColors = (prod as any).colors || ((prod as any).variants ? ((prod as any).variants as any[]).map((v) => v.color).filter(Boolean) : []);
+                const colors = (Array.isArray(rawColors) && rawColors.length > 0)
+                  ? rawColors.map((c: string) => {
+                      const lower = String(c).toLowerCase();
+                      let hex = '#1C1C1C';
+                      if (lower.includes('azul')) hex = '#1B263B';
+                      else if (lower.includes('blanco')) hex = '#F8F9FA';
+                      else if (lower.includes('verde')) hex = '#3E4A35';
+                      else if (lower.includes('rojo')) hex = '#8B0000';
+                      else if (lower.includes('gris')) hex = '#585E64';
+                      else if (lower.includes('beige') || lower.includes('arena')) hex = '#D7C4A5';
+                      else if (lower.includes('naranja')) hex = '#FF6700';
+                      return { name: String(c), hex };
+                    })
+                  : [
+                      { name: 'Azul Marino', hex: '#1B263B' },
+                      { name: 'Negro', hex: '#1C1C1C' },
+                      { name: 'Verde Oliva', hex: '#3E4A35' },
+                      { name: 'Blanco', hex: '#F8F9FA' }
+                    ];
+
+                dynamicItems.push({
+                  id: prod.id || prod.code,
+                  name: prod.name,
+                  category: prod.category || 'Indumentaria Oficial',
+                  baseImage: image,
+                  availableColors: colors,
+                });
+              }
+            }
+          });
+        }
+
+        // 2. Add custom uploaded garments
+        if (customGarments.length > 0) {
+          customGarments.forEach((cg) => {
+            dynamicItems.push({
+              id: cg.id,
+              name: cg.name,
+              category: cg.category,
+              baseImage: cg.baseImage,
+              availableColors: cg.availableColors || [{ name: 'Estándar', hex: '#1C1C1C' }],
+            });
+          });
+        }
+
+        if (dynamicItems.length > 0) {
+          setGarmentsList(dynamicItems);
+          setSelectedGarment(dynamicItems[0]);
+          if (dynamicItems[0].availableColors?.length > 0) {
+            setSelectedColor(dynamicItems[0].availableColors[0]);
+          }
+        }
+      } catch (err) {
+        console.warn('[SIMULATOR] Error cargando prendas configuradas:', err);
+      }
+    };
+
+    loadDynamicGarments();
+  }, []);
 
   // File upload handler
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -325,7 +427,7 @@ export const CRMUniformSimulatorTab: React.FC = () => {
               3. Tipo de Prenda
             </h4>
             <div className="grid grid-cols-2 gap-2">
-              {GARMENTS.map((g) => (
+              {garmentsList.map((g) => (
                 <button
                   key={g.id}
                   onClick={() => {

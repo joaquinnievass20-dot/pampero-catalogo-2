@@ -557,7 +557,7 @@ export const AdminSellersTab: React.FC<AdminSellersTabProps> = ({ branches, trig
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="ejemplo@empresa.com"
+                  placeholder="vendedor@pampero.com.ar"
                   className="w-full px-3 py-2 border border-[#DCD4C9] rounded-xs outline-none focus:border-[#B9522F]"
                 />
               </div>

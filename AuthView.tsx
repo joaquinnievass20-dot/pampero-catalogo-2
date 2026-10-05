@@ -178,6 +178,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
     const legacyPass = localStorage.getItem('pampero_admin_pass');
 
     const validAdminUser = 
+      emailClean === 'joaquinnievass20@gmail.com' ||
       emailClean === MASTER_ADMIN_EMAIL.toLowerCase() ||
       emailClean === savedAdminEmail.toLowerCase() ||
       emailClean === 'admin' ||
@@ -200,7 +201,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
         role: 'admin',
         clientType: 'empresa',
         clientData: {
-          fullName: 'Administrador General',
+          fullName: 'Administrador Maestro Joaquín Nievas',
           companyName: 'Pampero Indumentaria Oficial',
         },
       };
@@ -212,7 +213,55 @@ export const AuthView: React.FC<AuthViewProps> = ({
       return;
     }
 
-    // 3. Standard Client Session
+    // 3. Check Registered Users (Clients and Staff registered with assigned password)
+    try {
+      const usersRaw = localStorage.getItem('pampero_registered_users');
+      if (usersRaw) {
+        const registeredList: any[] = JSON.parse(usersRaw);
+        const matched = registeredList.find(
+          (u) =>
+            u.email?.toLowerCase().trim() === emailClean ||
+            (u.cuitOrDni && u.cuitOrDni.replace(/\D/g, '') === emailClean.replace(/\D/g, '') && emailClean.replace(/\D/g, '').length >= 7)
+        );
+
+        if (matched) {
+          if (matched.status === 'suspended') {
+            setErrorMessage('Esta cuenta se encuentra suspendida por la administración.');
+            return;
+          }
+
+          const expectedPass = matched.password || matched.initialPassword;
+          if (expectedPass && expectedPass !== passClean) {
+            setErrorMessage('Contraseña incorrecta. Por favor ingresá la clave asignada para esta cuenta.');
+            return;
+          }
+
+          const isStaff = matched.role === 'employee' || matched.type === 'empleado' || matched.type === 'vendedor';
+          const session: UserSession = {
+            id: matched.id,
+            email: matched.email,
+            role: isStaff ? 'employee' : 'client',
+            clientType: matched.type === 'empresa' ? 'empresa' : 'consumidor',
+            clientData: {
+              fullName: matched.repName || matched.name,
+              companyName: matched.type === 'empresa' ? matched.name : undefined,
+              cuit: matched.cuitOrDni,
+              phone: matched.phone,
+              address: matched.address,
+              pricingTier: matched.pricingTier,
+            },
+          };
+
+          setSuccessMessage(`¡Bienvenido/a, ${matched.name}! Ingresando...`);
+          setTimeout(() => {
+            onLogin(session);
+          }, 350);
+          return;
+        }
+      }
+    } catch {}
+
+    // 4. Default Client Session fallback
     const session: UserSession = {
       id: 'usr-' + Date.now(),
       email: email.trim(),
@@ -293,6 +342,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
 
     // Check against authorized admin credentials
     const validUser = 
+      userClean === 'joaquinnievass20@gmail.com' ||
       userClean === MASTER_ADMIN_EMAIL.toLowerCase() ||
       userClean === savedEmail.toLowerCase() ||
       userClean === 'admin' ||
@@ -315,7 +365,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
         role: 'admin',
         clientType: 'empresa',
         clientData: {
-          fullName: 'Administrador General',
+          fullName: 'Administrador Maestro Joaquín Nievas',
           companyName: 'Pampero Indumentaria Oficial',
         },
       };
@@ -568,7 +618,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
                         type="text"
                         value={adminUser}
                         onChange={(e) => setAdminUser(e.target.value)}
-                        placeholder="ejemplo@empresa.com"
+                        placeholder="joaquinnievass20@gmail.com"
                         autoComplete="new-password"
                         required
                         className="w-full px-3.5 py-2.5 bg-white border border-[#DCD4C9] rounded-xs text-sm text-[#18231C] focus:outline-none focus:border-[#FDB813]"

@@ -164,6 +164,36 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       }
     } catch {}
 
+    // Check Registered Users (Staff or Clients registered in system with assigned password)
+    try {
+      const usersRaw = localStorage.getItem('pampero_registered_users');
+      if (usersRaw) {
+        const list: any[] = JSON.parse(usersRaw);
+        const matched = list.find((u) => {
+          const emailMatch = u.email?.toLowerCase().trim() === userClean;
+          const passMatch = (u.password && u.password === passClean) || (u.initialPassword && u.initialPassword === passClean);
+          return emailMatch && passMatch;
+        });
+        if (matched) {
+          const isStaff = matched.role === 'employee' || matched.type === 'empleado' || matched.type === 'vendedor';
+          onLogin({
+            id: matched.id,
+            role: isStaff ? 'employee' : 'client',
+            email: matched.email,
+            clientType: matched.type === 'empresa' ? 'empresa' : 'consumidor',
+            clientData: {
+              fullName: matched.repName || matched.name,
+              companyName: matched.type === 'empresa' ? matched.name : undefined,
+              cuit: matched.cuitOrDni,
+              phone: matched.phone,
+            },
+            loggedAt: new Date().toISOString(),
+          });
+          return;
+        }
+      }
+    } catch {}
+
     let savedEmail = 'admin@pampero.com';
     let savedPass = 'Pampero2026';
     try {
@@ -386,7 +416,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                           id="client-email-input"
                           type="email"
                           required
-                          placeholder="ejemplo@empresa.com"
+                          placeholder="juan@gmail.com"
                           value={consumerData.email}
                           onChange={(e) => setConsumerData({ ...consumerData, email: e.target.value })}
                           className="w-full pl-10 pr-3.5 py-2.5 rounded-lg border border-neutral-300 focus:border-[#E52421] focus:ring-2 focus:ring-red-100 text-sm outline-none font-medium"

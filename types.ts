@@ -50,6 +50,7 @@ export interface EmployeeAccount {
   password?: string;
   role: 'employee';
   allowedTabs: string[]; // e.g. ['promos', 'mass_images', 'prices', 'coupons', 'variants', 'products', 'branches', 'quotes', 'users', 'analytics', 'crm']
+  crmTabs?: ('visits' | 'board' | 'suppliers' | 'costs')[]; // CRM specific tab permissions: visits, board, suppliers, costs
   branch?: string; // 'Maipú' | 'Ciudad' | 'Luján' | 'Todas'
   sellerName?: string;
   crmScope?: 'all' | 'branch_only' | 'own_only'; // 'all': todas las empresas, 'branch_only': sucursal, 'own_only': solo su cartera
@@ -181,14 +182,21 @@ export interface Promotion {
 
 export interface RegisteredUser {
   id: string;
-  type: 'consumidor' | 'empresa' | 'admin';
+  type: 'consumidor' | 'empresa' | 'admin' | 'empleado' | 'vendedor';
+  role?: 'admin' | 'employee' | 'client';
   name: string;
   repName?: string;
   email: string;
+  password?: string;
+  initialPassword?: string;
   phone: string;
   cuitOrDni?: string;
   address?: string;
   city?: string;
+  branch?: string;
+  sellerRole?: 'admin' | 'local' | 'vendedor';
+  allowedTabs?: string[];
+  crmTabs?: ('visits' | 'board' | 'suppliers' | 'costs')[];
   createdAt: string;
   status: 'active' | 'pending' | 'suspended';
   pricingTier?: 'Consumidor Final' | 'Corporativo / Mayorista';
@@ -248,7 +256,6 @@ export interface LookbookItem {
 
 export interface ThemeConfig {
   primaryColor: string; // e.g., #18231C
-  primaryTextColor?: string; // e.g., #F5F2EC
   accentColor: string;  // e.g., #FDB813
   secondaryColor: string; // e.g., #DCD4C9
   backgroundColor?: string; // e.g., #F5F2EC
@@ -340,10 +347,14 @@ export type CRMOrderStatus = 'cotizacion' | 'sena_50' | 'produccion' | 'listo' |
 
 export interface CRMOrder {
   id: string;
+  orderNumber?: string; // Correlative integer order #1, #2, #3...
   date: string;
   quoteId?: string;
   clientName: string;
   clientType: 'consumidor_final' | 'empresa';
+  clientPhone?: string;
+  clientEmail?: string;
+  channel?: 'WhatsApp' | 'Excel' | 'Web';
   status: CRMOrderStatus;
   seller: string;
   branch: string;
@@ -368,7 +379,6 @@ export interface LeadVisit {
   seller: string; // 'Itatí' | 'Guada' | 'Carolina' | 'Gustavo'
   branch: string;
   status: LeadVisitStatus;
-  step?: string;
   objective: string;
   nextStep: string;
   nextStepDate?: string;
@@ -426,4 +436,45 @@ export interface SizingCampaign {
   createdAt: string;
   expiresAt: string;
   entriesCount?: number;
+}
+
+// --- COST CONTROL & EXPENSES (CONTROL DE COSTOS) ---
+export type ExpenseType = 'Fijo' | 'Variable';
+
+export type ExpenseCategory = 
+  | 'Alquiler' 
+  | 'Sueldos base'
+  | 'Sueldos' 
+  | 'Impuestos/Servicios'
+  | 'Impuestos' 
+  | 'Servicios (Luz/Gas/Agua/Internet)' 
+  | 'Fletes'
+  | 'Insumos/Embalaje'
+  | 'Mantenimiento' 
+  | 'Viáticos'
+  | 'Comisiones'
+  | 'Mercadería e Insumos' 
+  | 'Logística y Envíos' 
+  | 'Marketing y Publicidad' 
+  | 'Otros Gastos';
+
+export interface CRMExpense {
+  id: string;
+  date: string; // YYYY-MM-DD
+  branch: 'Maipú' | 'Ciudad' | 'Luján' | string;
+  type: ExpenseType; // 'Fijo' | 'Variable'
+  category: ExpenseCategory | string;
+  amount: number;
+  detail: string;
+  registeredBy?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface CostCategoryConfig {
+  id: string;
+  name: string;
+  defaultType: ExpenseType; // 'Fijo' | 'Variable'
+  isSystem?: boolean;
+  createdAt?: string;
 }

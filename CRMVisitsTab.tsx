@@ -151,7 +151,7 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
     setEmail(v.email || '');
     setSeller(v.seller || 'Itatí');
     setBranch(v.branch || 'Maipú');
-    setStep(getVisitStep(v) as any);
+    setStep(getVisitStep(v));
     setDate(v.date || new Date().toISOString().split('T')[0]);
     setObjective(v.objective || '');
     setNextStep(v.nextStep || '');
@@ -331,7 +331,7 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
                 key={col.id}
                 onDragOver={(e) => { e.preventDefault(); setDragOverCol(col.id); }}
                 onDragLeave={() => setDragOverCol(null)}
-                onDrop={() => handleDrop(col.id as any)}
+                onDrop={() => handleDrop(col.id)}
                 className={`bg-[#FAF8F5] rounded-xs border-2 flex flex-col h-full min-h-[520px] transition-all ${
                   isDragTarget ? 'border-[#B9522F] bg-amber-50/50 shadow-md' : 'border-[#DCD4C9]'
                 }`}

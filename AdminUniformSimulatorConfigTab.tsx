@@ -135,7 +135,7 @@ export const AdminUniformSimulatorConfigTab: React.FC<AdminUniformSimulatorConfi
     const apparelIds = products
       .filter((p) => {
         const cat = (p.category || '').toLowerCase();
-        const sub = (p.subCategory || '').toLowerCase();
+        const sub = (p.subcategory || '').toLowerCase();
         const name = (p.name || '').toLowerCase();
         return (
           cat.includes('indumentaria') || 

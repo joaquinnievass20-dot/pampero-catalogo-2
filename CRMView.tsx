@@ -57,24 +57,6 @@ import { CRMVisitsTab } from './CRMVisitsTab';
 import { CRMSupplierOrdersTab } from './CRMSupplierOrdersTab';
 import { CRMCostsTab } from './CRMCostsTab';
 
-export interface DynamicBoardColumn {
-  id: string;
-  label: string;
-  color: string;
-  bgColor: string;
-}
-
-export interface BoardFieldConfig {
-  showObservations: boolean;
-  showDeliveryDate: boolean;
-  showEmbroideryNotes: boolean;
-  showBranch: boolean;
-  showSeller: boolean;
-  showEstimatedUnits: boolean;
-  showEstimatedAmount: boolean;
-  showOrderNumber: boolean;
-}
-
 interface CRMViewProps {
   userSession: UserSession | null;
   onClose: () => void;
@@ -162,13 +144,13 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
   const activeStaffUser = userSession?.clientData?.fullName || (userSession?.role === 'admin' ? 'Administrador General' : userSession?.email?.split('@')[0] || 'Personal Pampero');
 
   // Allowed CRM tabs based on Admin or Employee Permissions
-  const allowedCrmTabs: ('visits' | 'board' | 'suppliers' | 'costs')[] = (() => {
+  const allowedCrmTabs: ('visits' | 'board' | 'suppliers' | 'costs')[] = React.useMemo(() => {
     if (userSession?.role === 'admin') return ['visits', 'board', 'suppliers', 'costs'];
     if (currentEmployee?.crmTabs && Array.isArray(currentEmployee.crmTabs) && currentEmployee.crmTabs.length > 0) {
       return currentEmployee.crmTabs as ('visits' | 'board' | 'suppliers' | 'costs')[];
     }
     return ['visits', 'board', 'suppliers'];
-  })();
+  }, [userSession?.role, currentEmployee?.crmTabs]);
 
   const [activeTab, setActiveTab] = useState<'visits' | 'board' | 'suppliers' | 'costs'>('visits');
 
@@ -659,7 +641,7 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
                     }`}
                     onDragOver={(e) => handleDragOver(e, col.id)}
                     onDragLeave={handleDragLeave}
-                    onDrop={(e) => handleDrop(e, col.id as any)}
+                    onDrop={(e) => handleDrop(e, col.id)}
                   >
                     {/* Column Header */}
                     <div
