@@ -356,6 +356,8 @@ export interface CRMOrder {
   clientEmail?: string;
   channel?: 'WhatsApp' | 'Excel' | 'Web';
   status: CRMOrderStatus;
+  columnId?: string;
+  step?: string;
   seller: string;
   branch: string;
   totalUnits: number;
@@ -379,6 +381,9 @@ export interface LeadVisit {
   seller: string; // 'Itatí' | 'Guada' | 'Carolina' | 'Gustavo'
   branch: string;
   status: LeadVisitStatus;
+  columnId?: string;
+  step?: string;
+  kanbanStep?: string;
   objective: string;
   nextStep: string;
   nextStepDate?: string;

@@ -172,11 +172,6 @@ export default function App() {
           }));
           setProducts(sanitized);
           saveCatalogBackup(sanitized);
-        } else {
-          // If Firestore is empty on the first run, seed it with default products
-          console.log('[FIREBASE] Cloud Firestore vacío detectado. Sembrando catálogo inicial en la nube...');
-          const initialCatalog = loadCatalogBackup() || INITIAL_PRODUCTS;
-          saveFirestoreProducts(initialCatalog);
         }
 
         const firestoreConfig = await fetchFirestoreStoreConfig();
@@ -223,16 +218,6 @@ export default function App() {
               localStorage.setItem('pampero_catalog_lookbook', JSON.stringify(firestoreConfig.lookbook));
             } catch {}
           }
-        } else {
-          // Seed store configuration to Cloud Firestore
-          saveFirestoreStoreConfig({
-            categories: INITIAL_CATEGORY_HIERARCHY,
-            promotions: INITIAL_PROMOTIONS,
-            theme: INITIAL_THEME,
-            branches: INITIAL_BRANCHES,
-            coupons: INITIAL_COUPONS,
-            lookbook: INITIAL_LOOKBOOK,
-          });
         }
       } catch (_fErr) {
         // Silent fallback to keep console clean and avoid spamming errors
