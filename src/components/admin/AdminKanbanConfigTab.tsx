@@ -21,6 +21,7 @@ import {
   DEFAULT_COMPANY_COLUMNS, 
   KanbanColumnConfig 
 } from '../../services/firebase';
+import { fixUtf8Encoding, sanitizeObjectEncoding } from '../../utils/encodingUtils';
 
 interface AdminKanbanConfigTabProps {
   triggerSaveNotice?: () => void;
@@ -44,10 +45,10 @@ export const AdminKanbanConfigTab: React.FC<AdminKanbanConfigTabProps> = ({ trig
   useEffect(() => {
     const unsub = subscribeToKanbanColumns((data) => {
       if (Array.isArray(data.visits) && data.visits.length > 0) {
-        setVisitColumns(data.visits);
+        setVisitColumns(data.visits.map(sanitizeObjectEncoding));
       }
       if (Array.isArray(data.companies) && data.companies.length > 0) {
-        setCompanyColumns(data.companies);
+        setCompanyColumns(data.companies.map(sanitizeObjectEncoding));
       }
     });
     return () => unsub();
@@ -84,12 +85,12 @@ export const AdminKanbanConfigTab: React.FC<AdminKanbanConfigTabProps> = ({ trig
       .replace(/_+/g, '_')
       .slice(0, 20) || `col_${Date.now()}`;
 
-    const newCol: KanbanColumnConfig = {
+    const newCol: KanbanColumnConfig = sanitizeObjectEncoding({
       id: `${cleanId}_${Date.now().toString().slice(-4)}`,
       label: trimmed,
       color: newColColor,
       description: newColDesc.trim() || undefined,
-    };
+    });
 
     if (activeBoard === 'visits') {
       setVisitColumns((prev) => [...prev, newCol]);

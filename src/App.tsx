@@ -35,6 +35,9 @@ import {
   saveFirestoreStoreConfig,
   subscribeToFirestoreStoreConfig,
   subscribeToFirestoreProducts,
+  subscribeToFirestorePromotions,
+  saveFirestorePromotionsBatch,
+  seedInitialPromotionsIfEmpty,
   db,
   getFirebaseDb,
 } from './services/firebase';
@@ -172,11 +175,6 @@ export default function App() {
           }));
           setProducts(sanitized);
           saveCatalogBackup(sanitized);
-        } else {
-          // If Firestore is empty on the first run, seed it with default products
-          console.log('[FIREBASE] Cloud Firestore vacío detectado. Sembrando catálogo inicial en la nube...');
-          const initialCatalog = loadCatalogBackup() || INITIAL_PRODUCTS;
-          saveFirestoreProducts(initialCatalog);
         }
 
         const firestoreConfig = await fetchFirestoreStoreConfig();
@@ -189,9 +187,6 @@ export default function App() {
           }
           if (Array.isArray(firestoreConfig.promotions) && firestoreConfig.promotions.length > 0) {
             setPromotions(firestoreConfig.promotions);
-            try {
-              localStorage.setItem('pampero_catalog_promos', JSON.stringify(firestoreConfig.promotions));
-            } catch {}
           }
           if (Array.isArray(firestoreConfig.branches) && firestoreConfig.branches.length > 0) {
             setBranches(firestoreConfig.branches);
@@ -223,40 +218,41 @@ export default function App() {
               localStorage.setItem('pampero_catalog_lookbook', JSON.stringify(firestoreConfig.lookbook));
             } catch {}
           }
-        } else {
-          // Seed store configuration to Cloud Firestore
-          saveFirestoreStoreConfig({
-            categories: INITIAL_CATEGORY_HIERARCHY,
-            promotions: INITIAL_PROMOTIONS,
-            theme: INITIAL_THEME,
-            branches: INITIAL_BRANCHES,
-            coupons: INITIAL_COUPONS,
-            lookbook: INITIAL_LOOKBOOK,
-          });
         }
-      } catch (fErr) {
-        console.warn('[FIREBASE SYNC] Cloud sync warning:', fErr);
+      } catch (_fErr) {
+        // Silent fallback to keep console clean and avoid spamming errors
       }
     }
   };
 
   // Sync products and store configuration in real-time across all devices and tabs
   useEffect(() => {
+    console.log('%c🚀 PAMPERO GRAN MENDOZA v2.5.0-LIVE | Firestore Realtime, Storage & RBAC Activo', 'background: #18231C; color: #EAB308; font-weight: bold; font-size: 13px; padding: 4px 8px; border-radius: 4px;');
     // 0. Ensure Master Admin Account ALWAYS exists (even on clean state / Vercel deployment)
     ensureMasterAdminInitialized();
 
-    // Initial sync
+    // Initial sync once on mount
     syncFromServer();
 
     // Real-time Firestore configuration updates listener
     const unsubscribeFirestore = subscribeToFirestoreStoreConfig((remoteConfig) => {
       if (remoteConfig.theme) setTheme(remoteConfig.theme);
-      if (Array.isArray(remoteConfig.promotions) && remoteConfig.promotions.length > 0) setPromotions(remoteConfig.promotions);
       if (Array.isArray(remoteConfig.categories) && remoteConfig.categories.length > 0) setCategories(remoteConfig.categories);
       if (Array.isArray(remoteConfig.volumeDiscounts) && remoteConfig.volumeDiscounts.length > 0) setVolumeDiscounts(remoteConfig.volumeDiscounts);
       if (Array.isArray(remoteConfig.branches) && remoteConfig.branches.length > 0) setBranches(remoteConfig.branches);
       if (Array.isArray(remoteConfig.coupons)) setCoupons(remoteConfig.coupons);
       if (Array.isArray(remoteConfig.lookbook)) setLookbook(remoteConfig.lookbook);
+    });
+
+    // Seed initial promotions into dedicated Firestore collection 'promotions' if empty
+    seedInitialPromotionsIfEmpty(INITIAL_PROMOTIONS).catch(() => {});
+
+    // Real-time Firestore dedicated 'promotions' collection listener (onSnapshot)
+    // Synchronizes changes in live time for both the Admin Panel and public store views
+    const unsubscribePromotions = subscribeToFirestorePromotions((remotePromos) => {
+      if (Array.isArray(remotePromos) && remotePromos.length > 0) {
+        setPromotions(remotePromos);
+      }
     });
 
     // Real-time Firestore products listener for instant cross-device image & catalog sync
@@ -287,27 +283,17 @@ export default function App() {
     window.addEventListener('focus', handleFocus);
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
-    // Periodic background sync every 15 seconds so clients see changes live
-    const interval = setInterval(syncFromServer, 15000);
-
     return () => {
       unsubscribeFirestore();
+      unsubscribePromotions();
       unsubscribeProducts();
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
-      clearInterval(interval);
     };
   }, []);
 
-  // 3. Promotions State
-  const [promotions, setPromotions] = useState<Promotion[]>(() => {
-    try {
-      const saved = localStorage.getItem('pampero_catalog_promos');
-      return saved ? JSON.parse(saved) : INITIAL_PROMOTIONS;
-    } catch {
-      return INITIAL_PROMOTIONS;
-    }
-  });
+  // 3. Promotions State (In-memory initial state from INITIAL_PROMOTIONS, synchronized via Firestore onSnapshot)
+  const [promotions, setPromotions] = useState<Promotion[]>(INITIAL_PROMOTIONS);
 
   // 4. Mendoza Branches State
   const [branches, setBranches] = useState<BranchLocation[]>(() => {
@@ -499,11 +485,8 @@ export default function App() {
 
   const handleUpdatePromotions = async (newPromos: Promotion[]) => {
     setPromotions(newPromos);
-    try {
-      localStorage.setItem('pampero_catalog_promos', JSON.stringify(newPromos));
-    } catch {}
-
-    // Persist to Cloud Firestore via Firebase SDK
+    // Persist strictly to Cloud Firestore via dedicated 'promotions' collection
+    await saveFirestorePromotionsBatch(newPromos);
     saveFirestoreStoreConfig({ promotions: newPromos });
   };
 

@@ -182,14 +182,21 @@ export interface Promotion {
 
 export interface RegisteredUser {
   id: string;
-  type: 'consumidor' | 'empresa' | 'admin';
+  type: 'consumidor' | 'empresa' | 'admin' | 'empleado' | 'vendedor';
+  role?: 'admin' | 'employee' | 'client';
   name: string;
   repName?: string;
   email: string;
+  password?: string;
+  initialPassword?: string;
   phone: string;
   cuitOrDni?: string;
   address?: string;
   city?: string;
+  branch?: string;
+  sellerRole?: 'admin' | 'local' | 'vendedor';
+  allowedTabs?: string[];
+  crmTabs?: ('visits' | 'board' | 'suppliers' | 'costs')[];
   createdAt: string;
   status: 'active' | 'pending' | 'suspended';
   pricingTier?: 'Consumidor Final' | 'Corporativo / Mayorista';
@@ -336,7 +343,7 @@ export type CategoryHierarchyItem = {
 
 
 // --- CRM & MANAGEMENT TYPES ---
-export type CRMOrderStatus = 'cotizacion' | 'sena_50' | 'produccion' | 'listo' | 'entregado' | 'cancelado' | 'pausa';
+export type CRMOrderStatus = 'cotizacion' | 'sena_50' | 'produccion' | 'listo' | 'entregado' | 'cancelado';
 
 export interface CRMOrder {
   id: string;
@@ -349,6 +356,8 @@ export interface CRMOrder {
   clientEmail?: string;
   channel?: 'WhatsApp' | 'Excel' | 'Web';
   status: CRMOrderStatus;
+  columnId?: string;
+  step?: string;
   seller: string;
   branch: string;
   totalUnits: number;
@@ -372,6 +381,9 @@ export interface LeadVisit {
   seller: string; // 'Itatí' | 'Guada' | 'Carolina' | 'Gustavo'
   branch: string;
   status: LeadVisitStatus;
+  columnId?: string;
+  step?: string;
+  kanbanStep?: string;
   objective: string;
   nextStep: string;
   nextStepDate?: string;

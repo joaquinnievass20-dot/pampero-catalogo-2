@@ -61,8 +61,8 @@ export const ClientSizingPortalView: React.FC<ClientSizingPortalViewProps> = ({
   useEffect(() => {
     const unsubCamp = subscribeToSizingCampaigns((camps) => {
       setCampaigns(camps);
-      if (camps.length > 0 && !selectedCampaignId) {
-        setSelectedCampaignId(camps[0].id);
+      if (camps.length > 0) {
+        setSelectedCampaignId((prev) => prev || camps[0].id);
       }
     });
 
@@ -74,7 +74,7 @@ export const ClientSizingPortalView: React.FC<ClientSizingPortalViewProps> = ({
       unsubCamp();
       unsubEntries();
     };
-  }, [selectedCampaignId]);
+  }, []);
 
   // Sincronización estricta (RLS/Filtro):
   // La vista del Portal de Talles debe filtrar los datos para que cada empresa logueada

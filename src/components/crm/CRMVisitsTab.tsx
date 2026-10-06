@@ -3,10 +3,12 @@ import { LeadVisit } from '../../types';
 import { 
   saveLeadVisit, 
   deleteLeadVisit, 
+  subscribeToLeadVisits,
   subscribeToKanbanColumns, 
   DEFAULT_VISIT_COLUMNS, 
   KanbanColumnConfig 
 } from '../../services/firebase';
+import { fixUtf8Encoding, sanitizeObjectEncoding } from '../../utils/encodingUtils';
 import { 
   Plus, 
   Search, 
@@ -72,15 +74,39 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
   const [columns, setColumns] = useState<KanbanColumnConfig[]>(() => {
     try {
       const saved = localStorage.getItem('pampero_kanban_visits_cols');
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map(sanitizeObjectEncoding);
+        }
+      }
     } catch {}
-    return DEFAULT_VISIT_COLUMNS;
+    return DEFAULT_VISIT_COLUMNS.map(sanitizeObjectEncoding);
   });
+
+  const [localVisits, setLocalVisits] = useState<LeadVisit[]>(() => (visits || []).map(sanitizeObjectEncoding));
+
+  // Sync prop updates
+  useEffect(() => {
+    if (Array.isArray(visits) && visits.length > 0) {
+      setLocalVisits(visits.map(sanitizeObjectEncoding));
+    }
+  }, [visits]);
+
+  // Real-time Firestore onSnapshot for crm_leads_visitas
+  useEffect(() => {
+    const unsub = subscribeToLeadVisits((updated) => {
+      if (Array.isArray(updated) && updated.length > 0) {
+        setLocalVisits(updated.map(sanitizeObjectEncoding));
+      }
+    });
+    return () => unsub();
+  }, []);
 
   useEffect(() => {
     const unsub = subscribeToKanbanColumns((data) => {
       if (Array.isArray(data.visits) && data.visits.length > 0) {
-        setColumns(data.visits);
+        setColumns(data.visits.map(sanitizeObjectEncoding));
       }
     });
     return () => unsub();
@@ -110,7 +136,7 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
 
   // Normalize visit step dynamically
   const getVisitStep = (v: LeadVisit): string => {
-    const raw = (v as any).step || (v as any).kanbanStep;
+    const raw = (v as any).columnId || (v as any).step || (v as any).kanbanStep;
     if (raw && columns.some((c) => c.id === raw)) {
       return raw;
     }
@@ -151,7 +177,7 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
     setEmail(v.email || '');
     setSeller(v.seller || 'Itatí');
     setBranch(v.branch || 'Maipú');
-    setStep(getVisitStep(v));
+    setStep(getVisitStep(v) as any);
     setDate(v.date || new Date().toISOString().split('T')[0]);
     setObjective(v.objective || '');
     setNextStep(v.nextStep || '');
@@ -164,7 +190,9 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
     e.preventDefault();
     if (!companyName.trim()) return;
 
-    const updatedVisit: LeadVisit = {
+    const chosenStep = step || columns[0]?.id || 'primer_contacto';
+
+    const updatedVisit: LeadVisit = sanitizeObjectEncoding({
       id: editingVisit ? editingVisit.id : `VIS-${Date.now().toString().slice(-6)}`,
       companyName: companyName.trim(),
       contactName: contactName.trim(),
@@ -172,7 +200,10 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
       email: email.trim(),
       seller,
       branch,
-      status: (step === 'convertida' ? 'cerrada' : step === 'previo_cotizacion' ? 'presupuesto_enviado' : step === 'reunion' ? 'realizada' : 'programada') as any,
+      status: (chosenStep === 'convertida' ? 'cerrada' : chosenStep === 'previo_cotizacion' ? 'presupuesto_enviado' : chosenStep === 'reunion' ? 'realizada' : 'programada') as any,
+      columnId: chosenStep,
+      step: chosenStep,
+      kanbanStep: chosenStep,
       objective: objective.trim(),
       nextStep: nextStep.trim(),
       estimatedUnits: estimatedUnits ? Number(estimatedUnits) : undefined,
@@ -180,13 +211,19 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
       date,
       createdAt: editingVisit ? editingVisit.createdAt : new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      ...({ kanbanStep: step, step } as any),
-    };
+    });
 
-    await saveLeadVisit(updatedVisit);
+    // Immediate local React state update
+    setLocalVisits((prev) => [updatedVisit, ...prev.filter((v) => v.id !== updatedVisit.id)]);
+
+    try {
+      await saveLeadVisit(updatedVisit);
+    } catch (err) {
+      console.error('Error guardando visita:', err);
+    }
 
     // If promoted to 'convertida', move automatically to Seguimiento empresas
-    if (step === 'convertida' && onPromoteToCompanies) {
+    if (chosenStep === 'convertida' && onPromoteToCompanies) {
       onPromoteToCompanies(updatedVisit);
     }
 
@@ -195,14 +232,23 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
 
   // Move visit to next or specific step
   const handleMoveStep = async (visit: LeadVisit, nextTargetStep: VisitKanbanStep) => {
-    const updated: LeadVisit = {
+    const updated: LeadVisit = sanitizeObjectEncoding({
       ...visit,
       status: (nextTargetStep === 'convertida' ? 'cerrada' : nextTargetStep === 'previo_cotizacion' ? 'presupuesto_enviado' : nextTargetStep === 'reunion' ? 'realizada' : 'programada') as any,
+      columnId: nextTargetStep,
+      step: nextTargetStep,
+      kanbanStep: nextTargetStep,
       updatedAt: new Date().toISOString(),
-      ...({ kanbanStep: nextTargetStep, step: nextTargetStep } as any),
-    };
+    });
 
-    await saveLeadVisit(updated);
+    // Immediate optimistic local update
+    setLocalVisits((prev) => [updated, ...prev.filter((v) => v.id !== updated.id)]);
+
+    try {
+      await saveLeadVisit(updated);
+    } catch (err) {
+      console.error('Error al mover paso de visita:', err);
+    }
 
     // If it reaches or surpasses "Previo a cotización", move automatically to "Seguimiento empresas"
     if (nextTargetStep === 'convertida' && onPromoteToCompanies) {
@@ -212,7 +258,13 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
 
   const handleDelete = async (id: string) => {
     if (confirm('¿Eliminar esta visita comercial?')) {
-      await deleteLeadVisit(id);
+      // Force immediate local update to unblock UI
+      setLocalVisits((prev) => prev.filter((v) => v.id !== id));
+      try {
+        await deleteLeadVisit(id);
+      } catch (err) {
+        console.error('Error al eliminar visita comercial:', err);
+      }
     }
   };
 
@@ -223,7 +275,7 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
 
   const handleDrop = async (targetStep: VisitKanbanStep) => {
     if (!draggedVisitId) return;
-    const v = visits.find((item) => item.id === draggedVisitId);
+    const v = localVisits.find((item) => item.id === draggedVisitId);
     if (v) {
       await handleMoveStep(v, targetStep);
     }
@@ -231,8 +283,8 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
     setDragOverCol(null);
   };
 
-  // Filter visits
-  const filteredVisits = visits.filter((v) => {
+  // Filter visits from localVisits
+  const filteredVisits = localVisits.filter((v) => {
     const matchesSeller = sellerFilter === 'todos' || (v.seller || '').toLowerCase() === sellerFilter.toLowerCase();
     const matchesBranch = branchFilter === 'todos' || (v.branch || '').toLowerCase() === branchFilter.toLowerCase();
     const matchesQuery = 
@@ -343,7 +395,7 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
                 >
                   <div className="flex items-center justify-between mb-1">
                     <h4 className="font-bold text-xs uppercase tracking-wider text-[#18231C]">
-                      {col.label}
+                      {fixUtf8Encoding(col.label)}
                     </h4>
                     <span 
                       style={{ backgroundColor: `${col.color}22`, color: col.color }}
@@ -353,7 +405,7 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
                     </span>
                   </div>
                   <p className="text-[10px] text-[#6F6860] leading-tight">
-                    {col.description}
+                    {fixUtf8Encoding(col.description || '')}
                   </p>
                 </div>
 
@@ -383,15 +435,15 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
                           <div className="flex items-start justify-between gap-1.5">
                             <div className="min-w-0">
                               <span className="font-bold text-xs text-[#18231C] block truncate uppercase">
-                                {visit.companyName}
+                                {fixUtf8Encoding(visit.companyName)}
                               </span>
                               <span className="text-[11px] text-[#6F6860] flex items-center gap-1 mt-0.5">
                                 <User className="w-3 h-3 text-neutral-400 shrink-0" />
-                                <strong className="text-neutral-800">{visit.contactName || 'Sin contacto'}</strong>
+                                <strong className="text-neutral-800">{fixUtf8Encoding(visit.contactName || 'Sin contacto')}</strong>
                               </span>
                             </div>
                             <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-xs bg-[#ECE5DC] text-[#18231C] shrink-0">
-                              {visit.branch || 'Maipú'}
+                              {fixUtf8Encoding(visit.branch || 'Maipú')}
                             </span>
                           </div>
 
@@ -408,12 +460,12 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
                                 <span>{visit.phone}</span>
                               </a>
                             )}
-                            <span className="text-neutral-500">Resp: <strong>{visit.seller}</strong></span>
+                            <span className="text-neutral-500">Resp: <strong>{fixUtf8Encoding(visit.seller || '')}</strong></span>
                           </div>
 
                           {visit.objective && (
                             <p className="text-[11px] text-neutral-700 bg-neutral-50 p-1.5 rounded-xs border border-neutral-200/60 leading-snug">
-                              {visit.objective}
+                              {fixUtf8Encoding(visit.objective)}
                             </p>
                           )}
 
@@ -427,7 +479,7 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
                           {visit.nextStep && (
                             <div className="text-[10px] text-purple-900 bg-purple-50 px-2 py-1 rounded-xs border border-purple-200 flex items-center gap-1">
                               <Clock className="w-3 h-3 text-purple-600 shrink-0" />
-                              <span className="truncate">Próximo paso: <strong>{visit.nextStep}</strong></span>
+                              <span className="truncate">Próximo paso: <strong>{fixUtf8Encoding(visit.nextStep)}</strong></span>
                             </div>
                           )}
 

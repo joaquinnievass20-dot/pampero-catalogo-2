@@ -27,6 +27,7 @@ import {
   DEFAULT_COMPANY_COLUMNS,
   KanbanColumnConfig
 } from '../../services/firebase';
+import { fixUtf8Encoding, sanitizeObjectEncoding } from '../../utils/encodingUtils';
 import { 
   LayoutDashboard, 
   Filter, 
@@ -99,7 +100,7 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
   }, []);
 
   // RBAC Access Control: Check if logged in staff has CRM permissions
-  const currentEmployee: EmployeeAccount | null = (() => {
+  const currentEmployee: EmployeeAccount | null = React.useMemo(() => {
     if (userSession?.role !== 'employee') return null;
     try {
       const saved = localStorage.getItem('pampero_employees');
@@ -111,7 +112,7 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
       }
     } catch {}
     return null;
-  })();
+  }, [userSession?.id, userSession?.email, userSession?.role]);
 
   const isStaff = userSession?.role === 'admin' || userSession?.role === 'employee';
   const hasCrmPermission = userSession?.role === 'admin' || (currentEmployee?.allowedTabs ? currentEmployee.allowedTabs.includes('crm') : true);
@@ -126,7 +127,7 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
   const assignedSellerName = currentEmployee?.sellerName || userSession?.clientData?.fullName || '';
 
   // Dynamic sellers list from localStorage / store
-  const sellersList: Seller[] = (() => {
+  const sellersList: Seller[] = React.useMemo(() => {
     try {
       const saved = localStorage.getItem('pampero_sellers');
       if (saved) {
@@ -139,18 +140,19 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
       { id: 'sel-2', name: 'Guada', branch: 'Ciudad', active: true },
       { id: 'sel-3', name: 'Carolina', branch: 'Luján', active: true },
     ];
-  })();
+  }, []);
 
   const activeStaffUser = userSession?.clientData?.fullName || (userSession?.role === 'admin' ? 'Administrador General' : userSession?.email?.split('@')[0] || 'Personal Pampero');
 
   // Allowed CRM tabs based on Admin or Employee Permissions
-  const allowedCrmTabs: ('visits' | 'board' | 'suppliers' | 'costs')[] = (() => {
+  const crmTabsStr = currentEmployee?.crmTabs?.join(',') || '';
+  const allowedCrmTabs: ('visits' | 'board' | 'suppliers' | 'costs')[] = React.useMemo(() => {
     if (userSession?.role === 'admin') return ['visits', 'board', 'suppliers', 'costs'];
     if (currentEmployee?.crmTabs && Array.isArray(currentEmployee.crmTabs) && currentEmployee.crmTabs.length > 0) {
       return currentEmployee.crmTabs as ('visits' | 'board' | 'suppliers' | 'costs')[];
     }
     return ['visits', 'board', 'suppliers'];
-  })();
+  }, [userSession?.role, crmTabsStr]);
 
   const [activeTab, setActiveTab] = useState<'visits' | 'board' | 'suppliers' | 'costs'>('visits');
 
@@ -168,22 +170,27 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
   // Promote visit that passes "Previo a cotización" directly into "Seguimiento empresas"
   const handlePromoteVisitToCompanyOrder = async (visit: LeadVisit) => {
     try {
+      const firstColId = companyColumns[0]?.id || 'cotizacion';
       const orderId = `COT-VIS-${Date.now().toString().slice(-6)}`;
-      const newOrder: CRMOrder = {
+      const newOrder: CRMOrder = sanitizeObjectEncoding({
         id: orderId,
         date: new Date().toISOString(),
         quoteId: orderId,
+        orderNumber: `#${orderId.slice(-6)}`,
         clientName: visit.companyName,
         clientType: 'empresa',
-        status: 'cotizacion',
+        status: firstColId as CRMOrderStatus,
+        columnId: firstColId,
         seller: visit.seller || 'Itatí',
         branch: visit.branch || 'Maipú',
         totalUnits: visit.estimatedUnits || 1,
         totalEstimated: 0,
         observations: `[Avanzado desde Visitas Comerciales] Contacto: ${visit.contactName || '-'} · Tel: ${visit.phone || '-'} · Objetivo: ${visit.objective || '-'} · Notas: ${visit.notes || '-'}`,
         updatedAt: new Date().toISOString(),
-      };
+      });
 
+      // Immediate local state update
+      setOrders((prev) => [newOrder, ...prev.filter((o) => o.id !== newOrder.id)]);
       await saveCRMOrder(newOrder);
       setActiveTab('board');
     } catch (err) {
@@ -203,13 +210,13 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
 
   const accent = theme?.accentColor || '#FDB813';
 
-  // Real-time Firestore Subscriptions
+  // Real-time Firestore Subscriptions with clean encoding
   useEffect(() => {
-    const unsubOrders = subscribeToCRMOrders((fetched) => setOrders(fetched));
-    const unsubVisits = subscribeToLeadVisits((fetched) => setVisits(fetched));
-    const unsubSuppliers = subscribeToSupplierOrders((fetched) => setSupplierOrders(fetched));
-    const unsubCampaigns = subscribeToSizingCampaigns((fetched) => setSizingCampaigns(fetched));
-    const unsubSizes = subscribeToEmployeeSizeEntries('all', (fetched) => setEmployeeSizes(fetched));
+    const unsubOrders = subscribeToCRMOrders((fetched) => setOrders(fetched.map(sanitizeObjectEncoding)));
+    const unsubVisits = subscribeToLeadVisits((fetched) => setVisits(fetched.map(sanitizeObjectEncoding)));
+    const unsubSuppliers = subscribeToSupplierOrders((fetched) => setSupplierOrders(fetched.map(sanitizeObjectEncoding)));
+    const unsubCampaigns = subscribeToSizingCampaigns((fetched) => setSizingCampaigns(fetched.map(sanitizeObjectEncoding)));
+    const unsubSizes = subscribeToEmployeeSizeEntries('all', (fetched) => setEmployeeSizes(fetched.map(sanitizeObjectEncoding)));
 
     return () => {
       unsubOrders();
@@ -226,14 +233,25 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
     e.dataTransfer.effectAllowed = 'move';
   };
 
-  const handleDrop = (e: React.DragEvent, newStatus: CRMOrderStatus) => {
+  const handleDrop = async (e: React.DragEvent, newStatus: CRMOrderStatus) => {
     e.preventDefault();
     setDragOverColumn(null);
     const orderId = e.dataTransfer.getData('orderId');
     if (!orderId) return;
     const order = orders.find((o) => o.id === orderId);
     if (order && order.status !== newStatus) {
-      saveCRMOrder({ ...order, status: newStatus, updatedAt: new Date().toISOString() });
+      const updated = sanitizeObjectEncoding({ 
+        ...order, 
+        status: newStatus, 
+        columnId: newStatus, 
+        updatedAt: new Date().toISOString() 
+      });
+      setOrders((prev) => [updated, ...prev.filter((o) => o.id !== orderId)]);
+      try {
+        await saveCRMOrder(updated);
+      } catch (err) {
+        console.error('Error al actualizar estado en Drag & Drop:', err);
+      }
     }
   };
 
@@ -285,23 +303,37 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
     return matchesSeller && matchesBranch && matchesSearch;
   });
 
-  // Create manual order
-  const handleCreateManualOrder = (formData: any) => {
-    const newOrder: CRMOrder = {
-      id: `MAN-${Date.now().toString().slice(-6)}`,
-      date: new Date().toISOString(),
-      clientName: formData.clientName,
-      clientType: formData.clientType || 'empresa',
-      status: 'cotizacion',
-      seller: formData.seller || assignedSellerName || 'Sin Asignar',
-      branch: formData.branch || assignedBranch || 'Ciudad',
-      totalUnits: Number(formData.totalUnits) || 0,
-      totalEstimated: Number(formData.totalEstimated) || 0,
-      observations: formData.observations || '',
-      updatedAt: new Date().toISOString(),
-    };
-    saveCRMOrder(newOrder);
-    setShowNewOrderModal(false);
+  // Create manual order with guaranteed columnId and immediate local React update
+  const handleCreateManualOrder = async (formData: any) => {
+    try {
+      const firstColId = companyColumns[0]?.id || 'cotizacion';
+      const orderId = `PED-${Date.now().toString().slice(-6)}`;
+      const newOrder: CRMOrder = sanitizeObjectEncoding({
+        id: orderId,
+        date: new Date().toISOString(),
+        quoteId: orderId,
+        orderNumber: `#${orderId.slice(-6)}`,
+        clientName: formData.clientName,
+        clientType: formData.clientType || 'empresa',
+        status: (formData.status || firstColId) as CRMOrderStatus,
+        columnId: formData.columnId || formData.status || firstColId,
+        seller: formData.seller || assignedSellerName || 'Sin Asignar',
+        branch: formData.branch || assignedBranch || 'Ciudad',
+        totalUnits: Number(formData.totalUnits) || 0,
+        totalEstimated: Number(formData.totalEstimated) || 0,
+        observations: formData.observations || '',
+        updatedAt: new Date().toISOString(),
+      });
+
+      // Immediate local React state update so card appears instantly
+      setOrders((prev) => [newOrder, ...prev.filter((o) => o.id !== newOrder.id)]);
+
+      await saveCRMOrder(newOrder);
+      setShowNewOrderModal(false);
+    } catch (err) {
+      console.error('Error al registrar pedido manual:', err);
+      setShowNewOrderModal(false);
+    }
   };
 
   // Safe operator simulator switcher for Admin only
@@ -626,8 +658,10 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
             <div className="flex gap-4 flex-1 overflow-x-auto pb-4">
               {companyColumns.map((col) => {
                 const columnOrders = filteredOrders.filter((o) => {
+                  const oCol = (o as any).columnId || o.status;
+                  if (oCol === col.id) return true;
                   if (o.status === col.id) return true;
-                  if (col.id === companyColumns[0]?.id && !companyColumns.some((c) => c.id === o.status)) return true;
+                  if (col.id === companyColumns[0]?.id && !companyColumns.some((c) => c.id === o.status || c.id === (o as any).columnId)) return true;
                   return false;
                 });
                 const isDragOver = dragOverColumn === col.id;
@@ -652,7 +686,7 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
                         borderTop: `2px solid ${col.color}40`,
                       }}
                     >
-                      <span>{col.label}</span>
+                      <span>{fixUtf8Encoding(col.label)}</span>
                       <span
                         className="px-2 py-0.5 rounded-full text-[10px] font-black"
                         style={{ backgroundColor: col.color + '22', color: col.color }}
@@ -704,7 +738,7 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
 
                             {/* Client Name */}
                             <h4 className="font-bold text-sm text-[#18231C] leading-tight">
-                              {order.clientName}
+                              {fixUtf8Encoding(order.clientName)}
                             </h4>
                             <p className="text-[11px] text-[#6F6860] mt-0.5">
                               {order.totalUnits} prendas
@@ -713,14 +747,14 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
                             {/* Block Reason */}
                             {order.blockReason && (
                               <div className="mt-2 text-[10px] bg-red-50 text-red-700 p-1.5 rounded-xs font-medium border border-red-200">
-                                ⚠ Bloqueado: {order.blockReason}
+                                ⚠ Bloqueado: {fixUtf8Encoding(order.blockReason)}
                               </div>
                             )}
 
                             {/* Observations */}
                             {order.observations && !order.blockReason && (
                               <div className="mt-2 text-[10px] bg-amber-50 text-amber-800 p-1.5 rounded-xs">
-                                {order.observations.slice(0, 80)}
+                                {fixUtf8Encoding(order.observations.slice(0, 80))}
                                 {order.observations.length > 80 ? '...' : ''}
                               </div>
                             )}
@@ -730,11 +764,11 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
                               <div className="flex items-center gap-1.5">
                                 <Clock className="w-3 h-3 text-[#8C827A]" />
                                 <span className="text-[10px] font-bold text-[#8C827A]">
-                                  {order.seller || 'Sin asignar'}
+                                  {fixUtf8Encoding(order.seller || 'Sin asignar')}
                                 </span>
                                 {order.branch && (
                                   <span className="text-[9px] px-1 py-0.2 rounded-xs bg-[#FAF8F5] border border-[#DCD4C9] text-[#6F6860]">
-                                    {order.branch}
+                                    {fixUtf8Encoding(order.branch)}
                                   </span>
                                 )}
                               </div>
@@ -766,12 +800,14 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
                                     type="button"
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      saveCRMOrder({ ...order, status: nextCol.id, updatedAt: new Date().toISOString() });
+                                      const updated = sanitizeObjectEncoding({ ...order, status: nextCol.id, columnId: nextCol.id, updatedAt: new Date().toISOString() });
+                                      setOrders((prev) => [updated, ...prev.filter((o) => o.id !== order.id)]);
+                                      saveCRMOrder(updated).catch(console.error);
                                     }}
                                     className="px-2 py-1 bg-[#18231C] hover:bg-[#B9522F] text-white rounded-xs text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 transition-colors cursor-pointer"
-                                    title={`Avanzar a ${nextCol.label}`}
+                                    title={`Avanzar a ${fixUtf8Encoding(nextCol.label)}`}
                                   >
-                                    <span>{nextCol.label.split('/')[0].split(' ')[0]}</span>
+                                    <span>{fixUtf8Encoding(nextCol.label.split('/')[0].split(' ')[0])}</span>
                                     <ArrowRight className="w-2.5 h-2.5" />
                                   </button>
                                 );
@@ -814,7 +850,11 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
 
         {/* === TAB 4: CONTROL DE COSTOS === */}
         {activeTab === 'costs' && (
-          <CRMCostsTab accentColor={accent} />
+          <CRMCostsTab 
+            accentColor={accent} 
+            userRole={userSession?.role || 'admin'} 
+            defaultBranch={assignedBranch}
+          />
         )}
       </div>
 
@@ -832,12 +872,23 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
         <OrderDetailModal
           order={selectedOrderForDetail}
           onClose={() => setSelectedOrderForDetail(null)}
-          onSave={(updated) => {
-            saveCRMOrder(updated);
+          onSave={async (updated) => {
+            const cleanUpdated = sanitizeObjectEncoding(updated);
+            setOrders((prev) => [cleanUpdated, ...prev.filter((o) => o.id !== cleanUpdated.id)]);
+            try {
+              await saveCRMOrder(cleanUpdated);
+            } catch (err) {
+              console.error('Error al guardar orden:', err);
+            }
             setSelectedOrderForDetail(null);
           }}
-          onDelete={(id) => {
-            deleteCRMOrder(id);
+          onDelete={async (id) => {
+            setOrders((prev) => prev.filter((o) => o.id !== id));
+            try {
+              await deleteCRMOrder(id);
+            } catch (err) {
+              console.error('Error al eliminar orden:', err);
+            }
             setSelectedOrderForDetail(null);
           }}
         />

@@ -1,6 +1,31 @@
 import React, { useState, useRef } from 'react';
 import { Promotion, Product, PromotionButton } from '../../types';
-import { Tag, Plus, Edit2, Trash2, Check, Upload, Image, Eye, EyeOff, Search, Layers, Palette, Type, MousePointer, ExternalLink, ArrowRight } from 'lucide-react';
+import { 
+  Tag, 
+  Plus, 
+  Edit2, 
+  Trash2, 
+  Check, 
+  Upload, 
+  Image, 
+  Eye, 
+  EyeOff, 
+  Search, 
+  Layers, 
+  Palette, 
+  Type, 
+  MousePointer, 
+  ExternalLink, 
+  ArrowRight,
+  Loader2,
+  CheckCircle2,
+  AlertCircle
+} from 'lucide-react';
+import {
+  uploadPromotionBanner,
+  saveFirestorePromotion,
+  deleteFirestorePromotion,
+} from '../../services/firebase';
 
 interface AdminPromosTabProps {
   promotions: Promotion[];
@@ -20,6 +45,9 @@ export const AdminPromosTab: React.FC<AdminPromosTabProps> = ({
   const [editingPromo, setEditingPromo] = useState<Promotion | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [productSearch, setProductSearch] = useState('');
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Form State
@@ -130,23 +158,33 @@ export const AdminPromosTab: React.FC<AdminPromosTabProps> = ({
     }));
   };
 
-  const handleFileImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // EXCLUSIVAMENTE subida de archivos utilizando uploadBytes y getDownloadURL de Firebase Storage
+  const handleFileImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     if (!file.type.startsWith('image/')) {
-      alert('Por favor seleccioná una imagen válida.');
+      alert('Por favor seleccioná una imagen válida (JPG, PNG, WEBP, AVIF).');
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const dataUrl = event.target?.result as string;
-      if (dataUrl) {
-        setForm((prev) => ({ ...prev, bannerImage: dataUrl }));
-      }
-    };
-    reader.readAsDataURL(file);
+    setIsUploadingImage(true);
+    setUploadError(null);
+
+    try {
+      const promoId = editingPromo?.id || form.id || `promo-${Date.now()}`;
+      // Subida obligatoria y exclusiva a Firebase Storage mediante SDK oficial
+      const downloadUrl = await uploadPromotionBanner(file, promoId);
+      setForm((prev) => ({ ...prev, bannerImage: downloadUrl }));
+    } catch (err: any) {
+      console.error('[FIREBASE STORAGE] Error al subir imagen de banner:', err);
+      const msg = err?.message || 'Error de conexión con Firebase Storage.';
+      setUploadError(msg);
+      alert(`Error al subir la imagen a Firebase Storage: ${msg}`);
+    } finally {
+      setIsUploadingImage(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
   };
 
   const toggleAssociatedProduct = (code: string) => {
@@ -175,88 +213,119 @@ export const AdminPromosTab: React.FC<AdminPromosTabProps> = ({
     }));
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  // Guardado persistente exclusivo en Cloud Firestore (Colección dedicada 'promotions')
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.title?.trim()) {
       alert('Por favor ingresá el título de la promoción.');
       return;
     }
 
+    setIsSaving(true);
     const primaryLabel = form.buttons?.[0]?.label || form.primaryBtnText || 'VER CATÁLOGO';
     const selectedCodes = form.associatedProductCodes || [];
     const targetTag = form.tagFilter || form.badge || form.title || 'Promoción';
 
-    if (editingPromo) {
-      const updated = promotions.map((p) =>
-        p.id === editingPromo.id ? ({ ...p, ...form, primaryBtnText: primaryLabel } as Promotion) : p
-      );
-      onUpdatePromotions(updated);
+    try {
+      if (editingPromo) {
+        const updatedPromo: Promotion = {
+          ...editingPromo,
+          ...form,
+          primaryBtnText: primaryLabel,
+          textColor: form.textColor || '#FFFFFF',
+          fontSize: form.fontSize || '72px',
+          subtitleColor: form.subtitleColor || '#DCD4C9',
+          subtitleFontSize: form.subtitleFontSize || '16px',
+        } as Promotion;
 
-      // Synchronize product promotion tags
-      if (onUpdateProducts) {
-        const updatedProducts = products.map((p) => {
-          const isSelected = selectedCodes.includes(p.code);
-          const wasTaggedWithThisPromo = p.promotionTag && (
-            p.promotionTag === editingPromo.tagFilter ||
-            p.promotionTag === editingPromo.badge ||
-            p.promotionTag === editingPromo.title ||
-            p.promotionTag === form.tagFilter ||
-            p.promotionTag === form.badge
-          );
+        const updated = promotions.map((p) =>
+          p.id === editingPromo.id ? updatedPromo : p
+        );
+        onUpdatePromotions(updated);
 
-          if (isSelected) {
-            return { ...p, promotionTag: targetTag };
-          } else if (wasTaggedWithThisPromo) {
-            // Unchecked: clear promotion tag so it's not stuck
-            return { ...p, promotionTag: '' };
-          }
-          return p;
-        });
-        onUpdateProducts(updatedProducts);
+        // Guardado directo en Firestore
+        await saveFirestorePromotion(updatedPromo);
+
+        // Synchronize product promotion tags
+        if (onUpdateProducts) {
+          const updatedProducts = products.map((p) => {
+            const isSelected = selectedCodes.includes(p.code);
+            const wasTaggedWithThisPromo = p.promotionTag && (
+              p.promotionTag === editingPromo.tagFilter ||
+              p.promotionTag === editingPromo.badge ||
+              p.promotionTag === editingPromo.title ||
+              p.promotionTag === form.tagFilter ||
+              p.promotionTag === form.badge
+            );
+
+            if (isSelected) {
+              return { ...p, promotionTag: targetTag };
+            } else if (wasTaggedWithThisPromo) {
+              return { ...p, promotionTag: '' };
+            }
+            return p;
+          });
+          onUpdateProducts(updatedProducts);
+        }
+      } else {
+        const newPromo: Promotion = {
+          id: form.id || 'promo-' + Date.now(),
+          title: form.title || 'Nueva Promoción',
+          subtitle: form.subtitle || '',
+          badge: form.badge || 'PROMO',
+          bannerImage:
+            form.bannerImage ||
+            'https://images.unsplash.com/photo-1508873696983-2df5293cb32f?auto=format&fit=crop&w=1600&q=80',
+          tagFilter: form.tagFilter || 'Temporada 2026',
+          active: form.active ?? true,
+          discountOnly: false,
+          discountPercentage: form.discountPercentage || 0,
+          associatedProductCodes: selectedCodes,
+          textColor: form.textColor || '#FFFFFF',
+          fontSize: form.fontSize || '72px',
+          subtitleColor: form.subtitleColor || '#DCD4C9',
+          subtitleFontSize: form.subtitleFontSize || '16px',
+          primaryBtnText: primaryLabel,
+          buttons: form.buttons || [],
+        };
+        onUpdatePromotions([newPromo, ...promotions]);
+
+        // Guardado directo en Firestore
+        await saveFirestorePromotion(newPromo);
+
+        if (onUpdateProducts && selectedCodes.length > 0) {
+          const updatedProducts = products.map((p) => {
+            if (selectedCodes.includes(p.code)) {
+              return { ...p, promotionTag: targetTag };
+            }
+            return p;
+          });
+          onUpdateProducts(updatedProducts);
+        }
       }
-    } else {
-      const newPromo: Promotion = {
-        id: 'promo-' + Date.now(),
-        title: form.title || 'Nueva Promoción',
-        subtitle: form.subtitle || '',
-        badge: form.badge || 'PROMO',
-        bannerImage:
-          form.bannerImage ||
-          'https://images.unsplash.com/photo-1508873696983-2df5293cb32f?auto=format&fit=crop&w=1600&q=80',
-        tagFilter: form.tagFilter || 'Temporada 2026',
-        active: form.active ?? true,
-        discountOnly: false,
-        discountPercentage: form.discountPercentage || 0,
-        associatedProductCodes: selectedCodes,
-        textColor: form.textColor || '#FFFFFF',
-        fontSize: form.fontSize || '72px',
-        subtitleColor: form.subtitleColor || '#DCD4C9',
-        subtitleFontSize: form.subtitleFontSize || '16px',
-        primaryBtnText: primaryLabel,
-        buttons: form.buttons || [],
-      };
-      onUpdatePromotions([newPromo, ...promotions]);
 
-      if (onUpdateProducts && selectedCodes.length > 0) {
-        const updatedProducts = products.map((p) => {
-          if (selectedCodes.includes(p.code)) {
-            return { ...p, promotionTag: targetTag };
-          }
-          return p;
-        });
-        onUpdateProducts(updatedProducts);
-      }
+      setIsCreating(false);
+      setEditingPromo(null);
+      triggerSaveNotice();
+    } catch (err: any) {
+      console.error('[PROMOTION SAVE ERROR]:', err);
+      alert('Hubo un error al guardar la promoción en Firestore.');
+    } finally {
+      setIsSaving(false);
     }
-
-    setIsCreating(false);
-    setEditingPromo(null);
-    triggerSaveNotice();
   };
 
-  const handleDelete = (id: string) => {
-    if (confirm('¿Desea eliminar esta promoción?')) {
+  // Eliminación persistente exclusiva en Cloud Firestore (Colección dedicada 'promotions')
+  const handleDelete = async (id: string) => {
+    if (confirm('¿Desea eliminar esta promoción permanentemente?')) {
       const promoToDelete = promotions.find((p) => p.id === id);
       onUpdatePromotions(promotions.filter((p) => p.id !== id));
+
+      try {
+        await deleteFirestorePromotion(id);
+      } catch (err) {
+        console.error('[PROMOTION DELETE ERROR]:', err);
+      }
 
       if (promoToDelete && onUpdateProducts) {
         const updatedProducts = products.map((p) => {
@@ -278,11 +347,22 @@ export const AdminPromosTab: React.FC<AdminPromosTabProps> = ({
     }
   };
 
-  const toggleActive = (id: string) => {
+  // Activación / Desactivación en vivo persistida en Cloud Firestore
+  const toggleActive = async (id: string) => {
+    const target = promotions.find((p) => p.id === id);
+    if (!target) return;
+    const updatedPromo: Promotion = { ...target, active: !target.active };
     const updated = promotions.map((p) =>
-      p.id === id ? { ...p, active: !p.active } : p
+      p.id === id ? updatedPromo : p
     );
     onUpdatePromotions(updated);
+
+    try {
+      await saveFirestorePromotion(updatedPromo);
+    } catch (err) {
+      console.error('[PROMOTION TOGGLE ERROR]:', err);
+    }
+
     triggerSaveNotice();
   };
 
@@ -632,11 +712,17 @@ export const AdminPromosTab: React.FC<AdminPromosTabProps> = ({
               </div>
             </div>
 
-            {/* Banner Image Selection: Upload File or URL */}
+            {/* Banner Image Selection: Upload File exclusively to Firebase Storage or URL */}
             <div className="space-y-3 p-4 bg-[#FAF8F5] rounded-xs border border-[#DCD4C9]">
-              <label className="block text-[10px] uppercase tracking-wider font-bold text-[#18231C]">
-                Foto de la Promoción (Subir Archivo o URL)
-              </label>
+              <div className="flex items-center justify-between">
+                <label className="block text-[10px] uppercase tracking-wider font-bold text-[#18231C]">
+                  Foto de la Promoción (Firebase Storage)
+                </label>
+                <span className="text-[10px] text-emerald-800 font-bold bg-emerald-50 border border-emerald-300 px-2 py-0.5 rounded-xs flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                  Firebase Storage SDK (uploadBytes)
+                </span>
+              </div>
               
               <div className="flex flex-wrap items-center gap-3">
                 <input
@@ -644,26 +730,63 @@ export const AdminPromosTab: React.FC<AdminPromosTabProps> = ({
                   ref={fileInputRef}
                   onChange={handleFileImageUpload}
                   accept="image/*"
+                  disabled={isUploadingImage}
                   className="hidden"
                 />
                 <button
                   type="button"
+                  disabled={isUploadingImage}
                   onClick={() => fileInputRef.current?.click()}
-                  className="px-4 py-2 bg-white hover:bg-neutral-100 border border-[#DCD4C9] rounded-xs text-xs font-bold uppercase tracking-wider text-[#18231C] flex items-center gap-2"
+                  className={`px-4 py-2 bg-white hover:bg-neutral-100 border border-[#DCD4C9] rounded-xs text-xs font-bold uppercase tracking-wider text-[#18231C] flex items-center gap-2 cursor-pointer transition-all shadow-xs ${
+                    isUploadingImage ? 'opacity-60 cursor-not-allowed' : ''
+                  }`}
                 >
-                  <Upload className="w-4 h-4 text-[#B9522F]" />
-                  Subir Imagen desde la Computadora
+                  {isUploadingImage ? (
+                    <>
+                      <Loader2 className="w-4 h-4 text-[#B9522F] animate-spin" />
+                      <span>Subiendo a Firebase Storage...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="w-4 h-4 text-[#B9522F]" />
+                      <span>Subir Imagen a Firebase Storage</span>
+                    </>
+                  )}
                 </button>
-                <span className="text-xs text-[#6F6860]">o pegá una URL directa abajo:</span>
+                <span className="text-xs text-[#6F6860]">o ingresá la URL pública de Storage:</span>
               </div>
+
+              {uploadError && (
+                <div className="p-2.5 bg-red-50 border border-red-300 rounded-xs text-xs text-red-700 flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+                  <span>{uploadError}</span>
+                </div>
+              )}
 
               <input
                 type="text"
                 value={form.bannerImage}
                 onChange={(e) => setForm({ ...form, bannerImage: e.target.value })}
-                placeholder="https://..."
+                placeholder="https://firebasestorage.googleapis.com/..."
                 className="w-full px-3 py-2 bg-white border border-[#DCD4C9] rounded-xs text-xs font-mono text-[#18231C]"
               />
+
+              {form.bannerImage && (
+                <div className="flex items-center gap-3 pt-1">
+                  <div className="w-16 h-10 rounded-xs overflow-hidden border border-[#DCD4C9] shrink-0 bg-neutral-200">
+                    <img 
+                      src={form.bannerImage} 
+                      alt="Vista previa" 
+                      className="w-full h-full object-cover"
+                      referrerPolicy="no-referrer"
+                    />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <span className="text-[10px] uppercase font-bold text-[#6F6860] block">URL actual almacenada:</span>
+                    <span className="text-xs font-mono text-[#18231C] truncate block max-w-md">{form.bannerImage}</span>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* BOTONES DE ACCIÓN DEL BANNER (PERSONALIZACIÓN COMPLETA DE BOTONES) */}
@@ -934,10 +1057,22 @@ export const AdminPromosTab: React.FC<AdminPromosTabProps> = ({
               </button>
               <button
                 type="submit"
-                className="px-6 py-2 bg-[#18231C] hover:bg-black text-[#F5F2EC] text-xs font-bold uppercase tracking-wider rounded-xs flex items-center gap-2 shadow-xs"
+                disabled={isSaving || isUploadingImage}
+                className={`px-6 py-2 bg-[#18231C] hover:bg-black text-[#F5F2EC] text-xs font-bold uppercase tracking-wider rounded-xs flex items-center gap-2 shadow-xs cursor-pointer ${
+                  isSaving || isUploadingImage ? 'opacity-60 cursor-not-allowed' : ''
+                }`}
               >
-                <Check className="w-3.5 h-3.5 text-emerald-400" />
-                {editingPromo ? 'Guardar Cambios de Promoción' : 'Crear Promoción'}
+                {isSaving ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 text-emerald-400 animate-spin" />
+                    <span>Guardando en Firestore...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>{editingPromo ? 'Guardar Cambios de Promoción' : 'Crear Promoción'}</span>
+                  </>
+                )}
               </button>
             </div>
 

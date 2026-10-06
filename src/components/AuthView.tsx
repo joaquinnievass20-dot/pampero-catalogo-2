@@ -213,7 +213,55 @@ export const AuthView: React.FC<AuthViewProps> = ({
       return;
     }
 
-    // 3. Standard Client Session
+    // 3. Check Registered Users (Clients and Staff registered with assigned password)
+    try {
+      const usersRaw = localStorage.getItem('pampero_registered_users');
+      if (usersRaw) {
+        const registeredList: any[] = JSON.parse(usersRaw);
+        const matched = registeredList.find(
+          (u) =>
+            u.email?.toLowerCase().trim() === emailClean ||
+            (u.cuitOrDni && u.cuitOrDni.replace(/\D/g, '') === emailClean.replace(/\D/g, '') && emailClean.replace(/\D/g, '').length >= 7)
+        );
+
+        if (matched) {
+          if (matched.status === 'suspended') {
+            setErrorMessage('Esta cuenta se encuentra suspendida por la administración.');
+            return;
+          }
+
+          const expectedPass = matched.password || matched.initialPassword;
+          if (expectedPass && expectedPass !== passClean) {
+            setErrorMessage('Contraseña incorrecta. Por favor ingresá la clave asignada para esta cuenta.');
+            return;
+          }
+
+          const isStaff = matched.role === 'employee' || matched.type === 'empleado' || matched.type === 'vendedor';
+          const session: UserSession = {
+            id: matched.id,
+            email: matched.email,
+            role: isStaff ? 'employee' : 'client',
+            clientType: matched.type === 'empresa' ? 'empresa' : 'consumidor',
+            clientData: {
+              fullName: matched.repName || matched.name,
+              companyName: matched.type === 'empresa' ? matched.name : undefined,
+              cuit: matched.cuitOrDni,
+              phone: matched.phone,
+              address: matched.address,
+              pricingTier: matched.pricingTier,
+            },
+          };
+
+          setSuccessMessage(`¡Bienvenido/a, ${matched.name}! Ingresando...`);
+          setTimeout(() => {
+            onLogin(session);
+          }, 350);
+          return;
+        }
+      }
+    } catch {}
+
+    // 4. Default Client Session fallback
     const session: UserSession = {
       id: 'usr-' + Date.now(),
       email: email.trim(),

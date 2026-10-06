@@ -646,7 +646,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       localStorage.setItem('pampero_catalog_theme', JSON.stringify(theme));
       localStorage.setItem('pampero_theme_config', JSON.stringify(theme));
       localStorage.setItem('pampero_catalog_products', JSON.stringify(products));
-      localStorage.setItem('pampero_catalog_promos', JSON.stringify(promotions));
       localStorage.setItem('pampero_catalog_branches', JSON.stringify(branches));
       localStorage.setItem('pampero_discount_coupons', JSON.stringify(coupons));
       if (theme.customLogoUrl) {
@@ -694,6 +693,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             <div>
               <h2 className="font-display text-lg sm:text-xl uppercase tracking-wider flex items-center gap-2 leading-none">
                 PANEL DE ADMINISTRACIÓN GENERAL · GRAN MENDOZA
+                <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded-xs font-mono font-bold tracking-normal">
+                  v2.5.0
+                </span>
                 {savedNotice && (
                   <span className="text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2 py-0.5 rounded-xs flex items-center gap-1 font-sans font-semibold">
                     <Check className="w-3 h-3" /> Cambios Guardados
@@ -954,7 +956,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 </button>
               )}
 
-              {/* Empleados & Cuentas Creadas (Fusionado) */}
+              {/* Vendedores & Cuentas Creadas (Fusionado) */}
               {isTabVisible('users') && (
                 <button
                   id="admin-tab-users"
@@ -969,7 +971,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   }`}
                 >
                   <Users className="w-4 h-4" style={{ color: iconColor }} />
-                  Empleados & Cuentas
+                  Cuentas & Vendedores
                 </button>
               )}
 
