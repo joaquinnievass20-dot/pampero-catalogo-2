@@ -646,7 +646,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       localStorage.setItem('pampero_catalog_theme', JSON.stringify(theme));
       localStorage.setItem('pampero_theme_config', JSON.stringify(theme));
       localStorage.setItem('pampero_catalog_products', JSON.stringify(products));
-      localStorage.setItem('pampero_catalog_promos', JSON.stringify(promotions));
       localStorage.setItem('pampero_catalog_branches', JSON.stringify(branches));
       localStorage.setItem('pampero_discount_coupons', JSON.stringify(coupons));
       if (theme.customLogoUrl) {

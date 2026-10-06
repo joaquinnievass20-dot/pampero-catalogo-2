@@ -35,6 +35,9 @@ import {
   saveFirestoreStoreConfig,
   subscribeToFirestoreStoreConfig,
   subscribeToFirestoreProducts,
+  subscribeToFirestorePromotions,
+  saveFirestorePromotionsBatch,
+  seedInitialPromotionsIfEmpty,
   db,
   getFirebaseDb,
 } from './services/firebase';
@@ -184,9 +187,6 @@ export default function App() {
           }
           if (Array.isArray(firestoreConfig.promotions) && firestoreConfig.promotions.length > 0) {
             setPromotions(firestoreConfig.promotions);
-            try {
-              localStorage.setItem('pampero_catalog_promos', JSON.stringify(firestoreConfig.promotions));
-            } catch {}
           }
           if (Array.isArray(firestoreConfig.branches) && firestoreConfig.branches.length > 0) {
             setBranches(firestoreConfig.branches);
@@ -236,12 +236,22 @@ export default function App() {
     // Real-time Firestore configuration updates listener
     const unsubscribeFirestore = subscribeToFirestoreStoreConfig((remoteConfig) => {
       if (remoteConfig.theme) setTheme(remoteConfig.theme);
-      if (Array.isArray(remoteConfig.promotions) && remoteConfig.promotions.length > 0) setPromotions(remoteConfig.promotions);
       if (Array.isArray(remoteConfig.categories) && remoteConfig.categories.length > 0) setCategories(remoteConfig.categories);
       if (Array.isArray(remoteConfig.volumeDiscounts) && remoteConfig.volumeDiscounts.length > 0) setVolumeDiscounts(remoteConfig.volumeDiscounts);
       if (Array.isArray(remoteConfig.branches) && remoteConfig.branches.length > 0) setBranches(remoteConfig.branches);
       if (Array.isArray(remoteConfig.coupons)) setCoupons(remoteConfig.coupons);
       if (Array.isArray(remoteConfig.lookbook)) setLookbook(remoteConfig.lookbook);
+    });
+
+    // Seed initial promotions into dedicated Firestore collection 'promotions' if empty
+    seedInitialPromotionsIfEmpty(INITIAL_PROMOTIONS).catch(() => {});
+
+    // Real-time Firestore dedicated 'promotions' collection listener (onSnapshot)
+    // Synchronizes changes in live time for both the Admin Panel and public store views
+    const unsubscribePromotions = subscribeToFirestorePromotions((remotePromos) => {
+      if (Array.isArray(remotePromos) && remotePromos.length > 0) {
+        setPromotions(remotePromos);
+      }
     });
 
     // Real-time Firestore products listener for instant cross-device image & catalog sync
@@ -274,21 +284,15 @@ export default function App() {
 
     return () => {
       unsubscribeFirestore();
+      unsubscribePromotions();
       unsubscribeProducts();
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, []);
 
-  // 3. Promotions State
-  const [promotions, setPromotions] = useState<Promotion[]>(() => {
-    try {
-      const saved = localStorage.getItem('pampero_catalog_promos');
-      return saved ? JSON.parse(saved) : INITIAL_PROMOTIONS;
-    } catch {
-      return INITIAL_PROMOTIONS;
-    }
-  });
+  // 3. Promotions State (In-memory initial state from INITIAL_PROMOTIONS, synchronized via Firestore onSnapshot)
+  const [promotions, setPromotions] = useState<Promotion[]>(INITIAL_PROMOTIONS);
 
   // 4. Mendoza Branches State
   const [branches, setBranches] = useState<BranchLocation[]>(() => {
@@ -480,11 +484,8 @@ export default function App() {
 
   const handleUpdatePromotions = async (newPromos: Promotion[]) => {
     setPromotions(newPromos);
-    try {
-      localStorage.setItem('pampero_catalog_promos', JSON.stringify(newPromos));
-    } catch {}
-
-    // Persist to Cloud Firestore via Firebase SDK
+    // Persist strictly to Cloud Firestore via dedicated 'promotions' collection
+    await saveFirestorePromotionsBatch(newPromos);
     saveFirestoreStoreConfig({ promotions: newPromos });
   };
 

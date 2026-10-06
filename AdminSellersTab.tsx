@@ -93,27 +93,28 @@ export const AdminSellersTab: React.FC<AdminSellersTabProps> = ({ branches, trig
 
   // Real-time Firestore sync
   useEffect(() => {
+    let unsub = () => {};
     const firestoreDb = db || getFirebaseDb();
-    if (!firestoreDb) return;
+    if (firestoreDb) {
+      try {
+        unsub = onSnapshot(collection(firestoreDb, 'vendedores'), (snapshot) => {
+          if (!snapshot.empty) {
+            const remoteList: SellerRecord[] = snapshot.docs.map((d) => ({
+              id: d.id,
+              ...(d.data() as any),
+            }));
+            setSellers(remoteList);
+            try {
+              localStorage.setItem('pampero_sellers', JSON.stringify(remoteList));
+            } catch {}
+          }
+        }, (err) => {
+          console.warn('[FIRESTORE] Vendedores offline sync:', err.message);
+        });
+      } catch {}
+    }
 
-    try {
-      const unsub = onSnapshot(collection(firestoreDb, 'vendedores'), (snapshot) => {
-        if (!snapshot.empty) {
-          const remoteList: SellerRecord[] = snapshot.docs.map((d) => ({
-            id: d.id,
-            ...(d.data() as any),
-          }));
-          setSellers(remoteList);
-          try {
-            localStorage.setItem('pampero_sellers', JSON.stringify(remoteList));
-          } catch {}
-        }
-      }, (err) => {
-        console.warn('[FIRESTORE] Vendedores offline sync:', err.message);
-      });
-
-      return () => unsub();
-    } catch {}
+    return () => unsub();
   }, []);
 
   const saveToFirestoreAndStorage = async (newList: SellerRecord[]) => {

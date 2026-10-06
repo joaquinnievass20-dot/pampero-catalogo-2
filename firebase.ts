@@ -479,6 +479,238 @@ export function subscribeToFirestoreStoreConfig(
   }
 }
 
+// ==========================================
+// DEDICATED PROMOTIONS PERSISTENCE (Cloud Firestore & Storage)
+// ==========================================
+
+/**
+ * Uploads a banner image to Firebase Storage exclusively using uploadBytes and getDownloadURL.
+ * Saves directly into the 'promotions/' directory and returns the public download URL.
+ */
+export async function uploadPromotionBanner(
+  file: File,
+  promoId: string = `promo-${Date.now()}`
+): Promise<string> {
+  const stor = storage || getFirebaseStorage();
+  if (!stor) {
+    console.error('[STORAGE ERROR] Firebase Storage no está disponible.');
+    throw new Error('Firebase Storage no disponible.');
+  }
+
+  const timestamp = Date.now();
+  const originalName = file.name || 'banner.jpg';
+  const cleanName = originalName.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const filePath = `promotions/${promoId}_${timestamp}_${cleanName}`;
+  const storageRef = ref(stor, filePath);
+  const contentType = file.type || 'image/jpeg';
+
+  try {
+    const uploadResult = await uploadBytes(storageRef, file, { contentType });
+    const downloadUrl = await getDownloadURL(uploadResult.ref);
+    console.log('[FIREBASE STORAGE] Banner de promoción subido a Storage exitosamente:', downloadUrl);
+    return downloadUrl;
+  } catch (err: any) {
+    console.error('[FIREBASE STORAGE ERROR] Error subiendo banner a Storage:', err?.message || err);
+    throw err;
+  }
+}
+
+/**
+ * Saves a promotion document in the dedicated 'promotions' collection in Cloud Firestore.
+ * Preserves all typography properties (textColor, fontSize, subtitleColor, subtitleFontSize)
+ * and the public Firebase Storage banner URL.
+ */
+export async function saveFirestorePromotion(promo: Promotion): Promise<boolean> {
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return false;
+
+  try {
+    const promoId = promo.id || `promo-${Date.now()}`;
+    const docRef = doc(firestoreDb, 'promotions', promoId);
+
+    const payload = {
+      id: promoId,
+      title: promo.title || '',
+      subtitle: promo.subtitle || '',
+      badge: promo.badge || '',
+      bannerImage: promo.bannerImage || '',
+      categoryFilter: promo.categoryFilter || null,
+      tagFilter: promo.tagFilter || '',
+      discountOnly: Boolean(promo.discountOnly),
+      discountPercentage: Number(promo.discountPercentage) || 0,
+      associatedProductCodes: Array.isArray(promo.associatedProductCodes) ? promo.associatedProductCodes : [],
+      active: promo.active !== false,
+      textColor: promo.textColor || '#FFFFFF',
+      fontSize: promo.fontSize || '72px',
+      subtitleColor: promo.subtitleColor || '#DCD4C9',
+      subtitleFontSize: promo.subtitleFontSize || '16px',
+      primaryBtnText: promo.primaryBtnText || 'VER CATÁLOGO',
+      buttons: Array.isArray(promo.buttons)
+        ? promo.buttons.map((b) => ({
+            id: b.id,
+            label: b.label || '',
+            actionType: b.actionType || 'catalog',
+            actionValue: b.actionValue || '',
+            style: b.style || 'primary',
+          }))
+        : [],
+      updatedAt: new Date().toISOString(),
+    };
+
+    await setDoc(docRef, payload, { merge: true });
+    console.log('[FIREBASE] Promoción guardada en colección dedicated promotions:', promoId);
+    return true;
+  } catch (err: any) {
+    console.error('[FIREBASE ERROR] Error guardando promoción en Firestore:', err);
+    return false;
+  }
+}
+
+/**
+ * Deletes a promotion document from the dedicated 'promotions' collection in Cloud Firestore.
+ */
+export async function deleteFirestorePromotion(promoId: string): Promise<boolean> {
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return false;
+
+  try {
+    const docRef = doc(firestoreDb, 'promotions', promoId);
+    await deleteDoc(docRef);
+    console.log('[FIREBASE] Promoción eliminada de Firestore:', promoId);
+    return true;
+  } catch (err: any) {
+    console.error('[FIREBASE ERROR] Error eliminando promoción de Firestore:', err);
+    return false;
+  }
+}
+
+/**
+ * Saves multiple promotions in batch into the dedicated 'promotions' collection in Cloud Firestore.
+ */
+export async function saveFirestorePromotionsBatch(promos: Promotion[]): Promise<boolean> {
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb || !Array.isArray(promos)) return false;
+
+  try {
+    const batch = writeBatch(firestoreDb);
+    for (const promo of promos) {
+      const promoId = promo.id || `promo-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const docRef = doc(firestoreDb, 'promotions', promoId);
+      const payload = {
+        id: promoId,
+        title: promo.title || '',
+        subtitle: promo.subtitle || '',
+        badge: promo.badge || '',
+        bannerImage: promo.bannerImage || '',
+        categoryFilter: promo.categoryFilter || null,
+        tagFilter: promo.tagFilter || '',
+        discountOnly: Boolean(promo.discountOnly),
+        discountPercentage: Number(promo.discountPercentage) || 0,
+        associatedProductCodes: Array.isArray(promo.associatedProductCodes) ? promo.associatedProductCodes : [],
+        active: promo.active !== false,
+        textColor: promo.textColor || '#FFFFFF',
+        fontSize: promo.fontSize || '72px',
+        subtitleColor: promo.subtitleColor || '#DCD4C9',
+        subtitleFontSize: promo.subtitleFontSize || '16px',
+        primaryBtnText: promo.primaryBtnText || 'VER CATÁLOGO',
+        buttons: Array.isArray(promo.buttons)
+          ? promo.buttons.map((b) => ({
+              id: b.id,
+              label: b.label || '',
+              actionType: b.actionType || 'catalog',
+              actionValue: b.actionValue || '',
+              style: b.style || 'primary',
+            }))
+          : [],
+        updatedAt: new Date().toISOString(),
+      };
+      batch.set(docRef, payload, { merge: true });
+    }
+    await batch.commit();
+    console.log('[FIREBASE] Batch de promociones persistido en Firestore.');
+    return true;
+  } catch (err: any) {
+    console.error('[FIREBASE ERROR] Error guardando batch de promociones en Firestore:', err);
+    return false;
+  }
+}
+
+/**
+ * Real-time onSnapshot listener for the dedicated 'promotions' collection in Cloud Firestore.
+ * Notifies subscriber of all updates in live time across admin and public client views.
+ */
+export function subscribeToFirestorePromotions(
+  onUpdate: (promos: Promotion[]) => void,
+  onError?: (err: Error) => void
+): () => void {
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return () => {};
+
+  try {
+    const colRef = collection(firestoreDb, 'promotions');
+    const unsubscribe = onSnapshot(
+      colRef,
+      (snapshot) => {
+        if (!snapshot.empty) {
+          const list: Promotion[] = [];
+          snapshot.docs.forEach((d) => {
+            const data = d.data();
+            list.push({
+              id: d.id,
+              title: data.title || '',
+              subtitle: data.subtitle || '',
+              badge: data.badge || '',
+              bannerImage: data.bannerImage || '',
+              categoryFilter: data.categoryFilter || undefined,
+              tagFilter: data.tagFilter || '',
+              discountOnly: Boolean(data.discountOnly),
+              discountPercentage: Number(data.discountPercentage) || 0,
+              associatedProductCodes: Array.isArray(data.associatedProductCodes) ? data.associatedProductCodes : [],
+              active: data.active !== false,
+              textColor: data.textColor || '#FFFFFF',
+              fontSize: data.fontSize || '72px',
+              subtitleColor: data.subtitleColor || '#DCD4C9',
+              subtitleFontSize: data.subtitleFontSize || '16px',
+              primaryBtnText: data.primaryBtnText || 'VER CATÁLOGO',
+              buttons: Array.isArray(data.buttons) ? data.buttons : [],
+            });
+          });
+          onUpdate(list);
+        } else {
+          onUpdate([]);
+        }
+      },
+      (error) => {
+        console.warn('[FIREBASE] Advertencia en listener de promociones:', error.message);
+        if (onError) onError(error);
+      }
+    );
+    return unsubscribe;
+  } catch (err: any) {
+    console.warn('[FIREBASE] Error suscribiendo a colección promotions:', err);
+    return () => {};
+  }
+}
+
+/**
+ * Seeds initial promotions to Cloud Firestore if the 'promotions' collection is currently empty.
+ */
+export async function seedInitialPromotionsIfEmpty(initialPromos: Promotion[]): Promise<void> {
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb || !Array.isArray(initialPromos) || initialPromos.length === 0) return;
+
+  try {
+    const snap = await getDocs(collection(firestoreDb, 'promotions'));
+    if (snap.empty) {
+      console.log('[FIREBASE] Sembrando promociones iniciales en colección promotions...');
+      await saveFirestorePromotionsBatch(initialPromos);
+      console.log('[FIREBASE] Promociones iniciales sembradas exitosamente en Firestore.');
+    }
+  } catch (err) {
+    console.warn('[FIREBASE] Aviso verificando o sembrando promociones iniciales:', err);
+  }
+}
+
 
 import { 
   INITIAL_CRM_ORDERS, 
@@ -731,16 +963,21 @@ export const subscribeToSupplierOrders = (onUpdate: (orders: any[]) => void) => 
 
   const firestoreDb = db || getFirebaseDb();
   if (!firestoreDb) return () => {};
-  const colRef = collection(firestoreDb, 'crm_pedidos_proveedor');
-  return onSnapshot(colRef, (snapshot) => {
-    if (!snapshot.empty) {
-      const orders = snapshot.docs.map(doc => doc.data() as any);
-      localStorage.setItem('pampero_supplier_orders', JSON.stringify(orders));
-      onUpdate(orders);
-    }
-  }, (error) => {
-    console.warn('Error listening to supplier orders:', error);
-  });
+  try {
+    const colRef = collection(firestoreDb, 'crm_pedidos_proveedor');
+    return onSnapshot(colRef, (snapshot) => {
+      if (!snapshot.empty) {
+        const orders = snapshot.docs.map(doc => doc.data() as any);
+        localStorage.setItem('pampero_supplier_orders', JSON.stringify(orders));
+        onUpdate(orders);
+      }
+    }, (error) => {
+      console.warn('Error listening to supplier orders:', error);
+    });
+  } catch (err) {
+    console.warn('Exception in subscribeToSupplierOrders:', err);
+    return () => {};
+  }
 };
 
 // --- PORTAL DE TALLES EMPRESARIAL ---
@@ -761,7 +998,7 @@ export const saveSizingCampaign = async (campaignData: any) => {
   }
 };
 
-export const subscribeToSizingCampaigns = (onUpdate: (campaigns: any[]) => void) => {
+export const subscribeToSizingCampaigns = (onUpdate: (campaigns: any[]) => void): () => void => {
   try {
     const local = localStorage.getItem('pampero_sizing_campaigns');
     if (local) {
@@ -777,16 +1014,21 @@ export const subscribeToSizingCampaigns = (onUpdate: (campaigns: any[]) => void)
 
   const firestoreDb = db || getFirebaseDb();
   if (!firestoreDb) return () => {};
-  const colRef = collection(firestoreDb, 'crm_sizing_campaigns');
-  return onSnapshot(colRef, (snapshot) => {
-    if (!snapshot.empty) {
-      const campaigns = snapshot.docs.map(doc => doc.data() as any);
-      localStorage.setItem('pampero_sizing_campaigns', JSON.stringify(campaigns));
-      onUpdate(campaigns);
-    }
-  }, (error) => {
-    console.warn('Error listening to sizing campaigns:', error);
-  });
+  try {
+    const colRef = collection(firestoreDb, 'crm_sizing_campaigns');
+    return onSnapshot(colRef, (snapshot) => {
+      if (!snapshot.empty) {
+        const campaigns = snapshot.docs.map(doc => doc.data() as any);
+        localStorage.setItem('pampero_sizing_campaigns', JSON.stringify(campaigns));
+        onUpdate(campaigns);
+      }
+    }, (error) => {
+      console.warn('Error listening to sizing campaigns:', error);
+    });
+  } catch (err) {
+    console.warn('Exception in subscribeToSizingCampaigns:', err);
+    return () => {};
+  }
 };
 
 export const saveEmployeeSizeEntry = async (entryData: any) => {
@@ -806,7 +1048,7 @@ export const saveEmployeeSizeEntry = async (entryData: any) => {
   }
 };
 
-export const subscribeToEmployeeSizeEntries = (campaignId: string, onUpdate: (entries: any[]) => void) => {
+export const subscribeToEmployeeSizeEntries = (campaignId: string, onUpdate: (entries: any[]) => void): () => void => {
   try {
     const local = localStorage.getItem('pampero_employee_sizes');
     let list = INITIAL_EMPLOYEE_SIZES;
@@ -822,17 +1064,22 @@ export const subscribeToEmployeeSizeEntries = (campaignId: string, onUpdate: (en
 
   const firestoreDb = db || getFirebaseDb();
   if (!firestoreDb) return () => {};
-  const colRef = collection(firestoreDb, 'crm_employee_sizes');
-  return onSnapshot(colRef, (snapshot) => {
-    if (!snapshot.empty) {
-      const all = snapshot.docs.map(doc => doc.data() as any);
-      localStorage.setItem('pampero_employee_sizes', JSON.stringify(all));
-      const filtered = campaignId === 'all' ? all : all.filter(e => e.campaignId === campaignId);
-      onUpdate(filtered);
-    }
-  }, (error) => {
-    console.warn('Error listening to employee size entries:', error);
-  });
+  try {
+    const colRef = collection(firestoreDb, 'crm_employee_sizes');
+    return onSnapshot(colRef, (snapshot) => {
+      if (!snapshot.empty) {
+        const all = snapshot.docs.map(doc => doc.data() as any);
+        localStorage.setItem('pampero_employee_sizes', JSON.stringify(all));
+        const filtered = campaignId === 'all' ? all : all.filter(e => e.campaignId === campaignId);
+        onUpdate(filtered);
+      }
+    }, (error) => {
+      console.warn('Error listening to employee size entries:', error);
+    });
+  } catch (err) {
+    console.warn('Exception in subscribeToEmployeeSizeEntries:', err);
+    return () => {};
+  }
 };
 
 // ==========================================
@@ -1188,9 +1435,8 @@ export async function saveCRMExpense(expense: CRMExpense): Promise<{ success: bo
       await setDoc(docRef, cleaned, { merge: true });
       return { success: true, id: cleanExpense.id };
     } catch (err: any) {
-      console.warn('[FIREBASE] saveCRMExpense warning (saved to local state):', err?.message || err);
-      // Return success because local cache / optimistic update holds it
-      return { success: true, id: cleanExpense.id, error: err?.message };
+      console.warn('[FIREBASE] saveCRMExpense warning:', err?.message || err);
+      return { success: false, id: cleanExpense.id, error: err?.message || 'Error guardando en Firestore' };
     }
   }
   return { success: true, id: cleanExpense.id };
@@ -1210,8 +1456,8 @@ export async function deleteCRMExpense(expenseId: string): Promise<{ success: bo
       await deleteDoc(docRef);
       return { success: true };
     } catch (err: any) {
-      console.warn('[FIREBASE] deleteCRMExpense warning (deleted from local state):', err?.message || err);
-      return { success: true, error: err?.message };
+      console.warn('[FIREBASE] deleteCRMExpense error:', err?.message || err);
+      return { success: false, error: err?.message || 'Error eliminando en Firestore' };
     }
   }
   return { success: true };

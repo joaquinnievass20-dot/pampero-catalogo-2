@@ -163,7 +163,9 @@ export const CRMCostsTab: React.FC<CRMCostsTabProps> = ({
   const filteredExpenses = useMemo(() => {
     if (!isAdmin) return [];
     return expenses.filter((item) => {
-      const matchBranch = selectedBranch === 'todas' || item.branch.toLowerCase() === selectedBranch.toLowerCase();
+      const expBranchNorm = (item.branch || '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      const selBranchNorm = selectedBranch.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      const matchBranch = selectedBranch === 'todas' || expBranchNorm === selBranchNorm || expBranchNorm.includes(selBranchNorm) || selBranchNorm.includes(expBranchNorm);
       const matchMonth = selectedMonthYear === 'todos' || (item.date && item.date.startsWith(selectedMonthYear));
       const matchSearch = !searchDetail.trim() || 
         (item.detail || '').toLowerCase().includes(searchDetail.toLowerCase()) ||
@@ -203,16 +205,20 @@ export const CRMCostsTab: React.FC<CRMCostsTabProps> = ({
       totalGeneral += amt;
 
       const br = (exp.branch || '').toLowerCase();
+      const brNorm = br.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
       const matched = dynamicBranches.find(
-        (b) => b.toLowerCase() === br || br.includes(b.toLowerCase()) || b.toLowerCase().includes(br)
+        (b) => {
+          const bNorm = b.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+          return bNorm === brNorm || brNorm.includes(bNorm) || bNorm.includes(brNorm);
+        }
       );
       if (matched) {
         branchTotals[matched] = (branchTotals[matched] || 0) + amt;
       }
 
-      if (br.includes('maip')) totalMaipu += amt;
-      else if (br.includes('ciudad')) totalCiudad += amt;
-      else if (br.includes('luj')) totalLujan += amt;
+      if (brNorm.includes('maip')) totalMaipu += amt;
+      else if (brNorm.includes('ciudad')) totalCiudad += amt;
+      else if (brNorm.includes('luj')) totalLujan += amt;
 
       if (exp.type === 'Fijo') {
         totalFijos += amt;
@@ -283,22 +289,25 @@ export const CRMCostsTab: React.FC<CRMCostsTabProps> = ({
           : new Date().toISOString(),
       });
 
-      // Optimistic local update for admin
+      // Optimistic local update for admin only (employees are write-only)
       if (isAdmin) {
         setExpenses((prev) => [expenseData, ...prev.filter((x) => x.id !== expenseData.id)]);
       }
 
-      // Write-only push to crm_expenses
-      await saveCRMExpense(expenseData);
+      // Write-only push to crm_expenses via Firestore SDK (setDoc)
+      const res = await saveCRMExpense(expenseData);
+      if (res && res.error && !res.success) {
+        throw new Error(res.error);
+      }
 
-      // Clean form state
+      // Clean form state strictly
       setFormDetail('');
       setFormAmount('');
       setFormDate(new Date().toISOString().split('T')[0]);
 
       if (isEditingId) {
         setIsEditingId(null);
-        setFeedbackNotice({ type: 'success', message: '¡Gasto actualizado con éxito!' });
+        setFeedbackNotice({ type: 'success', message: '¡Gasto actualizado con éxito en Firestore!' });
       } else {
         setFeedbackNotice({ type: 'success', message: '¡Gasto registrado con éxito!' });
       }
@@ -306,7 +315,7 @@ export const CRMCostsTab: React.FC<CRMCostsTabProps> = ({
       setTimeout(() => setFeedbackNotice(null), 3500);
     } catch (err: any) {
       console.error('[CRMCostsTab] Error al guardar gasto:', err);
-      setFeedbackNotice({ type: 'error', message: `Error al guardar: ${err.message || 'Error de conexión'}` });
+      setFeedbackNotice({ type: 'error', message: `Error al guardar: ${err?.message || 'Error de conexión con Firestore'}` });
     } finally {
       setIsSubmitting(false);
     }
@@ -340,12 +349,17 @@ export const CRMCostsTab: React.FC<CRMCostsTabProps> = ({
     setExpenses((prev) => prev.filter((item) => item.id !== id));
 
     try {
-      await deleteCRMExpense(id);
+      const res = await deleteCRMExpense(id);
+      if (res && res.error && !res.success) {
+        throw new Error(res.error);
+      }
       setFeedbackNotice({ type: 'success', message: 'Gasto eliminado exitosamente de Firestore.' });
       setTimeout(() => setFeedbackNotice(null), 3000);
     } catch (err: any) {
-      console.error('[CRMCostsTab] Error eliminando gasto:', err);
-      setFeedbackNotice({ type: 'error', message: 'No se pudo eliminar en Firestore pero se removió de la vista local.' });
+      console.error('[CRMCostsTab] Error eliminando gasto en Firestore:', err);
+      // En caso de fallo al eliminar, forzar la actualización del estado local de React para destrabar la interfaz
+      setExpenses((prev) => prev.filter((item) => item.id !== id));
+      setFeedbackNotice({ type: 'error', message: 'No se pudo eliminar en Firestore pero se actualizó la vista local para destrabar la interfaz.' });
       setTimeout(() => setFeedbackNotice(null), 3500);
     }
   };

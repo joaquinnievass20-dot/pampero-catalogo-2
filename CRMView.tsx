@@ -100,7 +100,7 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
   }, []);
 
   // RBAC Access Control: Check if logged in staff has CRM permissions
-  const currentEmployee: EmployeeAccount | null = (() => {
+  const currentEmployee: EmployeeAccount | null = React.useMemo(() => {
     if (userSession?.role !== 'employee') return null;
     try {
       const saved = localStorage.getItem('pampero_employees');
@@ -112,7 +112,7 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
       }
     } catch {}
     return null;
-  })();
+  }, [userSession?.id, userSession?.email, userSession?.role]);
 
   const isStaff = userSession?.role === 'admin' || userSession?.role === 'employee';
   const hasCrmPermission = userSession?.role === 'admin' || (currentEmployee?.allowedTabs ? currentEmployee.allowedTabs.includes('crm') : true);
@@ -127,7 +127,7 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
   const assignedSellerName = currentEmployee?.sellerName || userSession?.clientData?.fullName || '';
 
   // Dynamic sellers list from localStorage / store
-  const sellersList: Seller[] = (() => {
+  const sellersList: Seller[] = React.useMemo(() => {
     try {
       const saved = localStorage.getItem('pampero_sellers');
       if (saved) {
@@ -140,18 +140,19 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
       { id: 'sel-2', name: 'Guada', branch: 'Ciudad', active: true },
       { id: 'sel-3', name: 'Carolina', branch: 'Luján', active: true },
     ];
-  })();
+  }, []);
 
   const activeStaffUser = userSession?.clientData?.fullName || (userSession?.role === 'admin' ? 'Administrador General' : userSession?.email?.split('@')[0] || 'Personal Pampero');
 
   // Allowed CRM tabs based on Admin or Employee Permissions
+  const crmTabsStr = currentEmployee?.crmTabs?.join(',') || '';
   const allowedCrmTabs: ('visits' | 'board' | 'suppliers' | 'costs')[] = React.useMemo(() => {
     if (userSession?.role === 'admin') return ['visits', 'board', 'suppliers', 'costs'];
     if (currentEmployee?.crmTabs && Array.isArray(currentEmployee.crmTabs) && currentEmployee.crmTabs.length > 0) {
       return currentEmployee.crmTabs as ('visits' | 'board' | 'suppliers' | 'costs')[];
     }
     return ['visits', 'board', 'suppliers'];
-  }, [userSession?.role, currentEmployee?.crmTabs]);
+  }, [userSession?.role, crmTabsStr]);
 
   const [activeTab, setActiveTab] = useState<'visits' | 'board' | 'suppliers' | 'costs'>('visits');
 
