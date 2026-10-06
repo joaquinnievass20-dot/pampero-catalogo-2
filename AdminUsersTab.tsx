@@ -272,7 +272,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
 
   // Modal para Crear Nueva Cuenta con Asignación de Clave
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [newAccountType, setNewAccountType] = useState<'empresa' | 'consumidor' | 'empleado'>('empresa');
+  const [newAccountType, setNewAccountType] = useState<'empresa' | 'consumidor' | 'empleado' | 'admin'>('empresa');
   const [newAccountName, setNewAccountName] = useState('');
   const [newAccountRepName, setNewAccountRepName] = useState('');
   const [newAccountEmail, setNewAccountEmail] = useState('');
@@ -404,10 +404,13 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
     }
 
     const userId = `usr-${Date.now()}`;
+    const determinedRole: 'admin' | 'employee' | 'client' = 
+      newAccountType === 'admin' ? 'admin' : (newAccountType === 'empleado' ? 'employee' : 'client');
+
     const newUser: RegisteredUser = {
       id: userId,
       type: newAccountType,
-      role: newAccountType === 'empleado' ? 'employee' : 'client',
+      role: determinedRole,
       name: nameTrimmed,
       repName: newAccountType === 'empresa' ? newAccountRepName.trim() : undefined,
       email: emailTrimmed,
@@ -417,12 +420,14 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
       cuitOrDni: newAccountCuit.trim() || 'Sin registrar',
       address: newAccountAddress.trim() || 'Gran Mendoza',
       city: newAccountCity.trim() || 'Gran Mendoza',
-      branch: newAccountType === 'empleado' ? newAccountBranch : undefined,
+      branch: newAccountType === 'empleado' ? newAccountBranch : (newAccountType === 'admin' ? 'Administración Central' : undefined),
       sellerRole: newAccountType === 'empleado' ? 'vendedor' : undefined,
-      pricingTier: newAccountType === 'empresa' ? 'Corporativo / Mayorista' : 'Consumidor Final',
+      pricingTier: newAccountType === 'empresa' ? 'Corporativo / Mayorista' : (newAccountType === 'admin' ? 'Administrador' : 'Consumidor Final'),
       status: 'active',
       createdAt: new Date().toISOString().split('T')[0],
-      notes: newAccountType === 'empleado' ? `Operador en sucursal ${newAccountBranch}` : 'Cuenta creada por administrador',
+      notes: newAccountType === 'admin' 
+        ? 'Cuenta administradora con acceso y permisos totales' 
+        : (newAccountType === 'empleado' ? `Operador en sucursal ${newAccountBranch}` : 'Cuenta creada por administrador'),
     };
 
     // Actualizar estado local inmediatamente
@@ -1049,7 +1054,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
                   <label className="block text-[11px] font-bold uppercase tracking-wider text-[#18231C] mb-1.5">
                     1. Elegir Rol de la Cuenta:
                   </label>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     <button
                       type="button"
                       onClick={() => setNewAccountType('empresa')}
@@ -1086,7 +1091,20 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
                       }`}
                     >
                       <UserCheck className="w-5 h-5 text-amber-700" />
-                      <span className="text-xs">Empleado / Vendedor</span>
+                      <span className="text-xs">Empleado / Ventas</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setNewAccountType('admin')}
+                      className={`p-2.5 border rounded-xs flex flex-col items-center justify-center gap-1 text-center cursor-pointer transition-all ${
+                        newAccountType === 'admin'
+                          ? 'border-[#B9522F] bg-purple-50 text-purple-950 font-bold shadow-xs ring-1 ring-purple-400'
+                          : 'border-[#DCD4C9] bg-[#FAF8F5] text-[#6F6860] hover:bg-white'
+                      }`}
+                    >
+                      <ShieldCheck className="w-5 h-5 text-purple-700" />
+                      <span className="text-xs">Administrador</span>
                     </button>
                   </div>
                 </div>

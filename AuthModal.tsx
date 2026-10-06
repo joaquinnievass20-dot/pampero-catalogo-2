@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { collection, getDocs } from 'firebase/firestore';
+import { getFirebaseDb } from '../services/firebase';
 import { UserSession, ClientType, ConsumerClient, CompanyClient } from '../types';
 import { PamperoLogo } from './PamperoLogo';
 import { 
@@ -123,14 +125,54 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     });
   };
 
-  const handleAdminSubmit = (e: React.FormEvent) => {
+  const handleAdminSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setAdminError('');
 
     const userClean = adminUser.trim().toLowerCase();
     const passClean = adminPass.trim();
 
-    // Check Employee accounts
+    // 1. Check direct Cloud Firestore registered accounts first (Admins, Employees, Clients)
+    try {
+      const firestoreDb = getFirebaseDb();
+      if (firestoreDb) {
+        const snap = await getDocs(collection(firestoreDb, 'usuarios'));
+        if (!snap.empty) {
+          const matchedDoc = snap.docs.find((d) => {
+            const data = d.data();
+            const emailMatch = (data.email || '').toLowerCase().trim() === userClean;
+            const passMatch = (data.password && data.password === passClean) || 
+                              (data.initialPassword && data.initialPassword === passClean);
+            return emailMatch && passMatch;
+          });
+          if (matchedDoc) {
+            const matched = matchedDoc.data();
+            const isAdminRole = matched.role === 'admin' || matched.type === 'admin';
+            const isStaff = matched.role === 'employee' || matched.type === 'empleado' || matched.type === 'vendedor';
+            const determinedRole: 'admin' | 'employee' | 'client' = 
+              isAdminRole ? 'admin' : (isStaff ? 'employee' : 'client');
+            onLogin({
+              id: matchedDoc.id,
+              role: determinedRole,
+              email: matched.email,
+              clientType: matched.type === 'empresa' ? 'empresa' : 'consumidor',
+              clientData: {
+                fullName: matched.repName || matched.name,
+                companyName: matched.type === 'empresa' ? matched.name : undefined,
+                cuit: matched.cuitOrDni,
+                phone: matched.phone,
+              },
+              loggedAt: new Date().toISOString(),
+            });
+            return;
+          }
+        }
+      }
+    } catch (_fErr) {
+      // Continue to local fallbacks
+    }
+
+    // 2. Check Employee accounts
     try {
       const empSaved = localStorage.getItem('pampero_employees');
       const empList: any[] = empSaved 
@@ -175,10 +217,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           return emailMatch && passMatch;
         });
         if (matched) {
+          const isAdminRole = matched.role === 'admin' || matched.type === 'admin';
           const isStaff = matched.role === 'employee' || matched.type === 'empleado' || matched.type === 'vendedor';
+          const determinedRole: 'admin' | 'employee' | 'client' = 
+            isAdminRole ? 'admin' : (isStaff ? 'employee' : 'client');
           onLogin({
             id: matched.id,
-            role: isStaff ? 'employee' : 'client',
+            role: determinedRole,
             email: matched.email,
             clientType: matched.type === 'empresa' ? 'empresa' : 'consumidor',
             clientData: {

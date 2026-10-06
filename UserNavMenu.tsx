@@ -197,7 +197,7 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
 
               {/* Menu Links */}
               <div className="p-1.5 space-y-0.5">
-                {/* Staff Main Hub - Botón Principal */}
+                {/* 1. STAFF ONLY (admin / employee): Hub de Trabajo Interno */}
                 {(userSession.role === 'admin' || userSession.role === 'employee') && onOpenHub && (
                   <button
                     type="button"
@@ -209,7 +209,7 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
                   >
                     <div className="flex items-center gap-2">
                       <Compass className="w-4 h-4 text-[#B9522F]" />
-                      <span>Menú Principal</span>
+                      <span>Menú Principal de Trabajo</span>
                     </div>
                     <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded-xs bg-[#B9522F] text-white">
                       Hub
@@ -217,8 +217,48 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
                   </button>
                 )}
 
-                {/* Armador de Uniformes */}
-                {onOpenUniformSimulator && (
+                {/* 2. ADMIN ONLY: Panel de Control General */}
+                {userSession.role === 'admin' && onOpenAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDropdownOpen(false);
+                      onOpenAdmin();
+                    }}
+                    className="w-full flex items-center justify-between px-3 py-2 text-left text-xs font-bold text-[#18231C] hover:bg-[#FAF8F5] rounded-xs transition-colors cursor-pointer group"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Settings className="w-4 h-4" style={{ color: accent }} />
+                      <span>Panel de Control (Admin)</span>
+                    </div>
+                    <span 
+                      style={{ backgroundColor: `${accent}20`, color: primaryBg }}
+                      className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded-xs"
+                    >
+                      Admin
+                    </span>
+                  </button>
+                )}
+
+                {/* 3. STAFF ONLY (admin / employee): Acceso Directo a CRM si disponible */}
+                {(userSession.role === 'admin' || userSession.role === 'employee') && onOpenCRM && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDropdownOpen(false);
+                      onOpenCRM();
+                    }}
+                    className="w-full flex items-center justify-between px-3 py-2 text-left text-xs font-bold text-[#18231C] hover:bg-[#FAF8F5] rounded-xs transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2">
+                      <LayoutDashboard className="w-4 h-4 text-[#B9522F]" />
+                      <span>CRM Pampero</span>
+                    </div>
+                  </button>
+                )}
+
+                {/* 4. CLIENT & ADMIN ONLY: Armador de Uniformes */}
+                {(userSession.role === 'client' || userSession.role === 'admin') && onOpenUniformSimulator && (
                   <button
                     type="button"
                     onClick={() => {
@@ -237,8 +277,8 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
                   </button>
                 )}
 
-                {/* Portal de Talles */}
-                {onOpenSizingPortal && (
+                {/* 5. CLIENT (Empresas) & ADMIN: Portal de Talles */}
+                {(userSession.role === 'admin' || (userSession.role === 'client' && userSession.clientType === 'empresa')) && onOpenSizingPortal && (
                   <button
                     type="button"
                     onClick={() => {
@@ -254,31 +294,8 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
                   </button>
                 )}
 
-                {/* Admin or Employee Panel (Opción Secundaria) */}
-                {(userSession.role === 'admin' || userSession.role === 'employee') && onOpenAdmin && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDropdownOpen(false);
-                      onOpenAdmin();
-                    }}
-                    className="w-full flex items-center justify-between px-3 py-2 text-left text-xs font-bold text-[#18231C] hover:bg-[#FAF8F5] rounded-xs transition-colors cursor-pointer group"
-                  >
-                    <div className="flex items-center gap-2">
-                      <Settings className="w-4 h-4" style={{ color: accent }} />
-                      <span>{userSession.role === 'employee' ? 'Panel de Empleado' : 'Panel de Control'}</span>
-                    </div>
-                    <span 
-                      style={{ backgroundColor: `${accent}20`, color: primaryBg }}
-                      className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded-xs"
-                    >
-                      Admin
-                    </span>
-                  </button>
-                )}
-
-                {/* Profile / Contact Info */}
-                {onOpenProfile && (
+                {/* 6. CLIENT ONLY: Perfil & Datos de Entrega */}
+                {userSession.role === 'client' && onOpenProfile && (
                   <button
                     type="button"
                     onClick={() => {
@@ -292,28 +309,30 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
                   </button>
                 )}
 
-                {/* Quote history / cart access - Mi Pedido */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setDropdownOpen(false);
-                    onOpenCart();
-                  }}
-                  className="w-full flex items-center justify-between px-3 py-2 text-left text-xs text-[#4A453F] hover:text-[#18231C] hover:bg-[#FAF8F5] rounded-xs transition-colors cursor-pointer"
-                >
-                  <div className="flex items-center gap-2">
-                    <ShoppingBag className="w-4 h-4 text-[#8C827A]" />
-                    <span>Mi Pedido</span>
-                  </div>
-                  {cartCount > 0 && (
-                    <span 
-                      style={{ backgroundColor: accent, color: '#18231C' }}
-                      className="text-[10px] font-black px-1.5 py-0.2 rounded-full"
-                    >
-                      {cartCount}
-                    </span>
-                  )}
-                </button>
+                {/* 7. CLIENT ONLY: Mi Pedido */}
+                {userSession.role === 'client' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDropdownOpen(false);
+                      onOpenCart();
+                    }}
+                    className="w-full flex items-center justify-between px-3 py-2 text-left text-xs text-[#4A453F] hover:text-[#18231C] hover:bg-[#FAF8F5] rounded-xs transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2">
+                      <ShoppingBag className="w-4 h-4 text-[#8C827A]" />
+                      <span>Mi Pedido</span>
+                    </div>
+                    {cartCount > 0 && (
+                      <span 
+                        style={{ backgroundColor: accent, color: '#18231C' }}
+                        className="text-[10px] font-black px-1.5 py-0.2 rounded-full"
+                      >
+                        {cartCount}
+                      </span>
+                    )}
+                  </button>
+                )}
               </div>
 
               {/* Logout Footer */}

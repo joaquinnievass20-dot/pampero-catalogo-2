@@ -36,6 +36,7 @@ import {
   subscribeToFirestoreStoreConfig,
   subscribeToFirestoreProducts,
   subscribeToFirestorePromotions,
+  subscribeToFirestoreLookbook,
   saveFirestorePromotionsBatch,
   seedInitialPromotionsIfEmpty,
   db,
@@ -227,6 +228,7 @@ export default function App() {
 
   // Sync products and store configuration in real-time across all devices and tabs
   useEffect(() => {
+    console.log('%c🚀 PAMPERO GRAN MENDOZA v2.5.0-LIVE | Firestore Realtime, Storage & RBAC Activo', 'background: #18231C; color: #EAB308; font-weight: bold; font-size: 13px; padding: 4px 8px; border-radius: 4px;');
     // 0. Ensure Master Admin Account ALWAYS exists (even on clean state / Vercel deployment)
     ensureMasterAdminInitialized();
 
@@ -251,6 +253,13 @@ export default function App() {
     const unsubscribePromotions = subscribeToFirestorePromotions((remotePromos) => {
       if (Array.isArray(remotePromos) && remotePromos.length > 0) {
         setPromotions(remotePromos);
+      }
+    });
+
+    // Real-time Firestore dedicated 'lookbook' listener (onSnapshot)
+    const unsubscribeLookbook = subscribeToFirestoreLookbook((remoteLooks) => {
+      if (Array.isArray(remoteLooks) && remoteLooks.length > 0) {
+        setLookbook(remoteLooks);
       }
     });
 
@@ -285,6 +294,7 @@ export default function App() {
     return () => {
       unsubscribeFirestore();
       unsubscribePromotions();
+      unsubscribeLookbook();
       unsubscribeProducts();
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
@@ -928,8 +938,8 @@ export default function App() {
           />
         )}
 
-        {/* VIEW 6: ADMIN PANEL (Protected with password) */}
-        {viewMode === 'admin' && (
+        {/* VIEW 6: ADMIN PANEL (Protected strictly for role 'admin') */}
+        {viewMode === 'admin' && userSession?.role === 'admin' && (
           <AdminPanel
             isOpen={true}
             products={products}
