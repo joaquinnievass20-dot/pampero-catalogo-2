@@ -1,56 +1,6 @@
 import { Product, Promotion, BranchLocation, ThemeConfig, DiscountCoupon, QuantityDiscountRule } from '../types';
 
-export const INITIAL_PROMOTIONS: Promotion[] = [
-  {
-    id: 'promo-2026',
-    title: 'Indumentaria que aguanta el trabajo',
-    subtitle: 'Catálogo digital de exhibición. Hombre, mujer, infantil y venta corporativa, con fichas de producto, talles, colores y promociones vigentes.',
-    badge: 'TEMPORADA 2026',
-    bannerImage: '/hero.jpg',
-    tagFilter: 'Temporada 2026',
-    active: true,
-    associatedProductCodes: ['PAM-URB-01', 'PAM-URB-02', 'PAM-BOM-001', 'PAM-MUJ-01'],
-    textColor: '#FFFFFF',
-    fontSize: '72px',
-    subtitleColor: '#DCD4C9',
-    subtitleFontSize: '16px',
-    primaryBtnText: 'VER CATÁLOGO',
-  },
-  {
-    id: 'promo-corporativo',
-    title: 'Dotaciones & Venta Mayorista',
-    subtitle: 'Precios especiales por bulto y bordado institucional para empresas e industrias.',
-    badge: 'DESCUENTOS POR VOLUMEN',
-    bannerImage: 'https://images.unsplash.com/photo-1504307651254-35680f356dfd?auto=format&fit=crop&w=1600&q=80',
-    categoryFilter: 'Venta Corporativa',
-    tagFilter: 'Venta Corporativa',
-    discountOnly: false,
-    active: true,
-    associatedProductCodes: ['PAM-IND-01', 'PAM-IND-03', 'PAM-IND-04', 'PAM-CAL-001'],
-    textColor: '#FFFFFF',
-    fontSize: '64px',
-    subtitleColor: '#DCD4C9',
-    subtitleFontSize: '16px',
-    primaryBtnText: 'VENTA CORPORATIVA',
-  },
-  {
-    id: 'promo-rural',
-    title: 'Especial Campo & Tradición',
-    subtitle: 'Bombachas de campo reforzadas, fajas y calzado rústico de máxima resistencia.',
-    badge: '15% OFF CONTADO',
-    bannerImage: 'https://images.unsplash.com/photo-1516455590571-18256e5bb9ff?auto=format&fit=crop&w=1600&q=80',
-    tagFilter: 'Especial Campo',
-    discountOnly: true,
-    discountPercentage: 15,
-    active: true,
-    associatedProductCodes: ['PAM-BOM-002', 'PAM-MUJ-02', 'PMP-10007'],
-    textColor: '#FFFFFF',
-    fontSize: '64px',
-    subtitleColor: '#DCD4C9',
-    subtitleFontSize: '16px',
-    primaryBtnText: 'VER ESPECIAL CAMPO',
-  },
-];
+export const INITIAL_PROMOTIONS: Promotion[] = [];
 
 export const INITIAL_BRANCHES: BranchLocation[] = [
   {

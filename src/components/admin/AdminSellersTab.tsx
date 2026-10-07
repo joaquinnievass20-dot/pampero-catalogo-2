@@ -514,7 +514,7 @@ export const AdminSellersTab: React.FC<AdminSellersTabProps> = ({ branches, trig
                   required
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="Ej: Carolina"
+                  placeholder="Ingresar nombre completo"
                   className="w-full px-3 py-2 border border-[#DCD4C9] rounded-xs outline-none focus:border-[#B9522F]"
                 />
               </div>
@@ -547,7 +547,7 @@ export const AdminSellersTab: React.FC<AdminSellersTabProps> = ({ branches, trig
                   type="text"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
-                  placeholder="261 498-5544"
+                  placeholder="Ej: 2612345678"
                   className="w-full px-3 py-2 border border-[#DCD4C9] rounded-xs outline-none focus:border-[#B9522F]"
                 />
               </div>
@@ -558,7 +558,7 @@ export const AdminSellersTab: React.FC<AdminSellersTabProps> = ({ branches, trig
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="vendedor@pampero.com.ar"
+                  placeholder="correo@empresa.com"
                   className="w-full px-3 py-2 border border-[#DCD4C9] rounded-xs outline-none focus:border-[#B9522F]"
                 />
               </div>

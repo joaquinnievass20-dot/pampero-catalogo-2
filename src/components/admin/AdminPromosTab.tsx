@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Promotion, Product, PromotionButton } from '../../types';
 import { 
   Tag, 
@@ -25,6 +25,7 @@ import {
   uploadPromotionBanner,
   saveFirestorePromotion,
   deleteFirestorePromotion,
+  subscribeToFirestorePromotions,
 } from '../../services/firebase';
 
 interface AdminPromosTabProps {
@@ -49,6 +50,16 @@ export const AdminPromosTab: React.FC<AdminPromosTabProps> = ({
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Sincronización en vivo exclusiva con Cloud Firestore mediante onSnapshot
+  useEffect(() => {
+    const unsub = subscribeToFirestorePromotions((remotePromos) => {
+      if (Array.isArray(remotePromos) && remotePromos.length > 0) {
+        onUpdatePromotions(remotePromos);
+      }
+    });
+    return () => unsub();
+  }, []);
 
   // Form State
   const [form, setForm] = useState<Partial<Promotion>>({
@@ -218,6 +229,11 @@ export const AdminPromosTab: React.FC<AdminPromosTabProps> = ({
     e.preventDefault();
     if (!form.title?.trim()) {
       alert('Por favor ingresá el título de la promoción.');
+      return;
+    }
+
+    if (form.bannerImage && form.bannerImage.startsWith('data:image/')) {
+      alert('Prohibido guardar imágenes en Base64. Por favor subí la imagen mediante el botón oficial de Firebase Storage (uploadBytes) o ingresá una URL pública válida.');
       return;
     }
 

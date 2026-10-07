@@ -43,8 +43,8 @@ interface AdminUsersTabProps {
 export const INITIAL_REGISTERED_USERS: RegisteredUser[] = [
   {
     ...MASTER_ADMIN_USER,
-    password: 'Pampero2026',
-    initialPassword: 'Pampero2026',
+    password: 'Jn05022000',
+    initialPassword: 'Jn05022000',
   },
   // Vendedores & Equipo Comercial
   {
@@ -272,7 +272,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
 
   // Modal para Crear Nueva Cuenta con Asignación de Clave
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [newAccountType, setNewAccountType] = useState<'empresa' | 'consumidor' | 'empleado'>('empresa');
+  const [newAccountType, setNewAccountType] = useState<'empresa' | 'consumidor' | 'empleado' | 'admin'>('empresa');
   const [newAccountName, setNewAccountName] = useState('');
   const [newAccountRepName, setNewAccountRepName] = useState('');
   const [newAccountEmail, setNewAccountEmail] = useState('');
@@ -374,6 +374,23 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
     triggerSaveNotice();
   };
 
+  // Cambiar rol de usuario en tiempo real e impactar en Firestore
+  const handleUpdateRole = async (user: RegisteredUser, newRoleType: 'admin' | 'empleado' | 'empresa' | 'consumidor') => {
+    if (user.id === 'admin-master' || user.id === MASTER_ADMIN_USER.id) return;
+    const determinedRole: 'admin' | 'employee' | 'client' = 
+      newRoleType === 'admin' ? 'admin' : (newRoleType === 'empleado' ? 'employee' : 'client');
+    const updatedUser: RegisteredUser = {
+      ...user,
+      type: newRoleType,
+      role: determinedRole,
+      pricingTier: newRoleType === 'admin' ? 'Administrador' : (newRoleType === 'empresa' ? 'Corporativo / Mayorista' : 'Consumidor Final'),
+      notes: newRoleType === 'admin' ? 'Cuenta con permisos de Administrador' : user.notes,
+    };
+    setUsers((prev) => prev.map((u) => (u.id === user.id ? updatedUser : u)));
+    await saveFirestoreUser(updatedUser);
+    triggerSaveNotice();
+  };
+
   // Manejar creación de nueva cuenta
   const handleCreateAccountSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -404,10 +421,13 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
     }
 
     const userId = `usr-${Date.now()}`;
+    const determinedRole: 'admin' | 'employee' | 'client' = 
+      newAccountType === 'admin' ? 'admin' : (newAccountType === 'empleado' ? 'employee' : 'client');
+
     const newUser: RegisteredUser = {
       id: userId,
       type: newAccountType,
-      role: newAccountType === 'empleado' ? 'employee' : 'client',
+      role: determinedRole,
       name: nameTrimmed,
       repName: newAccountType === 'empresa' ? newAccountRepName.trim() : undefined,
       email: emailTrimmed,
@@ -417,12 +437,14 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
       cuitOrDni: newAccountCuit.trim() || 'Sin registrar',
       address: newAccountAddress.trim() || 'Gran Mendoza',
       city: newAccountCity.trim() || 'Gran Mendoza',
-      branch: newAccountType === 'empleado' ? newAccountBranch : undefined,
+      branch: newAccountType === 'empleado' ? newAccountBranch : (newAccountType === 'admin' ? 'Administración Central' : undefined),
       sellerRole: newAccountType === 'empleado' ? 'vendedor' : undefined,
-      pricingTier: newAccountType === 'empresa' ? 'Corporativo / Mayorista' : 'Consumidor Final',
+      pricingTier: newAccountType === 'empresa' ? 'Corporativo / Mayorista' : (newAccountType === 'admin' ? 'Administrador' : 'Consumidor Final'),
       status: 'active',
       createdAt: new Date().toISOString().split('T')[0],
-      notes: newAccountType === 'empleado' ? `Operador en sucursal ${newAccountBranch}` : 'Cuenta creada por administrador',
+      notes: newAccountType === 'admin' 
+        ? 'Cuenta administradora con acceso y permisos totales' 
+        : (newAccountType === 'empleado' ? `Operador en sucursal ${newAccountBranch}` : 'Cuenta creada por administrador'),
     };
 
     // Actualizar estado local inmediatamente
@@ -801,27 +823,44 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
 
                       {/* Rol & Perfil */}
                       <td className="py-3 px-4">
-                        <span
-                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-xs text-[10px] font-bold uppercase tracking-wider ${
-                            isAdmin
-                              ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                        <div className="flex flex-col gap-1">
+                          <span
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-xs text-[10px] font-bold uppercase tracking-wider ${
+                              isAdmin
+                                ? 'bg-purple-100 text-purple-900 border border-purple-300'
+                                : isEmpresa
+                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                : isStaff
+                                ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                                : 'bg-blue-100 text-blue-800 border border-blue-300'
+                            }`}
+                          >
+                            {isAdmin
+                              ? 'Administrador'
                               : isEmpresa
-                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                              ? 'Cliente Empresa'
                               : isStaff
-                              ? 'bg-amber-100 text-amber-900 border border-amber-300'
-                              : 'bg-blue-100 text-blue-800 border border-blue-300'
-                          }`}
-                        >
-                          {isAdmin
-                            ? 'Admin General'
-                            : isEmpresa
-                            ? 'Cliente Empresa'
-                            : isStaff
-                            ? `Vendedor (${u.branch || 'Staff'})`
-                            : 'Consumidor Final'}
-                        </span>
-                        <div className="text-[9px] text-[#6F6860] mt-0.5">
-                          Alta: {u.createdAt || 'Registrado'}
+                              ? `Vendedor (${u.branch || 'Staff'})`
+                              : 'Consumidor Final'}
+                          </span>
+
+                          {!isMasterAdmin && (
+                            <select
+                              value={u.type}
+                              onChange={(e) => handleUpdateRole(u, e.target.value as any)}
+                              className="text-[9px] font-semibold text-[#18231C] bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs px-1 py-0.5 cursor-pointer outline-none hover:bg-white"
+                              title="Cambiar rol y permisos en Firebase"
+                            >
+                              <option value="admin">Cambiar a: Administrador</option>
+                              <option value="empleado">Cambiar a: Empleado/Ventas</option>
+                              <option value="empresa">Cambiar a: Cliente Empresa</option>
+                              <option value="consumidor">Cambiar a: Consumidor Final</option>
+                            </select>
+                          )}
+
+                          <div className="text-[9px] text-[#6F6860]">
+                            Alta: {u.createdAt || 'Registrado'}
+                          </div>
                         </div>
                       </td>
 
@@ -1049,7 +1088,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
                   <label className="block text-[11px] font-bold uppercase tracking-wider text-[#18231C] mb-1.5">
                     1. Elegir Rol de la Cuenta:
                   </label>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     <button
                       type="button"
                       onClick={() => setNewAccountType('empresa')}
@@ -1086,7 +1125,20 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
                       }`}
                     >
                       <UserCheck className="w-5 h-5 text-amber-700" />
-                      <span className="text-xs">Empleado / Vendedor</span>
+                      <span className="text-xs">Empleado / Ventas</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setNewAccountType('admin')}
+                      className={`p-2.5 border rounded-xs flex flex-col items-center justify-center gap-1 text-center cursor-pointer transition-all ${
+                        newAccountType === 'admin'
+                          ? 'border-[#B9522F] bg-purple-50 text-purple-950 font-bold shadow-xs ring-1 ring-purple-400'
+                          : 'border-[#DCD4C9] bg-[#FAF8F5] text-[#6F6860] hover:bg-white'
+                      }`}
+                    >
+                      <ShieldCheck className="w-5 h-5 text-purple-700" />
+                      <span className="text-xs">Administrador</span>
                     </button>
                   </div>
                 </div>
@@ -1103,7 +1155,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
                         required
                         value={newAccountName}
                         onChange={(e) => setNewAccountName(e.target.value)}
-                        placeholder={newAccountType === 'empresa' ? 'Ej: Viñedos Andinos S.A.' : 'Ej: Carlos Gómez'}
+                        placeholder={newAccountType === 'empresa' ? 'Razón Social o Empresa' : 'Ingresar nombre completo'}
                         className="w-full px-3 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs text-[#18231C] outline-none focus:border-[#B9522F]"
                       />
                     </div>
@@ -1117,7 +1169,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
                           type="text"
                           value={newAccountRepName}
                           onChange={(e) => setNewAccountRepName(e.target.value)}
-                          placeholder="Ej: Lic. Marcelo Pérez"
+                          placeholder="Nombre del representante"
                           className="w-full px-3 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs text-[#18231C] outline-none focus:border-[#B9522F]"
                         />
                       </div>
@@ -1149,7 +1201,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
                         required
                         value={newAccountEmail}
                         onChange={(e) => setNewAccountEmail(e.target.value)}
-                        placeholder="usuario@pampero.com"
+                        placeholder="correo@empresa.com"
                         className="w-full px-3 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs text-[#18231C] font-mono outline-none focus:border-[#B9522F]"
                       />
                     </div>
@@ -1163,7 +1215,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
                         required
                         value={newAccountPhone}
                         onChange={(e) => setNewAccountPhone(e.target.value)}
-                        placeholder="Ej: 261 555-1234"
+                        placeholder="Ej: 2612345678"
                         className="w-full px-3 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs text-[#18231C] outline-none focus:border-[#B9522F]"
                       />
                     </div>
@@ -1179,7 +1231,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
                         required
                         value={newAccountCuit}
                         onChange={(e) => setNewAccountCuit(e.target.value)}
-                        placeholder={newAccountType === 'empresa' ? '30-12345678-9' : '35.123.456'}
+                        placeholder={newAccountType === 'empresa' ? '30-XXXXXXXX-X' : 'XX.XXX.XXX'}
                         className="w-full px-3 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs text-[#18231C] font-mono outline-none focus:border-[#B9522F]"
                       />
                     </div>
@@ -1192,7 +1244,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
                         type="text"
                         value={newAccountAddress}
                         onChange={(e) => setNewAccountAddress(e.target.value)}
-                        placeholder="Ej: Av. San Martín 1234"
+                        placeholder="Calle y número"
                         className="w-full px-3 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs text-[#18231C] outline-none focus:border-[#B9522F]"
                       />
                     </div>
@@ -1220,7 +1272,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
                         required
                         value={newAccountPassword}
                         onChange={(e) => setNewAccountPassword(e.target.value)}
-                        placeholder="Ej: Pampero2026_xyz"
+                        placeholder="Ingresar contraseña inicial"
                         className="w-full px-3 py-2 bg-white border border-amber-300 rounded-xs text-xs font-mono font-bold text-[#18231C] pr-10 outline-none focus:border-[#B9522F]"
                       />
                       <button

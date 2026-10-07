@@ -28,8 +28,12 @@ import {
   Clock,
   Sparkles,
   Layers,
-  ArrowRightCircle
+  ArrowRightCircle,
+  Download,
+  Upload,
+  CheckCircle2
 } from 'lucide-react';
+import { exportVisitsToExcel, importVisitsFromExcel } from '../../utils/kanbanExcelUtils';
 
 interface CRMVisitsTabProps {
   visits: LeadVisit[];
@@ -119,6 +123,30 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
   const [editingVisit, setEditingVisit] = useState<LeadVisit | null>(null);
   const [draggedVisitId, setDraggedVisitId] = useState<string | null>(null);
   const [dragOverCol, setDragOverCol] = useState<string | null>(null);
+  const [excelNotice, setExcelNotice] = useState<string | null>(null);
+  const [isExcelProcessing, setIsExcelProcessing] = useState(false);
+  const fileInputVisitsRef = React.useRef<HTMLInputElement>(null);
+
+  const handleExportVisits = () => {
+    exportVisitsToExcel(localVisits);
+  };
+
+  const handleImportVisits = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsExcelProcessing(true);
+    try {
+      const res = await importVisitsFromExcel(file, localVisits);
+      setLocalVisits(res.visits);
+      setExcelNotice(`¡Visitas actualizadas con éxito! ${res.updatedCount} actualizadas, ${res.newCount} nuevas en Firestore.`);
+      setTimeout(() => setExcelNotice(null), 6000);
+    } catch (err: any) {
+      alert(`Error al importar Excel de visitas: ${err?.message || err}`);
+    } finally {
+      setIsExcelProcessing(false);
+      if (fileInputVisitsRef.current) fileInputVisitsRef.current.value = '';
+    }
+  };
 
   // Form states
   const [companyName, setCompanyName] = useState('');
@@ -314,15 +342,62 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={() => openNewModal('primer_contacto')}
-          className="px-4 py-2 bg-[#B9522F] hover:bg-[#9E3E1E] text-white text-xs font-bold uppercase tracking-wider rounded-xs transition-all flex items-center gap-1.5 shadow-sm cursor-pointer shrink-0 self-start sm:self-auto"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Nueva Visita / Contacto</span>
-        </button>
+        <div className="flex items-center gap-2 shrink-0 self-start sm:self-auto">
+          {/* Excel Bulk Tools */}
+          <input
+            type="file"
+            ref={fileInputVisitsRef}
+            onChange={handleImportVisits}
+            accept=".xlsx,.xls,.csv"
+            className="hidden"
+          />
+          <button
+            type="button"
+            onClick={handleExportVisits}
+            className="px-3 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold uppercase tracking-wider rounded-xs transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+            title="Descargar tarjetas de visitas comerciales en Excel"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Descargar Excel</span>
+          </button>
+          <button
+            type="button"
+            disabled={isExcelProcessing}
+            onClick={() => fileInputVisitsRef.current?.click()}
+            className="px-3 py-2 bg-white hover:bg-[#FAF8F5] border border-[#DCD4C9] text-[#18231C] text-xs font-bold uppercase tracking-wider rounded-xs transition-all flex items-center gap-1.5 shadow-sm cursor-pointer disabled:opacity-50"
+            title="Subir archivo Excel para actualizar fases y visitas en Firestore"
+          >
+            <Upload className="w-3.5 h-3.5 text-emerald-700" />
+            <span>{isExcelProcessing ? 'Procesando...' : 'Subir Excel'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => openNewModal('primer_contacto')}
+            className="px-4 py-2 bg-[#B9522F] hover:bg-[#9E3E1E] text-white text-xs font-bold uppercase tracking-wider rounded-xs transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Nueva Visita / Contacto</span>
+          </button>
+        </div>
       </div>
+
+      {/* Excel Notification Banner */}
+      {excelNotice && (
+        <div className="p-3 bg-emerald-50 border border-emerald-300 rounded-xs flex items-center justify-between gap-2 text-xs text-emerald-950 animate-fadeIn">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span className="font-semibold">{excelNotice}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setExcelNotice(null)}
+            className="text-emerald-700 hover:text-emerald-900 font-bold text-xs"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Filters Bar */}
       <div className="flex flex-wrap items-center gap-3 bg-white p-3 rounded-xs border border-[#DCD4C9] shadow-2xs">
@@ -583,7 +658,7 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
                   required
                   value={companyName}
                   onChange={(e) => setCompanyName(e.target.value)}
-                  placeholder="Ej: Bodegas Salentein / Constructora Mendoza"
+                  placeholder="Razón Social o Empresa"
                   className="w-full px-3 py-2 border border-[#DCD4C9] rounded-xs outline-none focus:border-[#B9522F]"
                 />
               </div>
@@ -595,7 +670,7 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
                     type="text"
                     value={contactName}
                     onChange={(e) => setContactName(e.target.value)}
-                    placeholder="Ej: Ing. Martín Gómez"
+                    placeholder="Nombre del contacto"
                     className="w-full px-3 py-2 border border-[#DCD4C9] rounded-xs outline-none focus:border-[#B9522F]"
                   />
                 </div>
@@ -605,7 +680,7 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
                     type="text"
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
-                    placeholder="261 555-1234"
+                    placeholder="Ej: 2612345678"
                     className="w-full px-3 py-2 border border-[#DCD4C9] rounded-xs outline-none focus:border-[#B9522F]"
                   />
                 </div>

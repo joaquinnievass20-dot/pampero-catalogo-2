@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import * as XLSX from 'xlsx';
 import { Product, MainCategory } from '../../types';
 import { CATEGORY_HIERARCHY } from '../../data/categories';
@@ -46,6 +46,22 @@ export const AdminBulkExcelImportModal: React.FC<AdminBulkExcelImportModalProps>
 
   const sampleTemplateRows = [
     {
+      'Código': 'INSTRUCCIONES (ELIMINAR ESTA FILA ANTES DE SUBIR)',
+      'Nombre': 'Nombre del producto',
+      'Categoría': 'Hombre, Mujer, Infantil, Venta Corporativa',
+      'Sección': 'Exacto al sistema',
+      'Subcategoría': 'Exacto al sistema',
+      'Precio': 'Número sin signos',
+      'Precio Mayorista': 'Número sin signos',
+      'Descuento %': 'De 0 a 100',
+      'Unisex (SI/NO)': 'SI o NO',
+      'Venta Corporativa Exclusiva (SI/NO)': 'SI o NO',
+      'Talles Especiales (de-hasta:precio:sufijo)': 'Ej: 50-58:56000:-1',
+      'Colores': 'Separados por comas',
+      'Talles': 'Separados por comas',
+      'Imagen URL': 'URL pública',
+      'Descripción': 'Texto descriptivo',
+    },    {
       'Código': 'PAM-501',
       'Nombre': 'Camisa Grafa Trabajo Pesado',
       'Categoría': 'Hombre',

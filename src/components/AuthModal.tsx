@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { collection, getDocs } from 'firebase/firestore';
+import { getFirebaseDb } from '../services/firebase';
 import { UserSession, ClientType, ConsumerClient, CompanyClient } from '../types';
 import { PamperoLogo } from './PamperoLogo';
 import { 
@@ -123,14 +125,55 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     });
   };
 
-  const handleAdminSubmit = (e: React.FormEvent) => {
+  const handleAdminSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setAdminError('');
 
     const userClean = adminUser.trim().toLowerCase();
     const passClean = adminPass.trim();
 
-    // Check Employee accounts
+    // 1. Check direct Cloud Firestore registered accounts first (Admins, Employees, Clients)
+    try {
+      const firestoreDb = getFirebaseDb();
+      if (firestoreDb) {
+        const snap = await getDocs(collection(firestoreDb, 'usuarios'));
+        if (!snap.empty) {
+          const matchedDoc = snap.docs.find((d) => {
+            const data = d.data();
+            const emailMatch = (data.email || '').toLowerCase().trim() === userClean;
+            const usernameMatch = (data.username || '').toLowerCase().trim() === userClean;
+            const passMatch = (data.password && data.password === passClean) || 
+                              (data.initialPassword && data.initialPassword === passClean);
+            return (emailMatch || usernameMatch) && passMatch;
+          });
+          if (matchedDoc) {
+            const matched = matchedDoc.data();
+            const isAdminRole = matched.role === 'admin' || matched.type === 'admin';
+            const isStaff = matched.role === 'employee' || matched.type === 'empleado' || matched.type === 'vendedor';
+            const determinedRole: 'admin' | 'employee' | 'client' = 
+              isAdminRole ? 'admin' : (isStaff ? 'employee' : 'client');
+            onLogin({
+              id: matchedDoc.id,
+              role: determinedRole,
+              email: matched.email,
+              clientType: matched.type === 'empresa' ? 'empresa' : 'consumidor',
+              clientData: {
+                fullName: matched.repName || matched.name,
+                companyName: matched.type === 'empresa' ? matched.name : undefined,
+                cuit: matched.cuitOrDni,
+                phone: matched.phone,
+              },
+              loggedAt: new Date().toISOString(),
+            });
+            return;
+          }
+        }
+      }
+    } catch (_fErr) {
+      // Continue to local fallbacks
+    }
+
+    // 2. Check Employee accounts
     try {
       const empSaved = localStorage.getItem('pampero_employees');
       const empList: any[] = empSaved 
@@ -171,14 +214,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         const list: any[] = JSON.parse(usersRaw);
         const matched = list.find((u) => {
           const emailMatch = u.email?.toLowerCase().trim() === userClean;
+          const usernameMatch = u.username?.toLowerCase().trim() === userClean;
           const passMatch = (u.password && u.password === passClean) || (u.initialPassword && u.initialPassword === passClean);
-          return emailMatch && passMatch;
+          return (emailMatch || usernameMatch) && passMatch;
         });
         if (matched) {
+          const isAdminRole = matched.role === 'admin' || matched.type === 'admin';
           const isStaff = matched.role === 'employee' || matched.type === 'empleado' || matched.type === 'vendedor';
+          const determinedRole: 'admin' | 'employee' | 'client' = 
+            isAdminRole ? 'admin' : (isStaff ? 'employee' : 'client');
           onLogin({
             id: matched.id,
-            role: isStaff ? 'employee' : 'client',
+            role: determinedRole,
             email: matched.email,
             clientType: matched.type === 'empresa' ? 'empresa' : 'consumidor',
             clientData: {
@@ -211,6 +258,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     const customPass = localStorage.getItem('pampero_admin_custom_password');
 
     const isUserValid = 
+      userClean === 'joaquinnievass20@gmail.com' ||
       userClean === 'admin' || 
       userClean === 'admin@pampero.com' || 
       userClean === 'admin@pampero.com.ar' || 
@@ -218,14 +266,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       userClean === savedEmail.toLowerCase();
 
     const isPassValid = 
+      passClean === 'Jn05022000' ||
       passClean === 'Pampero2026' ||
-      passClean.toLowerCase() === 'pampero2026' ||
       (savedPass && passClean === savedPass) ||
-      (savedPass && passClean.toLowerCase() === savedPass.toLowerCase()) ||
-      (customPass && passClean === customPass) ||
-      (legacyPass && passClean === legacyPass) ||
-      passClean === 'admin' ||
-      passClean === 'pampero_admin';
+      (customPass && passClean === customPass);
 
     if (isUserValid && isPassValid) {
       onLogin({
@@ -397,7 +441,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                         id="client-name-input"
                         type="text"
                         required
-                        placeholder="Ej. Juan Pérez"
+                        placeholder="Ingresar nombre completo"
                         value={consumerData.fullName}
                         onChange={(e) => setConsumerData({ ...consumerData, fullName: e.target.value })}
                         className="w-full pl-10 pr-3.5 py-2.5 rounded-lg border border-neutral-300 focus:border-[#E52421] focus:ring-2 focus:ring-red-100 text-sm outline-none font-medium"
@@ -416,7 +460,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                           id="client-email-input"
                           type="email"
                           required
-                          placeholder="juan@gmail.com"
+                          placeholder="correo@empresa.com"
                           value={consumerData.email}
                           onChange={(e) => setConsumerData({ ...consumerData, email: e.target.value })}
                           className="w-full pl-10 pr-3.5 py-2.5 rounded-lg border border-neutral-300 focus:border-[#E52421] focus:ring-2 focus:ring-red-100 text-sm outline-none font-medium"
@@ -434,7 +478,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                           id="client-phone-input"
                           type="tel"
                           required
-                          placeholder="261 555 1234"
+                          placeholder="Ej: 2612345678"
                           value={consumerData.phone}
                           onChange={(e) => setConsumerData({ ...consumerData, phone: e.target.value })}
                           className="w-full pl-10 pr-3.5 py-2.5 rounded-lg border border-neutral-300 focus:border-[#E52421] focus:ring-2 focus:ring-red-100 text-sm outline-none font-medium"
@@ -555,7 +599,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                           id="company-name-input"
                           type="text"
                           required
-                          placeholder="Ej. Bodegas & Viñedos S.A."
+                          placeholder="Razón Social o Empresa"
                           value={companyData.companyName}
                           onChange={(e) => setCompanyData({ ...companyData, companyName: e.target.value })}
                           className="w-full pl-10 pr-3.5 py-2.5 rounded-lg border border-neutral-300 focus:border-[#E52421] text-sm font-medium"
@@ -593,7 +637,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                           id="company-email-input"
                           type="email"
                           required
-                          placeholder="compras@empresa.com"
+                          placeholder="correo@empresa.com"
                           value={companyData.institutionalEmail}
                           onChange={(e) => setCompanyData({ ...companyData, institutionalEmail: e.target.value })}
                           className="w-full pl-10 pr-3 py-2.5 rounded-lg border border-neutral-300 focus:border-[#E52421] text-sm font-medium"
@@ -611,7 +655,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                           id="company-phone-input"
                           type="tel"
                           required
-                          placeholder="261 4XXXXXX"
+                          placeholder="Ej: 2612345678"
                           value={companyData.institutionalPhone}
                           onChange={(e) => setCompanyData({ ...companyData, institutionalPhone: e.target.value })}
                           className="w-full pl-10 pr-3 py-2.5 rounded-lg border border-neutral-300 focus:border-[#E52421] text-sm font-medium"

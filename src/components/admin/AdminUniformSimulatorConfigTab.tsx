@@ -18,7 +18,7 @@ import {
   Image as ImageIcon
 } from 'lucide-react';
 import { Product } from '../../types';
-import { saveFirestoreStoreConfig, fetchFirestoreStoreConfig, uploadImageToStorage } from '../../services/firebase';
+import { saveFirestoreStoreConfig, fetchFirestoreStoreConfig, uploadImageToStorage, saveFirestoreSimulatorConfig } from '../../services/firebase';
 
 export interface CustomSimulatorGarment {
   id: string;
@@ -238,6 +238,7 @@ export const AdminUniformSimulatorConfigTab: React.FC<AdminUniformSimulatorConfi
     e.preventDefault();
     try {
       localStorage.setItem('pampero_simulator_config', JSON.stringify(config));
+      await saveFirestoreSimulatorConfig(config);
       await saveFirestoreStoreConfig({ simulatorConfig: config });
       triggerSaveNotice();
       setSavedSuccess(true);

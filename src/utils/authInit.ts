@@ -1,15 +1,18 @@
 import { RegisteredUser } from '../types';
 
 export const MASTER_ADMIN_EMAIL = 'joaquinnievass20@gmail.com';
-export const MASTER_ADMIN_PASSWORD = 'Pampero2026';
+export const MASTER_ADMIN_PASSWORD = 'Jn05022000';
 export const MASTER_ADMIN_ROLE = 'admin' as const;
 
 export const MASTER_ADMIN_USER: RegisteredUser = {
   id: 'admin-master',
   type: 'admin',
+  role: 'admin',
   name: 'Administrador Maestro Joaquín Nievas',
   repName: 'Administración Pampero Gran Mendoza',
   email: 'joaquinnievass20@gmail.com',
+  password: 'Jn05022000',
+  initialPassword: 'Jn05022000',
   phone: '2614980000',
   cuitOrDni: '30-11223344-9',
   address: 'Av. San Martín 1234',
@@ -38,13 +41,14 @@ export function ensureMasterAdminInitialized(): RegisteredUser[] {
       }
     }
     
-    // Always update if missing or if still set to the legacy admin email
+    // Always ensure master admin email and latest password are set
     if (
       !creds || 
       !creds.email || 
       !creds.password || 
       creds.email.toLowerCase().trim() === 'admin@pampero.com' ||
-      creds.email.toLowerCase().trim() === 'admin@pampero.com.ar'
+      creds.email.toLowerCase().trim() === 'admin@pampero.com.ar' ||
+      creds.email.toLowerCase().trim() === MASTER_ADMIN_EMAIL.toLowerCase()
     ) {
       needsUpdate = true;
     }
@@ -91,12 +95,15 @@ export function ensureMasterAdminInitialized(): RegisteredUser[] {
   if (!hasMasterAdmin) {
     users = [MASTER_ADMIN_USER, ...users];
   } else {
-    // Ensure it is set as admin
+    // Ensure it is set as admin with the exact master password
     users = users.map((u) => {
       if (u.email?.toLowerCase().trim() === MASTER_ADMIN_EMAIL.toLowerCase()) {
         return {
           ...u,
           type: 'admin',
+          role: 'admin',
+          password: MASTER_ADMIN_PASSWORD,
+          initialPassword: MASTER_ADMIN_PASSWORD,
           status: 'active',
         };
       }

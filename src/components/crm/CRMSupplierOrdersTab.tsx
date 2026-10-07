@@ -14,8 +14,11 @@ import {
   Trash2, 
   Edit3, 
   X, 
-  Save 
+  Save,
+  Download,
+  Upload
 } from 'lucide-react';
+import { exportSupplierOrdersToExcel, importSupplierOrdersFromExcel } from '../../utils/kanbanExcelUtils';
 
 interface CRMSupplierOrdersTabProps {
   orders: SupplierOrder[];
@@ -52,6 +55,29 @@ export const CRMSupplierOrdersTab: React.FC<CRMSupplierOrdersTabProps> = ({ orde
   const [branchDestination, setBranchDestination] = useState('Ciudad');
   const [responsibleStaff, setResponsibleStaff] = useState('Itatí');
   const [notes, setNotes] = useState('');
+  const [excelNotice, setExcelNotice] = useState<string | null>(null);
+  const [isExcelProcessing, setIsExcelProcessing] = useState(false);
+  const fileInputSupplierRef = React.useRef<HTMLInputElement>(null);
+
+  const handleExportOrders = () => {
+    exportSupplierOrdersToExcel(filteredOrders.length > 0 ? filteredOrders : orders);
+  };
+
+  const handleImportOrders = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsExcelProcessing(true);
+    try {
+      const res = await importSupplierOrdersFromExcel(file, orders);
+      setExcelNotice(`¡Pedidos a proveedor sincronizados! ${res.updatedCount} actualizados, ${res.newCount} nuevos en Firestore.`);
+      setTimeout(() => setExcelNotice(null), 6000);
+    } catch (err: any) {
+      alert(`Error al importar Excel de proveedores: ${err?.message || err}`);
+    } finally {
+      setIsExcelProcessing(false);
+      if (fileInputSupplierRef.current) fileInputSupplierRef.current.value = '';
+    }
+  };
 
   const openNewModal = () => {
     setEditingOrder(null);
@@ -147,14 +173,60 @@ export const CRMSupplierOrdersTab: React.FC<CRMSupplierOrdersTabProps> = ({ orde
           </p>
         </div>
 
-        <button
-          onClick={openNewModal}
-          className="px-4 py-2 bg-[#18231C] hover:bg-black text-white text-xs font-bold uppercase tracking-wider rounded-xs flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
-        >
-          <Plus className="w-4 h-4" />
-          Nueva Orden a Proveedor
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <input
+            type="file"
+            ref={fileInputSupplierRef}
+            onChange={handleImportOrders}
+            accept=".xlsx,.xls,.csv"
+            className="hidden"
+          />
+          <button
+            type="button"
+            onClick={handleExportOrders}
+            className="px-3 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold uppercase tracking-wider rounded-xs transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer"
+            title="Descargar pedidos a proveedores en Excel"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Descargar Excel</span>
+          </button>
+          <button
+            type="button"
+            disabled={isExcelProcessing}
+            onClick={() => fileInputSupplierRef.current?.click()}
+            className="px-3 py-2 bg-[#FAF8F5] hover:bg-[#ECE5DC] border border-[#DCD4C9] text-[#18231C] text-xs font-bold uppercase tracking-wider rounded-xs transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer disabled:opacity-50"
+            title="Subir archivo Excel para actualizar compras a proveedores"
+          >
+            <Upload className="w-3.5 h-3.5 text-emerald-700" />
+            <span>{isExcelProcessing ? 'Procesando...' : 'Subir Excel'}</span>
+          </button>
+
+          <button
+            onClick={openNewModal}
+            className="px-4 py-2 bg-[#18231C] hover:bg-black text-white text-xs font-bold uppercase tracking-wider rounded-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            Nueva Orden a Proveedor
+          </button>
+        </div>
       </div>
+
+      {/* Excel Notification Banner */}
+      {excelNotice && (
+        <div className="p-3 bg-emerald-50 border border-emerald-300 rounded-xs flex items-center justify-between gap-2 text-xs text-emerald-950 animate-fadeIn">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span className="font-semibold">{excelNotice}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setExcelNotice(null)}
+            className="text-emerald-700 hover:text-emerald-900 font-bold text-xs"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Filters Bar */}
       <div className="bg-white p-3 rounded-xs border border-[#DCD4C9] shadow-2xs flex flex-wrap items-center gap-3">

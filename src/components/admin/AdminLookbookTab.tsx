@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { LookbookItem, LookbookHotspot, Product, ThemeConfig } from '../../types';
 import { CATEGORY_HIERARCHY } from '../../data/categories';
 import { compressImage } from '../../utils/imageCompressor';
-import { uploadImageToStorage } from '../../services/firebase';
+import { uploadImageToStorage, saveFirestoreLookbook, subscribeToFirestoreLookbook } from '../../services/firebase';
 import { 
   Plus, 
   Trash2, 
@@ -49,6 +49,16 @@ export const AdminLookbookTab: React.FC<AdminLookbookTabProps> = ({
     setStatusMessage({ type, text });
     setTimeout(() => setStatusMessage(null), 3500);
   };
+
+  // Live Firestore onSnapshot subscription for Lookbook across all devices
+  useEffect(() => {
+    const unsub = subscribeToFirestoreLookbook((remoteLooks) => {
+      if (Array.isArray(remoteLooks) && remoteLooks.length > 0) {
+        setLooks(remoteLooks);
+      }
+    });
+    return () => unsub();
+  }, []);
 
   // 1. Add new Look
   const handleAddNewLook = () => {
@@ -223,9 +233,10 @@ export const AdminLookbookTab: React.FC<AdminLookbookTabProps> = ({
   const handleSaveAll = async () => {
     setIsSaving(true);
     try {
+      await saveFirestoreLookbook(looks);
       await onUpdateLookbook(looks);
       triggerSaveNotice();
-      notify('success', '¡Lookbook guardado y sincronizado con éxito!');
+      notify('success', '¡Lookbook guardado y sincronizado con éxito en Firestore y Storage!');
     } catch (err: any) {
       console.error(err);
       notify('error', `Error al persistir lookbook: ${err.message}`);

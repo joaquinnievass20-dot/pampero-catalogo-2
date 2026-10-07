@@ -1735,6 +1735,139 @@ export function subscribeToKanbanColumns(onUpdate: (data: { visits: KanbanColumn
   }
 }
 
+// ==========================================
+// DEDICATED LOOKBOOK PERSISTENCE (Cloud Firestore & Storage)
+// ==========================================
+
+export async function saveFirestoreLookbook(looks: LookbookItem[]): Promise<boolean> {
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb || !Array.isArray(looks)) return false;
+
+  try {
+    // 1. Save in store_config main doc
+    const configDocRef = doc(firestoreDb, 'store_config', 'main');
+    await setDoc(configDocRef, { lookbook: looks, updatedAt: new Date().toISOString() }, { merge: true });
+
+    // 2. Also persist each look into dedicated 'lookbook' collection
+    const batch = writeBatch(firestoreDb);
+    looks.forEach((look, index) => {
+      const lookId = look.id || `look-${index + 1}`;
+      const docRef = doc(firestoreDb, 'lookbook', lookId);
+      batch.set(docRef, { ...look, id: lookId, order: index + 1, updatedAt: new Date().toISOString() }, { merge: true });
+    });
+    await batch.commit();
+    console.log('[FIREBASE] Lookbook guardado en Firestore exitosamente');
+    return true;
+  } catch (err: any) {
+    console.error('[FIREBASE ERROR] Error guardando lookbook en Firestore:', err);
+    return false;
+  }
+}
+
+export function subscribeToFirestoreLookbook(
+  onUpdate: (looks: LookbookItem[]) => void
+): () => void {
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return () => {};
+
+  try {
+    const colRef = collection(firestoreDb, 'lookbook');
+    const unsubscribe = onSnapshot(
+      colRef,
+      (snapshot) => {
+        if (!snapshot.empty) {
+          const items: LookbookItem[] = [];
+          snapshot.docs.forEach((d) => {
+            items.push(d.data() as LookbookItem);
+          });
+          items.sort((a, b) => (a.order || 0) - (b.order || 0));
+          onUpdate(items);
+        }
+      },
+      (error) => {
+        console.warn('[FIREBASE] Advertencia en listener de lookbook:', error.message);
+      }
+    );
+    return unsubscribe;
+  } catch (err: any) {
+    console.warn('[FIREBASE] Error suscribiendo a lookbook:', err);
+    return () => {};
+  }
+}
+
+// ==========================================
+// DEDICATED UNIFORM SIMULATOR PERSISTENCE (Cloud Firestore & Storage)
+// ==========================================
+
+export async function saveFirestoreSimulatorConfig(simulatorConfig: any): Promise<boolean> {
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb || !simulatorConfig) return false;
+
+  try {
+    const configDocRef = doc(firestoreDb, 'store_config', 'main');
+    await setDoc(configDocRef, { simulatorConfig, updatedAt: new Date().toISOString() }, { merge: true });
+
+    const simDocRef = doc(firestoreDb, 'simulator_config', 'main');
+    await setDoc(simDocRef, { ...simulatorConfig, updatedAt: new Date().toISOString() }, { merge: true }).catch(() => {});
+
+    console.log('[FIREBASE] Configuración del simulador guardada en Firestore');
+    return true;
+  } catch (err: any) {
+    console.error('[FIREBASE ERROR] Error guardando simulador en Firestore:', err);
+    return false;
+  }
+}
+
+export function subscribeToFirestoreSimulatorConfig(
+  onUpdate: (config: any) => void
+): () => void {
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return () => {};
+
+  try {
+    const simDocRef = doc(firestoreDb, 'simulator_config', 'main');
+    const unsub1 = onSnapshot(
+      simDocRef,
+      (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          if (data) {
+            onUpdate(data);
+          }
+        }
+      },
+      (error) => {
+        console.warn('[FIREBASE] Listener simulator_config notice:', error.message);
+      }
+    );
+
+    const configDocRef = doc(firestoreDb, 'store_config', 'main');
+    const unsub2 = onSnapshot(
+      configDocRef,
+      (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          if (data && data.simulatorConfig) {
+            onUpdate(data.simulatorConfig);
+          }
+        }
+      },
+      (error) => {
+        console.warn('[FIREBASE] Listener store_config simulatorConfig notice:', error.message);
+      }
+    );
+
+    return () => {
+      unsub1();
+      unsub2();
+    };
+  } catch (err: any) {
+    console.warn('[FIREBASE] Error suscribiendo a simulador:', err);
+    return () => {};
+  }
+}
+
+
 
 
 

@@ -416,7 +416,7 @@ export const CRMSizingPortalTab: React.FC<CRMSizingPortalTabProps> = ({
                   type="text"
                   value={newCompanyName}
                   onChange={(e) => setNewCompanyName(e.target.value)}
-                  placeholder="Ej: BODEGAS BIANCHI"
+                  placeholder="Razón Social o Empresa"
                   required
                   className="w-full px-3 py-2 text-xs border border-[#DCD4C9] rounded-xs outline-none"
                 />
@@ -427,7 +427,7 @@ export const CRMSizingPortalTab: React.FC<CRMSizingPortalTabProps> = ({
                   type="text"
                   value={newCuit}
                   onChange={(e) => setNewCuit(e.target.value)}
-                  placeholder="30-..."
+                  placeholder="30-XXXXXXXX-X"
                   className="w-full px-3 py-2 text-xs border border-[#DCD4C9] rounded-xs outline-none font-mono"
                 />
               </div>
@@ -438,7 +438,7 @@ export const CRMSizingPortalTab: React.FC<CRMSizingPortalTabProps> = ({
                     type="text"
                     value={newContactName}
                     onChange={(e) => setNewContactName(e.target.value)}
-                    placeholder="Nombre"
+                    placeholder="Nombre del contacto"
                     className="w-full px-3 py-2 text-xs border border-[#DCD4C9] rounded-xs outline-none"
                   />
                 </div>
@@ -448,7 +448,7 @@ export const CRMSizingPortalTab: React.FC<CRMSizingPortalTabProps> = ({
                     type="text"
                     value={newContactPhone}
                     onChange={(e) => setNewContactPhone(e.target.value)}
-                    placeholder="261..."
+                    placeholder="Ej: 2612345678"
                     className="w-full px-3 py-2 text-xs border border-[#DCD4C9] rounded-xs outline-none"
                   />
                 </div>
@@ -484,7 +484,7 @@ export const CRMSizingPortalTab: React.FC<CRMSizingPortalTabProps> = ({
                     type="text"
                     value={empName}
                     onChange={(e) => setEmpName(e.target.value)}
-                    placeholder="Ej: Juan Carlos Morales"
+                    placeholder="Ingresar nombre completo"
                     required
                     className="w-full px-3 py-2 text-xs border border-[#DCD4C9] rounded-xs outline-none"
                   />
@@ -495,7 +495,7 @@ export const CRMSizingPortalTab: React.FC<CRMSizingPortalTabProps> = ({
                     type="text"
                     value={empDni}
                     onChange={(e) => setEmpDni(e.target.value)}
-                    placeholder="34567890"
+                    placeholder="XXXXXXXX"
                     required
                     className="w-full px-3 py-2 text-xs border border-[#DCD4C9] rounded-xs outline-none font-mono"
                   />
@@ -509,7 +509,7 @@ export const CRMSizingPortalTab: React.FC<CRMSizingPortalTabProps> = ({
                     type="text"
                     value={empDept}
                     onChange={(e) => setEmpDept(e.target.value)}
-                    placeholder="Ej: Mantenimiento, Bodega, Ventas..."
+                    placeholder="Sector / Área"
                     className="w-full px-3 py-2 text-xs border border-[#DCD4C9] rounded-xs outline-none"
                   />
                 </div>

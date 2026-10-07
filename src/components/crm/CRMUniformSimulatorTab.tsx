@@ -12,7 +12,12 @@ import {
   Building2,
   Eye
 } from 'lucide-react';
-import { fetchFirestoreStoreConfig, fetchFirestoreProducts } from '../../services/firebase';
+import { 
+  fetchFirestoreStoreConfig, 
+  fetchFirestoreProducts, 
+  subscribeToFirestoreSimulatorConfig, 
+  uploadImageToStorage 
+} from '../../services/firebase';
 import { Product } from '../../types';
 
 interface GarmentPreset {
@@ -186,18 +191,36 @@ export const CRMUniformSimulatorTab: React.FC = () => {
     };
 
     loadDynamicGarments();
+
+    // Suscripción onSnapshot en tiempo real a la configuración del Simulador desde Firestore
+    const unsub = subscribeToFirestoreSimulatorConfig((remoteCfg) => {
+      if (remoteCfg) {
+        try {
+          localStorage.setItem('pampero_simulator_config', JSON.stringify(remoteCfg));
+          loadDynamicGarments();
+        } catch {}
+      }
+    });
+
+    return () => unsub();
   }, []);
 
-  // File upload handler
-  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // File upload handler - Sube a Firebase Storage con fallback
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       setLogoName(file.name);
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        setLogoUrl(event.target?.result as string);
-      };
-      reader.readAsDataURL(file);
+      try {
+        const publicUrl = await uploadImageToStorage(file, 'simulator-logos');
+        setLogoUrl(publicUrl);
+      } catch (err) {
+        console.warn('[SIMULATOR] Storage offline/fallback local:', err);
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          setLogoUrl(event.target?.result as string);
+        };
+        reader.readAsDataURL(file);
+      }
     }
   };
 

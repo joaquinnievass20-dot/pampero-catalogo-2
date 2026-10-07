@@ -277,7 +277,7 @@ export const ClientSizingPortalView: React.FC<ClientSizingPortalViewProps> = ({
                   required
                   value={empName}
                   onChange={(e) => setEmpName(e.target.value)}
-                  placeholder="Ej: Juan Carlos Morales"
+                  placeholder="Ingresar nombre completo"
                   className="w-full p-2.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs outline-none focus:border-[#FDB813]"
                 />
               </div>
@@ -291,7 +291,7 @@ export const ClientSizingPortalView: React.FC<ClientSizingPortalViewProps> = ({
                   required
                   value={empDni}
                   onChange={(e) => setEmpDni(e.target.value)}
-                  placeholder="Ej: 32.405.112"
+                  placeholder="DNI o Legajo"
                   className="w-full p-2.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs outline-none focus:border-[#FDB813]"
                 />
               </div>
@@ -304,7 +304,7 @@ export const ClientSizingPortalView: React.FC<ClientSizingPortalViewProps> = ({
                   type="text"
                   value={empDept}
                   onChange={(e) => setEmpDept(e.target.value)}
-                  placeholder="Ej: Mantenimiento / Bodega"
+                  placeholder="Sector o Área"
                   className="w-full p-2.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs outline-none focus:border-[#FDB813]"
                 />
               </div>

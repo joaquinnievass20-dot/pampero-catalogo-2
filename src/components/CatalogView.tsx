@@ -389,8 +389,8 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-[#F5F2EC] text-[#22201D] font-sans">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10">
+    <div className="w-full min-h-screen bg-[#F5F2EC] text-[#22201D] font-sans flex flex-col items-center">
+      <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10">
         
         {/* Navigation Breadcrumb / Category switcher */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 border-b border-[#DCD4C9]/80 pb-4">

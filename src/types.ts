@@ -199,7 +199,7 @@ export interface RegisteredUser {
   crmTabs?: ('visits' | 'board' | 'suppliers' | 'costs')[];
   createdAt: string;
   status: 'active' | 'pending' | 'suspended';
-  pricingTier?: 'Consumidor Final' | 'Corporativo / Mayorista';
+  pricingTier?: 'Consumidor Final' | 'Corporativo / Mayorista' | 'Administrador';
   notes?: string;
 }
 
