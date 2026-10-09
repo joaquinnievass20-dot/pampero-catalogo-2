@@ -46,6 +46,22 @@ export const AdminBulkExcelImportModal: React.FC<AdminBulkExcelImportModalProps>
 
   const sampleTemplateRows = [
     {
+      'Código': 'INSTRUCCIONES (ELIMINAR ESTA FILA ANTES DE SUBIR)',
+      'Nombre': 'Nombre del producto',
+      'Categoría': 'Hombre, Mujer, Infantil, Venta Corporativa',
+      'Sección': 'Exacto al sistema',
+      'Subcategoría': 'Exacto al sistema',
+      'Precio': 'Número sin signos',
+      'Precio Mayorista': 'Número sin signos',
+      'Descuento %': 'De 0 a 100',
+      'Unisex (SI/NO)': 'SI o NO',
+      'Venta Corporativa Exclusiva (SI/NO)': 'SI o NO',
+      'Talles Especiales (de-hasta:precio:sufijo)': 'Ej: 50-58:56000:-1',
+      'Colores': 'Separados por comas',
+      'Talles': 'Separados por comas',
+      'Imagen URL': 'URL pública',
+      'Descripción': 'Texto descriptivo',
+    },    {
       'Código': 'PAM-501',
       'Nombre': 'Camisa Grafa Trabajo Pesado',
       'Categoría': 'Hombre',
@@ -392,22 +408,23 @@ export const AdminBulkExcelImportModal: React.FC<AdminBulkExcelImportModalProps>
           };
         });
 
-      // Firebase Batch Write directamente desde el frontend usando writeBatch(db)
-      // Firestore limita cada batch a 500 operaciones. Usamos bloques seguros de 200 items.
-      const BATCH_SIZE = 200;
+      // Optimización Extrema: Chunks de 450 elementos y ejecución de batch.commit() en paralelo con Promise.all()
+      // Firestore limita cada batch a 500 operaciones. Sin await bloqueante en el bucle principal.
+      const BATCH_SIZE = 450;
+      const commitPromises: Promise<void>[] = [];
+
       for (let i = 0; i < fullProducts.length; i += BATCH_SIZE) {
-        const batch = writeBatch(firestoreDb);
         const chunk = fullProducts.slice(i, i + BATCH_SIZE);
+        const batchProducts = writeBatch(firestoreDb);
+        const batchProductos = writeBatch(firestoreDb);
 
         for (const producto of chunk) {
           const sku = String(producto.code || producto.id).trim();
           if (!sku) continue;
 
-          // SKU Obligatorio: doc(db, 'products', String(fila['CÓDIGO']))
           const docRefProducts = doc(firestoreDb, 'products', sku);
           const docRefProductos = doc(firestoreDb, 'productos', sku);
 
-          // Limpiar valores undefined para evitar rechazos del SDK de Firestore
           const datos = JSON.parse(
             JSON.stringify(
               {
@@ -420,14 +437,16 @@ export const AdminBulkExcelImportModal: React.FC<AdminBulkExcelImportModalProps>
             )
           );
 
-          // batch.set(referencia, datos, { merge: true }) para no duplicar
-          batch.set(docRefProducts, datos, { merge: true });
-          batch.set(docRefProductos, datos, { merge: true });
+          batchProducts.set(docRefProducts, datos, { merge: true });
+          batchProductos.set(docRefProductos, datos, { merge: true });
         }
 
-        // Ejecutar escritura por lotes en Firebase
-        await batch.commit();
+        commitPromises.push(batchProducts.commit());
+        commitPromises.push(batchProductos.commit());
       }
+
+      // Ejecución ultra veloz paralela de todos los batches
+      await Promise.all(commitPromises);
 
       // Actualizar el catálogo en memoria y notificar componentes padres
       const currentList = existingProducts || [];

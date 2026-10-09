@@ -157,7 +157,7 @@ export const AdminCouponsTab: React.FC<AdminCouponsTabProps> = ({
                   type="text"
                   value={code}
                   onChange={(e) => setCode(e.target.value)}
-                  placeholder="EDEMSA12026"
+                  placeholder="PROMO2026"
                   required
                   className="w-full px-3 py-2 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs font-mono font-bold uppercase text-[#18231C] focus:border-[#B9522F]"
                 />
@@ -172,7 +172,7 @@ export const AdminCouponsTab: React.FC<AdminCouponsTabProps> = ({
                   type="text"
                   value={assignedCompany}
                   onChange={(e) => setAssignedCompany(e.target.value)}
-                  placeholder="Ej: EDEMSA S.A., YPF, Bodega Zuccardi"
+                  placeholder="Razón Social o Empresa"
                   className="w-full px-3 py-2 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs text-[#18231C]"
                 />
               </div>

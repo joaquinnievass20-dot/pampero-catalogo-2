@@ -54,6 +54,7 @@ import { AdminPanel } from './components/AdminPanel';
 import { CRMView } from './components/crm/CRMView';
 import { ClientUniformSimulatorView } from './components/client/ClientUniformSimulatorView';
 import { ClientSizingPortalView } from './components/client/ClientSizingPortalView';
+import { ClientOrderStatusView } from './components/client/ClientOrderStatusView';
 import { HubView } from './components/HubView';
 import { QuoteDrawer } from './components/QuoteDrawer';
 import { UserProfileModal } from './components/UserProfileModal';
@@ -176,6 +177,17 @@ export default function App() {
           }));
           setProducts(sanitized);
           saveCatalogBackup(sanitized);
+        } else {
+          try {
+            const srvRes = await fetch('/api/products');
+            if (srvRes.ok) {
+              const srvData = await srvRes.json();
+              if (Array.isArray(srvData.products) && srvData.products.length > 0) {
+                setProducts(srvData.products);
+                saveCatalogBackup(srvData.products);
+              }
+            }
+          } catch {}
         }
 
         const firestoreConfig = await fetchFirestoreStoreConfig();
@@ -246,19 +258,25 @@ export default function App() {
     });
 
     // Seed initial promotions into dedicated Firestore collection 'promotions' if empty
-    seedInitialPromotionsIfEmpty(INITIAL_PROMOTIONS).catch(() => {});
+    // seedInitialPromotionsIfEmpty(INITIAL_PROMOTIONS).catch(() => {});
 
     // Real-time Firestore dedicated 'promotions' collection listener (onSnapshot)
     // Synchronizes changes in live time for both the Admin Panel and public store views
-    const unsubscribePromotions = subscribeToFirestorePromotions((remotePromos) => {
-      if (Array.isArray(remotePromos) && remotePromos.length > 0) {
-        setPromotions(remotePromos);
+    const unsubscribePromotions = subscribeToFirestorePromotions(
+      (remotePromos) => {
+        if (Array.isArray(remotePromos)) {
+          setPromotions(remotePromos);
+          setIsPromotionsLoading(false);
+        }
+      },
+      () => {
+        setIsPromotionsLoading(false);
       }
-    });
+    );
 
     // Real-time Firestore dedicated 'lookbook' listener (onSnapshot)
     const unsubscribeLookbook = subscribeToFirestoreLookbook((remoteLooks) => {
-      if (Array.isArray(remoteLooks) && remoteLooks.length > 0) {
+      if (Array.isArray(remoteLooks)) {
         setLookbook(remoteLooks);
       }
     });
@@ -301,8 +319,9 @@ export default function App() {
     };
   }, []);
 
-  // 3. Promotions State (In-memory initial state from INITIAL_PROMOTIONS, synchronized via Firestore onSnapshot)
-  const [promotions, setPromotions] = useState<Promotion[]>(INITIAL_PROMOTIONS);
+  // 3. Promotions State (In-memory initial state empty, synchronized via Firestore onSnapshot)
+  const [promotions, setPromotions] = useState<Promotion[]>([]);
+  const [isPromotionsLoading, setIsPromotionsLoading] = useState<boolean>(true);
 
   // 4. Mendoza Branches State
   const [branches, setBranches] = useState<BranchLocation[]>(() => {
@@ -356,13 +375,13 @@ export default function App() {
 
   const [isProfileOpen, setIsProfileOpen] = useState(false);
 
-  // Lookbook State
+  // Lookbook State - initializes empty to avoid ghost images, rendered exclusively from Firestore
   const [lookbook, setLookbook] = useState<LookbookItem[]>(() => {
     try {
       const saved = localStorage.getItem('pampero_catalog_lookbook');
-      return saved ? JSON.parse(saved) : INITIAL_LOOKBOOK;
+      return saved ? JSON.parse(saved) : [];
     } catch {
-      return INITIAL_LOOKBOOK;
+      return [];
     }
   });
 
@@ -422,8 +441,9 @@ export default function App() {
   // 'crm'      -> Internal Kanban management system
   // 'uniform_simulator' -> Client 3D / live uniform embroidery simulator
   // 'sizing_portal'     -> Client digital employee sizing portal
+  // 'order_tracking'    -> Client live order status view (Kanban phase tracking)
   // 'hub'               -> Internal staff & admin hub with large action cards
-  const [viewMode, setViewMode] = useState<'landing' | 'auth' | 'catalog' | 'product_detail' | 'admin' | 'lookbook' | 'crm' | 'uniform_simulator' | 'sizing_portal' | 'hub'>('landing');
+  const [viewMode, setViewMode] = useState<'landing' | 'auth' | 'catalog' | 'product_detail' | 'admin' | 'lookbook' | 'crm' | 'uniform_simulator' | 'sizing_portal' | 'order_tracking' | 'hub'>('landing');
   const [authInitialTab, setAuthInitialTab] = useState<'login' | 'register' | 'admin'>('register');
   const [authInitialType, setAuthInitialType] = useState<'consumidor' | 'empresa'>('consumidor');
 
@@ -446,8 +466,17 @@ export default function App() {
     setProducts(sanitized);
     saveCatalogBackup(sanitized);
 
-    // Persist to Cloud Firestore via Firebase SDK
+    // 1. Persist to Cloud Firestore via Firebase SDK
     saveFirestoreProducts(sanitized);
+
+    // 2. Persist to local server storage
+    try {
+      fetch('/api/products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ products: sanitized }),
+      }).catch(() => {});
+    } catch {}
   };
 
   const handleDeleteProduct = async (id: string) => {
@@ -752,7 +781,7 @@ export default function App() {
       
       {/* Top Header shown on Catalog and Product Detail (Screenshot 3 & 4) */}
       {(viewMode === 'catalog' || viewMode === 'product_detail') && (
-        <header className="sticky top-0 z-50 bg-white border-b border-[#DCD4C9] shadow-xs">
+        <header className="sticky top-0 z-50 w-full bg-white border-b border-[#DCD4C9] shadow-xs">
           {/* Top Micro Announcement */}
           <div 
             style={{ 
@@ -848,6 +877,7 @@ export default function App() {
               onOpenUniformSimulator={() => setViewMode('uniform_simulator')}
               onOpenSizingPortal={() => setViewMode('sizing_portal')}
               onOpenProfile={() => setIsProfileOpen(true)}
+              onOpenOrderTracking={() => setViewMode('order_tracking')}
               theme={theme}
             />
           </div>
@@ -855,13 +885,14 @@ export default function App() {
       )}
 
       {/* Main View Router */}
-      <main className="flex-1">
+      <main className="flex-1 w-full flex flex-col items-center">
         {/* VIEW 1: LANDING PAGE (Screenshot 2: Hero with sliding covers) */}
         {viewMode === 'landing' && (
           <LandingHero
             userSession={userSession}
             theme={theme}
             promotions={promotions}
+            isPromotionsLoading={isPromotionsLoading}
             categoriesHierarchy={categories}
             onOpenAuth={openAuthScreen}
             onSelectCategory={(cat) => openCatalogScreen(null, cat)}
@@ -944,6 +975,8 @@ export default function App() {
             isOpen={true}
             products={products}
             promotions={promotions}
+            onUpdatePromotions={handleUpdatePromotions}
+            setPromotions={setPromotions}
             theme={theme}
             branches={branches}
             coupons={coupons}
@@ -952,7 +985,6 @@ export default function App() {
             onUpdateCategories={handleUpdateCategories}
             onUpdateProducts={handleUpdateProducts}
             onDeleteProduct={handleDeleteProduct}
-            onUpdatePromotions={handleUpdatePromotions}
             onUpdateTheme={handleUpdateTheme}
             onUpdateBranches={handleUpdateBranches}
             onUpdateCoupons={handleUpdateCoupons}
@@ -995,7 +1027,17 @@ export default function App() {
             />
           )}
 
-          {/* VIEW 10: HUB DE TRABAJO (Admin & Employee Work Hub) */}
+          {/* VIEW 10: SEGUIMIENTO EN VIVO DE PEDIDO (Vista Cliente: Estado de mi pedido) */}
+          {viewMode === 'order_tracking' && (
+            <ClientOrderStatusView
+              userSession={userSession}
+              theme={theme}
+              onBackToHome={() => setViewMode('landing')}
+              onOpenCatalog={() => setViewMode('catalog')}
+            />
+          )}
+
+          {/* VIEW 11: HUB DE TRABAJO (Admin & Employee Work Hub) */}
           {viewMode === 'hub' && userSession && (
             <HubView
               userSession={userSession}

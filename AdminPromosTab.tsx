@@ -32,6 +32,7 @@ interface AdminPromosTabProps {
   promotions: Promotion[];
   products: Product[];
   onUpdatePromotions: (promos: Promotion[]) => void;
+  setPromotions?: React.Dispatch<React.SetStateAction<Promotion[]>>;
   onUpdateProducts?: (products: Product[]) => void;
   triggerSaveNotice: () => void;
 }
@@ -40,6 +41,7 @@ export const AdminPromosTab: React.FC<AdminPromosTabProps> = ({
   promotions,
   products,
   onUpdatePromotions,
+  setPromotions,
   onUpdateProducts,
   triggerSaveNotice,
 }) => {
@@ -54,8 +56,11 @@ export const AdminPromosTab: React.FC<AdminPromosTabProps> = ({
   // Sincronización en vivo exclusiva con Cloud Firestore mediante onSnapshot
   useEffect(() => {
     const unsub = subscribeToFirestorePromotions((remotePromos) => {
-      if (Array.isArray(remotePromos) && remotePromos.length > 0) {
+      if (Array.isArray(remotePromos)) {
         onUpdatePromotions(remotePromos);
+        if (setPromotions) {
+          setPromotions(remotePromos);
+        }
       }
     });
     return () => unsub();
@@ -335,12 +340,22 @@ export const AdminPromosTab: React.FC<AdminPromosTabProps> = ({
   const handleDelete = async (id: string) => {
     if (confirm('¿Desea eliminar esta promoción permanentemente?')) {
       const promoToDelete = promotions.find((p) => p.id === id);
+
+      // Eliminación optimista inmediata en React
+      if (setPromotions) {
+        setPromotions((prev) => prev.filter((p) => p.id !== id));
+      }
       onUpdatePromotions(promotions.filter((p) => p.id !== id));
 
       try {
         await deleteFirestorePromotion(id);
       } catch (err) {
         console.error('[PROMOTION DELETE ERROR]:', err);
+        // REGLA OBLIGATORIA: En la función de borrar promoción, el bloque catch DEBE forzar la eliminación del estado local de React (setPromotions(prev => prev.filter(p => p.id !== id))) para destrabar la pantalla.
+        if (setPromotions) {
+          setPromotions((prev) => prev.filter((p) => p.id !== id));
+        }
+        onUpdatePromotions(promotions.filter((p) => p.id !== id));
       }
 
       if (promoToDelete && onUpdateProducts) {

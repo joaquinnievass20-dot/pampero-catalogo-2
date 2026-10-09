@@ -247,7 +247,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                   required
                   value={companyName}
                   onChange={(e) => setCompanyName(e.target.value)}
-                  placeholder="Ej. Distribuidora Cuyo S.A."
+                  placeholder="Razón Social o Empresa"
                   className="w-full pl-9 pr-3 py-2 text-xs bg-white rounded-xs border border-[#DCD4C9] outline-none focus:border-[#FDB813]"
                 />
               </div>
@@ -266,7 +266,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                   required
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
-                  placeholder="Tu nombre y apellido"
+                  placeholder="Ingresar nombre completo"
                   className="w-full pl-9 pr-3 py-2 text-xs bg-white rounded-xs border border-[#DCD4C9] outline-none focus:border-[#FDB813]"
                 />
               </div>
@@ -281,7 +281,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                 required={isCompany}
                 value={cuit}
                 onChange={(e) => setCuit(e.target.value)}
-                placeholder="20-xxxxxxxx-x"
+                placeholder="XX-XXXXXXXX-X"
                 className="w-full px-3 py-2 text-xs bg-white rounded-xs border border-[#DCD4C9] outline-none focus:border-[#FDB813]"
               />
             </div>
@@ -299,7 +299,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="tucorreo@ejemplo.com"
+                  placeholder="correo@empresa.com"
                   className="w-full pl-9 pr-3 py-2 text-xs bg-white rounded-xs border border-[#DCD4C9] outline-none focus:border-[#FDB813]"
                 />
               </div>
@@ -316,7 +316,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                   required
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
-                  placeholder="Ej. +54 9 261 123-4567"
+                  placeholder="Ej: 2612345678"
                   className="w-full pl-9 pr-3 py-2 text-xs bg-white rounded-xs border border-[#DCD4C9] outline-none focus:border-[#FDB813]"
                 />
               </div>
@@ -340,7 +340,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                   required
                   value={street}
                   onChange={(e) => setStreet(e.target.value)}
-                  placeholder="Ej. San Martín"
+                  placeholder="Calle y domicilio"
                   className="w-full px-3 py-2 text-xs bg-white rounded-xs border border-[#DCD4C9] outline-none focus:border-[#FDB813]"
                 />
               </div>
@@ -352,7 +352,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                   type="text"
                   value={streetNumber}
                   onChange={(e) => setStreetNumber(e.target.value)}
-                  placeholder="1234"
+                  placeholder="Altura / Nro"
                   className="w-full px-3 py-2 text-xs bg-white rounded-xs border border-[#DCD4C9] outline-none focus:border-[#FDB813]"
                 />
               </div>
@@ -366,7 +366,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                 type="text"
                 value={city}
                 onChange={(e) => setCity(e.target.value)}
-                placeholder="Maipú / Mendoza"
+                placeholder="Localidad / Departamento"
                 className="w-full px-3 py-2 text-xs bg-white rounded-xs border border-[#DCD4C9] outline-none focus:border-[#FDB813]"
               />
             </div>

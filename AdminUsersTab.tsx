@@ -6,6 +6,7 @@ import {
   saveFirestoreUser,
   deleteFirestoreUser,
   seedInitialFirestoreUsersIfEmpty,
+  createFirebaseAuthAndFirestoreUser,
 } from '../../services/firebase';
 import { 
   Users, 
@@ -43,8 +44,8 @@ interface AdminUsersTabProps {
 export const INITIAL_REGISTERED_USERS: RegisteredUser[] = [
   {
     ...MASTER_ADMIN_USER,
-    password: 'Pampero2026',
-    initialPassword: 'Pampero2026',
+    password: 'Jn05022000',
+    initialPassword: 'Jn05022000',
   },
   // Vendedores & Equipo Comercial
   {
@@ -350,8 +351,15 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
 
   // Real-time Delete from Cloud Firestore
   const handleDeleteUser = async (id: string, name: string) => {
-    if (id === 'admin-master' || id === MASTER_ADMIN_USER.id) {
-      alert('La cuenta administradora maestra (admin@pampero.com) está protegida por seguridad y no puede ser eliminada.');
+    const targetUser = users.find((u) => u.id === id);
+    const targetEmail = (targetUser?.email || '').toLowerCase().trim();
+    if (
+      id === 'admin-master' ||
+      id === MASTER_ADMIN_USER.id ||
+      targetEmail === 'joaquinnievass20@gmail.com' ||
+      targetEmail.includes('joaquinnievass20')
+    ) {
+      alert('La cuenta administradora maestra (joaquinnievass20@gmail.com) y su documento están blindados por seguridad y no pueden ser eliminados bajo ningún concepto.');
       return;
     }
     if (confirm(`¿Estás seguro de eliminar permanentemente la cuenta de "${name}"?`)) {
@@ -363,11 +371,42 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
 
   // Cambiar estado activo / suspendido
   const handleToggleStatus = async (user: RegisteredUser) => {
-    if (user.id === 'admin-master' || user.id === MASTER_ADMIN_USER.id) return;
+    if (
+      user.id === 'admin-master' ||
+      user.id === MASTER_ADMIN_USER.id ||
+      user.email?.toLowerCase().trim() === 'joaquinnievass20@gmail.com' ||
+      user.email?.toLowerCase().includes('joaquinnievass20')
+    ) {
+      return;
+    }
     const newStatus = user.status === 'active' ? 'suspended' : 'active';
     const updatedUser: RegisteredUser = {
       ...user,
       status: newStatus,
+    };
+    setUsers((prev) => prev.map((u) => (u.id === user.id ? updatedUser : u)));
+    await saveFirestoreUser(updatedUser);
+    triggerSaveNotice();
+  };
+
+  // Cambiar rol de usuario en tiempo real e impactar en Firestore
+  const handleUpdateRole = async (user: RegisteredUser, newRoleType: 'admin' | 'empleado' | 'empresa' | 'consumidor') => {
+    if (
+      user.id === 'admin-master' ||
+      user.id === MASTER_ADMIN_USER.id ||
+      user.email?.toLowerCase().trim() === 'joaquinnievass20@gmail.com' ||
+      user.email?.toLowerCase().includes('joaquinnievass20')
+    ) {
+      return;
+    }
+    const determinedRole: 'admin' | 'employee' | 'client' = 
+      newRoleType === 'admin' ? 'admin' : (newRoleType === 'empleado' ? 'employee' : 'client');
+    const updatedUser: RegisteredUser = {
+      ...user,
+      type: newRoleType,
+      role: determinedRole,
+      pricingTier: newRoleType === 'admin' ? 'Administrador' : (newRoleType === 'empresa' ? 'Corporativo / Mayorista' : 'Consumidor Final'),
+      notes: newRoleType === 'admin' ? 'Cuenta con permisos de Administrador' : user.notes,
     };
     setUsers((prev) => prev.map((u) => (u.id === user.id ? updatedUser : u)));
     await saveFirestoreUser(updatedUser);
@@ -393,6 +432,10 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
     }
     if (!passTrimmed) {
       setCreateError('La contraseña inicial asignada es obligatoria. Asígnale una clave para que el usuario pueda ingresar.');
+      return;
+    }
+    if (passTrimmed.length < 6) {
+      setCreateError('La contraseña debe tener al menos 6 caracteres para ser compatible con Firebase Authentication.');
       return;
     }
 
@@ -430,24 +473,32 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
         : (newAccountType === 'empleado' ? `Operador en sucursal ${newAccountBranch}` : 'Cuenta creada por administrador'),
     };
 
-    // Actualizar estado local inmediatamente
-    setUsers((prev) => [newUser, ...prev]);
+    try {
+      // Crear en Firebase Authentication Y simultáneamente crear el documento correspondiente en la colección users de Cloud Firestore usando el mismo uid en un bloque seguro.
+      // Las contraseñas asignadas manualmente OBLIGATORIAMENTE se usan al crear el usuario en Auth.
+      const authResult = await createFirebaseAuthAndFirestoreUser(newUser);
+      const finalUserId = authResult.uid || userId;
+      const finalUser: RegisteredUser = { ...newUser, id: finalUserId };
 
-    // Guardar en Cloud Firestore y Auth registries
-    await saveFirestoreUser(newUser);
-    triggerSaveNotice();
+      // Actualizar estado local inmediatamente con el UID unificado
+      setUsers((prev) => [finalUser, ...prev.filter((u) => u.id !== finalUserId && u.email?.toLowerCase() !== emailTrimmed)]);
+      triggerSaveNotice();
 
-    // Mostrar feedback de éxito
-    setCreatedSuccessUser(newUser);
+      // Mostrar feedback de éxito
+      setCreatedSuccessUser(finalUser);
 
-    // Limpiar formulario
-    setNewAccountName('');
-    setNewAccountRepName('');
-    setNewAccountEmail('');
-    setNewAccountPhone('');
-    setNewAccountCuit('');
-    setNewAccountAddress('');
-    setNewAccountPassword('');
+      // Limpiar formulario
+      setNewAccountName('');
+      setNewAccountRepName('');
+      setNewAccountEmail('');
+      setNewAccountPhone('');
+      setNewAccountCuit('');
+      setNewAccountAddress('');
+      setNewAccountPassword('');
+    } catch (err: any) {
+      console.error('[CREATE USER ERROR]:', err);
+      setCreateError(`Error al crear la cuenta en Firebase: ${err?.message || err}`);
+    }
   };
 
   // Exportar a CSV
@@ -746,7 +797,12 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
                   const isEmpresa = u.type === 'empresa';
                   const isStaff = u.type === 'empleado' || u.type === 'vendedor' || u.role === 'employee';
                   const isAdmin = u.type === 'admin';
-                  const isMasterAdmin = u.id === 'admin-master' || u.email?.toLowerCase().trim() === 'admin@pampero.com';
+                  const isMasterAdmin = 
+                    u.id === 'admin-master' || 
+                    u.id === MASTER_ADMIN_USER.id || 
+                    u.email?.toLowerCase().trim() === 'joaquinnievass20@gmail.com' ||
+                    u.email?.toLowerCase().trim() === MASTER_ADMIN_EMAIL.toLowerCase() ||
+                    (u.email || '').toLowerCase().includes('joaquinnievass20');
                   const initialPass = u.initialPassword || u.password || 'Pampero2026';
                   const isPassVisible = Boolean(visiblePasswords[u.id]);
                   const isCopied = copiedId === u.id;
@@ -806,27 +862,44 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
 
                       {/* Rol & Perfil */}
                       <td className="py-3 px-4">
-                        <span
-                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-xs text-[10px] font-bold uppercase tracking-wider ${
-                            isAdmin
-                              ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                        <div className="flex flex-col gap-1">
+                          <span
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-xs text-[10px] font-bold uppercase tracking-wider ${
+                              isAdmin
+                                ? 'bg-purple-100 text-purple-900 border border-purple-300'
+                                : isEmpresa
+                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                : isStaff
+                                ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                                : 'bg-blue-100 text-blue-800 border border-blue-300'
+                            }`}
+                          >
+                            {isAdmin
+                              ? 'Administrador'
                               : isEmpresa
-                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                              ? 'Cliente Empresa'
                               : isStaff
-                              ? 'bg-amber-100 text-amber-900 border border-amber-300'
-                              : 'bg-blue-100 text-blue-800 border border-blue-300'
-                          }`}
-                        >
-                          {isAdmin
-                            ? 'Admin General'
-                            : isEmpresa
-                            ? 'Cliente Empresa'
-                            : isStaff
-                            ? `Vendedor (${u.branch || 'Staff'})`
-                            : 'Consumidor Final'}
-                        </span>
-                        <div className="text-[9px] text-[#6F6860] mt-0.5">
-                          Alta: {u.createdAt || 'Registrado'}
+                              ? `Vendedor (${u.branch || 'Staff'})`
+                              : 'Consumidor Final'}
+                          </span>
+
+                          {!isMasterAdmin && (
+                            <select
+                              value={u.type}
+                              onChange={(e) => handleUpdateRole(u, e.target.value as any)}
+                              className="text-[9px] font-semibold text-[#18231C] bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs px-1 py-0.5 cursor-pointer outline-none hover:bg-white"
+                              title="Cambiar rol y permisos en Firebase"
+                            >
+                              <option value="admin">Cambiar a: Administrador</option>
+                              <option value="empleado">Cambiar a: Empleado/Ventas</option>
+                              <option value="empresa">Cambiar a: Cliente Empresa</option>
+                              <option value="consumidor">Cambiar a: Consumidor Final</option>
+                            </select>
+                          )}
+
+                          <div className="text-[9px] text-[#6F6860]">
+                            Alta: {u.createdAt || 'Registrado'}
+                          </div>
                         </div>
                       </td>
 
@@ -1121,7 +1194,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
                         required
                         value={newAccountName}
                         onChange={(e) => setNewAccountName(e.target.value)}
-                        placeholder={newAccountType === 'empresa' ? 'Ej: Viñedos Andinos S.A.' : 'Ej: Carlos Gómez'}
+                        placeholder={newAccountType === 'empresa' ? 'Razón Social o Empresa' : 'Ingresar nombre completo'}
                         className="w-full px-3 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs text-[#18231C] outline-none focus:border-[#B9522F]"
                       />
                     </div>
@@ -1135,7 +1208,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
                           type="text"
                           value={newAccountRepName}
                           onChange={(e) => setNewAccountRepName(e.target.value)}
-                          placeholder="Ej: Lic. Marcelo Pérez"
+                          placeholder="Nombre del representante"
                           className="w-full px-3 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs text-[#18231C] outline-none focus:border-[#B9522F]"
                         />
                       </div>
@@ -1167,7 +1240,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
                         required
                         value={newAccountEmail}
                         onChange={(e) => setNewAccountEmail(e.target.value)}
-                        placeholder="usuario@pampero.com"
+                        placeholder="correo@empresa.com"
                         className="w-full px-3 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs text-[#18231C] font-mono outline-none focus:border-[#B9522F]"
                       />
                     </div>
@@ -1181,7 +1254,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
                         required
                         value={newAccountPhone}
                         onChange={(e) => setNewAccountPhone(e.target.value)}
-                        placeholder="Ej: 261 555-1234"
+                        placeholder="Ej: 2612345678"
                         className="w-full px-3 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs text-[#18231C] outline-none focus:border-[#B9522F]"
                       />
                     </div>
@@ -1197,7 +1270,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
                         required
                         value={newAccountCuit}
                         onChange={(e) => setNewAccountCuit(e.target.value)}
-                        placeholder={newAccountType === 'empresa' ? '30-12345678-9' : '35.123.456'}
+                        placeholder={newAccountType === 'empresa' ? '30-XXXXXXXX-X' : 'XX.XXX.XXX'}
                         className="w-full px-3 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs text-[#18231C] font-mono outline-none focus:border-[#B9522F]"
                       />
                     </div>
@@ -1210,7 +1283,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
                         type="text"
                         value={newAccountAddress}
                         onChange={(e) => setNewAccountAddress(e.target.value)}
-                        placeholder="Ej: Av. San Martín 1234"
+                        placeholder="Calle y número"
                         className="w-full px-3 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs text-[#18231C] outline-none focus:border-[#B9522F]"
                       />
                     </div>
@@ -1238,7 +1311,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
                         required
                         value={newAccountPassword}
                         onChange={(e) => setNewAccountPassword(e.target.value)}
-                        placeholder="Ej: Pampero2026_xyz"
+                        placeholder="Ingresar contraseña inicial"
                         className="w-full px-3 py-2 bg-white border border-amber-300 rounded-xs text-xs font-mono font-bold text-[#18231C] pr-10 outline-none focus:border-[#B9522F]"
                       />
                       <button

@@ -13,7 +13,8 @@ import {
   Bell,
   LayoutDashboard,
   Sparkles,
-  Shirt
+  Shirt,
+  Package
 } from 'lucide-react';
 
 interface UserNavMenuProps {
@@ -28,6 +29,7 @@ interface UserNavMenuProps {
   onOpenUniformSimulator?: () => void;
   onOpenSizingPortal?: () => void;
   onOpenProfile?: () => void;
+  onOpenOrderTracking?: () => void;
   onOpenCatalog?: () => void;
   theme?: ThemeConfig;
 }
@@ -44,6 +46,7 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
   onOpenUniformSimulator,
   onOpenSizingPortal,
   onOpenProfile,
+  onOpenOrderTracking,
   onOpenCatalog,
   theme,
 }) => {
@@ -294,7 +297,27 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
                   </button>
                 )}
 
-                {/* 6. CLIENT ONLY: Perfil & Datos de Entrega */}
+                {/* 6. CLIENT & ALL USERS: Estado de mi pedido (Seguimiento en Vivo) */}
+                {onOpenOrderTracking && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDropdownOpen(false);
+                      onOpenOrderTracking();
+                    }}
+                    className="w-full flex items-center justify-between px-3 py-2 text-left text-xs font-bold text-[#18231C] bg-blue-50/60 hover:bg-blue-100/80 rounded-xs transition-colors cursor-pointer group"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Package className="w-4 h-4 text-blue-600" />
+                      <span>Estado de mi pedido</span>
+                    </div>
+                    <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded-xs bg-blue-600 text-white">
+                      En Vivo
+                    </span>
+                  </button>
+                )}
+
+                {/* 7. CLIENT ONLY: Perfil & Datos de Entrega */}
                 {userSession.role === 'client' && onOpenProfile && (
                   <button
                     type="button"
@@ -309,7 +332,7 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
                   </button>
                 )}
 
-                {/* 7. CLIENT ONLY: Mi Pedido */}
+                {/* 8. CLIENT ONLY: Mi Pedido */}
                 {userSession.role === 'client' && (
                   <button
                     type="button"

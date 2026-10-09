@@ -51,8 +51,12 @@ import {
   Phone,
   ArrowRight,
   ShieldCheck,
-  DollarSign
+  DollarSign,
+  Download,
+  Upload,
+  FileSpreadsheet
 } from 'lucide-react';
+import { exportOrdersToExcel, importOrdersFromExcel } from '../../utils/kanbanExcelUtils';
 import { CRMNotificationsModal } from './CRMNotificationsModal';
 import { CRMVisitsTab } from './CRMVisitsTab';
 import { CRMSupplierOrdersTab } from './CRMSupplierOrdersTab';
@@ -207,6 +211,30 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
   const [showNotificationsModal, setShowNotificationsModal] = useState(false);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
   const [selectedOrderForDetail, setSelectedOrderForDetail] = useState<CRMOrder | null>(null);
+  const [excelNotice, setExcelNotice] = useState<string | null>(null);
+  const [isExcelProcessing, setIsExcelProcessing] = useState(false);
+  const fileInputOrdersRef = React.useRef<HTMLInputElement>(null);
+
+  const handleExportOrders = () => {
+    exportOrdersToExcel(filteredOrders.length > 0 ? filteredOrders : orders);
+  };
+
+  const handleImportOrders = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsExcelProcessing(true);
+    try {
+      const res = await importOrdersFromExcel(file, orders);
+      setOrders(res.orders);
+      setExcelNotice(`¡Excel sincronizado con éxito! Se actualizaron ${res.updatedCount} pedidos y se crearon ${res.newCount} en Cloud Firestore.`);
+      setTimeout(() => setExcelNotice(null), 6000);
+    } catch (err: any) {
+      alert(`Error al importar Excel: ${err?.message || err}`);
+    } finally {
+      setIsExcelProcessing(false);
+      if (fileInputOrdersRef.current) fileInputOrdersRef.current.value = '';
+    }
+  };
 
   const accent = theme?.accentColor || '#FDB813';
 
@@ -431,7 +459,8 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
   return (
     <div className="flex flex-col min-h-[calc(100vh-80px)] bg-[#FAF8F5]">
       {/* Top Bar Navigation */}
-      <div className="bg-white border-b border-[#DCD4C9] px-4 sm:px-6 py-3 flex flex-col lg:flex-row items-start lg:items-center justify-between shrink-0 shadow-xs gap-3">
+      <div className="bg-white border-b border-[#DCD4C9] w-full shrink-0 shadow-xs">
+        <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-3 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3">
         <div className="flex items-center gap-4 sm:gap-6 flex-wrap">
           <h2 className="font-display font-bold text-lg sm:text-xl uppercase tracking-wider text-[#18231C] flex items-center gap-2">
             <LayoutDashboard className="w-5 h-5 text-[#B9522F]" />
@@ -532,10 +561,12 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
             Volver al menú principal
           </button>
         </div>
+        </div>
       </div>
 
       {/* Main Content Area */}
-      <div className="flex-1 p-4 sm:p-6 overflow-auto">
+      <div className="flex-1 overflow-auto">
+        <div className="w-full max-w-7xl mx-auto p-4 sm:p-6 h-full flex flex-col">
         {/* === TAB 1: KANBAN BOARD === */}
         {activeTab === 'board' && (
           <div className="flex flex-col h-full space-y-4">
@@ -649,10 +680,57 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
                 />
               </div>
 
+              {/* Excel Bulk Export & Import Tools */}
+              <div className="flex items-center gap-2">
+                <input
+                  type="file"
+                  ref={fileInputOrdersRef}
+                  onChange={handleImportOrders}
+                  accept=".xlsx,.xls,.csv"
+                  className="hidden"
+                />
+                <button
+                  type="button"
+                  onClick={handleExportOrders}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xs text-xs font-bold transition-colors cursor-pointer shadow-xs"
+                  title="Descargar todas las tarjetas actuales en archivo Excel"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Descargar Excel</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={isExcelProcessing}
+                  onClick={() => fileInputOrdersRef.current?.click()}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#FAF8F5] hover:bg-[#ECE5DC] border border-[#DCD4C9] text-[#18231C] rounded-xs text-xs font-bold transition-colors cursor-pointer shadow-xs disabled:opacity-50"
+                  title="Subir archivo Excel para actualizar estados y datos de las tarjetas masivamente en Firestore"
+                >
+                  <Upload className="w-3.5 h-3.5 text-emerald-700" />
+                  <span>{isExcelProcessing ? 'Procesando...' : 'Subir Excel'}</span>
+                </button>
+              </div>
+
               <div className="ml-auto text-[10px] font-bold text-[#8C827A] uppercase">
                 {filteredOrders.length} pedidos mostrados
               </div>
             </div>
+
+            {/* Excel Notification Banner */}
+            {excelNotice && (
+              <div className="p-3 bg-emerald-50 border border-emerald-300 rounded-xs flex items-center justify-between gap-2 text-xs text-emerald-950 animate-fadeIn">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span className="font-semibold">{excelNotice}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setExcelNotice(null)}
+                  className="text-emerald-700 hover:text-emerald-900 font-bold text-xs"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
 
             {/* Kanban Board Columns */}
             <div className="flex gap-4 flex-1 overflow-x-auto pb-4">
@@ -856,6 +934,7 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
             defaultBranch={assignedBranch}
           />
         )}
+        </div>
       </div>
 
       {/* Notifications Drawer Modal */}
@@ -1145,7 +1224,7 @@ const NewOrderModal: React.FC<{
               type="text"
               value={clientName}
               onChange={(e) => setClientName(e.target.value)}
-              placeholder="Ej: PIZZOLON, VALMEN JCB, BODEGA NORTON..."
+              placeholder="Razón Social o Cliente"
               className="w-full px-3 py-2 text-xs bg-white rounded-xs border border-[#DCD4C9] outline-none"
               required
             />

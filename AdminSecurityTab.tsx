@@ -188,7 +188,7 @@ export const AdminSecurityTab: React.FC<AdminSecurityTabProps> = ({ triggerSaveN
               required
               value={adminEmail}
               onChange={(e) => setAdminEmail(e.target.value)}
-              placeholder="ejemplo@gmail.com"
+              placeholder="correo@empresa.com"
               className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs font-medium text-[#18231C] focus:outline-none focus:border-[#B9522F] focus:bg-white transition-colors"
             />
             <p className="text-[10px] text-[#6F6860] mt-1">

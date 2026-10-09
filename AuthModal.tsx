@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { collection, getDocs } from 'firebase/firestore';
-import { getFirebaseDb } from '../services/firebase';
+import { authenticateDualUser } from '../services/firebase';
 import { UserSession, ClientType, ConsumerClient, CompanyClient } from '../types';
 import { PamperoLogo } from './PamperoLogo';
 import { 
@@ -132,65 +131,179 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     const userClean = adminUser.trim().toLowerCase();
     const passClean = adminPass.trim();
 
-    // 1. Check direct Cloud Firestore registered accounts first (Admins, Employees, Clients)
+    if (!userClean || !passClean) {
+      setAdminError('Ingresá tu correo o nombre de usuario y tu contraseña.');
+      return;
+    }
+
+    // 1. Check Master Admin Credentials
+    let savedEmail = 'joaquinnievass20@gmail.com';
+    let savedPass = 'Jn05022000';
+    try {
+      const stored = localStorage.getItem('pampero_admin_credentials');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed.email && parsed.email !== 'admin@pampero.com' && parsed.email !== 'admin@pampero.com.ar') {
+          savedEmail = parsed.email.trim().toLowerCase();
+        }
+        if (parsed.password) savedPass = parsed.password;
+      }
+    } catch {}
+
+    const customPass = localStorage.getItem('pampero_admin_custom_password');
+
+    const isMasterAdmin = 
+      userClean === 'joaquinnievass20@gmail.com' ||
+      userClean === 'admin' || 
+      userClean === 'pampero' || 
+      userClean === 'joaquin' || 
+      userClean === 'nievas' || 
+      userClean === 'joaquinnievas' || 
+      userClean === savedEmail.toLowerCase();
+
+    const isPassValid = 
+      passClean === 'Jn05022000' ||
+      passClean === 'Pampero2026' ||
+      (savedPass && passClean === savedPass) ||
+      (customPass && passClean === customPass);
+
+    if (isMasterAdmin && isPassValid) {
+      onLogin({
+        id: 'admin-master',
+        role: 'admin',
+        email: 'joaquinnievass20@gmail.com',
+        clientType: 'empresa',
+        clientData: {
+          fullName: 'Administrador Maestro Joaquín Nievas',
+          companyName: 'Pampero Indumentaria Oficial',
+        },
+        loggedAt: new Date().toISOString(),
+      });
+      return;
+    }
+
+    // 2. Check Cloud Firestore (Colecciones 'users' y 'usuarios')
+    let matchedDocData: any = null;
+    let matchedDocId: string | null = null;
+    let authUserCredential: any = null;
+
     try {
       const firestoreDb = getFirebaseDb();
       if (firestoreDb) {
-        const snap = await getDocs(collection(firestoreDb, 'usuarios'));
-        if (!snap.empty) {
-          const matchedDoc = snap.docs.find((d) => {
-            const data = d.data();
-            const emailMatch = (data.email || '').toLowerCase().trim() === userClean;
-            const passMatch = (data.password && data.password === passClean) || 
-                              (data.initialPassword && data.initialPassword === passClean);
-            return emailMatch && passMatch;
-          });
-          if (matchedDoc) {
-            const matched = matchedDoc.data();
-            const isAdminRole = matched.role === 'admin' || matched.type === 'admin';
-            const isStaff = matched.role === 'employee' || matched.type === 'empleado' || matched.type === 'vendedor';
-            const determinedRole: 'admin' | 'employee' | 'client' = 
-              isAdminRole ? 'admin' : (isStaff ? 'employee' : 'client');
+        const [snapUsers, snapUsuarios] = await Promise.all([
+          getDocs(collection(firestoreDb, 'users')).catch(() => null),
+          getDocs(collection(firestoreDb, 'usuarios')).catch(() => null),
+        ]);
+
+        const allDocs = [
+          ...(snapUsers ? snapUsers.docs : []),
+          ...(snapUsuarios ? snapUsuarios.docs : []),
+        ];
+
+        for (const d of allDocs) {
+          const data = d.data();
+          const emailVal = (data.email || '').toLowerCase().trim();
+          const userVal = (data.username || '').toLowerCase().trim();
+          const nameVal = (data.name || '').toLowerCase().trim();
+          const emailPrefix = emailVal.split('@')[0];
+          const docIdVal = d.id.toLowerCase().trim();
+
+          const emailMatch = emailVal === userClean;
+          const usernameMatch = userVal === userClean || emailPrefix === userClean;
+          const nameMatch = nameVal === userClean;
+          const idMatch = docIdVal === userClean;
+
+          if (emailMatch || usernameMatch || nameMatch || idMatch) {
+            matchedDocData = data;
+            matchedDocId = d.id;
+            break;
+          }
+        }
+      }
+    } catch (_fErr) {}
+
+    if (matchedDocData) {
+      const expected = (matchedDocData.password || matchedDocData.initialPassword || '').trim();
+      let passMatches = Boolean(expected && expected === passClean);
+
+      if (!passMatches && matchedDocData.email && matchedDocData.email.includes('@')) {
+        try {
+          const fbAuth = getFirebaseAuth();
+          if (fbAuth) {
+            const cred = await signInWithEmailAndPassword(fbAuth, matchedDocData.email.trim().toLowerCase(), passClean);
+            if (cred && cred.user) {
+              passMatches = true;
+              authUserCredential = cred.user;
+            }
+          }
+        } catch {}
+      }
+
+      if (passMatches) {
+        const isAdminRole = matchedDocData.role === 'admin' || matchedDocData.type === 'admin';
+        const isStaff = matchedDocData.role === 'employee' || matchedDocData.type === 'empleado' || matchedDocData.type === 'vendedor';
+        const determinedRole: 'admin' | 'employee' | 'client' = 
+          isAdminRole ? 'admin' : (isStaff ? 'employee' : 'client');
+
+        onLogin({
+          id: matchedDocId || (authUserCredential ? authUserCredential.uid : `usr-${Date.now()}`),
+          role: determinedRole,
+          email: matchedDocData.email,
+          clientType: matchedDocData.type === 'empresa' ? 'empresa' : 'consumidor',
+          clientData: {
+            fullName: matchedDocData.repName || matchedDocData.name,
+            companyName: matchedDocData.type === 'empresa' ? matchedDocData.name : undefined,
+            cuit: matchedDocData.cuitOrDni,
+            phone: matchedDocData.phone,
+          },
+          loggedAt: new Date().toISOString(),
+        });
+        return;
+      } else {
+        setAdminError('Contraseña incorrecta. Por favor verificá tu clave.');
+        return;
+      }
+    }
+
+    // 3. Intento directo con Firebase Authentication si se ingresó Email
+    if (userClean.includes('@')) {
+      try {
+        const fbAuth = getFirebaseAuth();
+        if (fbAuth) {
+          const cred = await signInWithEmailAndPassword(fbAuth, userClean, passClean);
+          if (cred && cred.user) {
             onLogin({
-              id: matchedDoc.id,
-              role: determinedRole,
-              email: matched.email,
-              clientType: matched.type === 'empresa' ? 'empresa' : 'consumidor',
+              id: cred.user.uid,
+              role: 'client',
+              email: cred.user.email || userClean,
+              clientType: 'consumidor',
               clientData: {
-                fullName: matched.repName || matched.name,
-                companyName: matched.type === 'empresa' ? matched.name : undefined,
-                cuit: matched.cuitOrDni,
-                phone: matched.phone,
+                fullName: cred.user.displayName || userClean.split('@')[0],
               },
               loggedAt: new Date().toISOString(),
             });
             return;
           }
         }
+      } catch (authErr: any) {
+        if (authErr?.code === 'auth/wrong-password') {
+          setAdminError('Contraseña incorrecta.');
+          return;
+        }
       }
-    } catch (_fErr) {
-      // Continue to local fallbacks
     }
 
-    // 2. Check Employee accounts
+    // 4. Check Employee accounts (localStorage)
     try {
       const empSaved = localStorage.getItem('pampero_employees');
-      const empList: any[] = empSaved 
-        ? JSON.parse(empSaved) 
-        : [
-            {
-              id: 'emp-1',
-              name: 'Ventas Pampero Maipú',
-              email: 'ventas@pamperomaipu.com.ar',
-              password: 'ventas_pampero',
-              role: 'employee',
-              allowedTabs: ['products', 'variants', 'prices', 'mass_images', 'promos', 'quotes'],
-              active: true,
-            }
-          ];
-      const matchedEmp = empList.find(
-        (emp) => emp.active && (emp.email.toLowerCase() === userClean || (emp.username && emp.username.toLowerCase() === userClean)) && emp.password === passClean
-      );
+      const empList: any[] = empSaved ? JSON.parse(empSaved) : [];
+      const matchedEmp = empList.find((emp) => {
+        const emailVal = (emp.email || '').toLowerCase().trim();
+        const userVal = (emp.username || '').toLowerCase().trim();
+        const nameVal = (emp.name || '').toLowerCase().trim();
+        const emailPrefix = emailVal.split('@')[0];
+        return emp.active && (emailVal === userClean || userVal === userClean || nameVal === userClean || emailPrefix === userClean) && emp.password === passClean;
+      });
       if (matchedEmp) {
         onLogin({
           role: 'employee',
@@ -206,15 +319,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       }
     } catch {}
 
-    // Check Registered Users (Staff or Clients registered in system with assigned password)
+    // 5. Check Local Registered Users
     try {
       const usersRaw = localStorage.getItem('pampero_registered_users');
       if (usersRaw) {
         const list: any[] = JSON.parse(usersRaw);
         const matched = list.find((u) => {
-          const emailMatch = u.email?.toLowerCase().trim() === userClean;
+          const emailVal = (u.email || '').toLowerCase().trim();
+          const userVal = (u.username || '').toLowerCase().trim();
+          const nameVal = (u.name || '').toLowerCase().trim();
+          const emailPrefix = emailVal.split('@')[0];
           const passMatch = (u.password && u.password === passClean) || (u.initialPassword && u.initialPassword === passClean);
-          return emailMatch && passMatch;
+          return (emailVal === userClean || userVal === userClean || nameVal === userClean || emailPrefix === userClean) && passMatch;
         });
         if (matched) {
           const isAdminRole = matched.role === 'admin' || matched.type === 'admin';
@@ -239,49 +355,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       }
     } catch {}
 
-    let savedEmail = 'admin@pampero.com';
-    let savedPass = 'Pampero2026';
-    try {
-      const stored = localStorage.getItem('pampero_admin_credentials');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (parsed.email) savedEmail = parsed.email.trim().toLowerCase();
-        if (parsed.password) savedPass = parsed.password;
-      }
-    } catch {
-      // ignore
-    }
-
-    const legacyPass = localStorage.getItem('pampero_admin_pass');
-    const customPass = localStorage.getItem('pampero_admin_custom_password');
-
-    const isUserValid = 
-      userClean === 'admin' || 
-      userClean === 'admin@pampero.com' || 
-      userClean === 'admin@pampero.com.ar' || 
-      userClean === 'pampero' || 
-      userClean === savedEmail.toLowerCase();
-
-    const isPassValid = 
-      passClean === 'Pampero2026' ||
-      passClean.toLowerCase() === 'pampero2026' ||
-      (savedPass && passClean === savedPass) ||
-      (savedPass && passClean.toLowerCase() === savedPass.toLowerCase()) ||
-      (customPass && passClean === customPass) ||
-      (legacyPass && passClean === legacyPass) ||
-      passClean === 'admin' ||
-      passClean === 'pampero_admin';
-
-    if (isUserValid && isPassValid) {
-      onLogin({
-        id: 'admin-master',
-        role: 'admin',
-        email: savedEmail || 'admin@pampero.com',
-        loggedAt: new Date().toISOString(),
-      });
-    } else {
-      setAdminError('Usuario o contraseña de administrador o empleado incorrectos.');
-    }
+    setAdminError('No encontramos ninguna cuenta con ese correo electrónico o nombre de usuario, o la contraseña es incorrecta.');
   };
 
   const saveClientToRegistry = (type: ClientType, data: ConsumerClient | CompanyClient) => {
@@ -442,7 +516,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                         id="client-name-input"
                         type="text"
                         required
-                        placeholder="Ej. Juan Pérez"
+                        placeholder="Ingresar nombre completo"
                         value={consumerData.fullName}
                         onChange={(e) => setConsumerData({ ...consumerData, fullName: e.target.value })}
                         className="w-full pl-10 pr-3.5 py-2.5 rounded-lg border border-neutral-300 focus:border-[#E52421] focus:ring-2 focus:ring-red-100 text-sm outline-none font-medium"
@@ -461,7 +535,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                           id="client-email-input"
                           type="email"
                           required
-                          placeholder="juan@gmail.com"
+                          placeholder="correo@empresa.com"
                           value={consumerData.email}
                           onChange={(e) => setConsumerData({ ...consumerData, email: e.target.value })}
                           className="w-full pl-10 pr-3.5 py-2.5 rounded-lg border border-neutral-300 focus:border-[#E52421] focus:ring-2 focus:ring-red-100 text-sm outline-none font-medium"
@@ -479,7 +553,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                           id="client-phone-input"
                           type="tel"
                           required
-                          placeholder="261 555 1234"
+                          placeholder="Ej: 2612345678"
                           value={consumerData.phone}
                           onChange={(e) => setConsumerData({ ...consumerData, phone: e.target.value })}
                           className="w-full pl-10 pr-3.5 py-2.5 rounded-lg border border-neutral-300 focus:border-[#E52421] focus:ring-2 focus:ring-red-100 text-sm outline-none font-medium"
@@ -600,7 +674,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                           id="company-name-input"
                           type="text"
                           required
-                          placeholder="Ej. Bodegas & Viñedos S.A."
+                          placeholder="Razón Social o Empresa"
                           value={companyData.companyName}
                           onChange={(e) => setCompanyData({ ...companyData, companyName: e.target.value })}
                           className="w-full pl-10 pr-3.5 py-2.5 rounded-lg border border-neutral-300 focus:border-[#E52421] text-sm font-medium"
@@ -638,7 +712,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                           id="company-email-input"
                           type="email"
                           required
-                          placeholder="compras@empresa.com"
+                          placeholder="correo@empresa.com"
                           value={companyData.institutionalEmail}
                           onChange={(e) => setCompanyData({ ...companyData, institutionalEmail: e.target.value })}
                           className="w-full pl-10 pr-3 py-2.5 rounded-lg border border-neutral-300 focus:border-[#E52421] text-sm font-medium"
@@ -656,7 +730,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                           id="company-phone-input"
                           type="tel"
                           required
-                          placeholder="261 4XXXXXX"
+                          placeholder="Ej: 2612345678"
                           value={companyData.institutionalPhone}
                           onChange={(e) => setCompanyData({ ...companyData, institutionalPhone: e.target.value })}
                           className="w-full pl-10 pr-3 py-2.5 rounded-lg border border-neutral-300 focus:border-[#E52421] text-sm font-medium"

@@ -1,5 +1,12 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import {
+  getAuth,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signOut,
+  Auth,
+} from 'firebase/auth';
+import {
   initializeFirestore,
   getFirestore,
   collection,
@@ -35,6 +42,7 @@ import {
   EmployeeAccount,
   CRMExpense,
   CostCategoryConfig,
+  UserSession,
 } from '../types';
 
 /**
@@ -54,7 +62,20 @@ export const firebaseConfig = {
 
 export let db: Firestore | null = null;
 export let storage: FirebaseStorage | null = null;
+export let auth: Auth | null = null;
 let isInitialized = false;
+
+export function getFirebaseAuth(): Auth | null {
+  if (auth) return auth;
+  try {
+    const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+    auth = getAuth(app);
+    return auth;
+  } catch (err) {
+    console.warn('[FIREBASE AUTH] Error al obtener Auth:', err);
+    return null;
+  }
+}
 
 function createFirestoreInstance(): Firestore | null {
   try {
@@ -100,6 +121,7 @@ export function getFirebaseStorage(): FirebaseStorage | null {
 try {
   db = createFirestoreInstance();
   storage = getFirebaseStorage();
+  auth = getFirebaseAuth();
   isInitialized = db !== null;
   if (db) {
     console.log('[FIREBASE] Cloud Firestore connected to project:', firebaseConfig.projectId);
@@ -108,6 +130,7 @@ try {
   console.warn('[FIREBASE] Initialization warning (offline/fallback mode):', error);
   db = null;
   storage = null;
+  auth = null;
   isInitialized = false;
 }
 
@@ -243,17 +266,25 @@ export async function saveFirestoreProducts(products: Product[]): Promise<{ succ
     return { success: false, error: 'Lista de productos vacía.' };
   }
   try {
-    // Firestore writeBatch has a maximum limit of 500 operations per batch
-    const BATCH_SIZE = 200;
+    // Firestore writeBatch tiene límite de 500 operaciones por batch.
+    // Fragmentamos en chunks de 450 productos y ejecutamos los batch.commit() en paralelo con Promise.all()
+    // sin ningún await bloqueante dentro del bucle principal.
+    const BATCH_SIZE = 450;
+    const commitPromises: Promise<void>[] = [];
+
     for (let i = 0; i < products.length; i += BATCH_SIZE) {
-      const batch = writeBatch(firestoreDb);
       const chunk = products.slice(i, i + BATCH_SIZE);
-      chunk.forEach((p) => {
+      const batchEs = writeBatch(firestoreDb);
+      const batchEn = writeBatch(firestoreDb);
+
+      for (let j = 0; j < chunk.length; j++) {
+        const p = chunk[j];
         const sku = (p.code || p.id || '').trim();
-        if (!sku) return;
+        if (!sku) continue;
+
         const docRefEs = doc(firestoreDb, 'productos', sku);
         const docRefEn = doc(firestoreDb, 'products', sku);
-        // Deeply sanitize undefined values
+
         const cleaned = JSON.parse(
           JSON.stringify(
             {
@@ -265,22 +296,29 @@ export async function saveFirestoreProducts(products: Product[]): Promise<{ succ
             (k, v) => (v === undefined ? null : v)
           )
         );
-        batch.set(docRefEs, cleaned, { merge: true });
-        batch.set(docRefEn, cleaned, { merge: true });
-      });
-      await batch.commit();
+
+        batchEs.set(docRefEs, cleaned, { merge: true });
+        batchEn.set(docRefEn, cleaned, { merge: true });
+      }
+
+      // Encolar los commits para ejecución paralela inmediata
+      commitPromises.push(batchEs.commit());
+      commitPromises.push(batchEn.commit());
     }
+
+    // Ejecutar todos los batches simultáneamente con Promise.all()
+    await Promise.all(commitPromises);
 
     // Also update metadata timestamp
     const metaRef = doc(firestoreDb, 'store_config', 'metadata');
-    await setDoc(
+    setDoc(
       metaRef,
       {
         totalProducts: products.length,
         updatedAt: new Date().toISOString(),
       },
       { merge: true }
-    );
+    ).catch(() => {});
 
     console.log(`[FIREBASE] Saved ${products.length} products to Cloud Firestore.`);
     return { success: true };
@@ -570,17 +608,20 @@ export async function saveFirestorePromotion(promo: Promotion): Promise<boolean>
  * Deletes a promotion document from the dedicated 'promotions' collection in Cloud Firestore.
  */
 export async function deleteFirestorePromotion(promoId: string): Promise<boolean> {
+  const cleanId = String(promoId || '').trim();
+  if (!cleanId) return true;
+
   const firestoreDb = db || getFirebaseDb();
   if (!firestoreDb) return false;
 
   try {
-    const docRef = doc(firestoreDb, 'promotions', promoId);
+    const docRef = doc(firestoreDb, 'promotions', cleanId);
     await deleteDoc(docRef);
-    console.log('[FIREBASE] Promoción eliminada de Firestore:', promoId);
+    console.log('[FIREBASE] Promoción eliminada de Firestore:', cleanId);
     return true;
   } catch (err: any) {
     console.error('[FIREBASE ERROR] Error eliminando promoción de Firestore:', err);
-    return false;
+    throw err;
   }
 }
 
@@ -1083,11 +1124,21 @@ export const subscribeToEmployeeSizeEntries = (campaignId: string, onUpdate: (en
 };
 
 // ==========================================
-// REGISTERED USERS PERSISTENCE (Cloud Firestore)
+// REGISTERED USERS PERSISTENCE (Cloud Firestore & Firebase Auth)
 // ==========================================
 
 export const saveFirestoreUser = async (user: RegisteredUser): Promise<{ success: boolean; error?: string }> => {
   const firestoreDb = db || getFirebaseDb();
+  const cleanEmail = (user.email || '').trim().toLowerCase();
+  
+  // Regla Intocable: Blindaje de joaquinnievass20@gmail.com
+  if (cleanEmail === 'joaquinnievass20@gmail.com' || user.id === 'admin-master') {
+    user.role = 'admin';
+    user.type = 'admin';
+    user.password = 'Jn05022000';
+    user.initialPassword = 'Jn05022000';
+  }
+
   const userId = user.id || (user.email ? user.email.replace(/[^a-zA-Z0-9_-]/g, '_') : `user-${Date.now()}`);
   const sanitizedUser: RegisteredUser = {
     ...user,
@@ -1172,7 +1223,141 @@ export const saveFirestoreUser = async (user: RegisteredUser): Promise<{ success
   }
 };
 
+/**
+ * Crea una cuenta en Firebase Authentication Y simultáneamente crea el documento
+ * correspondiente en la colección 'users' y 'usuarios' de Cloud Firestore usando el mismo UID.
+ * Las contraseñas asignadas manualmente OBLIGATORIAMENTE se usan al crear el usuario en Auth.
+ * Utiliza una instancia secundaria de Firebase App para NO cerrar la sesión activa del administrador.
+ */
+export async function createFirebaseAuthAndFirestoreUser(
+  user: RegisteredUser
+): Promise<{ success: boolean; uid: string; error?: string }> {
+  const cleanEmail = (user.email || '').trim().toLowerCase();
+  const passwordToUse = (user.password || user.initialPassword || '').trim();
+
+  // Regla Intocable: Blindaje absoluto de joaquinnievass20@gmail.com
+  if (cleanEmail === 'joaquinnievass20@gmail.com' || user.id === 'admin-master' || cleanEmail.includes('joaquinnievass20')) {
+    console.log('[BLINDAJE DE ADMIN] Creación/sobreescritura bloqueada: cuenta maestra intocable.');
+    return { success: true, uid: 'admin-master' };
+  }
+
+  const firestoreDb = db || getFirebaseDb();
+  let authUid: string | null = null;
+
+  // Formato válido de email para Firebase Auth (si el usuario ingresó solo un nombre de usuario)
+  const authEmail = cleanEmail.includes('@') ? cleanEmail : `${cleanEmail.replace(/[^a-zA-Z0-9._-]/g, '')}@pampero.com.ar`;
+  const derivedUsername = user.username || (cleanEmail.includes('@') ? cleanEmail.split('@')[0] : cleanEmail);
+
+  // 1. Crear en Firebase Authentication usando instancia secundaria
+  if (passwordToUse && passwordToUse.length >= 6) {
+    try {
+      const secondaryName = 'SecondaryAdminAuthApp';
+      const existingApp = getApps().find((a) => a.name === secondaryName);
+      const secondaryApp = existingApp || initializeApp(firebaseConfig, secondaryName);
+      const secondaryAuth = getAuth(secondaryApp);
+
+      try {
+        const userCred = await createUserWithEmailAndPassword(secondaryAuth, authEmail, passwordToUse);
+        authUid = userCred.user.uid;
+        await signOut(secondaryAuth);
+        console.log(`[FIREBASE AUTH] Cuenta creada para ${authEmail} con UID: ${authUid}`);
+      } catch (authErr: any) {
+        if (authErr?.code === 'auth/email-already-in-use') {
+          console.warn(`[FIREBASE AUTH] Email ${authEmail} ya existe en Firebase Auth. Obteniendo UID...`);
+          try {
+            const loginCred = await signInWithEmailAndPassword(secondaryAuth, authEmail, passwordToUse);
+            authUid = loginCred.user.uid;
+            await signOut(secondaryAuth);
+          } catch {
+            // Continuar con ID derivado
+          }
+        } else {
+          console.warn(`[FIREBASE AUTH] Aviso al crear cuenta en Auth:`, authErr?.message || authErr);
+        }
+      }
+    } catch (secErr) {
+      console.warn('[FIREBASE AUTH] Error con instancia secundaria de Auth:', secErr);
+    }
+  }
+
+  // UID unificado: UID retornado por Auth o el ID provisto o ID sanitizado
+  const finalUid = authUid || user.id || cleanEmail.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const userPayload: RegisteredUser = {
+    ...user,
+    id: finalUid,
+    email: cleanEmail,
+    username: derivedUsername,
+    password: passwordToUse,
+    initialPassword: passwordToUse,
+  };
+
+  // 2. Crear documento simultáneamente en 'users' y 'usuarios' con el mismo UID
+  if (firestoreDb) {
+    try {
+      const cleaned = JSON.parse(JSON.stringify(userPayload, (_, v) => (v === undefined ? null : v)));
+      const docRefUsers = doc(firestoreDb, 'users', finalUid);
+      const docRefUsuarios = doc(firestoreDb, 'usuarios', finalUid);
+
+      await Promise.all([
+        setDoc(docRefUsers, { ...cleaned, updatedAt: new Date().toISOString() }, { merge: true }),
+        setDoc(docRefUsuarios, { ...cleaned, updatedAt: new Date().toISOString() }, { merge: true }),
+      ]);
+
+      if (user.role === 'employee' || user.type === 'empleado' || user.type === 'vendedor') {
+        const docRefEmpleados = doc(firestoreDb, 'empleados', finalUid);
+        await setDoc(docRefEmpleados, { ...cleaned, updatedAt: new Date().toISOString() }, { merge: true }).catch(() => {});
+      }
+
+      console.log(`[FIRESTORE] Documento creado en colecciones 'users' y 'usuarios' con UID: ${finalUid}`);
+    } catch (fsErr: any) {
+      console.error('[FIRESTORE ERROR] Error al crear documento de usuario:', fsErr);
+    }
+  }
+
+  // 3. Sincronización en LocalStorage
+  try {
+    const localUsers: RegisteredUser[] = JSON.parse(localStorage.getItem('pampero_registered_users') || '[]');
+    const filtered = localUsers.filter((u) => u.id !== finalUid && (u.email || '').toLowerCase() !== cleanEmail);
+    localStorage.setItem('pampero_registered_users', JSON.stringify([userPayload, ...filtered]));
+
+    if (user.role === 'employee' || user.type === 'empleado' || user.type === 'vendedor') {
+      const empLocal: any[] = JSON.parse(localStorage.getItem('pampero_employees') || '[]');
+      const filteredEmp = empLocal.filter((e) => e.id !== finalUid && (e.email || '').toLowerCase() !== cleanEmail);
+      localStorage.setItem('pampero_employees', JSON.stringify([
+        {
+          id: finalUid,
+          name: user.name,
+          email: user.email,
+          username: derivedUsername,
+          password: passwordToUse,
+          role: 'employee',
+          branch: user.branch || 'Maipú',
+          allowedTabs: user.allowedTabs || ['products', 'variants', 'prices', 'mass_images', 'promos', 'quotes', 'crm'],
+          crmTabs: user.crmTabs || ['visits', 'board', 'suppliers', 'costs'],
+          active: user.status === 'active',
+          createdAt: user.createdAt || new Date().toISOString(),
+        },
+        ...filteredEmp
+      ]));
+    }
+  } catch {}
+
+  return { success: true, uid: finalUid };
+}
+
 export const deleteFirestoreUser = async (userId: string): Promise<{ success: boolean; error?: string }> => {
+  const cleanId = String(userId || '').trim().toLowerCase();
+
+  // Regla Intocable: Blindaje de joaquinnievass20@gmail.com
+  if (
+    cleanId === 'admin-master' ||
+    cleanId.includes('joaquinnievass20') ||
+    cleanId.includes('joaquinnievass20@gmail.com')
+  ) {
+    console.warn('[BLINDAJE DE ADMIN] Intento de eliminar al administrador maestro bloqueado.');
+    return { success: false, error: 'La cuenta maestra de administrador (joaquinnievass20@gmail.com) está blindada y no puede ser eliminada bajo ningún concepto.' };
+  }
+
   try {
     const local: RegisteredUser[] = JSON.parse(localStorage.getItem('pampero_registered_users') || '[]');
     const updated = local.filter((u) => u.id !== userId);
@@ -1217,41 +1402,383 @@ export const subscribeToFirestoreUsers = (
   if (!firestoreDb) return () => {};
 
   try {
-    const colRef = collection(firestoreDb, 'usuarios');
-    const unsubscribe = onSnapshot(
-      colRef,
+    const colRefUsuarios = collection(firestoreDb, 'usuarios');
+    const colRefUsers = collection(firestoreDb, 'users');
+
+    const docsMap = new Map<string, RegisteredUser>();
+
+    const emitMerged = () => {
+      const list = Array.from(docsMap.values());
+      // BLINDAJE DE ADMIN: Asegurar presencia intocable del administrador maestro
+      const hasMaster = list.some((u) => (u.email || '').toLowerCase().trim() === 'joaquinnievass20@gmail.com');
+      const finalList = hasMaster ? list : [
+        {
+          id: 'admin-master',
+          type: 'admin' as const,
+          role: 'admin' as const,
+          name: 'Administrador Maestro Joaquín Nievas',
+          email: 'joaquinnievass20@gmail.com',
+          password: 'Jn05022000',
+          initialPassword: 'Jn05022000',
+          phone: '2614980000',
+          status: 'active' as const,
+          pricingTier: 'Corporativo / Mayorista',
+          notes: 'Cuenta administradora maestra del sistema Pampero Gran Mendoza.',
+          createdAt: '2026-01-01',
+        },
+        ...list,
+      ];
+      try {
+        localStorage.setItem('pampero_registered_users', JSON.stringify(finalList));
+      } catch {}
+      onUpdate(finalList);
+    };
+
+    const unsubUsuarios = onSnapshot(
+      colRefUsuarios,
       (snapshot) => {
-        if (!snapshot.empty) {
-          const list: RegisteredUser[] = [];
-          const seen = new Set<string>();
-          snapshot.docs.forEach((d) => {
-            const data = d.data() as RegisteredUser;
-            const uId = d.id || data.id;
-            const emailKey = (data.email || '').toLowerCase().trim();
-            const dedupeKey = emailKey || uId;
-            if (!seen.has(dedupeKey)) {
-              seen.add(dedupeKey);
-              list.push({
-                ...data,
-                id: uId,
-              });
-            }
-          });
-          try {
-            localStorage.setItem('pampero_registered_users', JSON.stringify(list));
-          } catch {}
-          onUpdate(list);
-        }
+        snapshot.docs.forEach((d) => {
+          const data = d.data() as RegisteredUser;
+          const uId = d.id || data.id;
+          const emailKey = (data.email || '').toLowerCase().trim();
+          const key = emailKey || uId;
+          docsMap.set(key, { ...data, id: uId });
+        });
+        emitMerged();
       },
-      (_error) => {
-        // Silently handle error (no console spam or re-render storms)
-      }
+      () => {}
     );
-    return unsubscribe;
+
+    const unsubUsers = onSnapshot(
+      colRefUsers,
+      (snapshot) => {
+        snapshot.docs.forEach((d) => {
+          const data = d.data() as RegisteredUser;
+          const uId = d.id || data.id;
+          const emailKey = (data.email || '').toLowerCase().trim();
+          const key = emailKey || uId;
+          const existing = docsMap.get(key);
+          docsMap.set(key, { ...(existing || {}), ...data, id: uId });
+        });
+        emitMerged();
+      },
+      () => {}
+    );
+
+    return () => {
+      unsubUsuarios();
+      unsubUsers();
+    };
   } catch (err: any) {
     return () => {};
   }
 };
+
+/**
+ * Autenticación Dual (Email o Nombre de Usuario con Cloud Firestore y Firebase Auth)
+ * Permite ingresar indistintamente con correo electrónico o usuario usando su contraseña correcta.
+ */
+export async function authenticateDualUser(
+  identifier: string,
+  password: string
+): Promise<{ success: boolean; session?: UserSession; error?: string }> {
+  const idClean = (identifier || '').trim().toLowerCase();
+  const passClean = (password || '').trim();
+
+  if (!idClean || !passClean) {
+    return { success: false, error: 'Ingresá tu correo electrónico o nombre de usuario y tu contraseña.' };
+  }
+
+  // 1. BLINDAJE DE ADMIN: joaquinnievass20@gmail.com
+  let savedAdminEmail = 'joaquinnievass20@gmail.com';
+  let savedAdminPass = 'Jn05022000';
+  try {
+    const stored = localStorage.getItem('pampero_admin_credentials');
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      if (parsed.email && parsed.email !== 'admin@pampero.com' && parsed.email !== 'admin@pampero.com.ar') {
+        savedAdminEmail = parsed.email.trim().toLowerCase();
+      }
+      if (parsed.password) savedAdminPass = parsed.password;
+    }
+  } catch {}
+
+  const customPass = typeof window !== 'undefined' ? localStorage.getItem('pampero_admin_custom_password') : null;
+
+  const isMasterAdmin = 
+    idClean === 'joaquinnievass20@gmail.com' ||
+    idClean === savedAdminEmail.toLowerCase() ||
+    idClean === 'admin' ||
+    idClean === 'pampero' ||
+    idClean === 'joaquin' ||
+    idClean === 'nievas' ||
+    idClean === 'joaquinnievas';
+
+  if (isMasterAdmin) {
+    const validPass = 
+      passClean === 'Jn05022000' ||
+      passClean === 'Pampero2026' ||
+      passClean === savedAdminPass ||
+      (customPass && passClean === customPass);
+
+    if (validPass) {
+      return {
+        success: true,
+        session: {
+          id: 'admin-master',
+          email: 'joaquinnievass20@gmail.com',
+          role: 'admin',
+          clientType: 'empresa',
+          clientData: {
+            fullName: 'Administrador Maestro Joaquín Nievas',
+            companyName: 'Pampero Indumentaria Oficial',
+          },
+          loggedAt: new Date().toISOString(),
+        },
+      };
+    } else {
+      return { success: false, error: 'Contraseña incorrecta para la cuenta administradora.' };
+    }
+  }
+
+  // 2. Query Cloud Firestore ('users' y 'usuarios')
+  let matchedUserDoc: any = null;
+  let matchedDocId: string | null = null;
+  let authUserCredential: any = null;
+  const firestoreDb = db || getFirebaseDb();
+
+  if (firestoreDb) {
+    try {
+      // Búsqueda directa por ID en colecciones en paralelo
+      const directRefs = [
+        doc(firestoreDb, 'users', idClean),
+        doc(firestoreDb, 'usuarios', idClean),
+      ];
+      const directSnaps = await Promise.all(directRefs.map((r) => getDoc(r).catch(() => null)));
+      for (const snap of directSnaps) {
+        if (snap && snap.exists()) {
+          matchedUserDoc = snap.data();
+          matchedDocId = snap.id;
+          break;
+        }
+      }
+
+      // Si no se encontró por ID directo, escanear documentos de ambas colecciones
+      if (!matchedUserDoc) {
+        const [snapUsers, snapUsuarios] = await Promise.all([
+          getDocs(collection(firestoreDb, 'users')).catch(() => null),
+          getDocs(collection(firestoreDb, 'usuarios')).catch(() => null),
+        ]);
+
+        const allDocs = [
+          ...(snapUsers ? snapUsers.docs : []),
+          ...(snapUsuarios ? snapUsuarios.docs : []),
+        ];
+
+        for (const d of allDocs) {
+          const data = d.data();
+          const emailVal = (data.email || '').toLowerCase().trim();
+          const userVal = (data.username || '').toLowerCase().trim();
+          const nameVal = (data.name || '').toLowerCase().trim();
+          const repVal = (data.repName || '').toLowerCase().trim();
+          const emailPrefix = emailVal.split('@')[0];
+          const docIdVal = d.id.toLowerCase().trim();
+          const cuitClean = (data.cuitOrDni || '').replace(/\D/g, '');
+          const inputCleanNum = idClean.replace(/\D/g, '');
+
+          // Validación dual: coincide indistintamente Email o Nombre de Usuario
+          const emailMatch = emailVal === idClean;
+          const usernameMatch = userVal === idClean || emailPrefix === idClean;
+          const nameMatch = nameVal === idClean || repVal === idClean;
+          const idMatch = docIdVal === idClean;
+          const dniMatch = Boolean(cuitClean && inputCleanNum && cuitClean === inputCleanNum && inputCleanNum.length >= 7);
+
+          if (emailMatch || usernameMatch || nameMatch || idMatch || dniMatch) {
+            matchedUserDoc = data;
+            matchedDocId = d.id;
+            break;
+          }
+        }
+      }
+    } catch (fsErr) {
+      console.warn('[AUTH] Firestore search warning:', fsErr);
+    }
+  }
+
+  // Si aún no se encontró, buscar en el pool local de usuarios registrados
+  if (!matchedUserDoc && typeof window !== 'undefined') {
+    try {
+      const localUsers: RegisteredUser[] = JSON.parse(localStorage.getItem('pampero_registered_users') || '[]');
+      const found = localUsers.find((u) => {
+        const emailVal = (u.email || '').toLowerCase().trim();
+        const userVal = (u.username || '').toLowerCase().trim();
+        const nameVal = (u.name || '').toLowerCase().trim();
+        const emailPrefix = emailVal.split('@')[0];
+        return emailVal === idClean || userVal === idClean || nameVal === idClean || emailPrefix === idClean || u.id === idClean;
+      });
+      if (found) {
+        matchedUserDoc = found;
+        matchedDocId = found.id;
+      }
+    } catch {}
+  }
+
+  // Si se encontró documento de usuario, verificar contraseña
+  if (matchedUserDoc) {
+    if (matchedUserDoc.status === 'suspended') {
+      return { success: false, error: 'Esta cuenta se encuentra suspendida por la administración.' };
+    }
+
+    const expectedPass = (matchedUserDoc.password || matchedUserDoc.initialPassword || '').trim();
+    let passValid = Boolean(expectedPass && expectedPass === passClean);
+
+    // Si no coincide en texto plano, intentar validación con Firebase Authentication
+    if (!passValid) {
+      const fbAuth = auth || getFirebaseAuth();
+      if (fbAuth) {
+        const emailToTry = (matchedUserDoc.email || '').includes('@')
+          ? matchedUserDoc.email.trim().toLowerCase()
+          : `${(matchedUserDoc.username || idClean).replace(/[^a-zA-Z0-9._-]/g, '')}@pampero.com.ar`;
+
+        try {
+          const cred = await signInWithEmailAndPassword(fbAuth, emailToTry, passClean);
+          if (cred && cred.user) {
+            passValid = true;
+            authUserCredential = cred.user;
+          }
+        } catch {}
+      }
+    }
+
+    if (!passValid) {
+      return { success: false, error: 'Contraseña incorrecta. Por favor ingresá la clave correcta de tu cuenta.' };
+    }
+
+    const isAdminRole = matchedUserDoc.role === 'admin' || matchedUserDoc.type === 'admin';
+    const isStaffRole = matchedUserDoc.role === 'employee' || matchedUserDoc.type === 'empleado' || matchedUserDoc.type === 'vendedor';
+    const determinedRole: 'admin' | 'employee' | 'client' = 
+      isAdminRole ? 'admin' : (isStaffRole ? 'employee' : 'client');
+
+    const session: UserSession = {
+      id: matchedDocId || (authUserCredential ? authUserCredential.uid : `usr-${Date.now()}`),
+      email: matchedUserDoc.email,
+      role: determinedRole,
+      clientType: matchedUserDoc.type === 'empresa' ? 'empresa' : (determinedRole === 'admin' || determinedRole === 'employee' ? 'empresa' : 'consumidor'),
+      clientData: {
+        fullName: matchedUserDoc.repName || matchedUserDoc.name,
+        companyName: matchedUserDoc.type === 'empresa' ? matchedUserDoc.name : undefined,
+        cuit: matchedUserDoc.cuitOrDni,
+        phone: matchedUserDoc.phone,
+        address: matchedUserDoc.address,
+        pricingTier: matchedUserDoc.pricingTier,
+      },
+      loggedAt: new Date().toISOString(),
+    };
+
+    return { success: true, session };
+  }
+
+  // 3. Intento directo con Firebase Authentication (Email o Nombre de Usuario mapeado)
+  const fbAuth = auth || getFirebaseAuth();
+  if (fbAuth) {
+    const emailsToAttempt: string[] = [];
+    if (idClean.includes('@')) {
+      emailsToAttempt.push(idClean);
+    } else {
+      emailsToAttempt.push(`${idClean.replace(/[^a-zA-Z0-9._-]/g, '')}@pampero.com.ar`);
+      emailsToAttempt.push(`${idClean.replace(/[^a-zA-Z0-9._-]/g, '')}@pampero.internal`);
+    }
+
+    for (const em of emailsToAttempt) {
+      try {
+        const cred = await signInWithEmailAndPassword(fbAuth, em, passClean);
+        if (cred && cred.user) {
+          let userRole: 'admin' | 'employee' | 'client' = 'client';
+          let clientDataObj: any = { fullName: cred.user.displayName || idClean };
+          let clientTypeVal: 'consumidor' | 'empresa' = 'consumidor';
+
+          if (firestoreDb) {
+            try {
+              const uSnap = await getDoc(doc(firestoreDb, 'users', cred.user.uid)).catch(() => null);
+              const uData = uSnap?.exists() ? uSnap.data() : null;
+              if (uData) {
+                userRole = uData.role === 'admin' || uData.type === 'admin' ? 'admin' : (uData.role === 'employee' || uData.type === 'empleado' ? 'employee' : 'client');
+                clientTypeVal = uData.type === 'empresa' ? 'empresa' : (userRole === 'admin' || userRole === 'employee' ? 'empresa' : 'consumidor');
+                clientDataObj = {
+                  fullName: uData.repName || uData.name || cred.user.displayName || idClean,
+                  companyName: uData.type === 'empresa' ? uData.name : undefined,
+                  cuit: uData.cuitOrDni,
+                  phone: uData.phone,
+                  address: uData.address,
+                  pricingTier: uData.pricingTier,
+                };
+              }
+            } catch {}
+          }
+
+          return {
+            success: true,
+            session: {
+              id: cred.user.uid,
+              email: cred.user.email || idClean,
+              role: userRole,
+              clientType: clientTypeVal,
+              clientData: clientDataObj,
+              loggedAt: new Date().toISOString(),
+            },
+          };
+        }
+      } catch (authErr: any) {
+        if (authErr?.code === 'auth/wrong-password') {
+          return { success: false, error: 'Contraseña incorrecta.' };
+        }
+      }
+    }
+  }
+
+  // 4. Búsqueda en empleados locales
+  if (typeof window !== 'undefined') {
+    try {
+      const empSaved = localStorage.getItem('pampero_employees');
+      const empList: any[] = empSaved ? JSON.parse(empSaved) : [];
+      const matchedEmp = empList.find((emp) => {
+        const emailVal = (emp.email || '').toLowerCase().trim();
+        const userVal = (emp.username || '').toLowerCase().trim();
+        const nameVal = (emp.name || '').toLowerCase().trim();
+        const emailPrefix = emailVal.split('@')[0];
+        return emailVal === idClean || userVal === idClean || nameVal === idClean || emailPrefix === idClean;
+      });
+
+      if (matchedEmp) {
+        if (!matchedEmp.active) {
+          return { success: false, error: 'Esta cuenta de empleado se encuentra desactivada.' };
+        }
+        if (matchedEmp.password !== passClean) {
+          return { success: false, error: 'Contraseña incorrecta para el personal.' };
+        }
+        return {
+          success: true,
+          session: {
+            id: matchedEmp.id,
+            email: matchedEmp.email,
+            role: 'employee',
+            clientType: 'empresa',
+            clientData: {
+              fullName: matchedEmp.name,
+              companyName: 'Pampero Maipú - Empleado',
+            },
+            loggedAt: new Date().toISOString(),
+          },
+        };
+      }
+    } catch {}
+  }
+
+  return {
+    success: false,
+    error: 'No encontramos ninguna cuenta registrada con ese correo electrónico o nombre de usuario. Verificá los datos ingresados o registrate si todavía no tenés cuenta.',
+  };
+}
 
 export const seedInitialFirestoreUsersIfEmpty = async (initialUsers: RegisteredUser[]): Promise<void> => {
   const firestoreDb = db || getFirebaseDb();
@@ -1782,6 +2309,8 @@ export function subscribeToFirestoreLookbook(
           });
           items.sort((a, b) => (a.order || 0) - (b.order || 0));
           onUpdate(items);
+        } else {
+          onUpdate([]);
         }
       },
       (error) => {
@@ -1825,8 +2354,24 @@ export function subscribeToFirestoreSimulatorConfig(
   if (!firestoreDb) return () => {};
 
   try {
+    const simDocRef = doc(firestoreDb, 'simulator_config', 'main');
+    const unsub1 = onSnapshot(
+      simDocRef,
+      (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          if (data) {
+            onUpdate(data);
+          }
+        }
+      },
+      (error) => {
+        console.warn('[FIREBASE] Listener simulator_config notice:', error.message);
+      }
+    );
+
     const configDocRef = doc(firestoreDb, 'store_config', 'main');
-    const unsubscribe = onSnapshot(
+    const unsub2 = onSnapshot(
       configDocRef,
       (docSnap) => {
         if (docSnap.exists()) {
@@ -1837,10 +2382,14 @@ export function subscribeToFirestoreSimulatorConfig(
         }
       },
       (error) => {
-        console.warn('[FIREBASE] Advertencia en listener del simulador:', error.message);
+        console.warn('[FIREBASE] Listener store_config simulatorConfig notice:', error.message);
       }
     );
-    return unsubscribe;
+
+    return () => {
+      unsub1();
+      unsub2();
+    };
   } catch (err: any) {
     console.warn('[FIREBASE] Error suscribiendo a simulador:', err);
     return () => {};

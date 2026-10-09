@@ -3,7 +3,7 @@ import { UserSession, ThemeConfig, RegisteredUser } from '../types';
 import { PamperoLogo } from './PamperoLogo';
 import { ShieldCheck, ArrowLeft, AlertCircle, CheckCircle2, Sparkles } from 'lucide-react';
 import { MASTER_ADMIN_EMAIL, MASTER_ADMIN_PASSWORD } from '../utils/authInit';
-import { saveFirestoreUser } from '../services/firebase';
+import { saveFirestoreUser, authenticateDualUser } from '../services/firebase';
 
 interface AuthViewProps {
   onLogin: (session: UserSession) => void;
@@ -109,273 +109,67 @@ export const AuthView: React.FC<AuthViewProps> = ({
     }, 400);
   };
 
-  // Submit Login (Allows Client, Employee or Admin login seamlessly)
-  const handleLogin = (e: React.FormEvent) => {
+  // Submit Login (Dual Email o Nombre de Usuario con Cloud Firestore y Firebase Auth)
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
+    setSuccessMessage(null);
 
-    const emailClean = email.trim().toLowerCase();
+    const idClean = email.trim();
     const passClean = password.trim();
 
-    if (!emailClean || !passClean) {
-      setErrorMessage('Ingresá tu email y contraseña.');
+    if (!idClean || !passClean) {
+      setErrorMessage('Ingresá tu correo electrónico o nombre de usuario y tu contraseña.');
       return;
     }
 
-    // 1. Check if it is an Employee trying to enter
     try {
-      const empSaved = localStorage.getItem('pampero_employees');
-      const empList: any[] = empSaved 
-        ? JSON.parse(empSaved) 
-        : [
-            {
-              id: 'emp-1',
-              name: 'Ventas Pampero Maipú',
-              email: 'ventas@pamperomaipu.com.ar',
-              password: 'ventas_pampero',
-              role: 'employee',
-              allowedTabs: ['products', 'variants', 'prices', 'mass_images', 'promos', 'quotes'],
-              active: true,
-            }
-          ];
-      const matchedEmp = empList.find(
-        (emp) => emp.active && (emp.email.toLowerCase() === emailClean || (emp.username && emp.username.toLowerCase() === emailClean)) && emp.password === passClean
-      );
-      if (matchedEmp) {
-        const empSession: UserSession = {
-          id: matchedEmp.id,
-          email: matchedEmp.email,
-          role: 'employee',
-          clientType: 'empresa',
-          clientData: {
-            fullName: matchedEmp.name,
-            companyName: 'Pampero Maipú - Empleado',
-          },
-        };
-        setSuccessMessage(`Bienvenido/a, ${matchedEmp.name}. Redirigiendo al Hub de Trabajo Interno...`);
+      const authResult = await authenticateDualUser(idClean, passClean);
+      if (authResult.success && authResult.session) {
+        const userDisplayName = authResult.session.clientData?.fullName || authResult.session.email || 'Usuario';
+        setSuccessMessage(`¡Bienvenido/a, ${userDisplayName}! Ingresando al sistema...`);
         setTimeout(() => {
-          onLogin(empSession);
+          onLogin(authResult.session!);
         }, 350);
-        return;
+      } else {
+        setErrorMessage(authResult.error || 'Credenciales incorrectas. Verificá tu correo o usuario y tu contraseña.');
       }
-    } catch {}
-
-    // 2. Check if it is an Admin logging in via standard form
-    let savedAdminEmail = MASTER_ADMIN_EMAIL;
-    let savedAdminPass = MASTER_ADMIN_PASSWORD;
-    try {
-      const stored = localStorage.getItem('pampero_admin_credentials');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (parsed.email && parsed.email !== 'admin@pampero.com' && parsed.email !== 'admin@pampero.com.ar') {
-          savedAdminEmail = parsed.email.trim().toLowerCase();
-        }
-        if (parsed.password) savedAdminPass = parsed.password;
-      }
-    } catch {}
-
-    const savedCustomPass = localStorage.getItem('pampero_admin_custom_password');
-    const legacyPass = localStorage.getItem('pampero_admin_pass');
-
-    const validAdminUser = 
-      emailClean === 'joaquinnievass20@gmail.com' ||
-      emailClean === MASTER_ADMIN_EMAIL.toLowerCase() ||
-      emailClean === savedAdminEmail.toLowerCase() ||
-      emailClean === 'admin' ||
-      emailClean === 'pampero';
-
-    const validAdminPass = 
-      passClean === 'Pampero2026' ||
-      passClean.toLowerCase() === 'pampero2026' ||
-      (savedAdminPass && passClean === savedAdminPass) ||
-      (savedAdminPass && passClean.toLowerCase() === savedAdminPass.toLowerCase()) ||
-      (savedCustomPass && passClean === savedCustomPass) ||
-      (legacyPass && passClean === legacyPass) ||
-      passClean === 'admin' ||
-      passClean === 'pampero_admin';
-
-    if (validAdminUser && validAdminPass) {
-      const adminSession: UserSession = {
-        id: 'admin-master',
-        email: emailClean === 'admin' || emailClean === 'pampero' ? MASTER_ADMIN_EMAIL : email.trim(),
-        role: 'admin',
-        clientType: 'empresa',
-        clientData: {
-          fullName: 'Administrador Maestro Joaquín Nievas',
-          companyName: 'Pampero Indumentaria Oficial',
-        },
-      };
-
-      setSuccessMessage('Acceso autorizado como Administrador. Redirigiendo al Hub de Trabajo Interno...');
-      setTimeout(() => {
-        onLogin(adminSession);
-      }, 350);
-      return;
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Error al autenticar. Intentá nuevamente.');
     }
-
-    // 3. Check Registered Users (Clients and Staff registered with assigned password)
-    try {
-      const usersRaw = localStorage.getItem('pampero_registered_users');
-      if (usersRaw) {
-        const registeredList: any[] = JSON.parse(usersRaw);
-        const matched = registeredList.find(
-          (u) =>
-            u.email?.toLowerCase().trim() === emailClean ||
-            (u.cuitOrDni && u.cuitOrDni.replace(/\D/g, '') === emailClean.replace(/\D/g, '') && emailClean.replace(/\D/g, '').length >= 7)
-        );
-
-        if (matched) {
-          if (matched.status === 'suspended') {
-            setErrorMessage('Esta cuenta se encuentra suspendida por la administración.');
-            return;
-          }
-
-          const expectedPass = matched.password || matched.initialPassword;
-          if (expectedPass && expectedPass !== passClean) {
-            setErrorMessage('Contraseña incorrecta. Por favor ingresá la clave asignada para esta cuenta.');
-            return;
-          }
-
-          const isStaff = matched.role === 'employee' || matched.type === 'empleado' || matched.type === 'vendedor';
-          const session: UserSession = {
-            id: matched.id,
-            email: matched.email,
-            role: isStaff ? 'employee' : 'client',
-            clientType: matched.type === 'empresa' ? 'empresa' : 'consumidor',
-            clientData: {
-              fullName: matched.repName || matched.name,
-              companyName: matched.type === 'empresa' ? matched.name : undefined,
-              cuit: matched.cuitOrDni,
-              phone: matched.phone,
-              address: matched.address,
-              pricingTier: matched.pricingTier,
-            },
-          };
-
-          setSuccessMessage(`¡Bienvenido/a, ${matched.name}! Ingresando...`);
-          setTimeout(() => {
-            onLogin(session);
-          }, 350);
-          return;
-        }
-      }
-    } catch {}
-
-    // 4. Default Client Session fallback
-    const session: UserSession = {
-      id: 'usr-' + Date.now(),
-      email: email.trim(),
-      role: 'client',
-      clientType: accountType,
-      clientData: {
-        fullName: email ? email.split('@')[0] : 'Usuario',
-      },
-    };
-
-    onLogin(session);
   };
 
-  // Submit Admin or Employee Login (WITH SECURE USER AND PASSWORD)
-  const handleAdminLogin = (e: React.FormEvent) => {
+  // Submit Admin or Employee Login (Dual Email o Nombre de Usuario con verificación segura)
+  const handleAdminLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
+    setSuccessMessage(null);
 
-    const userClean = adminUser.trim().toLowerCase();
+    const userClean = adminUser.trim();
     const passClean = adminPass.trim();
 
-    // 1. Check if it's an Employee account
-    try {
-      const empSaved = localStorage.getItem('pampero_employees');
-      const empList: any[] = empSaved 
-        ? JSON.parse(empSaved) 
-        : [
-            {
-              id: 'emp-1',
-              name: 'Ventas Pampero Maipú',
-              email: 'ventas@pamperomaipu.com.ar',
-              password: 'ventas_pampero',
-              role: 'employee',
-              allowedTabs: ['products', 'variants', 'prices', 'mass_images', 'promos', 'quotes'],
-              active: true,
-            }
-          ];
-      const matchedEmp = empList.find(
-        (emp) => emp.active && (emp.email.toLowerCase() === userClean || (emp.username && emp.username.toLowerCase() === userClean)) && emp.password === passClean
-      );
-      if (matchedEmp) {
-        const empSession: UserSession = {
-          id: matchedEmp.id,
-          email: matchedEmp.email,
-          role: 'employee',
-          clientType: 'empresa',
-          clientData: {
-            fullName: matchedEmp.name,
-            companyName: 'Pampero Maipú - Empleado',
-          },
-        };
-        setSuccessMessage(`Bienvenido/a, ${matchedEmp.name}. Redirigiendo al Hub de Trabajo Interno...`);
-        setTimeout(() => {
-          onLogin(empSession);
-        }, 350);
-        return;
-      }
-    } catch {}
-
-    // 2. Check Admin credentials
-    let savedEmail = MASTER_ADMIN_EMAIL;
-    let savedPass = MASTER_ADMIN_PASSWORD;
-    try {
-      const stored = localStorage.getItem('pampero_admin_credentials');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (parsed.email && parsed.email !== 'admin@pampero.com' && parsed.email !== 'admin@pampero.com.ar') {
-          savedEmail = parsed.email.trim().toLowerCase();
-        }
-        if (parsed.password) savedPass = parsed.password;
-      }
-    } catch {
-      // ignore
+    if (!userClean || !passClean) {
+      setErrorMessage('Completá usuario o email y contraseña.');
+      return;
     }
 
-    const savedCustomPass = localStorage.getItem('pampero_admin_custom_password');
-    const legacyPass = localStorage.getItem('pampero_admin_pass');
-
-    // Check against authorized admin credentials
-    const validUser = 
-      userClean === 'joaquinnievass20@gmail.com' ||
-      userClean === MASTER_ADMIN_EMAIL.toLowerCase() ||
-      userClean === savedEmail.toLowerCase() ||
-      userClean === 'admin' ||
-      userClean === 'pampero';
-
-    const validPass = 
-      passClean === 'Pampero2026' ||
-      passClean.toLowerCase() === 'pampero2026' ||
-      (savedPass && passClean === savedPass) ||
-      (savedPass && passClean.toLowerCase() === savedPass.toLowerCase()) ||
-      (savedCustomPass && passClean === savedCustomPass) ||
-      (legacyPass && passClean === legacyPass) ||
-      passClean === 'admin' ||
-      passClean === 'pampero_admin';
-
-    if (validUser && validPass) {
-      const adminSession: UserSession = {
-        id: 'admin-master',
-        email: userClean === 'admin' || userClean === 'pampero' ? MASTER_ADMIN_EMAIL : adminUser.trim(),
-        role: 'admin',
-        clientType: 'empresa',
-        clientData: {
-          fullName: 'Administrador Maestro Joaquín Nievas',
-          companyName: 'Pampero Indumentaria Oficial',
-        },
-      };
-
-      setSuccessMessage('Acceso autorizado como Administrador. Redirigiendo al Hub de Trabajo Interno...');
-      setTimeout(() => {
-        onLogin(adminSession);
-      }, 350);
-    } else {
-      setErrorMessage('Credenciales incorrectas. Verificá tu correo y contraseña de administración.');
+    try {
+      const authResult = await authenticateDualUser(userClean, passClean);
+      if (authResult.success && authResult.session) {
+        if (authResult.session.role !== 'admin' && authResult.session.role !== 'employee') {
+          setErrorMessage('Esta cuenta no cuenta con permisos de Administrador o Empleado. Por favor ingresá desde la pestaña principal "INGRESAR".');
+          return;
+        }
+        const userDisplayName = authResult.session.clientData?.fullName || authResult.session.email || 'Administrador';
+        setSuccessMessage(`Acceso autorizado para ${userDisplayName}. Redirigiendo al Hub de Trabajo Interno...`);
+        setTimeout(() => {
+          onLogin(authResult.session!);
+        }, 350);
+      } else {
+        setErrorMessage(authResult.error || 'Credenciales incorrectas para el panel de administración.');
+      }
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Error al autenticar en administración.');
     }
   };
 
@@ -612,13 +406,13 @@ export const AuthView: React.FC<AuthViewProps> = ({
                   <form onSubmit={handleAdminLogin} className="space-y-4">
                     <div>
                       <label className="block text-[10px] uppercase tracking-[0.25em] font-bold text-[#4A453F] mb-1.5">
-                        USUARIO O EMAIL
+                        EMAIL O NOMBRE DE USUARIO
                       </label>
                       <input
                         type="text"
                         value={adminUser}
                         onChange={(e) => setAdminUser(e.target.value)}
-                        placeholder="joaquinnievass20@gmail.com"
+                        placeholder="correo@empresa.com o usuario"
                         autoComplete="new-password"
                         required
                         className="w-full px-3.5 py-2.5 bg-white border border-[#DCD4C9] rounded-xs text-sm text-[#18231C] focus:outline-none focus:border-[#FDB813]"
@@ -752,7 +546,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
                           type="text"
                           value={fullName}
                           onChange={(e) => setFullName(e.target.value)}
-                          placeholder="Ej: Juan Pérez"
+                          placeholder="Ingresar nombre completo"
                           required={accountType === 'consumidor'}
                           className="w-full px-3.5 py-2.5 bg-white border border-[#DCD4C9] rounded-xs text-sm text-[#18231C] focus:outline-none focus:border-[#FDB813]"
                         />
@@ -769,7 +563,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
                               type="text"
                               value={companyName}
                               onChange={(e) => setCompanyName(e.target.value)}
-                              placeholder="Ej: Bodega Los Andes S.A."
+                              placeholder="Razón Social o Empresa"
                               required
                               className="w-full px-3.5 py-2.5 bg-white border border-[#DCD4C9] rounded-xs text-sm text-[#18231C] focus:outline-none focus:border-[#FDB813]"
                             />
@@ -782,7 +576,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
                               type="text"
                               value={cuit}
                               onChange={(e) => setCuit(e.target.value)}
-                              placeholder="30-71234567-9"
+                              placeholder="30-XXXXXXXX-X"
                               className="w-full px-3.5 py-2.5 bg-white border border-[#DCD4C9] rounded-xs text-sm text-[#18231C] focus:outline-none focus:border-[#FDB813]"
                             />
                           </div>
@@ -798,7 +592,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
                           type="email"
                           value={email}
                           onChange={(e) => setEmail(e.target.value)}
-                          placeholder="tu@email.com"
+                          placeholder="correo@empresa.com"
                           required
                           className="w-full px-3.5 py-2.5 bg-white border border-[#DCD4C9] rounded-xs text-sm text-[#18231C] focus:outline-none focus:border-[#FDB813]"
                         />
@@ -828,7 +622,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
                           type="tel"
                           value={phone}
                           onChange={(e) => setPhone(e.target.value)}
-                          placeholder="261 527-6713"
+                          placeholder="Ej: 2612345678"
                           className="w-full px-3.5 py-2.5 bg-white border border-[#DCD4C9] rounded-xs text-sm text-[#18231C] focus:outline-none focus:border-[#FDB813]"
                         />
                       </div>
@@ -929,13 +723,13 @@ export const AuthView: React.FC<AuthViewProps> = ({
                       <form onSubmit={handleLogin} className="space-y-4">
                       <div>
                         <label className="block text-[10px] uppercase tracking-[0.25em] font-bold text-[#4A453F] mb-1.5">
-                          EMAIL
+                          EMAIL O NOMBRE DE USUARIO
                         </label>
                         <input
-                          type="email"
+                          type="text"
                           value={email}
                           onChange={(e) => setEmail(e.target.value)}
-                          placeholder="tu@email.com"
+                          placeholder="correo@empresa.com o nombre de usuario"
                           autoComplete="new-password"
                           required
                           className="w-full px-3.5 py-2.5 bg-white border border-[#DCD4C9] rounded-xs text-sm text-[#18231C] focus:outline-none focus:border-[#FDB813]"

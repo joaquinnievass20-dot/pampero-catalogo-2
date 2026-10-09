@@ -421,7 +421,7 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
                     required
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    placeholder="Ej. Pedro Gómez - Ventas Maipú"
+                    placeholder="Ingresar nombre completo"
                     className="w-full pl-9 pr-3 py-2 text-xs bg-[#FAF8F5] rounded-xs border border-[#DCD4C9] outline-none"
                   />
                 </div>
@@ -438,7 +438,7 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
                     required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="empleado@pamperomaipu.com.ar"
+                    placeholder="correo@empresa.com"
                     className="w-full pl-9 pr-3 py-2 text-xs bg-[#FAF8F5] rounded-xs border border-[#DCD4C9] outline-none"
                   />
                 </div>
@@ -455,7 +455,7 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
                     required={!isEditing}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Ej. pampero2026 o clave propia"
+                    placeholder="Ingresar contraseña"
                     className="w-full pl-9 pr-3 py-2 text-xs bg-[#FAF8F5] rounded-xs border border-[#DCD4C9] outline-none"
                   />
                 </div>
@@ -486,7 +486,7 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
                     type="text"
                     value={sellerName}
                     onChange={(e) => setSellerName(e.target.value)}
-                    placeholder="Ej. Itatí / Guada / Carolina"
+                    placeholder="Nombre o alias de vendedor"
                     className="w-full px-3 py-2 text-xs bg-[#FAF8F5] rounded-xs border border-[#DCD4C9] outline-none"
                   />
                 </div>

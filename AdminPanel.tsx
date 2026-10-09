@@ -112,6 +112,7 @@ interface AdminPanelProps {
   onDeleteProduct?: (id: string) => void;
   promotions: Promotion[];
   onUpdatePromotions: (newPromos: Promotion[]) => void;
+  setPromotions?: React.Dispatch<React.SetStateAction<Promotion[]>>;
   theme: ThemeConfig;
   onUpdateTheme: (newTheme: ThemeConfig) => void;
   branches: BranchLocation[];
@@ -136,6 +137,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   onDeleteProduct,
   promotions,
   onUpdatePromotions,
+  setPromotions,
   theme,
   onUpdateTheme,
   branches,
@@ -1140,6 +1142,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               promotions={promotions}
               products={products}
               onUpdatePromotions={onUpdatePromotions}
+              setPromotions={setPromotions}
               onUpdateProducts={onUpdateProducts}
               triggerSaveNotice={triggerSaveNotice}
             />

@@ -34,6 +34,7 @@ interface LandingHeroProps {
   onOpenProfile?: () => void;
   onOpenLookbook?: () => void;
   categoriesHierarchy?: CategoryHierarchyItem[];
+  isPromotionsLoading?: boolean;
 }
 
 interface SlideItem {
@@ -73,6 +74,7 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
   onOpenProfile,
   onOpenLookbook,
   categoriesHierarchy,
+  isPromotionsLoading = false,
 }) => {
   const accent = theme?.accentColor || '#FDB813';
   const hoverAccent = theme?.hoverAccentColor || '#E0A310';
@@ -150,6 +152,7 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
 
   const [currentSlide, setCurrentSlide] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
+  const [isImageLoading, setIsImageLoading] = useState(true);
 
   // Drag & Swipe gesture state
   const [dragStartX, setDragStartX] = useState<number | null>(null);
@@ -166,6 +169,12 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
   }, [isPaused, isDragging, slides.length]);
 
   const activeSlide = slides[currentSlide] || slides[0];
+
+  useEffect(() => {
+    setIsImageLoading(true);
+  }, [activeSlide?.id, activeSlide?.bannerImage]);
+
+  const isLoading = Boolean(isPromotionsLoading || isImageLoading);
 
   const nextSlide = () => {
     setCurrentSlide((prev) => (prev + 1) % slides.length);
@@ -368,16 +377,30 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
         onTouchEnd={(e) => handleDragEnd(e.changedTouches[0].clientX)}
       >
         {/* Dynamic Background Image per Promo */}
-        <div className="relative h-[78vh] min-h-[540px] max-h-[780px] w-full overflow-hidden">
-          <img
-            key={activeSlide.id}
-            src={activeSlide.bannerImage}
-            alt={activeSlide.titleLine1}
-            className="h-full w-full object-cover transition-opacity duration-700 animate-fadeIn"
-          />
+        <div className="relative h-[78vh] min-h-[540px] max-h-[780px] w-full overflow-hidden bg-neutral-900">
+          {/* Skeleton o div gris mientras isLoading sea true */}
+          {isLoading && (
+            <div className="absolute inset-0 bg-neutral-800 animate-pulse z-10 flex items-center justify-center">
+              <div className="w-10 h-10 rounded-full border-2 border-neutral-600 border-t-amber-400 animate-spin opacity-40" />
+            </div>
+          )}
+
+          {/* Solo renderiza la imagen cuando onSnapshot entregue los datos y la foto termine de cargar */}
+          {!isPromotionsLoading && activeSlide.bannerImage && (
+            <img
+              key={activeSlide.id + '_' + activeSlide.bannerImage}
+              src={activeSlide.bannerImage}
+              alt={activeSlide.titleLine1}
+              onLoad={() => setIsImageLoading(false)}
+              onError={() => setIsImageLoading(false)}
+              className={`h-full w-full object-cover transition-opacity duration-700 ${
+                !isImageLoading ? 'opacity-100 animate-fadeIn' : 'opacity-0'
+              }`}
+            />
+          )}
 
           {/* Gradient overlay */}
-          <div className="absolute inset-0 bg-gradient-to-r from-[#18231C]/92 via-[#18231C]/65 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-r from-[#18231C]/92 via-[#18231C]/65 to-transparent z-20 pointer-events-none" />
         </div>
 
         {/* Square, semi-transparent navigation arrows matching user specification */}
