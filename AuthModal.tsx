@@ -136,161 +136,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       return;
     }
 
-    // 1. Check Master Admin Credentials
-    let savedEmail = 'joaquinnievass20@gmail.com';
-    let savedPass = 'Jn05022000';
     try {
-      const stored = localStorage.getItem('pampero_admin_credentials');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (parsed.email && parsed.email !== 'admin@pampero.com' && parsed.email !== 'admin@pampero.com.ar') {
-          savedEmail = parsed.email.trim().toLowerCase();
-        }
-        if (parsed.password) savedPass = parsed.password;
-      }
-    } catch {}
-
-    const customPass = localStorage.getItem('pampero_admin_custom_password');
-
-    const isMasterAdmin = 
-      userClean === 'joaquinnievass20@gmail.com' ||
-      userClean === 'admin' || 
-      userClean === 'pampero' || 
-      userClean === 'joaquin' || 
-      userClean === 'nievas' || 
-      userClean === 'joaquinnievas' || 
-      userClean === savedEmail.toLowerCase();
-
-    const isPassValid = 
-      passClean === 'Jn05022000' ||
-      passClean === 'Pampero2026' ||
-      (savedPass && passClean === savedPass) ||
-      (customPass && passClean === customPass);
-
-    if (isMasterAdmin && isPassValid) {
-      onLogin({
-        id: 'admin-master',
-        role: 'admin',
-        email: 'joaquinnievass20@gmail.com',
-        clientType: 'empresa',
-        clientData: {
-          fullName: 'Administrador Maestro Joaquín Nievas',
-          companyName: 'Pampero Indumentaria Oficial',
-        },
-        loggedAt: new Date().toISOString(),
-      });
-      return;
-    }
-
-    // 2. Check Cloud Firestore (Colecciones 'users' y 'usuarios')
-    let matchedDocData: any = null;
-    let matchedDocId: string | null = null;
-    let authUserCredential: any = null;
-
-    try {
-      const firestoreDb = getFirebaseDb();
-      if (firestoreDb) {
-        const [snapUsers, snapUsuarios] = await Promise.all([
-          getDocs(collection(firestoreDb, 'users')).catch(() => null),
-          getDocs(collection(firestoreDb, 'usuarios')).catch(() => null),
-        ]);
-
-        const allDocs = [
-          ...(snapUsers ? snapUsers.docs : []),
-          ...(snapUsuarios ? snapUsuarios.docs : []),
-        ];
-
-        for (const d of allDocs) {
-          const data = d.data();
-          const emailVal = (data.email || '').toLowerCase().trim();
-          const userVal = (data.username || '').toLowerCase().trim();
-          const nameVal = (data.name || '').toLowerCase().trim();
-          const emailPrefix = emailVal.split('@')[0];
-          const docIdVal = d.id.toLowerCase().trim();
-
-          const emailMatch = emailVal === userClean;
-          const usernameMatch = userVal === userClean || emailPrefix === userClean;
-          const nameMatch = nameVal === userClean;
-          const idMatch = docIdVal === userClean;
-
-          if (emailMatch || usernameMatch || nameMatch || idMatch) {
-            matchedDocData = data;
-            matchedDocId = d.id;
-            break;
-          }
-        }
-      }
-    } catch (_fErr) {}
-
-    if (matchedDocData) {
-      const expected = (matchedDocData.password || matchedDocData.initialPassword || '').trim();
-      let passMatches = Boolean(expected && expected === passClean);
-
-      if (!passMatches && matchedDocData.email && matchedDocData.email.includes('@')) {
-        try {
-          const fbAuth = getFirebaseAuth();
-          if (fbAuth) {
-            const cred = await signInWithEmailAndPassword(fbAuth, matchedDocData.email.trim().toLowerCase(), passClean);
-            if (cred && cred.user) {
-              passMatches = true;
-              authUserCredential = cred.user;
-            }
-          }
-        } catch {}
-      }
-
-      if (passMatches) {
-        const isAdminRole = matchedDocData.role === 'admin' || matchedDocData.type === 'admin';
-        const isStaff = matchedDocData.role === 'employee' || matchedDocData.type === 'empleado' || matchedDocData.type === 'vendedor';
-        const determinedRole: 'admin' | 'employee' | 'client' = 
-          isAdminRole ? 'admin' : (isStaff ? 'employee' : 'client');
-
-        onLogin({
-          id: matchedDocId || (authUserCredential ? authUserCredential.uid : `usr-${Date.now()}`),
-          role: determinedRole,
-          email: matchedDocData.email,
-          clientType: matchedDocData.type === 'empresa' ? 'empresa' : 'consumidor',
-          clientData: {
-            fullName: matchedDocData.repName || matchedDocData.name,
-            companyName: matchedDocData.type === 'empresa' ? matchedDocData.name : undefined,
-            cuit: matchedDocData.cuitOrDni,
-            phone: matchedDocData.phone,
-          },
-          loggedAt: new Date().toISOString(),
-        });
+      const authResult = await authenticateDualUser(userClean, passClean);
+      if (authResult.success && authResult.session) {
+        onLogin(authResult.session);
         return;
       } else {
-        setAdminError('Contraseña incorrecta. Por favor verificá tu clave.');
+        setAdminError(authResult.error || 'Credenciales incorrectas para el panel de administración.');
         return;
       }
-    }
-
-    // 3. Intento directo con Firebase Authentication si se ingresó Email
-    if (userClean.includes('@')) {
-      try {
-        const fbAuth = getFirebaseAuth();
-        if (fbAuth) {
-          const cred = await signInWithEmailAndPassword(fbAuth, userClean, passClean);
-          if (cred && cred.user) {
-            onLogin({
-              id: cred.user.uid,
-              role: 'client',
-              email: cred.user.email || userClean,
-              clientType: 'consumidor',
-              clientData: {
-                fullName: cred.user.displayName || userClean.split('@')[0],
-              },
-              loggedAt: new Date().toISOString(),
-            });
-            return;
-          }
-        }
-      } catch (authErr: any) {
-        if (authErr?.code === 'auth/wrong-password') {
-          setAdminError('Contraseña incorrecta.');
-          return;
-        }
-      }
+    } catch (err: any) {
+      setAdminError(err?.message || 'Error al autenticar en administración.');
+      return;
     }
 
     // 4. Check Employee accounts (localStorage)

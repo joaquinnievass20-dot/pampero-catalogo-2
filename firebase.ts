@@ -1411,21 +1411,22 @@ export const subscribeToFirestoreUsers = (
       const list = Array.from(docsMap.values());
       // BLINDAJE DE ADMIN: Asegurar presencia intocable del administrador maestro
       const hasMaster = list.some((u) => (u.email || '').toLowerCase().trim() === 'joaquinnievass20@gmail.com');
-      const finalList = hasMaster ? list : [
-        {
-          id: 'admin-master',
-          type: 'admin' as const,
-          role: 'admin' as const,
-          name: 'Administrador Maestro Joaquín Nievas',
-          email: 'joaquinnievass20@gmail.com',
-          password: 'Jn05022000',
-          initialPassword: 'Jn05022000',
-          phone: '2614980000',
-          status: 'active' as const,
-          pricingTier: 'Corporativo / Mayorista',
-          notes: 'Cuenta administradora maestra del sistema Pampero Gran Mendoza.',
-          createdAt: '2026-01-01',
-        },
+      const masterAdminEntry: RegisteredUser = {
+        id: 'admin-master',
+        type: 'admin',
+        role: 'admin',
+        name: 'Administrador Maestro Joaquín Nievas',
+        email: 'joaquinnievass20@gmail.com',
+        password: 'Jn05022000',
+        initialPassword: 'Jn05022000',
+        phone: '2614980000',
+        status: 'active',
+        pricingTier: 'Corporativo / Mayorista',
+        notes: 'Cuenta administradora maestra del sistema Pampero Gran Mendoza.',
+        createdAt: '2026-01-01',
+      };
+      const finalList: RegisteredUser[] = hasMaster ? list : [
+        masterAdminEntry,
         ...list,
       ];
       try {
@@ -1489,14 +1490,14 @@ export async function authenticateDualUser(
     return { success: false, error: 'Ingresá tu correo electrónico o nombre de usuario y tu contraseña.' };
   }
 
-  // 1. BLINDAJE DE ADMIN: joaquinnievass20@gmail.com
+  // 1. BLINDAJE DE ADMIN: joaquinnievass20@gmail.com y emails administrativos del sistema
   let savedAdminEmail = 'joaquinnievass20@gmail.com';
   let savedAdminPass = 'Jn05022000';
   try {
     const stored = localStorage.getItem('pampero_admin_credentials');
     if (stored) {
       const parsed = JSON.parse(stored);
-      if (parsed.email && parsed.email !== 'admin@pampero.com' && parsed.email !== 'admin@pampero.com.ar') {
+      if (parsed.email) {
         savedAdminEmail = parsed.email.trim().toLowerCase();
       }
       if (parsed.password) savedAdminPass = parsed.password;
@@ -1505,9 +1506,15 @@ export async function authenticateDualUser(
 
   const customPass = typeof window !== 'undefined' ? localStorage.getItem('pampero_admin_custom_password') : null;
 
+  // Acceso dual como administrador: acepta tanto email (cualquiera de los dominios pampero o el mail maestro) como nombre de usuario
   const isMasterAdmin = 
     idClean === 'joaquinnievass20@gmail.com' ||
     idClean === savedAdminEmail.toLowerCase() ||
+    idClean === 'admin@pampero.com' ||
+    idClean === 'admin@pampero.com.ar' ||
+    idClean === 'admin@pamperogm.com.ar' ||
+    idClean === 'administrador@pampero.com.ar' ||
+    idClean === 'administracion@pampero.com.ar' ||
     idClean === 'admin' ||
     idClean === 'pampero' ||
     idClean === 'joaquin' ||
@@ -1526,7 +1533,7 @@ export async function authenticateDualUser(
         success: true,
         session: {
           id: 'admin-master',
-          email: 'joaquinnievass20@gmail.com',
+          email: idClean.includes('@') ? idClean : 'joaquinnievass20@gmail.com',
           role: 'admin',
           clientType: 'empresa',
           clientData: {
@@ -1541,7 +1548,7 @@ export async function authenticateDualUser(
     }
   }
 
-  // 2. Query Cloud Firestore ('users' y 'usuarios')
+  // 2. Query Cloud Firestore ('users', 'usuarios', 'empleados', 'employees')
   let matchedUserDoc: any = null;
   let matchedDocId: string | null = null;
   let authUserCredential: any = null;
@@ -1553,6 +1560,8 @@ export async function authenticateDualUser(
       const directRefs = [
         doc(firestoreDb, 'users', idClean),
         doc(firestoreDb, 'usuarios', idClean),
+        doc(firestoreDb, 'empleados', idClean),
+        doc(firestoreDb, 'employees', idClean),
       ];
       const directSnaps = await Promise.all(directRefs.map((r) => getDoc(r).catch(() => null)));
       for (const snap of directSnaps) {
@@ -1563,16 +1572,20 @@ export async function authenticateDualUser(
         }
       }
 
-      // Si no se encontró por ID directo, escanear documentos de ambas colecciones
+      // Si no se encontró por ID directo, escanear documentos de todas las colecciones
       if (!matchedUserDoc) {
-        const [snapUsers, snapUsuarios] = await Promise.all([
+        const [snapUsers, snapUsuarios, snapEmpleados, snapEmployees] = await Promise.all([
           getDocs(collection(firestoreDb, 'users')).catch(() => null),
           getDocs(collection(firestoreDb, 'usuarios')).catch(() => null),
+          getDocs(collection(firestoreDb, 'empleados')).catch(() => null),
+          getDocs(collection(firestoreDb, 'employees')).catch(() => null),
         ]);
 
         const allDocs = [
           ...(snapUsers ? snapUsers.docs : []),
           ...(snapUsuarios ? snapUsuarios.docs : []),
+          ...(snapEmpleados ? snapEmpleados.docs : []),
+          ...(snapEmployees ? snapEmployees.docs : []),
         ];
 
         for (const d of allDocs) {
@@ -1588,7 +1601,7 @@ export async function authenticateDualUser(
 
           // Validación dual: coincide indistintamente Email o Nombre de Usuario
           const emailMatch = emailVal === idClean;
-          const usernameMatch = userVal === idClean || emailPrefix === idClean;
+          const usernameMatch = userVal === idClean || (emailPrefix && emailPrefix === idClean);
           const nameMatch = nameVal === idClean || repVal === idClean;
           const idMatch = docIdVal === idClean;
           const dniMatch = Boolean(cuitClean && inputCleanNum && cuitClean === inputCleanNum && inputCleanNum.length >= 7);

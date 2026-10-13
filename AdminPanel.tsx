@@ -413,22 +413,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     const imagesWomen = Array.isArray(productForm.imagesWomen) ? productForm.imagesWomen.filter(Boolean) : [];
     const isUnisex = Boolean(productForm.isUnisex || (imagesMen.length > 0 && imagesWomen.length > 0));
 
-    // Consolidar fotos generales sin descartar ninguna
-    let rawImages: string[] = [];
-    if (Array.isArray(productForm.images) && productForm.images.length > 0) {
-      rawImages = productForm.images.filter(Boolean);
-    }
-    if (rawImages.length === 0) {
-      rawImages = [...imagesMen, ...imagesWomen];
-    }
-    if (rawImages.length === 0 && productForm.image) {
-      rawImages = [productForm.image];
-    }
-    if (rawImages.length === 0) {
-      rawImages = ['https://images.unsplash.com/photo-1544923246-77307dd654cb?auto=format&fit=crop&w=800&q=80'];
-    }
-
-    const primaryImage = imagesMen[0] || imagesWomen[0] || rawImages[0] || productForm.image || rawImages[0];
+    // Consolidar fotos generales respetando estrictamente las fotos eliminadas por el usuario
+    const rawImages = Array.isArray(productForm.images) ? productForm.images.filter(Boolean) : [];
+    const primaryImage = rawImages[0] || imagesMen[0] || imagesWomen[0] || productForm.image || '';
 
     setIsSavingProduct(true);
     setFirebaseErrorNotice(null);
@@ -2154,15 +2141,24 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                   <button
                                     type="button"
                                     onClick={() => {
-                                      const updated = [...activeList];
-                                      updated.splice(idx, 1);
-                                      if (activePhotoGalleryTab === 'men') {
-                                        setProductForm((prev) => ({ ...prev, imagesMen: updated }));
-                                      } else if (activePhotoGalleryTab === 'women') {
-                                        setProductForm((prev) => ({ ...prev, imagesWomen: updated }));
-                                      } else {
-                                        setProductForm((prev) => ({ ...prev, images: updated, image: updated[0] || '' }));
+                                      const removedUrl = activeList[idx];
+                                      const cleanGeneral = (productForm.images || []).filter((u) => u !== removedUrl);
+                                      const cleanMen = (productForm.imagesMen || []).filter((u) => u !== removedUrl);
+                                      const cleanWomen = (productForm.imagesWomen || []).filter((u) => u !== removedUrl);
+                                      const cleanByColor = { ...(productForm.imagesByColor || {}) };
+                                      for (const [k, v] of Object.entries(cleanByColor)) {
+                                        if (v === removedUrl) delete cleanByColor[k];
                                       }
+                                      const nextMain = cleanGeneral[0] || cleanMen[0] || cleanWomen[0] || '';
+
+                                      setProductForm((prev) => ({
+                                        ...prev,
+                                        images: cleanGeneral,
+                                        imagesMen: cleanMen,
+                                        imagesWomen: cleanWomen,
+                                        imagesByColor: cleanByColor,
+                                        image: nextMain,
+                                      }));
                                     }}
                                     className="p-1 rounded-xs border border-red-200 text-red-600 hover:bg-red-50 text-xs cursor-pointer"
                                     title="Eliminar foto"

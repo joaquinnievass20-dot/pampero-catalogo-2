@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Product, UserSession, ThemeConfig, Promotion } from '../types';
-import { Building2 } from 'lucide-react';
+import { Building2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { getColorHex, getProductImageForColor, recordProductInteraction } from '../utils/colorUtils';
 import { getProductActivePromotion } from '../utils/promoUtils';
 import { trackProductClick } from '../utils/analytics';
@@ -42,6 +42,75 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   const activePromo = getProductActivePromotion(product, promotions);
   const promoBadgeLabel = activePromo ? (activePromo.badge || product.promotionTag || activePromo.tagFilter) : null;
 
+  // Collect all photos available for this product (supporting color variations, unisex and general galleries)
+  const allImages = useMemo(() => {
+    const list: string[] = [];
+    if (Array.isArray(product.images) && product.images.length > 0) {
+      list.push(...product.images.filter(Boolean));
+    }
+    if (Array.isArray(product.imagesMen) && product.imagesMen.length > 0) {
+      list.push(...product.imagesMen.filter(Boolean));
+    }
+    if (Array.isArray(product.imagesWomen) && product.imagesWomen.length > 0) {
+      list.push(...product.imagesWomen.filter(Boolean));
+    }
+    if (product.image && !list.includes(product.image)) {
+      list.unshift(product.image);
+    }
+    const colorImg = getProductImageForColor(product, selectedColor);
+    if (colorImg && !list.includes(colorImg)) {
+      list.unshift(colorImg);
+    }
+    const unique = list.filter((url, idx, self) => self.indexOf(url) === idx);
+    return unique.length > 0 ? unique : [displayedImage];
+  }, [product, selectedColor, displayedImage]);
+
+  const [currentImgIndex, setCurrentImgIndex] = useState(0);
+  const touchStartXRef = useRef<number | null>(null);
+
+  // Sync index if color changes and matches a color-specific photo
+  useEffect(() => {
+    const colorImg = getProductImageForColor(product, selectedColor);
+    if (colorImg) {
+      const foundIdx = allImages.findIndex((url) => url === colorImg);
+      if (foundIdx !== -1) {
+        setCurrentImgIndex(foundIdx);
+      }
+    }
+  }, [selectedColor, allImages, product]);
+
+  const safeImgIndex = Math.min(currentImgIndex, Math.max(0, allImages.length - 1));
+  const activeImageUrl = allImages[safeImgIndex] || displayedImage;
+
+  const handlePrevImage = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setCurrentImgIndex((prev) => (prev > 0 ? prev - 1 : allImages.length - 1));
+  };
+
+  const handleNextImage = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setCurrentImgIndex((prev) => (prev < allImages.length - 1 ? prev + 1 : 0));
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartXRef.current = e.touches[0].clientX;
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartXRef.current === null) return;
+    const diff = touchStartXRef.current - e.changedTouches[0].clientX;
+    touchStartXRef.current = null;
+    if (Math.abs(diff) > 40 && allImages.length > 1) {
+      if (diff > 0) {
+        // Swiped left -> next
+        setCurrentImgIndex((prev) => (prev < allImages.length - 1 ? prev + 1 : 0));
+      } else {
+        // Swiped right -> prev
+        setCurrentImgIndex((prev) => (prev > 0 ? prev - 1 : allImages.length - 1));
+      }
+    }
+  };
+
   const handleImageClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     recordProductInteraction(product, 'click');
@@ -60,19 +129,74 @@ export const ProductCard: React.FC<ProductCardProps> = ({
       id={`product-card-${product.id}`}
       className="group block select-none"
     >
-      {/* Product Image Box */}
+      {/* Product Image Box with Interactive Carousel */}
       <div 
         onClick={handleImageClick}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
         style={{ borderColor: cardBorder }}
         className="relative overflow-hidden rounded-xs bg-[#ECE5DC] border cursor-pointer transition-colors"
       >
         <img
-          src={displayedImage}
+          src={activeImageUrl}
           alt={product.name}
           loading="lazy"
           className="aspect-[9/11] w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
           referrerPolicy="no-referrer"
         />
+
+        {/* Carousel square semi-transparent navigation arrows (igual al sistema de promociones) */}
+        {allImages.length > 1 && (
+          <>
+            <button
+              type="button"
+              onClick={handlePrevImage}
+              className="absolute left-1.5 top-1/2 -translate-y-1/2 z-20 w-7 h-7 sm:w-8 sm:h-8 rounded-xs flex items-center justify-center bg-black/45 hover:bg-black/80 text-white border border-white/20 hover:border-white/50 backdrop-blur-xs transition-all shadow-md cursor-pointer opacity-85 hover:opacity-100 hover:scale-105"
+              aria-label="Foto anterior"
+              title="Foto anterior"
+            >
+              <ChevronLeft className="w-4 h-4 sm:w-5 sm:h-5" />
+            </button>
+
+            <button
+              type="button"
+              onClick={handleNextImage}
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 z-20 w-7 h-7 sm:w-8 sm:h-8 rounded-xs flex items-center justify-center bg-black/45 hover:bg-black/80 text-white border border-white/20 hover:border-white/50 backdrop-blur-xs transition-all shadow-md cursor-pointer opacity-85 hover:opacity-100 hover:scale-105"
+              aria-label="Foto siguiente"
+              title="Foto siguiente"
+            >
+              <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5" />
+            </button>
+
+            {/* Bottom dots indicators (fichitas interactivas para correr fotos igual al slider de promociones) */}
+            <div className="absolute bottom-2 inset-x-0 flex items-center justify-center gap-1 z-20 pointer-events-auto">
+              {allImages.slice(0, 8).map((_, i) => {
+                const isActive = safeImgIndex === i;
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCurrentImgIndex(i);
+                    }}
+                    style={{
+                      backgroundColor: isActive ? accent : 'rgba(255, 255, 255, 0.65)',
+                      width: isActive ? '16px' : '5px',
+                    }}
+                    className="h-1.5 rounded-full transition-all duration-300 cursor-pointer shadow-xs hover:bg-white"
+                    aria-label={`Ver foto ${i + 1}`}
+                  />
+                );
+              })}
+            </div>
+
+            {/* Photo counter badge */}
+            <div className="absolute bottom-2.5 right-2 bg-black/60 backdrop-blur-xs text-white text-[9px] font-mono font-bold px-1.5 py-0.5 rounded-xs z-10 pointer-events-none">
+              {safeImgIndex + 1}/{allImages.length}
+            </div>
+          </>
+        )}
 
         {/* Top left badge if present and linked to an active promotion */}
         {promoBadgeLabel && (
@@ -87,7 +211,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           </span>
         )}
 
-        {/* Top right discount badge (shifted if zoom button) */}
+        {/* Top right discount badge */}
         {hasDiscount && (
           <span 
             style={{ 

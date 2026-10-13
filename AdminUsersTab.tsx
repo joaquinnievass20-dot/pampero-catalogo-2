@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { RegisteredUser, BranchLocation, UserSession } from '../../types';
-import { MASTER_ADMIN_USER } from '../../utils/authInit';
+import { MASTER_ADMIN_USER, MASTER_ADMIN_EMAIL } from '../../utils/authInit';
 import {
   subscribeToFirestoreUsers,
   saveFirestoreUser,
