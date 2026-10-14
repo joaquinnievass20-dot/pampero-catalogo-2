@@ -562,7 +562,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     "corporatePrice": 30600,
     "discountPercentage": 15,
     "promotionTag": "Temporada 2026",
-    "image": "/ph-1.jpg",
+    "image": "https://images.unsplash.com/photo-1553062407-98eeb64c6a62?auto=format&fit=crop&w=800&q=80",
     "availableColors": [
       "Arena",
       "Negro",
@@ -595,7 +595,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     "corporatePrice": 31875,
     "discountPercentage": 15,
     "promotionTag": "Temporada 2026",
-    "image": "/ph-2.jpg",
+    "image": "https://images.unsplash.com/photo-1622560480605-d83c853bc5c3?auto=format&fit=crop&w=800&q=80",
     "availableColors": [
       "Arena",
       "Gris piedra",
@@ -628,7 +628,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     "corporatePrice": 33150,
     "discountPercentage": 15,
     "promotionTag": "Especial Campo",
-    "image": "/ph-3.jpg",
+    "image": "https://images.unsplash.com/photo-1547949003-9792a18a2601?auto=format&fit=crop&w=800&q=80",
     "availableColors": [
       "Terracota",
       "Verde oliva",
@@ -661,7 +661,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     "corporatePrice": 34425,
     "discountPercentage": 15,
     "promotionTag": "Temporada 2026",
-    "image": "/ph-4.jpg",
+    "image": "https://images.unsplash.com/photo-1577733966973-d680bffd2e80?auto=format&fit=crop&w=800&q=80",
     "availableColors": [
       "Terracota",
       "Azul trabajo",

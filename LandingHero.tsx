@@ -81,7 +81,7 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
 
   // Fallback high-res curated workwear background images for promos
   const fallbackImages = [
-    '/hero.jpg',
+    'https://images.unsplash.com/photo-1508873696983-2df5293cb32f?auto=format&fit=crop&q=80&w=1600',
     'https://images.unsplash.com/photo-1578632767115-351597cf2477?auto=format&fit=crop&q=80&w=1600', // Heavy workwear jacket
     'https://images.unsplash.com/photo-1549298916-b41d501d3772?auto=format&fit=crop&q=80&w=1600', // Work boots
     'https://images.unsplash.com/photo-1553062407-98eeb64c6a62?auto=format&fit=crop&q=80&w=1600', // Bags & backpacks
@@ -142,7 +142,7 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
           showEmpresaBtn: true,
           promoFilter: null,
           categoryFilter: null,
-          bannerImage: '/hero.jpg',
+          bannerImage: 'https://images.unsplash.com/photo-1508873696983-2df5293cb32f?auto=format&fit=crop&q=80&w=1600',
           textColor: '#FFFFFF',
           fontSize: '72px',
           subtitleColor: '#DCD4C9',

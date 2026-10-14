@@ -1618,16 +1618,28 @@ export async function authenticateDualUser(
     }
   }
 
-  // Si aún no se encontró, buscar en el pool local de usuarios registrados
+  // Si aún no se encontró, buscar en el pool local de usuarios registrados y operadores/empleados
   if (!matchedUserDoc && typeof window !== 'undefined') {
     try {
-      const localUsers: RegisteredUser[] = JSON.parse(localStorage.getItem('pampero_registered_users') || '[]');
-      const found = localUsers.find((u) => {
+      const localUsers: any[] = JSON.parse(localStorage.getItem('pampero_registered_users') || '[]');
+      const localEmployees: any[] = JSON.parse(localStorage.getItem('pampero_employees') || '[]');
+      const combinedPool = [...localEmployees, ...localUsers];
+
+      const found = combinedPool.find((u) => {
         const emailVal = (u.email || '').toLowerCase().trim();
         const userVal = (u.username || '').toLowerCase().trim();
         const nameVal = (u.name || '').toLowerCase().trim();
+        const repVal = (u.repName || '').toLowerCase().trim();
         const emailPrefix = emailVal.split('@')[0];
-        return emailVal === idClean || userVal === idClean || nameVal === idClean || emailPrefix === idClean || u.id === idClean;
+        const uId = (u.id || '').toLowerCase().trim();
+        return (
+          emailVal === idClean ||
+          userVal === idClean ||
+          nameVal === idClean ||
+          repVal === idClean ||
+          emailPrefix === idClean ||
+          uId === idClean
+        );
       });
       if (found) {
         matchedUserDoc = found;
