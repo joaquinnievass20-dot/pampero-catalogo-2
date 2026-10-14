@@ -155,7 +155,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 }) => {
   const isEmployee = userSession?.role === 'employee';
 
-  const employeePermissions: string[] = (() => {
+  const employeePermissions: string[] = React.useMemo(() => {
     if (!isEmployee) return [];
     try {
       const saved = localStorage.getItem('pampero_employees');
@@ -168,13 +168,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       }
     } catch {}
     return ['products', 'variants', 'prices', 'mass_images', 'quotes'];
-  })();
+  }, [isEmployee, userSession?.email, userSession?.id]);
 
-  const isTabVisible = (tabKey: AdminTabKey) => {
+  const isTabVisible = React.useCallback((tabKey: AdminTabKey) => {
     if (!isEmployee) return true;
     if (tabKey === 'security' || tabKey === 'permissions' || tabKey === 'kanban_config') return false;
     return employeePermissions.includes(tabKey);
-  };
+  }, [isEmployee, employeePermissions]);
 
   const initialTab: AdminTabKey = isEmployee 
     ? ((employeePermissions[0] as AdminTabKey) || 'products') 
@@ -186,9 +186,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   useEffect(() => {
     if (!isTabVisible(activeTab)) {
       const firstAllowed = employeePermissions[0] as AdminTabKey;
-      if (firstAllowed) setActiveTab(firstAllowed);
+      if (firstAllowed && firstAllowed !== activeTab) {
+        setActiveTab(firstAllowed);
+      }
     }
-  }, [userSession]);
+  }, [userSession?.id, userSession?.role, isTabVisible, activeTab, employeePermissions]);
 
   const currentHierarchy: CategoryHierarchyItem[] = (categories && categories.length > 0) ? categories : CATEGORY_HIERARCHY;
 

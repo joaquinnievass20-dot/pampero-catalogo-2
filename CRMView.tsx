@@ -238,10 +238,26 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
 
   const accent = theme?.accentColor || '#FDB813';
 
-  // Real-time Firestore Subscriptions with clean encoding
+  // Real-time Firestore Subscriptions with clean encoding and equality guards
   useEffect(() => {
-    const unsubOrders = subscribeToCRMOrders((fetched) => setOrders(fetched.map(sanitizeObjectEncoding)));
-    const unsubVisits = subscribeToLeadVisits((fetched) => setVisits(fetched.map(sanitizeObjectEncoding)));
+    const unsubOrders = subscribeToCRMOrders((fetched) => {
+      setOrders((prev) => {
+        if (prev.length === fetched.length) {
+          const hasDiff = fetched.some((o, i) => !prev[i] || prev[i].id !== o.id || prev[i].status !== o.status || prev[i].updatedAt !== o.updatedAt);
+          if (!hasDiff) return prev;
+        }
+        return fetched.map(sanitizeObjectEncoding);
+      });
+    });
+    const unsubVisits = subscribeToLeadVisits((fetched) => {
+      setVisits((prev) => {
+        if (prev.length === fetched.length) {
+          const hasDiff = fetched.some((v, i) => !prev[i] || prev[i].id !== v.id || prev[i].status !== v.status || prev[i].updatedAt !== v.updatedAt);
+          if (!hasDiff) return prev;
+        }
+        return fetched.map(sanitizeObjectEncoding);
+      });
+    });
     const unsubSuppliers = subscribeToSupplierOrders((fetched) => setSupplierOrders(fetched.map(sanitizeObjectEncoding)));
     const unsubCampaigns = subscribeToSizingCampaigns((fetched) => setSizingCampaigns(fetched.map(sanitizeObjectEncoding)));
     const unsubSizes = subscribeToEmployeeSizeEntries('all', (fetched) => setEmployeeSizes(fetched.map(sanitizeObjectEncoding)));

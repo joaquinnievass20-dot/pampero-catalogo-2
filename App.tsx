@@ -249,23 +249,36 @@ export default function App() {
 
     // Real-time Firestore configuration updates listener
     const unsubscribeFirestore = subscribeToFirestoreStoreConfig((remoteConfig) => {
-      if (remoteConfig.theme) setTheme(remoteConfig.theme);
-      if (Array.isArray(remoteConfig.categories) && remoteConfig.categories.length > 0) setCategories(remoteConfig.categories);
-      if (Array.isArray(remoteConfig.volumeDiscounts) && remoteConfig.volumeDiscounts.length > 0) setVolumeDiscounts(remoteConfig.volumeDiscounts);
-      if (Array.isArray(remoteConfig.branches) && remoteConfig.branches.length > 0) setBranches(remoteConfig.branches);
-      if (Array.isArray(remoteConfig.coupons)) setCoupons(remoteConfig.coupons);
-      if (Array.isArray(remoteConfig.lookbook)) setLookbook(remoteConfig.lookbook);
+      if (remoteConfig.theme) {
+        setTheme((prev) => (JSON.stringify(prev) === JSON.stringify(remoteConfig.theme) ? prev : remoteConfig.theme!));
+      }
+      if (Array.isArray(remoteConfig.categories) && remoteConfig.categories.length > 0) {
+        setCategories((prev) => (JSON.stringify(prev) === JSON.stringify(remoteConfig.categories) ? prev : remoteConfig.categories!));
+      }
+      if (Array.isArray(remoteConfig.volumeDiscounts) && remoteConfig.volumeDiscounts.length > 0) {
+        setVolumeDiscounts((prev) => (JSON.stringify(prev) === JSON.stringify(remoteConfig.volumeDiscounts) ? prev : remoteConfig.volumeDiscounts!));
+      }
+      if (Array.isArray(remoteConfig.branches) && remoteConfig.branches.length > 0) {
+        setBranches((prev) => (JSON.stringify(prev) === JSON.stringify(remoteConfig.branches) ? prev : remoteConfig.branches!));
+      }
+      if (Array.isArray(remoteConfig.coupons)) {
+        setCoupons((prev) => (JSON.stringify(prev) === JSON.stringify(remoteConfig.coupons) ? prev : remoteConfig.coupons!));
+      }
+      if (Array.isArray(remoteConfig.lookbook)) {
+        setLookbook((prev) => (JSON.stringify(prev) === JSON.stringify(remoteConfig.lookbook) ? prev : remoteConfig.lookbook!));
+      }
     });
 
-    // Seed initial promotions into dedicated Firestore collection 'promotions' if empty
-    // seedInitialPromotionsIfEmpty(INITIAL_PROMOTIONS).catch(() => {});
-
     // Real-time Firestore dedicated 'promotions' collection listener (onSnapshot)
-    // Synchronizes changes in live time for both the Admin Panel and public store views
     const unsubscribePromotions = subscribeToFirestorePromotions(
       (remotePromos) => {
         if (Array.isArray(remotePromos)) {
-          setPromotions(remotePromos);
+          setPromotions((prev) => {
+            if (prev.length === remotePromos.length && JSON.stringify(prev) === JSON.stringify(remotePromos)) {
+              return prev;
+            }
+            return remotePromos;
+          });
           setIsPromotionsLoading(false);
         }
       },
@@ -277,31 +290,52 @@ export default function App() {
     // Real-time Firestore dedicated 'lookbook' listener (onSnapshot)
     const unsubscribeLookbook = subscribeToFirestoreLookbook((remoteLooks) => {
       if (Array.isArray(remoteLooks)) {
-        setLookbook(remoteLooks);
+        setLookbook((prev) => {
+          if (prev.length === remoteLooks.length && JSON.stringify(prev) === JSON.stringify(remoteLooks)) {
+            return prev;
+          }
+          return remoteLooks;
+        });
       }
     });
 
     // Real-time Firestore products listener for instant cross-device image & catalog sync
     const unsubscribeProducts = subscribeToFirestoreProducts((remoteProducts) => {
       if (Array.isArray(remoteProducts) && remoteProducts.length > 0) {
-        const sanitized = remoteProducts.map((p) => ({
-          ...p,
-          category: sanitizeCategory(p.category),
-          section: p.section || '',
-          subCategory: p.subCategory || '',
-        }));
-        setProducts(sanitized);
-        saveCatalogBackup(sanitized);
+        setProducts((prev) => {
+          if (prev.length === remoteProducts.length) {
+            const hasDifference = remoteProducts.some((rp, i) => {
+              const p = prev[i];
+              return !p || p.id !== rp.id || p.price !== rp.price || p.corporatePrice !== rp.corporatePrice || p.image !== rp.image;
+            });
+            if (!hasDifference) return prev;
+          }
+          const sanitized = remoteProducts.map((p) => ({
+            ...p,
+            category: sanitizeCategory(p.category),
+            section: p.section || '',
+            subCategory: p.subCategory || '',
+          }));
+          saveCatalogBackup(sanitized);
+          return sanitized;
+        });
       }
     });
 
-    // Revalidate on window focus (e.g. when user returns to tab or opens browser)
+    // Revalidate on window focus throttled (prevents flood in preview iframes)
+    let lastFocusSync = Date.now();
     const handleFocus = () => {
-      syncFromServer();
+      const now = Date.now();
+      if (now - lastFocusSync > 30000) {
+        lastFocusSync = now;
+        syncFromServer();
+      }
     };
 
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
+      const now = Date.now();
+      if (document.visibilityState === 'visible' && now - lastFocusSync > 30000) {
+        lastFocusSync = now;
         syncFromServer();
       }
     };

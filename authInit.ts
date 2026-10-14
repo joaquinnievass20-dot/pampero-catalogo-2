@@ -48,7 +48,7 @@ export function ensureMasterAdminInitialized(): RegisteredUser[] {
       !creds.password || 
       creds.email.toLowerCase().trim() === 'admin@pampero.com' ||
       creds.email.toLowerCase().trim() === 'admin@pampero.com.ar' ||
-      creds.email.toLowerCase().trim() === MASTER_ADMIN_EMAIL.toLowerCase()
+      creds.password !== MASTER_ADMIN_PASSWORD
     ) {
       needsUpdate = true;
     }

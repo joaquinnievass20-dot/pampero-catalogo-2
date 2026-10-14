@@ -121,8 +121,8 @@ async function startServer() {
 
   // 6b. Initialize Lookbook
   let serverLookbook: any[] = readJsonSafe(LOOKBOOK_FILE, []);
-  if (!Array.isArray(serverLookbook) || serverLookbook.length === 0) {
-    serverLookbook = INITIAL_LOOKBOOK;
+  if (!Array.isArray(serverLookbook)) {
+    serverLookbook = [];
     writeJsonSafe(LOOKBOOK_FILE, serverLookbook);
   }
 

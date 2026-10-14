@@ -68,16 +68,28 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   const [currentImgIndex, setCurrentImgIndex] = useState(0);
   const touchStartXRef = useRef<number | null>(null);
 
-  // Sync index if color changes and matches a color-specific photo
-  useEffect(() => {
-    const colorImg = getProductImageForColor(product, selectedColor);
+  const handleSelectColor = (e: React.MouseEvent, col: string) => {
+    e.stopPropagation();
+    setSelectedColor(col);
+    const colorImg = getProductImageForColor(product, col);
     if (colorImg) {
       const foundIdx = allImages.findIndex((url) => url === colorImg);
       if (foundIdx !== -1) {
         setCurrentImgIndex(foundIdx);
       }
     }
-  }, [selectedColor, allImages, product]);
+  };
+
+  // Guarded sync for initial or external color adjustments
+  useEffect(() => {
+    const colorImg = getProductImageForColor(product, selectedColor);
+    if (colorImg) {
+      const foundIdx = allImages.findIndex((url) => url === colorImg);
+      if (foundIdx !== -1) {
+        setCurrentImgIndex((prev) => (prev === foundIdx ? prev : foundIdx));
+      }
+    }
+  }, [selectedColor, product.id]);
 
   const safeImgIndex = Math.min(currentImgIndex, Math.max(0, allImages.length - 1));
   const activeImageUrl = allImages[safeImgIndex] || displayedImage;
@@ -248,10 +260,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                 key={col}
                 type="button"
                 title={`Color: ${col}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setSelectedColor(col);
-                }}
+                onClick={(e) => handleSelectColor(e, col)}
                 style={{
                   backgroundColor: hex,
                   borderColor: isSelected ? (theme.primaryColor || '#18231C') : '#DCD4C9',

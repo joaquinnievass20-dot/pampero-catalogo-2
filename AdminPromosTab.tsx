@@ -53,18 +53,22 @@ export const AdminPromosTab: React.FC<AdminPromosTabProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Sincronización en vivo exclusiva con Cloud Firestore mediante onSnapshot
+  // Sincronización en vivo exclusiva con Cloud Firestore mediante onSnapshot (solo lectura en tiempo real)
   useEffect(() => {
     const unsub = subscribeToFirestorePromotions((remotePromos) => {
-      if (Array.isArray(remotePromos)) {
-        onUpdatePromotions(remotePromos);
-        if (setPromotions) {
-          setPromotions(remotePromos);
-        }
+      if (Array.isArray(remotePromos) && setPromotions) {
+        setPromotions((prev) => {
+          if (prev.length === remotePromos.length && JSON.stringify(prev) === JSON.stringify(remotePromos)) {
+            return prev;
+          }
+          return remotePromos;
+        });
       }
     });
-    return () => unsub();
-  }, []);
+    return () => {
+      unsub();
+    };
+  }, [setPromotions]);
 
   // Form State
   const [form, setForm] = useState<Partial<Promotion>>({

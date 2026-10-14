@@ -301,7 +301,12 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
           prev.forEach((u) => map.set(u.id, u));
           // Sobrescribir con remotos
           remoteUsers.forEach((u) => map.set(u.id, u));
-          return Array.from(map.values());
+          const merged = Array.from(map.values());
+          if (prev.length === merged.length) {
+            const hasDiff = merged.some((m, idx) => prev[idx]?.id !== m.id || prev[idx]?.status !== m.status || prev[idx]?.email !== m.email || prev[idx]?.role !== m.role);
+            if (!hasDiff) return prev;
+          }
+          return merged;
         });
       }
       setIsLoading(false);
