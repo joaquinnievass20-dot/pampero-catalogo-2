@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 540 160" width="100%" height="100%">
+  <!-- Symbol / Monogram: Circle with Stylized P -->
+  <g transform="translate(15, 8)">
+    <path 
+      d="M72 144 C32.24 144 0 111.76 0 72 C0 32.24 32.24 0 72 0 C111.76 0 144 32.24 144 72 C144 95.8 132.4 116.9 114.5 130 L114.5 106 C124.5 96.5 131 85 131 72 C131 39.4 104.6 13 72 13 C39.4 13 13 39.4 13 72 C13 104.6 39.4 131 72 131 L114.5 131 L114.5 144 Z" 
+      fill="#18231C"
+    />
+    <path 
+      d="M50 36 L86 36 C105.88 36 122 52.12 122 72 C122 91.88 105.88 108 86 108 L76 108 L76 140 L63 140 L63 49 L50 49 Z" 
+      fill="#18231C"
+    />
+    <path 
+      d="M76 49 L86 49 C98.7 49 109 59.3 109 72 C109 84.7 98.7 95 86 95 L76 95 Z" 
+      fill="#FFFFFF"
+    />
+  </g>
+
+  <!-- Brand Wordmark: "Pampero" -->
+  <text 
+    x="185" 
+    y="86" 
+    font-family="'Montserrat', 'Arial Black', sans-serif" 
+    font-size="76" 
+    font-weight="900" 
+    letter-spacing="-1.5px"
+    fill="#18231C"
+  >
+    Pampero
+  </text>
+
+  <!-- Badge: GRAN MENDOZA -->
+  <g transform="translate(186, 104)">
+    <rect x="0" y="0" width="224" height="30" fill="#FFFFFF" stroke="#18231C" stroke-width="2.5" />
+    <!-- Left black box with "GRAN" -->
+    <rect x="0" y="0" width="76" height="30" fill="#18231C" />
+    <text 
+      x="38" 
+      y="21" 
+      font-family="'Montserrat', sans-serif" 
+      font-size="14.5" 
+      font-weight="900" 
+      letter-spacing="3.5px" 
+      text-anchor="middle" 
+      fill="#FFFFFF"
+    >
+      GRAN
+    </text>
+    <!-- Right box with "MENDOZA" -->
+    <text 
+      x="150" 
+      y="21" 
+      font-family="'Montserrat', sans-serif" 
+      font-size="14.5" 
+      font-weight="900" 
+      letter-spacing="4px" 
+      text-anchor="middle" 
+      fill="#18231C"
+    >
+      MENDOZA
+    </text>
+  </g>
+</svg>

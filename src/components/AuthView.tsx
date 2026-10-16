@@ -3,8 +3,7 @@ import { UserSession, ThemeConfig, RegisteredUser } from '../types';
 import { PamperoLogo } from './PamperoLogo';
 import { ShieldCheck, ArrowLeft, AlertCircle, CheckCircle2, Sparkles } from 'lucide-react';
 import { MASTER_ADMIN_EMAIL, MASTER_ADMIN_PASSWORD } from '../utils/authInit';
-import { saveFirestoreUser, getFirebaseDb } from '../services/firebase';
-import { collection, getDocs } from 'firebase/firestore';
+import { saveFirestoreUser, authenticateDualUser } from '../services/firebase';
 
 interface AuthViewProps {
   onLogin: (session: UserSession) => void;
@@ -110,347 +109,67 @@ export const AuthView: React.FC<AuthViewProps> = ({
     }, 400);
   };
 
-  // Submit Login (Strict authentication against Firestore, Employee list, Registered accounts and Admin)
+  // Submit Login (Dual Email o Nombre de Usuario con Cloud Firestore y Firebase Auth)
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
+    setSuccessMessage(null);
 
-    const emailClean = email.trim().toLowerCase();
+    const idClean = email.trim();
     const passClean = password.trim();
 
-    if (!emailClean || !passClean) {
-      setErrorMessage('Ingresá tu email y contraseña.');
+    if (!idClean || !passClean) {
+      setErrorMessage('Ingresá tu correo electrónico o nombre de usuario y tu contraseña.');
       return;
     }
 
-    // 1. Check Master Admin Credentials
-    let savedAdminEmail = MASTER_ADMIN_EMAIL;
-    let savedAdminPass = MASTER_ADMIN_PASSWORD;
     try {
-      const stored = localStorage.getItem('pampero_admin_credentials');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (parsed.email && parsed.email !== 'admin@pampero.com' && parsed.email !== 'admin@pampero.com.ar') {
-          savedAdminEmail = parsed.email.trim().toLowerCase();
-        }
-        if (parsed.password) savedAdminPass = parsed.password;
-      }
-    } catch {}
-
-    const isMasterAdminEmail = 
-      emailClean === 'joaquinnievass20@gmail.com' ||
-      emailClean === MASTER_ADMIN_EMAIL.toLowerCase() ||
-      emailClean === savedAdminEmail.toLowerCase() ||
-      emailClean === 'admin' ||
-      emailClean === 'pampero';
-
-    if (isMasterAdminEmail) {
-      const validAdminPass = 
-        passClean === 'Jn05022000' ||
-        passClean === savedAdminPass ||
-        passClean === MASTER_ADMIN_PASSWORD ||
-        passClean === 'Pampero2026';
-      
-      if (!validAdminPass) {
-        setErrorMessage('Contraseña incorrecta para la cuenta administradora.');
-        return;
-      }
-
-      const adminSession: UserSession = {
-        id: 'admin-master',
-        email: emailClean === 'admin' || emailClean === 'pampero' ? MASTER_ADMIN_EMAIL : email.trim(),
-        role: 'admin',
-        clientType: 'empresa',
-        clientData: {
-          fullName: 'Administrador Maestro Joaquín Nievas',
-          companyName: 'Pampero Indumentaria Oficial',
-        },
-      };
-
-      setSuccessMessage('Acceso autorizado como Administrador. Redirigiendo al Hub de Trabajo Interno...');
-      setTimeout(() => {
-        onLogin(adminSession);
-      }, 350);
-      return;
-    }
-
-    // 2. Check Employee Accounts (localStorage & fallback)
-    try {
-      const empSaved = localStorage.getItem('pampero_employees');
-      const empList: any[] = empSaved ? JSON.parse(empSaved) : [];
-      const matchedEmp = empList.find(
-        (emp) => (emp.email?.toLowerCase().trim() === emailClean || (emp.username && emp.username.toLowerCase().trim() === emailClean))
-      );
-      if (matchedEmp) {
-        if (!matchedEmp.active) {
-          setErrorMessage('Esta cuenta de empleado se encuentra desactivada.');
-          return;
-        }
-        if (matchedEmp.password !== passClean) {
-          setErrorMessage('Contraseña incorrecta. Por favor ingresá la clave asignada a tu usuario de ventas.');
-          return;
-        }
-        const empSession: UserSession = {
-          id: matchedEmp.id,
-          email: matchedEmp.email,
-          role: 'employee',
-          clientType: 'empresa',
-          clientData: {
-            fullName: matchedEmp.name,
-            companyName: 'Pampero Maipú - Empleado',
-          },
-        };
-        setSuccessMessage(`Bienvenido/a, ${matchedEmp.name}. Redirigiendo al Hub de Trabajo Interno...`);
+      const authResult = await authenticateDualUser(idClean, passClean);
+      if (authResult.success && authResult.session) {
+        const userDisplayName = authResult.session.clientData?.fullName || authResult.session.email || 'Usuario';
+        setSuccessMessage(`¡Bienvenido/a, ${userDisplayName}! Ingresando al sistema...`);
         setTimeout(() => {
-          onLogin(empSession);
+          onLogin(authResult.session!);
         }, 350);
-        return;
+      } else {
+        setErrorMessage(authResult.error || 'Credenciales incorrectas. Verificá tu correo o usuario y tu contraseña.');
       }
-    } catch {}
-
-    // 3. Check Cloud Firestore & Local Registered Users Pool
-    let matchedUser: RegisteredUser | null = null;
-
-    // Check Cloud Firestore 'usuarios' collection directly first
-    try {
-      const firestoreDb = getFirebaseDb();
-      if (firestoreDb) {
-        const snap = await getDocs(collection(firestoreDb, 'usuarios'));
-        if (!snap.empty) {
-          const found = snap.docs.find((d) => {
-            const data = d.data();
-            const emailMatch = (data.email || '').toLowerCase().trim() === emailClean;
-            const dniClean = (data.cuitOrDni || '').replace(/\D/g, '');
-            const inputClean = emailClean.replace(/\D/g, '');
-            const dniMatch = dniClean && inputClean && dniClean === inputClean && inputClean.length >= 7;
-            return emailMatch || dniMatch;
-          });
-          if (found) {
-            matchedUser = { ...found.data(), id: found.id } as RegisteredUser;
-          }
-        }
-      }
-    } catch (fErr) {
-      console.warn('[AUTH] Firestore search fallback to local:', fErr);
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Error al autenticar. Intentá nuevamente.');
     }
-
-    // If not found in Firestore snapshot yet, check local storage registered users
-    if (!matchedUser) {
-      try {
-        const usersRaw = localStorage.getItem('pampero_registered_users');
-        if (usersRaw) {
-          const registeredList: RegisteredUser[] = JSON.parse(usersRaw);
-          const found = registeredList.find(
-            (u) =>
-              u.email?.toLowerCase().trim() === emailClean ||
-              (u.cuitOrDni && u.cuitOrDni.replace(/\D/g, '') === emailClean.replace(/\D/g, '') && emailClean.replace(/\D/g, '').length >= 7)
-          );
-          if (found) matchedUser = found;
-        }
-      } catch {}
-    }
-
-    if (matchedUser) {
-      if (matchedUser.status === 'suspended') {
-        setErrorMessage('Esta cuenta se encuentra suspendida por la administración.');
-        return;
-      }
-
-      const expectedPass = (matchedUser.password || matchedUser.initialPassword || '').trim();
-      if (!expectedPass || expectedPass !== passClean) {
-        setErrorMessage('Contraseña incorrecta. Por favor ingresá la clave asignada a esta cuenta.');
-        return;
-      }
-
-      const isAdminRole = matchedUser.role === 'admin' || matchedUser.type === 'admin';
-      const isStaffRole = matchedUser.role === 'employee' || matchedUser.type === 'empleado' || matchedUser.type === 'vendedor';
-      const determinedRole: 'admin' | 'employee' | 'client' = 
-        isAdminRole ? 'admin' : (isStaffRole ? 'employee' : 'client');
-
-      const session: UserSession = {
-        id: matchedUser.id,
-        email: matchedUser.email,
-        role: determinedRole,
-        clientType: matchedUser.type === 'empresa' ? 'empresa' : (determinedRole === 'admin' || determinedRole === 'employee' ? 'empresa' : 'consumidor'),
-        clientData: {
-          fullName: matchedUser.repName || matchedUser.name,
-          companyName: matchedUser.type === 'empresa' ? matchedUser.name : undefined,
-          cuit: matchedUser.cuitOrDni,
-          phone: matchedUser.phone,
-          address: matchedUser.address,
-          pricingTier: matchedUser.pricingTier,
-        },
-      };
-
-      setSuccessMessage(`¡Bienvenido/a, ${matchedUser.name}! Ingresando...`);
-      setTimeout(() => {
-        onLogin(session);
-      }, 350);
-      return;
-    }
-
-    // If not found anywhere, strictly reject:
-    setErrorMessage('No encontramos ninguna cuenta registrada con ese correo electrónico. Si no tenés cuenta, podés crear una en la pestaña de Registro.');
   };
 
-  // Submit Admin or Employee Login (WITH STRICT PASSWORD VERIFICATION)
+  // Submit Admin or Employee Login (Dual Email o Nombre de Usuario con verificación segura)
   const handleAdminLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
+    setSuccessMessage(null);
 
-    const userClean = adminUser.trim().toLowerCase();
+    const userClean = adminUser.trim();
     const passClean = adminPass.trim();
 
     if (!userClean || !passClean) {
-      setErrorMessage('Completá usuario y contraseña.');
+      setErrorMessage('Completá usuario o email y contraseña.');
       return;
     }
 
-    // 1. Check if it's an Employee account
     try {
-      const empSaved = localStorage.getItem('pampero_employees');
-      const empList: any[] = empSaved 
-        ? JSON.parse(empSaved) 
-        : [
-            {
-              id: 'emp-1',
-              name: 'Ventas Pampero Maipú',
-              email: 'ventas@pamperomaipu.com.ar',
-              password: 'ventas_pampero',
-              role: 'employee',
-              allowedTabs: ['products', 'variants', 'prices', 'mass_images', 'promos', 'quotes'],
-              active: true,
-            }
-          ];
-      const matchedEmp = empList.find(
-        (emp) => emp.active && (emp.email.toLowerCase() === userClean || (emp.username && emp.username.toLowerCase() === userClean))
-      );
-      if (matchedEmp) {
-        if (matchedEmp.password !== passClean) {
-          setErrorMessage('Contraseña incorrecta para el personal.');
+      const authResult = await authenticateDualUser(userClean, passClean);
+      if (authResult.success && authResult.session) {
+        if (authResult.session.role !== 'admin' && authResult.session.role !== 'employee') {
+          setErrorMessage('Esta cuenta no cuenta con permisos de Administrador o Empleado. Por favor ingresá desde la pestaña principal "INGRESAR".');
           return;
         }
-        const empSession: UserSession = {
-          id: matchedEmp.id,
-          email: matchedEmp.email,
-          role: 'employee',
-          clientType: 'empresa',
-          clientData: {
-            fullName: matchedEmp.name,
-            companyName: 'Pampero Maipú - Empleado',
-          },
-        };
-        setSuccessMessage(`Bienvenido/a, ${matchedEmp.name}. Redirigiendo al Hub de Trabajo Interno...`);
+        const userDisplayName = authResult.session.clientData?.fullName || authResult.session.email || 'Administrador';
+        setSuccessMessage(`Acceso autorizado para ${userDisplayName}. Redirigiendo al Hub de Trabajo Interno...`);
         setTimeout(() => {
-          onLogin(empSession);
+          onLogin(authResult.session!);
         }, 350);
-        return;
+      } else {
+        setErrorMessage(authResult.error || 'Credenciales incorrectas para el panel de administración.');
       }
-    } catch {}
-
-    // 2. Check Custom Administrators registered in Firestore or local
-    try {
-      const firestoreDb = getFirebaseDb();
-      let adminAccount: RegisteredUser | null = null;
-      if (firestoreDb) {
-        const snap = await getDocs(collection(firestoreDb, 'usuarios'));
-        if (!snap.empty) {
-          const foundDoc = snap.docs.find((d) => {
-            const data = d.data();
-            const matchesEmail = (data.email || '').toLowerCase().trim() === userClean;
-            const isAdmin = data.role === 'admin' || data.type === 'admin';
-            return matchesEmail && isAdmin;
-          });
-          if (foundDoc) adminAccount = { ...foundDoc.data(), id: foundDoc.id } as RegisteredUser;
-        }
-      }
-      if (!adminAccount) {
-        const local = localStorage.getItem('pampero_registered_users');
-        if (local) {
-          const list: RegisteredUser[] = JSON.parse(local);
-          adminAccount = list.find((u) => u.email?.toLowerCase().trim() === userClean && (u.role === 'admin' || u.type === 'admin')) || null;
-        }
-      }
-
-      if (adminAccount) {
-        if (adminAccount.status === 'suspended') {
-          setErrorMessage('Esta cuenta administradora se encuentra suspendida.');
-          return;
-        }
-        const expected = (adminAccount.password || adminAccount.initialPassword || '').trim();
-        if (expected === passClean) {
-          const session: UserSession = {
-            id: adminAccount.id,
-            email: adminAccount.email,
-            role: 'admin',
-            clientType: 'empresa',
-            clientData: {
-              fullName: adminAccount.name,
-              companyName: 'Pampero Gran Mendoza',
-            },
-          };
-          setSuccessMessage(`Bienvenido/a, Administrador/a ${adminAccount.name}. Redirigiendo...`);
-          setTimeout(() => onLogin(session), 350);
-          return;
-        } else {
-          setErrorMessage('Contraseña incorrecta para la cuenta administradora.');
-          return;
-        }
-      }
-    } catch {}
-
-    // 2. Check Admin credentials
-    let savedEmail = MASTER_ADMIN_EMAIL;
-    let savedPass = MASTER_ADMIN_PASSWORD;
-    try {
-      const stored = localStorage.getItem('pampero_admin_credentials');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (parsed.email && parsed.email !== 'admin@pampero.com' && parsed.email !== 'admin@pampero.com.ar') {
-          savedEmail = parsed.email.trim().toLowerCase();
-        }
-        if (parsed.password) savedPass = parsed.password;
-      }
-    } catch {
-      // ignore
-    }
-
-    const savedCustomPass = localStorage.getItem('pampero_admin_custom_password');
-    const legacyPass = localStorage.getItem('pampero_admin_pass');
-
-    // Check against authorized admin credentials
-    const validUser = 
-      userClean === 'joaquinnievass20@gmail.com' ||
-      userClean === MASTER_ADMIN_EMAIL.toLowerCase() ||
-      userClean === savedEmail.toLowerCase() ||
-      userClean === 'admin' ||
-      userClean === 'pampero';
-
-    const validPass = 
-      passClean === 'Jn05022000' ||
-      passClean === MASTER_ADMIN_PASSWORD ||
-      passClean === 'Pampero2026' ||
-      (savedPass && passClean === savedPass) ||
-      (savedCustomPass && passClean === savedCustomPass);
-
-    if (validUser && validPass) {
-      const adminSession: UserSession = {
-        id: 'admin-master',
-        email: userClean === 'admin' || userClean === 'pampero' ? MASTER_ADMIN_EMAIL : adminUser.trim(),
-        role: 'admin',
-        clientType: 'empresa',
-        clientData: {
-          fullName: 'Administrador Maestro Joaquín Nievas',
-          companyName: 'Pampero Indumentaria Oficial',
-        },
-      };
-
-      setSuccessMessage('Acceso autorizado como Administrador. Redirigiendo al Hub de Trabajo Interno...');
-      setTimeout(() => {
-        onLogin(adminSession);
-      }, 350);
-    } else {
-      setErrorMessage('Credenciales incorrectas. Verificá tu correo y contraseña de administración.');
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Error al autenticar en administración.');
     }
   };
 
@@ -687,13 +406,13 @@ export const AuthView: React.FC<AuthViewProps> = ({
                   <form onSubmit={handleAdminLogin} className="space-y-4">
                     <div>
                       <label className="block text-[10px] uppercase tracking-[0.25em] font-bold text-[#4A453F] mb-1.5">
-                        USUARIO O EMAIL
+                        EMAIL O NOMBRE DE USUARIO
                       </label>
                       <input
                         type="text"
                         value={adminUser}
                         onChange={(e) => setAdminUser(e.target.value)}
-                        placeholder="correo@empresa.com"
+                        placeholder="correo@empresa.com o usuario"
                         autoComplete="new-password"
                         required
                         className="w-full px-3.5 py-2.5 bg-white border border-[#DCD4C9] rounded-xs text-sm text-[#18231C] focus:outline-none focus:border-[#FDB813]"
@@ -1004,13 +723,13 @@ export const AuthView: React.FC<AuthViewProps> = ({
                       <form onSubmit={handleLogin} className="space-y-4">
                       <div>
                         <label className="block text-[10px] uppercase tracking-[0.25em] font-bold text-[#4A453F] mb-1.5">
-                          EMAIL
+                          EMAIL O NOMBRE DE USUARIO
                         </label>
                         <input
-                          type="email"
+                          type="text"
                           value={email}
                           onChange={(e) => setEmail(e.target.value)}
-                          placeholder="tu@email.com"
+                          placeholder="correo@empresa.com o nombre de usuario"
                           autoComplete="new-password"
                           required
                           className="w-full px-3.5 py-2.5 bg-white border border-[#DCD4C9] rounded-xs text-sm text-[#18231C] focus:outline-none focus:border-[#FDB813]"

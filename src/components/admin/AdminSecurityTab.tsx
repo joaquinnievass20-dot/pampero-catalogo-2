@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { ShieldCheck, Lock, Mail, KeyRound, Check, AlertCircle, Eye, EyeOff, Sparkles, RefreshCw } from 'lucide-react';
+import { ShieldCheck, Lock, Mail, KeyRound, Check, AlertCircle, Eye, EyeOff, Sparkles, RefreshCw, Trash2 } from 'lucide-react';
+import { clearCatalogBackup } from '../../utils/backupManager';
 
 interface AdminSecurityTabProps {
   triggerSaveNotice: () => void;
@@ -188,7 +189,7 @@ export const AdminSecurityTab: React.FC<AdminSecurityTabProps> = ({ triggerSaveN
               required
               value={adminEmail}
               onChange={(e) => setAdminEmail(e.target.value)}
-              placeholder="ejemplo@gmail.com"
+              placeholder="correo@empresa.com"
               className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs font-medium text-[#18231C] focus:outline-none focus:border-[#B9522F] focus:bg-white transition-colors"
             />
             <p className="text-[10px] text-[#6F6860] mt-1">
@@ -282,6 +283,37 @@ export const AdminSecurityTab: React.FC<AdminSecurityTabProps> = ({ triggerSaveN
           </button>
         </div>
       </form>
+
+      {/* Herramienta de Mantenimiento y Caché Local */}
+      <div className="bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs p-5">
+        <h4 className="text-xs font-bold text-[#18231C] uppercase tracking-wider mb-1 flex items-center gap-2">
+          <RefreshCw className="w-4 h-4 text-[#B9522F]" />
+          Limpieza de Memoria Local del Navegador
+        </h4>
+        <p className="text-[12px] text-[#6F6860] mb-4 leading-relaxed">
+          Si ves fotos o productos antiguos en este equipo (aún después de actualizar en Vercel o presionar Control + F5), 
+          se debe a que el navegador retiene una copia en su memoria <code className="bg-[#EFE9DF] px-1 py-0.5 rounded text-[11px] text-[#18231C]">localStorage</code>. 
+          Al hacer clic abajo se purga la copia local y se recarga todo limpio desde la nube.
+        </p>
+        <button
+          type="button"
+          onClick={() => {
+            if (confirm('¿Deseás borrar la memoria local del catálogo en este navegador y recargar la página limpia?')) {
+              clearCatalogBackup();
+              try {
+                localStorage.removeItem('pampero_catalog_products');
+                localStorage.removeItem('pampero_products_backup');
+                localStorage.removeItem('pampero_theme_config');
+              } catch {}
+              window.location.reload();
+            }
+          }}
+          className="px-4 py-2 bg-white hover:bg-red-50 border border-red-300 text-red-700 text-xs font-semibold rounded-xs flex items-center gap-2 transition-colors cursor-pointer"
+        >
+          <Trash2 className="w-4 h-4 text-red-600" />
+          Purgar Caché Local y Forzar Recarga Limpia
+        </button>
+      </div>
     </div>
   );
 };

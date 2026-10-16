@@ -59,6 +59,19 @@ export function loadCatalogBackup(): Product[] | null {
 }
 
 /**
+ * Elimina las copias de respaldo locales para forzar una sincronización limpia desde cero.
+ */
+export function clearCatalogBackup(): void {
+  try {
+    localStorage.removeItem(PAMPERO_PRODUCTS_KEY);
+    localStorage.removeItem(PAMPERO_BACKUP_KEY);
+    localStorage.removeItem(PAMPERO_BACKUP_META_KEY);
+  } catch (err) {
+    console.warn('[PAMPERO BACKUP] Error limpiando respaldo local:', err);
+  }
+}
+
+/**
  * Comprueba si el backend devolvió un catálogo vacío o reseteado.
  * No resucita productos eliminados intencionalmente por el usuario.
  */

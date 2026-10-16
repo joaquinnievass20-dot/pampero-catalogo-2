@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { collection, getDocs } from 'firebase/firestore';
-import { getFirebaseDb } from '../services/firebase';
+import { authenticateDualUser } from '../services/firebase';
 import { UserSession, ClientType, ConsumerClient, CompanyClient } from '../types';
 import { PamperoLogo } from './PamperoLogo';
 import { 
@@ -132,66 +131,36 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     const userClean = adminUser.trim().toLowerCase();
     const passClean = adminPass.trim();
 
-    // 1. Check direct Cloud Firestore registered accounts first (Admins, Employees, Clients)
-    try {
-      const firestoreDb = getFirebaseDb();
-      if (firestoreDb) {
-        const snap = await getDocs(collection(firestoreDb, 'usuarios'));
-        if (!snap.empty) {
-          const matchedDoc = snap.docs.find((d) => {
-            const data = d.data();
-            const emailMatch = (data.email || '').toLowerCase().trim() === userClean;
-            const usernameMatch = (data.username || '').toLowerCase().trim() === userClean;
-            const passMatch = (data.password && data.password === passClean) || 
-                              (data.initialPassword && data.initialPassword === passClean);
-            return (emailMatch || usernameMatch) && passMatch;
-          });
-          if (matchedDoc) {
-            const matched = matchedDoc.data();
-            const isAdminRole = matched.role === 'admin' || matched.type === 'admin';
-            const isStaff = matched.role === 'employee' || matched.type === 'empleado' || matched.type === 'vendedor';
-            const determinedRole: 'admin' | 'employee' | 'client' = 
-              isAdminRole ? 'admin' : (isStaff ? 'employee' : 'client');
-            onLogin({
-              id: matchedDoc.id,
-              role: determinedRole,
-              email: matched.email,
-              clientType: matched.type === 'empresa' ? 'empresa' : 'consumidor',
-              clientData: {
-                fullName: matched.repName || matched.name,
-                companyName: matched.type === 'empresa' ? matched.name : undefined,
-                cuit: matched.cuitOrDni,
-                phone: matched.phone,
-              },
-              loggedAt: new Date().toISOString(),
-            });
-            return;
-          }
-        }
-      }
-    } catch (_fErr) {
-      // Continue to local fallbacks
+    if (!userClean || !passClean) {
+      setAdminError('Ingresá tu correo o nombre de usuario y tu contraseña.');
+      return;
     }
 
-    // 2. Check Employee accounts
+    try {
+      const authResult = await authenticateDualUser(userClean, passClean);
+      if (authResult.success && authResult.session) {
+        onLogin(authResult.session);
+        return;
+      } else {
+        setAdminError(authResult.error || 'Credenciales incorrectas para el panel de administración.');
+        return;
+      }
+    } catch (err: any) {
+      setAdminError(err?.message || 'Error al autenticar en administración.');
+      return;
+    }
+
+    // 4. Check Employee accounts (localStorage)
     try {
       const empSaved = localStorage.getItem('pampero_employees');
-      const empList: any[] = empSaved 
-        ? JSON.parse(empSaved) 
-        : [
-            {
-              id: 'emp-1',
-              name: 'Ventas Pampero Maipú',
-              email: 'ventas@pamperomaipu.com.ar',
-              password: 'ventas_pampero',
-              role: 'employee',
-              allowedTabs: ['products', 'variants', 'prices', 'mass_images', 'promos', 'quotes'],
-              active: true,
-            }
-          ];
-      const matchedEmp = empList.find(
-        (emp) => emp.active && (emp.email.toLowerCase() === userClean || (emp.username && emp.username.toLowerCase() === userClean)) && emp.password === passClean
-      );
+      const empList: any[] = empSaved ? JSON.parse(empSaved) : [];
+      const matchedEmp = empList.find((emp) => {
+        const emailVal = (emp.email || '').toLowerCase().trim();
+        const userVal = (emp.username || '').toLowerCase().trim();
+        const nameVal = (emp.name || '').toLowerCase().trim();
+        const emailPrefix = emailVal.split('@')[0];
+        return emp.active && (emailVal === userClean || userVal === userClean || nameVal === userClean || emailPrefix === userClean) && emp.password === passClean;
+      });
       if (matchedEmp) {
         onLogin({
           role: 'employee',
@@ -207,16 +176,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       }
     } catch {}
 
-    // Check Registered Users (Staff or Clients registered in system with assigned password)
+    // 5. Check Local Registered Users
     try {
       const usersRaw = localStorage.getItem('pampero_registered_users');
       if (usersRaw) {
         const list: any[] = JSON.parse(usersRaw);
         const matched = list.find((u) => {
-          const emailMatch = u.email?.toLowerCase().trim() === userClean;
-          const usernameMatch = u.username?.toLowerCase().trim() === userClean;
+          const emailVal = (u.email || '').toLowerCase().trim();
+          const userVal = (u.username || '').toLowerCase().trim();
+          const nameVal = (u.name || '').toLowerCase().trim();
+          const emailPrefix = emailVal.split('@')[0];
           const passMatch = (u.password && u.password === passClean) || (u.initialPassword && u.initialPassword === passClean);
-          return (emailMatch || usernameMatch) && passMatch;
+          return (emailVal === userClean || userVal === userClean || nameVal === userClean || emailPrefix === userClean) && passMatch;
         });
         if (matched) {
           const isAdminRole = matched.role === 'admin' || matched.type === 'admin';
@@ -241,46 +212,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       }
     } catch {}
 
-    let savedEmail = 'admin@pampero.com';
-    let savedPass = 'Pampero2026';
-    try {
-      const stored = localStorage.getItem('pampero_admin_credentials');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (parsed.email) savedEmail = parsed.email.trim().toLowerCase();
-        if (parsed.password) savedPass = parsed.password;
-      }
-    } catch {
-      // ignore
-    }
-
-    const legacyPass = localStorage.getItem('pampero_admin_pass');
-    const customPass = localStorage.getItem('pampero_admin_custom_password');
-
-    const isUserValid = 
-      userClean === 'joaquinnievass20@gmail.com' ||
-      userClean === 'admin' || 
-      userClean === 'admin@pampero.com' || 
-      userClean === 'admin@pampero.com.ar' || 
-      userClean === 'pampero' || 
-      userClean === savedEmail.toLowerCase();
-
-    const isPassValid = 
-      passClean === 'Jn05022000' ||
-      passClean === 'Pampero2026' ||
-      (savedPass && passClean === savedPass) ||
-      (customPass && passClean === customPass);
-
-    if (isUserValid && isPassValid) {
-      onLogin({
-        id: 'admin-master',
-        role: 'admin',
-        email: savedEmail || 'admin@pampero.com',
-        loggedAt: new Date().toISOString(),
-      });
-    } else {
-      setAdminError('Usuario o contraseña de administrador o empleado incorrectos.');
-    }
+    setAdminError('No encontramos ninguna cuenta con ese correo electrónico o nombre de usuario, o la contraseña es incorrecta.');
   };
 
   const saveClientToRegistry = (type: ClientType, data: ConsumerClient | CompanyClient) => {

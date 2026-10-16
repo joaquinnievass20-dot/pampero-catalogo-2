@@ -91,16 +91,16 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
     const colorImg = getProductImageForColor(product, selectedColor);
     const foundIdx = allImages.findIndex(img => img === colorImg);
     if (foundIdx !== -1) {
-      setActiveImageIndex(foundIdx);
+      setActiveImageIndex((prev) => (prev === foundIdx ? prev : foundIdx));
     }
-  }, [selectedColor, product]);
+  }, [selectedColor, product?.id]);
 
-  // Record view/click interaction
+  // Record view/click interaction once on mount or when product ID changes
   useEffect(() => {
-    if (product) {
+    if (product && product.id) {
       recordProductInteraction(product, 'click');
     }
-  }, [product]);
+  }, [product?.id]);
 
   const isCompany = userSession?.clientType === 'empresa';
   

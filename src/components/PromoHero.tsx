@@ -8,6 +8,7 @@ interface PromoHeroProps {
   onSelectPromo: (promo: Promotion) => void;
   onClearPromoFilter: () => void;
   filteredCount: number;
+  isLoading?: boolean;
 }
 
 export const PromoHero: React.FC<PromoHeroProps> = ({
@@ -16,7 +17,9 @@ export const PromoHero: React.FC<PromoHeroProps> = ({
   onSelectPromo,
   onClearPromoFilter,
   filteredCount,
+  isLoading = false,
 }) => {
+  const [loadedImages, setLoadedImages] = React.useState<Record<string, boolean>>({});
   const activePromos = promotions.filter((p) => p.active);
   if (activePromos.length === 0 && !activePromoFilter) return null;
 
@@ -53,20 +56,32 @@ export const PromoHero: React.FC<PromoHeroProps> = ({
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
         {activePromos.map((promo) => {
           const isSelected = activePromoFilter === promo.tagFilter;
+          const isImgLoaded = Boolean(loadedImages[promo.id]);
 
           return (
             <div
               key={promo.id}
               onClick={() => onSelectPromo(promo)}
-              className={`group relative h-40 sm:h-44 rounded-2xl overflow-hidden cursor-pointer shadow-sm hover:shadow-xl transition-all duration-300 border ${
+              className={`group relative h-40 sm:h-44 rounded-2xl overflow-hidden cursor-pointer shadow-sm hover:shadow-xl transition-all duration-300 border bg-neutral-900 ${
                 isSelected ? 'ring-4 ring-[#E52421] border-[#E52421]' : 'border-neutral-200'
               }`}
             >
+              {/* Skeleton de carga inicial */}
+              {(isLoading || !isImgLoaded) && (
+                <div className="absolute inset-0 bg-neutral-800 animate-pulse z-0 flex items-center justify-center">
+                  <div className="w-6 h-6 rounded-full border-2 border-neutral-600 border-t-amber-400 animate-spin opacity-40" />
+                </div>
+              )}
+
               {/* Background image */}
               <img
                 src={promo.bannerImage}
                 alt={promo.title}
-                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 brightness-75"
+                onLoad={() => setLoadedImages((prev) => ({ ...prev, [promo.id]: true }))}
+                onError={() => setLoadedImages((prev) => ({ ...prev, [promo.id]: true }))}
+                className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 brightness-75 ${
+                  isImgLoaded ? 'opacity-100' : 'opacity-0'
+                }`}
                 referrerPolicy="no-referrer"
               />
 

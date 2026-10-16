@@ -238,10 +238,26 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
 
   const accent = theme?.accentColor || '#FDB813';
 
-  // Real-time Firestore Subscriptions with clean encoding
+  // Real-time Firestore Subscriptions with clean encoding and equality guards
   useEffect(() => {
-    const unsubOrders = subscribeToCRMOrders((fetched) => setOrders(fetched.map(sanitizeObjectEncoding)));
-    const unsubVisits = subscribeToLeadVisits((fetched) => setVisits(fetched.map(sanitizeObjectEncoding)));
+    const unsubOrders = subscribeToCRMOrders((fetched) => {
+      setOrders((prev) => {
+        if (prev.length === fetched.length) {
+          const hasDiff = fetched.some((o, i) => !prev[i] || prev[i].id !== o.id || prev[i].status !== o.status || prev[i].updatedAt !== o.updatedAt);
+          if (!hasDiff) return prev;
+        }
+        return fetched.map(sanitizeObjectEncoding);
+      });
+    });
+    const unsubVisits = subscribeToLeadVisits((fetched) => {
+      setVisits((prev) => {
+        if (prev.length === fetched.length) {
+          const hasDiff = fetched.some((v, i) => !prev[i] || prev[i].id !== v.id || prev[i].status !== v.status || prev[i].updatedAt !== v.updatedAt);
+          if (!hasDiff) return prev;
+        }
+        return fetched.map(sanitizeObjectEncoding);
+      });
+    });
     const unsubSuppliers = subscribeToSupplierOrders((fetched) => setSupplierOrders(fetched.map(sanitizeObjectEncoding)));
     const unsubCampaigns = subscribeToSizingCampaigns((fetched) => setSizingCampaigns(fetched.map(sanitizeObjectEncoding)));
     const unsubSizes = subscribeToEmployeeSizeEntries('all', (fetched) => setEmployeeSizes(fetched.map(sanitizeObjectEncoding)));
@@ -267,18 +283,21 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
     const orderId = e.dataTransfer.getData('orderId');
     if (!orderId) return;
     const order = orders.find((o) => o.id === orderId);
-    if (order && order.status !== newStatus) {
-      const updated = sanitizeObjectEncoding({ 
-        ...order, 
-        status: newStatus, 
-        columnId: newStatus, 
-        updatedAt: new Date().toISOString() 
-      });
-      setOrders((prev) => [updated, ...prev.filter((o) => o.id !== orderId)]);
-      try {
-        await saveCRMOrder(updated);
-      } catch (err) {
-        console.error('Error al actualizar estado en Drag & Drop:', err);
+    if (order) {
+      const currentOrderCol = (order as any).columnId || order.status;
+      if (currentOrderCol !== newStatus) {
+        const updated = sanitizeObjectEncoding({ 
+          ...order, 
+          status: newStatus, 
+          columnId: newStatus, 
+          updatedAt: new Date().toISOString() 
+        });
+        setOrders((prev) => [updated, ...prev.filter((o) => o.id !== orderId)]);
+        try {
+          await saveCRMOrder(updated);
+        } catch (err) {
+          console.error('Error al actualizar estado en Drag & Drop:', err);
+        }
       }
     }
   };
@@ -460,7 +479,7 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
     <div className="flex flex-col min-h-[calc(100vh-80px)] bg-[#FAF8F5]">
       {/* Top Bar Navigation */}
       <div className="bg-white border-b border-[#DCD4C9] w-full shrink-0 shadow-xs">
-        <div className="w-full max-w-[1600px] mx-auto px-4 sm:px-6 py-3 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3">
+        <div className="w-full max-w-[1700px] mx-auto px-4 sm:px-6 py-3 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3">
         <div className="flex items-center gap-4 sm:gap-6 flex-wrap">
           <h2 className="font-display font-bold text-lg sm:text-xl uppercase tracking-wider text-[#18231C] flex items-center gap-2">
             <LayoutDashboard className="w-5 h-5 text-[#B9522F]" />
@@ -561,12 +580,12 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
             Volver al menú principal
           </button>
         </div>
+        </div>
       </div>
 
-      </div>
       {/* Main Content Area */}
       <div className="flex-1 overflow-auto">
-        <div className="w-full max-w-[1600px] mx-auto p-4 sm:p-6 h-full flex flex-col">
+        <div className="w-full max-w-[1700px] mx-auto p-4 sm:p-6 h-full flex flex-col">
         {/* === TAB 1: KANBAN BOARD === */}
         {activeTab === 'board' && (
           <div className="flex flex-col h-full space-y-4">
@@ -732,182 +751,188 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
               </div>
             )}
 
-            {/* Kanban Board Columns */}
-            <div className="flex gap-4 flex-1 overflow-x-auto pb-4">
-              {companyColumns.map((col) => {
-                const columnOrders = filteredOrders.filter((o) => {
-                  const oCol = (o as any).columnId || o.status;
-                  if (oCol === col.id) return true;
-                  if (o.status === col.id) return true;
-                  if (col.id === companyColumns[0]?.id && !companyColumns.some((c) => c.id === o.status || c.id === (o as any).columnId)) return true;
-                  return false;
-                });
-                const isDragOver = dragOverColumn === col.id;
-                return (
-                  <div
-                    key={col.id}
-                    className={`w-72 sm:w-80 shrink-0 rounded-xs border flex flex-col transition-colors ${
-                      isDragOver
-                        ? 'border-[#B9522F] bg-[#B9522F]/5'
-                        : 'border-[#DCD4C9]/60 bg-[#ECE5DC]/30'
-                    }`}
-                    onDragOver={(e) => handleDragOver(e, col.id)}
-                    onDragLeave={handleDragLeave}
-                    onDrop={(e) => handleDrop(e, col.id)}
-                  >
-                    {/* Column Header */}
+            {/* Kanban Board Columns - Grid perfectamente alineado sin desplazamiento */}
+            <div className="flex-1 overflow-x-auto pb-4">
+              <div 
+                className="grid gap-4 min-w-[1100px]"
+                style={{ gridTemplateColumns: `repeat(${companyColumns.length}, minmax(260px, 1fr))` }}
+              >
+                {companyColumns.map((col) => {
+                  const columnOrders = filteredOrders.filter((o) => {
+                    const effectiveColId = (o as any).columnId || o.status || companyColumns[0]?.id;
+                    if (effectiveColId === col.id) return true;
+                    const existsInBoard = companyColumns.some((c) => c.id === effectiveColId);
+                    if (!existsInBoard && col.id === companyColumns[0]?.id) return true;
+                    return false;
+                  });
+                  const isDragOver = dragOverColumn === col.id;
+                  return (
                     <div
-                      className="p-3 border-b border-[#DCD4C9] rounded-t-xs font-bold text-xs uppercase text-[#18231C] flex justify-between items-center bg-white"
-                      style={{
-                        borderLeftColor: col.color,
-                        borderLeftWidth: '4px',
-                        borderTop: `2px solid ${col.color}40`,
-                      }}
+                      key={col.id}
+                      className={`rounded-xs border flex flex-col min-h-[520px] transition-colors ${
+                        isDragOver
+                          ? 'border-[#B9522F] bg-[#B9522F]/5'
+                          : 'border-[#DCD4C9]/80 bg-[#ECE5DC]/30'
+                      }`}
+                      onDragOver={(e) => handleDragOver(e, col.id)}
+                      onDragLeave={handleDragLeave}
+                      onDrop={(e) => handleDrop(e, col.id as CRMOrderStatus)}
                     >
-                      <span>{fixUtf8Encoding(col.label)}</span>
-                      <span
-                        className="px-2 py-0.5 rounded-full text-[10px] font-black"
-                        style={{ backgroundColor: col.color + '22', color: col.color }}
+                      {/* Column Header */}
+                      <div
+                        className="p-3 border-b border-[#DCD4C9] rounded-t-xs font-bold text-xs uppercase text-[#18231C] flex justify-between items-center bg-white"
+                        style={{
+                          borderLeftColor: col.color,
+                          borderLeftWidth: '4px',
+                          borderTop: `2px solid ${col.color}40`,
+                        }}
                       >
-                        {columnOrders.length}
-                      </span>
-                    </div>
+                        <span>{fixUtf8Encoding(col.label)}</span>
+                        <span
+                          className="px-2 py-0.5 rounded-full text-[10px] font-black"
+                          style={{ backgroundColor: col.color + '22', color: col.color }}
+                        >
+                          {columnOrders.length}
+                        </span>
+                      </div>
 
-                    {/* Cards */}
-                    <div className="p-2.5 flex-1 overflow-y-auto space-y-2.5 min-h-[300px]">
-                      {columnOrders.map((order) => {
-                        const daysOld = Math.floor(
-                          (Date.now() - new Date(order.date).getTime()) / (1000 * 60 * 60 * 24)
-                        );
-                        const isDelayed =
-                          daysOld > 7 && (order.status === 'cotizacion' || order.status === 'sena_50');
+                      {/* Cards */}
+                      <div className="p-2.5 flex-1 overflow-y-auto space-y-2.5 min-h-[300px]">
+                        {columnOrders.map((order) => {
+                          const daysOld = Math.floor(
+                            (Date.now() - new Date(order.date).getTime()) / (1000 * 60 * 60 * 24)
+                          );
+                          const isDelayed =
+                            daysOld > 7 && (order.status === 'cotizacion' || order.status === 'sena_50');
 
-                        return (
-                          <div
-                            key={order.id}
-                            draggable
-                            onDragStart={(e) => handleDragStart(e, order.id)}
-                            onClick={() => setSelectedOrderForDetail(order)}
-                            className={`bg-white p-3 rounded-xs border shadow-xs cursor-grab active:cursor-grabbing hover:shadow-md transition-all select-none ${
-                              isDelayed
-                                ? 'border-red-300 border-l-4 border-l-red-500 bg-red-50/20'
-                                : 'border-[#DCD4C9] hover:border-[#B9522F]'
-                            }`}
-                          >
-                            {/* Card Top */}
-                            <div className="flex justify-between items-start mb-1.5">
-                              <div className="flex items-center gap-1">
-                                {order.clientType === 'empresa' ? (
-                                  <Building2 className="w-3 h-3 text-amber-600" />
-                                ) : (
-                                  <User className="w-3 h-3 text-emerald-600" />
-                                )}
-                                <span className="text-[11px] text-[#18231C] font-black font-mono">
-                                  {order.orderNumber || `#${order.id.slice(-6)}`}
-                                </span>
-                              </div>
-                              {isDelayed && (
-                                <span className="text-[9px] font-bold px-1.5 py-0.5 bg-red-100 text-red-700 rounded-xs uppercase flex items-center gap-0.5 animate-pulse">
-                                  <AlertTriangle className="w-2.5 h-2.5" />
-                                  {daysOld}d demorado
-                                </span>
-                              )}
-                            </div>
-
-                            {/* Client Name */}
-                            <h4 className="font-bold text-sm text-[#18231C] leading-tight">
-                              {fixUtf8Encoding(order.clientName)}
-                            </h4>
-                            <p className="text-[11px] text-[#6F6860] mt-0.5">
-                              {order.totalUnits} prendas
-                            </p>
-
-                            {/* Block Reason */}
-                            {order.blockReason && (
-                              <div className="mt-2 text-[10px] bg-red-50 text-red-700 p-1.5 rounded-xs font-medium border border-red-200">
-                                ⚠ Bloqueado: {fixUtf8Encoding(order.blockReason)}
-                              </div>
-                            )}
-
-                            {/* Observations */}
-                            {order.observations && !order.blockReason && (
-                              <div className="mt-2 text-[10px] bg-amber-50 text-amber-800 p-1.5 rounded-xs">
-                                {fixUtf8Encoding(order.observations.slice(0, 80))}
-                                {order.observations.length > 80 ? '...' : ''}
-                              </div>
-                            )}
-
-                            {/* Card Footer */}
-                            <div className="mt-2.5 flex justify-between items-center border-t border-[#ECE5DC] pt-2">
-                              <div className="flex items-center gap-1.5">
-                                <Clock className="w-3 h-3 text-[#8C827A]" />
-                                <span className="text-[10px] font-bold text-[#8C827A]">
-                                  {fixUtf8Encoding(order.seller || 'Sin asignar')}
-                                </span>
-                                {order.branch && (
-                                  <span className="text-[9px] px-1 py-0.2 rounded-xs bg-[#FAF8F5] border border-[#DCD4C9] text-[#6F6860]">
-                                    {fixUtf8Encoding(order.branch)}
+                          return (
+                            <div
+                              key={order.id}
+                              draggable
+                              onDragStart={(e) => handleDragStart(e, order.id)}
+                              onClick={() => setSelectedOrderForDetail(order)}
+                              className={`bg-white p-3 rounded-xs border shadow-xs cursor-grab active:cursor-grabbing hover:shadow-md transition-all select-none ${
+                                isDelayed
+                                  ? 'border-red-300 border-l-4 border-l-red-500 bg-red-50/20'
+                                  : 'border-[#DCD4C9] hover:border-[#B9522F]'
+                              }`}
+                            >
+                              {/* Card Top */}
+                              <div className="flex justify-between items-start mb-1.5">
+                                <div className="flex items-center gap-1">
+                                  {order.clientType === 'empresa' ? (
+                                    <Building2 className="w-3 h-3 text-amber-600" />
+                                  ) : (
+                                    <User className="w-3 h-3 text-emerald-600" />
+                                  )}
+                                  <span className="text-[11px] text-[#18231C] font-black font-mono">
+                                    {order.orderNumber || `#${order.id.slice(-6)}`}
+                                  </span>
+                                </div>
+                                {isDelayed && (
+                                  <span className="text-[9px] font-bold px-1.5 py-0.5 bg-red-100 text-red-700 rounded-xs uppercase flex items-center gap-0.5 animate-pulse">
+                                    <AlertTriangle className="w-2.5 h-2.5" />
+                                    {daysOld}d demorado
                                   </span>
                                 )}
                               </div>
-                              <span className="font-bold text-emerald-700 text-sm">
-                                $ {(order.totalEstimated || 0).toLocaleString('es-AR')}
-                              </span>
-                            </div>
 
-                            {/* Card Action Shortcuts */}
-                            <div className="mt-2 pt-1.5 border-t border-dashed border-[#ECE5DC] flex items-center justify-between gap-1">
-                              <a
-                                href={`https://wa.me/?text=${encodeURIComponent(`Hola ${order.clientName}, te escribimos de Pampero Gran Mendoza para actualizarte sobre tu pedido ${order.orderNumber || `#${order.id.slice(-6)}`} (Estado: ${col.label}). Total: $${(order.totalEstimated || 0).toLocaleString('es-AR')}. ¿Tenés alguna consulta?`)}`}
-                                target="_blank"
-                                rel="noreferrer"
-                                onClick={(e) => e.stopPropagation()}
-                                className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xs text-[10px] font-bold flex items-center gap-1 transition-colors"
-                                title="Avisar al cliente por WhatsApp"
-                              >
-                                <MessageCircle className="w-3 h-3 text-emerald-600" />
-                                <span>WhatsApp</span>
-                              </a>
+                              {/* Client Name */}
+                              <h4 className="font-bold text-sm text-[#18231C] leading-tight">
+                                {fixUtf8Encoding(order.clientName)}
+                              </h4>
+                              <p className="text-[11px] text-[#6F6860] mt-0.5">
+                                {order.totalUnits} prendas
+                              </p>
 
-                              {(() => {
-                                const currentIndex = companyColumns.findIndex((c) => c.id === order.status);
-                                const nextCol = currentIndex >= 0 && currentIndex < companyColumns.length - 1 ? companyColumns[currentIndex + 1] : null;
-                                if (!nextCol) return null;
-                                return (
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      const updated = sanitizeObjectEncoding({ ...order, status: nextCol.id, columnId: nextCol.id, updatedAt: new Date().toISOString() });
-                                      setOrders((prev) => [updated, ...prev.filter((o) => o.id !== order.id)]);
-                                      saveCRMOrder(updated).catch(console.error);
-                                    }}
-                                    className="px-2 py-1 bg-[#18231C] hover:bg-[#B9522F] text-white rounded-xs text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 transition-colors cursor-pointer"
-                                    title={`Avanzar a ${fixUtf8Encoding(nextCol.label)}`}
-                                  >
-                                    <span>{fixUtf8Encoding(nextCol.label.split('/')[0].split(' ')[0])}</span>
-                                    <ArrowRight className="w-2.5 h-2.5" />
-                                  </button>
-                                );
-                              })()}
+                              {/* Block Reason */}
+                              {order.blockReason && (
+                                <div className="mt-2 text-[10px] bg-red-50 text-red-700 p-1.5 rounded-xs font-medium border border-red-200">
+                                  ⚠ Bloqueado: {fixUtf8Encoding(order.blockReason)}
+                                </div>
+                              )}
+
+                              {/* Observations */}
+                              {order.observations && !order.blockReason && (
+                                <div className="mt-2 text-[10px] bg-amber-50 text-amber-800 p-1.5 rounded-xs">
+                                  {fixUtf8Encoding(order.observations.slice(0, 80))}
+                                  {order.observations.length > 80 ? '...' : ''}
+                                </div>
+                              )}
+
+                              {/* Card Footer */}
+                              <div className="mt-2.5 flex justify-between items-center border-t border-[#ECE5DC] pt-2">
+                                <div className="flex items-center gap-1.5">
+                                  <Clock className="w-3 h-3 text-[#8C827A]" />
+                                  <span className="text-[10px] font-bold text-[#8C827A]">
+                                    {fixUtf8Encoding(order.seller || 'Sin asignar')}
+                                  </span>
+                                  {order.branch && (
+                                    <span className="text-[9px] px-1 py-0.2 rounded-xs bg-[#FAF8F5] border border-[#DCD4C9] text-[#6F6860]">
+                                      {fixUtf8Encoding(order.branch)}
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="font-bold text-emerald-700 text-sm">
+                                  $ {(order.totalEstimated || 0).toLocaleString('es-AR')}
+                                </span>
+                              </div>
+
+                              {/* Card Action Shortcuts */}
+                              <div className="mt-2 pt-1.5 border-t border-dashed border-[#ECE5DC] flex items-center justify-between gap-1">
+                                <a
+                                  href={`https://wa.me/?text=${encodeURIComponent(`Hola ${order.clientName}, te escribimos de Pampero Gran Mendoza para actualizarte sobre tu pedido ${order.orderNumber || `#${order.id.slice(-6)}`} (Estado: ${col.label}). Total: $${(order.totalEstimated || 0).toLocaleString('es-AR')}. ¿Tenés alguna consulta?`)}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xs text-[10px] font-bold flex items-center gap-1 transition-colors"
+                                  title="Avisar al cliente por WhatsApp"
+                                >
+                                  <MessageCircle className="w-3 h-3 text-emerald-600" />
+                                  <span>WhatsApp</span>
+                                </a>
+
+                                {(() => {
+                                  const currentOrderCol = (order as any).columnId || order.status;
+                                  const currentIndex = companyColumns.findIndex((c) => c.id === currentOrderCol);
+                                  const nextCol = currentIndex >= 0 && currentIndex < companyColumns.length - 1 ? companyColumns[currentIndex + 1] : null;
+                                  if (!nextCol) return null;
+                                  return (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        const updated = sanitizeObjectEncoding({ ...order, status: nextCol.id as CRMOrderStatus, columnId: nextCol.id, updatedAt: new Date().toISOString() });
+                                        setOrders((prev) => [updated, ...prev.filter((o) => o.id !== order.id)]);
+                                        saveCRMOrder(updated).catch(console.error);
+                                      }}
+                                      className="px-2 py-1 bg-[#18231C] hover:bg-[#B9522F] text-white rounded-xs text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 transition-colors cursor-pointer"
+                                      title={`Avanzar a ${fixUtf8Encoding(nextCol.label)}`}
+                                    >
+                                      <span>{fixUtf8Encoding(nextCol.label.split('/')[0].split(' ')[0])}</span>
+                                      <ArrowRight className="w-2.5 h-2.5" />
+                                    </button>
+                                  );
+                                })()}
+                              </div>
                             </div>
+                          );
+                        })}
+
+                        {columnOrders.length === 0 && (
+                          <div
+                            className={`p-6 text-center text-[11px] text-[#8C827A] border-2 border-dashed rounded-xs ${
+                              isDragOver ? 'border-[#B9522F] bg-[#B9522F]/5' : 'border-[#DCD4C9]'
+                            }`}
+                          >
+                            {isDragOver ? 'Soltar aquí' : 'Sin pedidos en esta fase'}
                           </div>
-                        );
-                      })}
-
-                      {columnOrders.length === 0 && (
-                        <div
-                          className={`p-6 text-center text-[11px] text-[#8C827A] border-2 border-dashed rounded-xs ${
-                            isDragOver ? 'border-[#B9522F] bg-[#B9522F]/5' : 'border-[#DCD4C9]'
-                          }`}
-                        >
-                          {isDragOver ? 'Soltar aquí' : 'Sin pedidos en esta fase'}
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
           </div>
         )}
@@ -934,6 +959,7 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
             defaultBranch={assignedBranch}
           />
         )}
+        </div>
       </div>
 
       {/* Notifications Drawer Modal */}
@@ -971,7 +997,7 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
           }}
         />
       )}
-      </div>
+
       {/* Modal: New Manual Order */}
       {showNewOrderModal && (
         <NewOrderModal
@@ -1333,5 +1359,3 @@ const NewOrderModal: React.FC<{
     </div>
   );
 };
-
-

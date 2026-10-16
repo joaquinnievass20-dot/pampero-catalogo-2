@@ -90,22 +90,45 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
 
   const [localVisits, setLocalVisits] = useState<LeadVisit[]>(() => (visits || []).map(sanitizeObjectEncoding));
 
-  // Sync prop updates
+  // Sync prop updates safely without infinite re-renders
   useEffect(() => {
-    if (Array.isArray(visits) && visits.length > 0) {
-      setLocalVisits(visits.map(sanitizeObjectEncoding));
+    if (Array.isArray(visits)) {
+      setLocalVisits((prev) => {
+        if (prev.length === visits.length) {
+          const hasDiff = visits.some((v, idx) => {
+            const p = prev[idx];
+            return !p || p.id !== v.id || p.status !== v.status || p.updatedAt !== v.updatedAt;
+          });
+          if (!hasDiff) return prev;
+        }
+        return visits.map(sanitizeObjectEncoding);
+      });
     }
   }, [visits]);
 
-  // Real-time Firestore onSnapshot for crm_leads_visitas
+  // Real-time Firestore onSnapshot for crm_leads_visitas (only if not provided by parent)
   useEffect(() => {
+    if (Array.isArray(visits) && visits.length > 0) {
+      return () => {};
+    }
     const unsub = subscribeToLeadVisits((updated) => {
-      if (Array.isArray(updated) && updated.length > 0) {
-        setLocalVisits(updated.map(sanitizeObjectEncoding));
+      if (Array.isArray(updated)) {
+        setLocalVisits((prev) => {
+          if (prev.length === updated.length) {
+            const hasDiff = updated.some((v, idx) => {
+              const p = prev[idx];
+              return !p || p.id !== v.id || p.status !== v.status || p.updatedAt !== v.updatedAt;
+            });
+            if (!hasDiff) return prev;
+          }
+          return updated.map(sanitizeObjectEncoding);
+        });
       }
     });
-    return () => unsub();
-  }, []);
+    return () => {
+      unsub();
+    };
+  }, [visits]);
 
   useEffect(() => {
     const unsub = subscribeToKanbanColumns((data) => {

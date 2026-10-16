@@ -186,6 +186,7 @@ export interface RegisteredUser {
   role?: 'admin' | 'employee' | 'client';
   name: string;
   repName?: string;
+  username?: string;
   email: string;
   password?: string;
   initialPassword?: string;

@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { RegisteredUser, BranchLocation, UserSession } from '../../types';
-import { MASTER_ADMIN_USER } from '../../utils/authInit';
+import { MASTER_ADMIN_USER, MASTER_ADMIN_EMAIL } from '../../utils/authInit';
 import {
   subscribeToFirestoreUsers,
   saveFirestoreUser,
   deleteFirestoreUser,
   seedInitialFirestoreUsersIfEmpty,
+  createFirebaseAuthAndFirestoreUser,
 } from '../../services/firebase';
 import { 
   Users, 
@@ -300,7 +301,12 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
           prev.forEach((u) => map.set(u.id, u));
           // Sobrescribir con remotos
           remoteUsers.forEach((u) => map.set(u.id, u));
-          return Array.from(map.values());
+          const merged = Array.from(map.values());
+          if (prev.length === merged.length) {
+            const hasDiff = merged.some((m, idx) => prev[idx]?.id !== m.id || prev[idx]?.status !== m.status || prev[idx]?.email !== m.email || prev[idx]?.role !== m.role);
+            if (!hasDiff) return prev;
+          }
+          return merged;
         });
       }
       setIsLoading(false);
@@ -350,8 +356,15 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
 
   // Real-time Delete from Cloud Firestore
   const handleDeleteUser = async (id: string, name: string) => {
-    if (id === 'admin-master' || id === MASTER_ADMIN_USER.id) {
-      alert('La cuenta administradora maestra (admin@pampero.com) está protegida por seguridad y no puede ser eliminada.');
+    const targetUser = users.find((u) => u.id === id);
+    const targetEmail = (targetUser?.email || '').toLowerCase().trim();
+    if (
+      id === 'admin-master' ||
+      id === MASTER_ADMIN_USER.id ||
+      targetEmail === 'joaquinnievass20@gmail.com' ||
+      targetEmail.includes('joaquinnievass20')
+    ) {
+      alert('La cuenta administradora maestra (joaquinnievass20@gmail.com) y su documento están blindados por seguridad y no pueden ser eliminados bajo ningún concepto.');
       return;
     }
     if (confirm(`¿Estás seguro de eliminar permanentemente la cuenta de "${name}"?`)) {
@@ -363,7 +376,14 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
 
   // Cambiar estado activo / suspendido
   const handleToggleStatus = async (user: RegisteredUser) => {
-    if (user.id === 'admin-master' || user.id === MASTER_ADMIN_USER.id) return;
+    if (
+      user.id === 'admin-master' ||
+      user.id === MASTER_ADMIN_USER.id ||
+      user.email?.toLowerCase().trim() === 'joaquinnievass20@gmail.com' ||
+      user.email?.toLowerCase().includes('joaquinnievass20')
+    ) {
+      return;
+    }
     const newStatus = user.status === 'active' ? 'suspended' : 'active';
     const updatedUser: RegisteredUser = {
       ...user,
@@ -376,7 +396,14 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
 
   // Cambiar rol de usuario en tiempo real e impactar en Firestore
   const handleUpdateRole = async (user: RegisteredUser, newRoleType: 'admin' | 'empleado' | 'empresa' | 'consumidor') => {
-    if (user.id === 'admin-master' || user.id === MASTER_ADMIN_USER.id) return;
+    if (
+      user.id === 'admin-master' ||
+      user.id === MASTER_ADMIN_USER.id ||
+      user.email?.toLowerCase().trim() === 'joaquinnievass20@gmail.com' ||
+      user.email?.toLowerCase().includes('joaquinnievass20')
+    ) {
+      return;
+    }
     const determinedRole: 'admin' | 'employee' | 'client' = 
       newRoleType === 'admin' ? 'admin' : (newRoleType === 'empleado' ? 'employee' : 'client');
     const updatedUser: RegisteredUser = {
@@ -410,6 +437,10 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
     }
     if (!passTrimmed) {
       setCreateError('La contraseña inicial asignada es obligatoria. Asígnale una clave para que el usuario pueda ingresar.');
+      return;
+    }
+    if (passTrimmed.length < 6) {
+      setCreateError('La contraseña debe tener al menos 6 caracteres para ser compatible con Firebase Authentication.');
       return;
     }
 
@@ -447,24 +478,32 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
         : (newAccountType === 'empleado' ? `Operador en sucursal ${newAccountBranch}` : 'Cuenta creada por administrador'),
     };
 
-    // Actualizar estado local inmediatamente
-    setUsers((prev) => [newUser, ...prev]);
+    try {
+      // Crear en Firebase Authentication Y simultáneamente crear el documento correspondiente en la colección users de Cloud Firestore usando el mismo uid en un bloque seguro.
+      // Las contraseñas asignadas manualmente OBLIGATORIAMENTE se usan al crear el usuario en Auth.
+      const authResult = await createFirebaseAuthAndFirestoreUser(newUser);
+      const finalUserId = authResult.uid || userId;
+      const finalUser: RegisteredUser = { ...newUser, id: finalUserId };
 
-    // Guardar en Cloud Firestore y Auth registries
-    await saveFirestoreUser(newUser);
-    triggerSaveNotice();
+      // Actualizar estado local inmediatamente con el UID unificado
+      setUsers((prev) => [finalUser, ...prev.filter((u) => u.id !== finalUserId && u.email?.toLowerCase() !== emailTrimmed)]);
+      triggerSaveNotice();
 
-    // Mostrar feedback de éxito
-    setCreatedSuccessUser(newUser);
+      // Mostrar feedback de éxito
+      setCreatedSuccessUser(finalUser);
 
-    // Limpiar formulario
-    setNewAccountName('');
-    setNewAccountRepName('');
-    setNewAccountEmail('');
-    setNewAccountPhone('');
-    setNewAccountCuit('');
-    setNewAccountAddress('');
-    setNewAccountPassword('');
+      // Limpiar formulario
+      setNewAccountName('');
+      setNewAccountRepName('');
+      setNewAccountEmail('');
+      setNewAccountPhone('');
+      setNewAccountCuit('');
+      setNewAccountAddress('');
+      setNewAccountPassword('');
+    } catch (err: any) {
+      console.error('[CREATE USER ERROR]:', err);
+      setCreateError(`Error al crear la cuenta en Firebase: ${err?.message || err}`);
+    }
   };
 
   // Exportar a CSV
@@ -763,7 +802,12 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
                   const isEmpresa = u.type === 'empresa';
                   const isStaff = u.type === 'empleado' || u.type === 'vendedor' || u.role === 'employee';
                   const isAdmin = u.type === 'admin';
-                  const isMasterAdmin = u.id === 'admin-master' || u.email?.toLowerCase().trim() === 'admin@pampero.com';
+                  const isMasterAdmin = 
+                    u.id === 'admin-master' || 
+                    u.id === MASTER_ADMIN_USER.id || 
+                    u.email?.toLowerCase().trim() === 'joaquinnievass20@gmail.com' ||
+                    u.email?.toLowerCase().trim() === MASTER_ADMIN_EMAIL.toLowerCase() ||
+                    (u.email || '').toLowerCase().includes('joaquinnievass20');
                   const initialPass = u.initialPassword || u.password || 'Pampero2026';
                   const isPassVisible = Boolean(visiblePasswords[u.id]);
                   const isCopied = copiedId === u.id;
