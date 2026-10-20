@@ -25,7 +25,8 @@ import {
   saveEmployeeSizeEntry,
   subscribeToKanbanColumns,
   DEFAULT_COMPANY_COLUMNS,
-  KanbanColumnConfig
+  KanbanColumnConfig,
+  getNextCorrelativeOrderNumber
 } from '../../services/firebase';
 import { fixUtf8Encoding, sanitizeObjectEncoding } from '../../utils/encodingUtils';
 import { 
@@ -175,12 +176,13 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
   const handlePromoteVisitToCompanyOrder = async (visit: LeadVisit) => {
     try {
       const firstColId = companyColumns[0]?.id || 'cotizacion';
-      const orderId = `COT-VIS-${Date.now().toString().slice(-6)}`;
+      const { number: orderNum, formatted: formattedOrderNum } = await getNextCorrelativeOrderNumber();
+      const orderId = `PED-${orderNum}`;
       const newOrder: CRMOrder = sanitizeObjectEncoding({
         id: orderId,
         date: new Date().toISOString(),
-        quoteId: orderId,
-        orderNumber: `#${orderId.slice(-6)}`,
+        quoteId: formattedOrderNum,
+        orderNumber: formattedOrderNum,
         clientName: visit.companyName,
         clientType: 'empresa',
         status: firstColId as CRMOrderStatus,
@@ -354,12 +356,13 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
   const handleCreateManualOrder = async (formData: any) => {
     try {
       const firstColId = companyColumns[0]?.id || 'cotizacion';
-      const orderId = `PED-${Date.now().toString().slice(-6)}`;
+      const { number: orderNum, formatted: formattedOrderNum } = await getNextCorrelativeOrderNumber();
+      const orderId = `PED-${orderNum}`;
       const newOrder: CRMOrder = sanitizeObjectEncoding({
         id: orderId,
         date: new Date().toISOString(),
-        quoteId: orderId,
-        orderNumber: `#${orderId.slice(-6)}`,
+        quoteId: formattedOrderNum,
+        orderNumber: formattedOrderNum,
         clientName: formData.clientName,
         clientType: formData.clientType || 'empresa',
         status: (formData.status || firstColId) as CRMOrderStatus,

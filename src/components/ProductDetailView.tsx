@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Product, UserSession, ThemeConfig, SpecialSizeRange, Promotion } from '../types';
 import { ArrowLeft, MessageCircle, ShoppingBag, Check, Building2, Info, ChevronLeft, ChevronRight, Layers, Tag, ZoomIn } from 'lucide-react';
 import { getColorHex, getColorCode, getProductImageForColor, recordProductInteraction } from '../utils/colorUtils';
@@ -63,37 +63,76 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
 
   const [unisexModelView, setUnisexModelView] = useState<'all' | 'men' | 'women'>('all');
 
-  // Collect all product images for gallery/carousel with unisex model support
-  const allImages: string[] = (() => {
+  // Collect all product images for gallery/carousel with unisex model and color support
+  const allImages: string[] = useMemo(() => {
+    const list: string[] = [];
+
     if (product.isUnisex) {
       if (unisexModelView === 'men' && Array.isArray(product.imagesMen) && product.imagesMen.length > 0) {
-        return product.imagesMen.filter(Boolean);
+        list.push(...product.imagesMen.filter(Boolean));
+      } else if (unisexModelView === 'women' && Array.isArray(product.imagesWomen) && product.imagesWomen.length > 0) {
+        list.push(...product.imagesWomen.filter(Boolean));
+      } else {
+        // 'all': Combine general + men + women without discarding anything
+        if (Array.isArray(product.images) && product.images.length > 0) {
+          list.push(...product.images.filter(Boolean));
+        }
+        if (Array.isArray(product.imagesMen) && product.imagesMen.length > 0) {
+          list.push(...product.imagesMen.filter(Boolean));
+        }
+        if (Array.isArray(product.imagesWomen) && product.imagesWomen.length > 0) {
+          list.push(...product.imagesWomen.filter(Boolean));
+        }
       }
-      if (unisexModelView === 'women' && Array.isArray(product.imagesWomen) && product.imagesWomen.length > 0) {
-        return product.imagesWomen.filter(Boolean);
+    } else {
+      if (Array.isArray(product.images) && product.images.length > 0) {
+        list.push(...product.images.filter(Boolean));
       }
-      // If 'all', merge men and women then fallback
-      const menList = Array.isArray(product.imagesMen) ? product.imagesMen.filter(Boolean) : [];
-      const womenList = Array.isArray(product.imagesWomen) ? product.imagesWomen.filter(Boolean) : [];
-      if (menList.length > 0 || womenList.length > 0) {
-        const combined = [...menList, ...womenList];
-        return combined.filter((url, index, self) => self.indexOf(url) === index);
+      if (Array.isArray(product.imagesMen) && product.imagesMen.length > 0) {
+        list.push(...product.imagesMen.filter(Boolean));
+      }
+      if (Array.isArray(product.imagesWomen) && product.imagesWomen.length > 0) {
+        list.push(...product.imagesWomen.filter(Boolean));
       }
     }
-    return [
-      ...(Array.isArray(product.images) && product.images.length > 0 ? product.images : []),
-      product.image
-    ].filter((url, index, self): url is string => Boolean(url) && self.indexOf(url) === index);
-  })();
+
+    // Always include color-specific images
+    if (product.imagesByColor && typeof product.imagesByColor === 'object') {
+      for (const url of Object.values(product.imagesByColor)) {
+        if (url && typeof url === 'string' && !list.includes(url)) {
+          list.push(url);
+        }
+      }
+    }
+
+    // Include primary image if provided and not yet in list
+    if (product.image && !list.includes(product.image)) {
+      list.unshift(product.image);
+    }
+
+    // Prioritize selected color image if available
+    const colorImg = getProductImageForColor(product, selectedColor);
+    if (colorImg && !list.includes(colorImg)) {
+      list.unshift(colorImg);
+    }
+
+    const unique = list.filter((url, index, self): url is string => Boolean(url) && self.indexOf(url) === index);
+    return unique.length > 0 ? unique : (product.image ? [product.image] : []);
+  }, [product, selectedColor, unisexModelView]);
+
+  // Safe active index clamped to current images length
+  const safeActiveIndex = activeImageIndex >= allImages.length ? 0 : activeImageIndex;
 
   // Update active image if color changes and matches a color-specific image
   useEffect(() => {
     const colorImg = getProductImageForColor(product, selectedColor);
-    const foundIdx = allImages.findIndex(img => img === colorImg);
-    if (foundIdx !== -1) {
-      setActiveImageIndex((prev) => (prev === foundIdx ? prev : foundIdx));
+    if (colorImg) {
+      const foundIdx = allImages.findIndex(img => img === colorImg);
+      if (foundIdx !== -1) {
+        setActiveImageIndex(foundIdx);
+      }
     }
-  }, [selectedColor, product?.id]);
+  }, [selectedColor, allImages]);
 
   // Record view/click interaction once on mount or when product ID changes
   useEffect(() => {
@@ -119,7 +158,7 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
     : currentBasePrice;
 
   const accent = theme.accentColor || '#FDB813';
-  const displayedImage = allImages[activeImageIndex] || getProductImageForColor(product, selectedColor);
+  const displayedImage = allImages[safeActiveIndex] || getProductImageForColor(product, selectedColor) || product.image || '';
 
   const handleAddToCart = () => {
     trackAddToCart({
@@ -226,7 +265,7 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
 
                   {/* Photo counter */}
                   <div className="absolute top-4 right-4 bg-black/60 backdrop-blur-xs text-white text-[11px] font-mono font-bold px-2.5 py-1 rounded-full z-10">
-                    {activeImageIndex + 1} / {allImages.length}
+                    {safeActiveIndex + 1} / {allImages.length}
                   </div>
                 </>
               )}
@@ -337,11 +376,11 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
                     type="button"
                     onClick={() => setActiveImageIndex(idx)}
                     style={{
-                      borderColor: activeImageIndex === idx ? (theme.primaryColor || '#18231C') : '#DCD4C9'
+                      borderColor: safeActiveIndex === idx ? (theme.primaryColor || '#18231C') : '#DCD4C9'
                     }}
-                    className={`w-16 h-16 rounded-xs border-2 overflow-hidden flex-shrink-0 transition-all cursor-pointer bg-neutral-100 ${
-                      activeImageIndex === idx 
-                        ? 'ring-2 ring-black/20 scale-105 opacity-100 shadow-sm' 
+                    className={`w-16 h-16 rounded-xs border-2 overflow-hidden shrink-0 transition-all cursor-pointer bg-neutral-100 ${
+                      safeActiveIndex === idx 
+                        ? 'ring-2 ring-black/30 scale-105 opacity-100 shadow-sm' 
                         : 'opacity-70 hover:opacity-100 hover:border-neutral-500'
                     }`}
                   >
@@ -646,7 +685,7 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
         isOpen={isLightboxOpen}
         onClose={() => setIsLightboxOpen(false)}
         images={allImages}
-        initialIndex={activeImageIndex}
+        initialIndex={safeActiveIndex}
         productTitle={product.name}
         productCode={activeProductCode}
         productPrice={discountedPrice}

@@ -2074,6 +2074,29 @@ export async function getNextCorrelativeOrderNumber(): Promise<{ number: number;
   const firestoreDb = db || getFirebaseDb();
   const storageKey = 'pampero_last_correlative_order';
 
+  // Determine current baseline from local memory / existing orders
+  const getBaselineCount = (): number => {
+    try {
+      const saved = localStorage.getItem(storageKey);
+      if (saved) {
+        const parsed = parseInt(saved, 10);
+        if (!isNaN(parsed) && parsed > 0) return parsed;
+      }
+      const rawOrders = localStorage.getItem('pampero_crm_orders');
+      if (rawOrders) {
+        const orders = JSON.parse(rawOrders);
+        if (Array.isArray(orders) && orders.length > 0) {
+          const nums = orders.map((o: any) => {
+            const raw = String(o.orderNumber || o.id || '').replace(/[^0-9]/g, '');
+            return parseInt(raw, 10) || 0;
+          });
+          return Math.max(...nums, 8);
+        }
+      }
+    } catch {}
+    return 8; // Baseline from initial orders #1 through #8
+  };
+
   if (firestoreDb) {
     try {
       const counterRef = doc(firestoreDb, 'counters', 'orders');
@@ -2082,6 +2105,9 @@ export async function getNextCorrelativeOrderNumber(): Promise<{ number: number;
         let current = 0;
         if (snap.exists()) {
           current = Number(snap.data()?.lastOrderNumber) || 0;
+        }
+        if (current <= 0) {
+          current = getBaselineCount();
         }
         const updated = current + 1;
         transaction.set(counterRef, {
@@ -2099,15 +2125,10 @@ export async function getNextCorrelativeOrderNumber(): Promise<{ number: number;
   }
 
   // Local fallback
-  let localCount = 1;
-  try {
-    const saved = localStorage.getItem(storageKey);
-    if (saved) {
-      localCount = (parseInt(saved, 10) || 0) + 1;
-    }
-  } catch {}
-  localStorage.setItem(storageKey, String(localCount));
-  return { number: localCount, formatted: `#${localCount}` };
+  const base = getBaselineCount();
+  const nextLocal = base + 1;
+  localStorage.setItem(storageKey, String(nextLocal));
+  return { number: nextLocal, formatted: `#${nextLocal}` };
 }
 
 // ==========================================
@@ -2115,15 +2136,21 @@ export async function getNextCorrelativeOrderNumber(): Promise<{ number: number;
 // ==========================================
 
 export const DEFAULT_COST_CATEGORIES: CostCategoryConfig[] = [
-  { id: 'cat-alquiler', name: 'Alquiler', defaultType: 'Fijo', isSystem: true },
-  { id: 'cat-sueldos-base', name: 'Sueldos base', defaultType: 'Fijo', isSystem: true },
-  { id: 'cat-impuestos-servicios', name: 'Impuestos/Servicios', defaultType: 'Fijo', isSystem: true },
-  { id: 'cat-fletes', name: 'Fletes', defaultType: 'Variable', isSystem: true },
-  { id: 'cat-insumos-embalaje', name: 'Insumos/Embalaje', defaultType: 'Variable', isSystem: true },
-  { id: 'cat-mantenimiento', name: 'Mantenimiento', defaultType: 'Variable', isSystem: true },
-  { id: 'cat-viaticos', name: 'Viáticos', defaultType: 'Variable', isSystem: true },
+  // Costos Variables
+  { id: 'cat-costo-compra', name: 'Costo de compra', defaultType: 'Variable', isSystem: true },
+  { id: 'cat-embalaje', name: 'Embalaje por prenda', defaultType: 'Variable', isSystem: true },
   { id: 'cat-comisiones', name: 'Comisiones', defaultType: 'Variable', isSystem: true },
+  { id: 'cat-fletes', name: 'Fletes y Logística', defaultType: 'Variable', isSystem: true },
   { id: 'cat-marketing', name: 'Marketing y Publicidad', defaultType: 'Variable', isSystem: true },
+  { id: 'cat-viaticos', name: 'Viáticos', defaultType: 'Variable', isSystem: true },
+  { id: 'cat-insumos', name: 'Insumos y Materiales', defaultType: 'Variable', isSystem: true },
+  // Costos Fijos
+  { id: 'cat-alquiler', name: 'Alquileres', defaultType: 'Fijo', isSystem: true },
+  { id: 'cat-servicios-basicos', name: 'Servicios Básicos (Luz/Gas/Agua/Internet)', defaultType: 'Fijo', isSystem: true },
+  { id: 'cat-sueldos', name: 'Sueldos', defaultType: 'Fijo', isSystem: true },
+  { id: 'cat-seguros', name: 'Seguros', defaultType: 'Fijo', isSystem: true },
+  { id: 'cat-impuestos', name: 'Impuestos', defaultType: 'Fijo', isSystem: true },
+  { id: 'cat-mantenimiento', name: 'Mantenimiento', defaultType: 'Fijo', isSystem: true },
   { id: 'cat-otros', name: 'Otros Gastos', defaultType: 'Variable', isSystem: true },
 ];
 

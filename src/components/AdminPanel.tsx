@@ -53,6 +53,7 @@ import {
   Search, 
   Ticket, 
   Images,
+  ImageOff,
   MapPin,
   Clock,
   Phone,
@@ -417,7 +418,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
     // Consolidar fotos generales respetando estrictamente las fotos eliminadas por el usuario
     const rawImages = Array.isArray(productForm.images) ? productForm.images.filter(Boolean) : [];
-    const primaryImage = rawImages[0] || imagesMen[0] || imagesWomen[0] || productForm.image || '';
+    const hasAnyPhoto = rawImages.length > 0 || imagesMen.length > 0 || imagesWomen.length > 0;
+    const primaryImage = hasAnyPhoto
+      ? (rawImages[0] || imagesMen[0] || imagesWomen[0] || '')
+      : '';
 
     setIsSavingProduct(true);
     setFirebaseErrorNotice(null);
@@ -554,28 +558,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     try {
       const firestoreDb = db || getFirebaseDb();
       if (firestoreDb && (targetId || targetCode)) {
-        await Promise.race([
-          (async () => {
-            if (targetId) {
-              await deleteDoc(doc(firestoreDb, 'productos', targetId)).catch(() => {});
-              await deleteDoc(doc(firestoreDb, 'products', targetId)).catch(() => {});
-            }
-            if (targetCode && targetCode !== targetId) {
-              await deleteDoc(doc(firestoreDb, 'productos', targetCode)).catch(() => {});
-              await deleteDoc(doc(firestoreDb, 'products', targetCode)).catch(() => {});
-            }
-          })(),
-          new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('Timeout Firebase deleteDoc')), 2000)
-          ),
+        await Promise.allSettled([
+          targetId ? deleteDoc(doc(firestoreDb, 'productos', targetId)) : Promise.resolve(),
+          targetId ? deleteDoc(doc(firestoreDb, 'products', targetId)) : Promise.resolve(),
+          targetCode && targetCode !== targetId ? deleteDoc(doc(firestoreDb, 'productos', targetCode)) : Promise.resolve(),
+          targetCode && targetCode !== targetId ? deleteDoc(doc(firestoreDb, 'products', targetCode)) : Promise.resolve(),
         ]);
+        console.log(`[FIREBASE] Producto eliminado de colecciones productos y products: ${targetId || targetCode}`);
       }
     } catch (error) {
-      console.warn('[FIREBASE] Error al eliminar documento en backend (se fuerza eliminación en UI):', error);
-      forceLocalRemoval();
+      console.warn('[FIREBASE] Error al eliminar documento en Firestore:', error);
     } finally {
-      // El bloque catch o finally DEBE forzar la eliminación del producto del estado local de React
-      // para destrabar la interfaz visualmente de una vez por todas.
       forceLocalRemoval();
     }
   };
@@ -2313,6 +2306,34 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                               title="Editar producto"
                             >
                               <Edit3 className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                if (confirm(`¿Deseás eliminar y vaciar todas las fotos del producto "${p.name}"? Quedará limpio como plantilla sin fotos.`)) {
+                                  const clearedProd: Product = {
+                                    ...p,
+                                    image: '',
+                                    images: [],
+                                    imagesMen: [],
+                                    imagesWomen: [],
+                                    imagesByColor: {},
+                                  };
+                                  try {
+                                    await saveSingleFirestoreProduct(clearedProd);
+                                  } catch (err) {
+                                    console.warn('Error guardando en Firestore:', err);
+                                  }
+                                  const updatedList = products.map((item) => (item.id === p.id ? clearedProd : item));
+                                  onUpdateProducts(updatedList);
+                                  saveCatalogBackup(updatedList);
+                                  triggerSaveNotice();
+                                }
+                              }}
+                              className="p-1 text-[#6F6860] hover:text-amber-600 transition-colors"
+                              title="Vaciar / Eliminar todas las fotos de este producto"
+                            >
+                              <ImageOff className="w-4 h-4" />
                             </button>
                             <button
                               type="button"
