@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { UserSession, ThemeConfig } from '../types';
+import { UserSession, ThemeConfig, RegisteredUser } from '../types';
+import { saveFirestoreUser } from '../services/firebase';
 import { 
   User, 
   Mail, 
@@ -111,12 +112,34 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
       clientData: updatedData,
     };
 
-    // 1. Save to pampero_session
+    // 1. Save to pampero_user_session (compatible with App.tsx) and pampero_session
     try {
+      localStorage.setItem('pampero_user_session', JSON.stringify(updatedSession));
       localStorage.setItem('pampero_session', JSON.stringify(updatedSession));
     } catch {}
 
-    // 2. Also update pampero_registered_users pool
+    // 2. Persist to Cloud Firestore and pampero_registered_users pool
+    const registeredUserToSave: RegisteredUser = {
+      id: userSession.id,
+      name: isCompany ? (companyName.trim() || fullName.trim()) : fullName.trim(),
+      repName: fullName.trim(),
+      email: email.trim(),
+      phone: phone.trim(),
+      cuitOrDni: cuit.trim(),
+      address: formattedAddressStr,
+      city: city.trim(),
+      type: isCompany ? 'empresa' : 'consumidor',
+      role: userSession.role || 'client',
+      status: 'active',
+      pricingTier: isCompany ? 'Corporativo / Mayorista' : 'Consumidor Final',
+      createdAt: (userSession as any).createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    saveFirestoreUser(registeredUserToSave).catch((err) => {
+      console.warn('[FIRESTORE] Error guardando perfil de cliente:', err);
+    });
+
     try {
       const usersStr = localStorage.getItem('pampero_registered_users');
       if (usersStr) {
@@ -125,13 +148,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
           if (u.id === userSession.id || (userSession.email && u.email === userSession.email)) {
             return {
               ...u,
-              name: isCompany ? (companyName.trim() || fullName.trim()) : fullName.trim(),
-              repName: fullName.trim(),
-              email: email.trim(),
-              phone: phone.trim(),
-              cuitOrDni: cuit.trim(),
-              address: formattedAddressStr,
-              city: city.trim(),
+              ...registeredUserToSave,
             };
           }
           return u;

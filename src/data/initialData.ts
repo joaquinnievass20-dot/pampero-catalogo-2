@@ -4,6 +4,15 @@ export const INITIAL_PROMOTIONS: Promotion[] = [];
 
 export const INITIAL_BRANCHES: BranchLocation[] = [
   {
+    id: 'mza-maipu',
+    name: 'Pampero Maipú',
+    address: 'Pescara 250',
+    zone: 'Maipú',
+    phone: '261 527-6713',
+    hours: 'Lunes a Viernes 8:30 a 13:00 y 16:30 a 20:30 | Sábados 9:00 a 13:30',
+    mapsUrl: 'https://maps.google.com/?q=Pescara+250+Maipu+Mendoza',
+  },
+  {
     id: 'mza-ciudad',
     name: 'Pampero Ciudad de Mendoza',
     address: 'San Martín 477',

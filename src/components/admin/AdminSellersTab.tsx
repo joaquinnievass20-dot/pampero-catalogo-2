@@ -98,16 +98,14 @@ export const AdminSellersTab: React.FC<AdminSellersTabProps> = ({ branches, trig
     if (firestoreDb) {
       try {
         unsub = onSnapshot(collection(firestoreDb, 'vendedores'), (snapshot) => {
-          if (!snapshot.empty) {
-            const remoteList: SellerRecord[] = snapshot.docs.map((d) => ({
-              id: d.id,
-              ...(d.data() as any),
-            }));
-            setSellers(remoteList);
-            try {
-              localStorage.setItem('pampero_sellers', JSON.stringify(remoteList));
-            } catch {}
-          }
+          const remoteList: SellerRecord[] = snapshot.docs.map((d) => ({
+            id: d.id,
+            ...(d.data() as any),
+          }));
+          setSellers(remoteList);
+          try {
+            localStorage.setItem('pampero_sellers', JSON.stringify(remoteList));
+          } catch {}
         }, (err) => {
           console.warn('[FIRESTORE] Vendedores offline sync:', err.message);
         });

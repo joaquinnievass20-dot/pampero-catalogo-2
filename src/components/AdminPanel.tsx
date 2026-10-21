@@ -37,7 +37,17 @@ import { parseImageFileName } from '../utils/imageNamingParser';
 import { PamperoLogo } from './PamperoLogo';
 import { saveCatalogBackup } from '../utils/backupManager';
 import { doc, deleteDoc } from 'firebase/firestore';
-import { db, getFirebaseDb, saveSingleFirestoreProduct, deleteFirestoreProductDoc, isFirebaseReady, uploadImageToStorage } from '../services/firebase';
+import { 
+  db, 
+  getFirebaseDb, 
+  saveSingleFirestoreProduct, 
+  deleteFirestoreProductDoc, 
+  isFirebaseReady, 
+  uploadImageToStorage,
+  formatStorageErrorMessage,
+  saveFirestoreBranches,
+  deleteFirestoreBranch
+} from '../services/firebase';
 import { 
   Palette, 
   Tag, 
@@ -293,7 +303,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           }
         } catch (fileErr: any) {
           console.error('[CARGA FOTO] Error al procesar archivo:', file.name, fileErr);
-          throw new Error(`Error al subir la imagen "${file.name}" a Firebase Storage: ${fileErr?.message || fileErr}`);
+          const detailedMsg = formatStorageErrorMessage(fileErr);
+          throw new Error(`Error al subir la imagen "${file.name}" a Firebase Storage: ${detailedMsg}`);
         }
       }
 
@@ -329,6 +340,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         const saveRes = await saveSingleFirestoreProduct(updatedProduct);
         if (!saveRes.success) {
           console.error('[FIRESTORE ERROR] No se pudo guardar foto en Firestore:', saveRes.error);
+          setPhotoUploadError(`Imagen subida a Storage, pero Firestore notificó: ${saveRes.error}`);
         } else {
           // Sincronizar catálogo visual en memoria
           const updatedCatalog = products.map((p) =>
@@ -340,7 +352,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       }
     } catch (err: any) {
       console.error('[CARGA FOTOS PRODUCTO ERROR]:', err);
-      const errorMsg = err?.message || 'Error al subir las imágenes a Firebase Storage.';
+      const errorMsg = err?.message || formatStorageErrorMessage(err) || 'Error al subir las imágenes a Firebase Storage.';
       setPhotoUploadError(errorMsg);
     } finally {
       // Garantizar siempre que el loading se detenga para no congelar la pantalla
@@ -602,6 +614,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     if (typeof window !== 'undefined') {
       localStorage.setItem('pampero_catalog_branches', JSON.stringify(updated));
     }
+    // Sincronización directa en Cloud Firestore (colección 'branches' y store_config)
+    saveFirestoreBranches(updated);
     setEditingBranch(null);
     setIsCreatingBranch(false);
     triggerSaveNotice();
@@ -614,6 +628,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       if (typeof window !== 'undefined') {
         localStorage.setItem('pampero_catalog_branches', JSON.stringify(updated));
       }
+      saveFirestoreBranches(updated);
+      deleteFirestoreBranch(id);
       triggerSaveNotice();
     }
   };

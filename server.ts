@@ -938,6 +938,18 @@ async function startServer() {
     console.log(`Pampero server running on http://0.0.0.0:${PORT}`);
   });
 
+  server.on('error', (err: any) => {
+    console.error('[SERVER LISTEN ERROR]', err);
+  });
+
+  process.on('uncaughtException', (err) => {
+    console.error('[SERVER UNCAUGHT EXCEPTION]', err);
+  });
+
+  process.on('unhandledRejection', (reason) => {
+    console.error('[SERVER UNHANDLED REJECTION]', reason);
+  });
+
   process.on('SIGTERM', () => {
     server.close();
   });

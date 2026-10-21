@@ -199,6 +199,7 @@ export interface RegisteredUser {
   allowedTabs?: string[];
   crmTabs?: ('visits' | 'board' | 'suppliers' | 'costs')[];
   createdAt: string;
+  updatedAt?: string;
   status: 'active' | 'pending' | 'suspended';
   pricingTier?: 'Consumidor Final' | 'Corporativo / Mayorista' | 'Administrador';
   notes?: string;
@@ -483,4 +484,14 @@ export interface CostCategoryConfig {
   defaultType: ExpenseType; // 'Fijo' | 'Variable'
   isSystem?: boolean;
   createdAt?: string;
+}
+
+export interface CRMSale {
+  id: string; // e.g. "2026-10-15-Maipú"
+  date: string; // YYYY-MM-DD
+  branch: string; // Local e.g. "Maipú", "Ciudad", "Luján"
+  totalDaily: number; // TOTAL DEL DÍA limpio
+  rawDate?: string;
+  importedAt?: string;
+  updatedAt?: string;
 }

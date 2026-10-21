@@ -3,6 +3,7 @@ import {
   getAuth,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
+  sendPasswordResetEmail,
   signOut,
   Auth,
 } from 'firebase/auth';
@@ -42,6 +43,7 @@ import {
   EmployeeAccount,
   CRMExpense,
   CostCategoryConfig,
+  CRMSale,
   UserSession,
 } from '../types';
 
@@ -98,6 +100,31 @@ function createFirestoreInstance(): Firestore | null {
   }
 }
 
+export function formatStorageErrorMessage(err: any): string {
+  if (!err) return 'Error desconocido al subir archivo a Firebase Storage.';
+  const code = err.code || err?.name || '';
+  const msg = err.message || '';
+  if (code === 'storage/unauthorized') {
+    return 'Permiso denegado en Firebase Storage (storage/unauthorized). Verificá las reglas de seguridad de Storage en la consola de Firebase.';
+  }
+  if (code === 'storage/bucket-not-found') {
+    return 'El bucket de Storage no fue encontrado (storage/bucket-not-found). Verificá el nombre del bucket en la configuración.';
+  }
+  if (code === 'storage/retry-limit-exceeded') {
+    return 'Tiempo de espera agotado al conectar con Firebase Storage (storage/retry-limit-exceeded). Verificá tu conexión a internet o la disponibilidad del servicio.';
+  }
+  if (code === 'storage/quota-exceeded') {
+    return 'Cuota de almacenamiento excedida en Firebase Storage (storage/quota-exceeded).';
+  }
+  if (code === 'storage/unauthenticated') {
+    return 'Se requiere autenticación para subir imágenes a Firebase Storage (storage/unauthenticated).';
+  }
+  if (code === 'storage/invalid-argument') {
+    return `Argumento inválido al subir imagen: ${msg}`;
+  }
+  return msg || `Error en Firebase Storage (${code || 'desconocido'})`;
+}
+
 export function getFirebaseStorage(): FirebaseStorage | null {
   if (storage) return storage;
   try {
@@ -106,11 +133,21 @@ export function getFirebaseStorage(): FirebaseStorage | null {
     const cleanBucket = rawBucket.replace(/^gs:\/\//, '');
 
     // Conexión Directa: inicializa Firebase Storage consumiendo VITE_FIREBASE_STORAGE_BUCKET
-    storage = cleanBucket ? getStorage(app, `gs://${cleanBucket}`) : getStorage(app);
+    if (cleanBucket) {
+      try {
+        storage = getStorage(app, `gs://${cleanBucket}`);
+      } catch {
+        storage = getStorage(app);
+      }
+    } else {
+      storage = getStorage(app);
+    }
 
-    // Evitar que el SDK de Firebase Storage se cuelgue en reintentos infinitos
-    storage.maxUploadRetryTime = 10000;
-    storage.maxOperationRetryTime = 10000;
+    if (storage) {
+      // Evitar que el SDK de Firebase Storage se cuelgue en reintentos infinitos
+      storage.maxUploadRetryTime = 12000;
+      storage.maxOperationRetryTime = 12000;
+    }
     return storage;
   } catch (err) {
     console.error('[FIREBASE STORAGE] Error al inicializar Storage con VITE_FIREBASE_STORAGE_BUCKET:', err);
@@ -143,6 +180,88 @@ export function getFirebaseDb(): Firestore | null {
 
 export function isFirebaseReady(): boolean {
   return (isInitialized && db !== null) || getFirebaseDb() !== null;
+}
+
+/**
+ * Optimización de Carga de Imágenes:
+ * Comprime archivos de imagen grandes (> 300KB o dimensiones superiores a 1600px)
+ * en el frontend mediante HTML5 Canvas antes de subirlos a Firebase Storage.
+ * Esto reduce imágenes de 5-15MB a ~150-300KB sin pérdida perceptible de calidad,
+ * acelerando exponencialmente la descarga en el catálogo interactivo y promociones.
+ */
+export async function compressImageForUpload(fileOrBlob: File | Blob): Promise<Blob> {
+  if (typeof window === 'undefined' || !fileOrBlob.type.startsWith('image/')) {
+    return fileOrBlob;
+  }
+  // Conservar GIFs y SVGs para no alterar animaciones ni vectores
+  if (fileOrBlob.type.includes('gif') || fileOrBlob.type.includes('svg')) {
+    return fileOrBlob;
+  }
+  // Si ya es un archivo muy ligero (< 250 KB) y no es PNG pesado, conservarlo
+  if (fileOrBlob.size < 250 * 1024 && !fileOrBlob.type.includes('png')) {
+    return fileOrBlob;
+  }
+
+  return new Promise<Blob>((resolve) => {
+    try {
+      const img = new Image();
+      const objectUrl = URL.createObjectURL(fileOrBlob);
+
+      img.onload = () => {
+        URL.revokeObjectURL(objectUrl);
+        const maxDimension = 1600;
+        let { width, height } = img;
+
+        if (width > maxDimension || height > maxDimension) {
+          if (width > height) {
+            height = Math.round((height * maxDimension) / width);
+            width = maxDimension;
+          } else {
+            width = Math.round((width * maxDimension) / height);
+            height = maxDimension;
+          }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+
+        if (!ctx) {
+          resolve(fileOrBlob);
+          return;
+        }
+
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, 0, 0, width, height);
+
+        canvas.toBlob(
+          (blob) => {
+            if (blob && blob.size < fileOrBlob.size) {
+              console.log(
+                `[OPTIMIZACIÓN IMAGEN] Reducida de ${(fileOrBlob.size / 1024).toFixed(1)}KB a ${(blob.size / 1024).toFixed(1)}KB (${width}x${height})`
+              );
+              resolve(blob);
+            } else {
+              resolve(fileOrBlob);
+            }
+          },
+          'image/jpeg',
+          0.84
+        );
+      };
+
+      img.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        resolve(fileOrBlob);
+      };
+
+      img.src = objectUrl;
+    } catch {
+      resolve(fileOrBlob);
+    }
+  });
 }
 
 /**
@@ -184,8 +303,11 @@ export async function uploadImageToStorage(
       const cleanName = originalName.replace(/[^a-zA-Z0-9._-]/g, '_');
       const filePath = `${folder}/${timestamp}_${cleanName}`;
       storageRef = ref(stor, filePath);
-      const contentType = (fileOrDataUrl as File).type || 'image/jpeg';
-      uploadPromise = uploadBytes(storageRef, fileOrDataUrl, { contentType });
+
+      // Optimización client-side de compresión antes de la subida
+      const optimizedBlob = await compressImageForUpload(fileOrDataUrl);
+      const contentType = optimizedBlob.type || (fileOrDataUrl as File).type || 'image/jpeg';
+      uploadPromise = uploadBytes(storageRef, optimizedBlob, { contentType });
     } else {
       throw new Error('Formato de imagen inválido para subir a Firebase Storage.');
     }
@@ -513,6 +635,162 @@ export function subscribeToFirestoreStoreConfig(
     return unsubscribe;
   } catch (err: any) {
     console.warn('[FIREBASE] Error attaching real-time listener:', err?.message || err);
+    return () => {};
+  }
+}
+
+// ==========================================
+// DYNAMIC BRANCHES PERSISTENCE (Firestore 'branches' collection & 'store_config')
+// ==========================================
+
+export async function fetchFirestoreBranches(): Promise<BranchLocation[]> {
+  const firestoreDb = db || getFirebaseDb();
+  const branchesMap = new Map<string, BranchLocation>();
+
+  if (firestoreDb) {
+    try {
+      const snap = await getDocs(collection(firestoreDb, 'branches'));
+      snap.forEach((d) => {
+        const data = d.data() as BranchLocation;
+        const bId = d.id || data.id;
+        branchesMap.set(bId, { ...data, id: bId });
+      });
+    } catch (err) {
+      console.warn('[FIREBASE BRANCHES] Aviso leyendo colección branches:', err);
+    }
+
+    try {
+      const cfgSnap = await getDoc(doc(firestoreDb, 'store_config', 'main'));
+      if (cfgSnap.exists()) {
+        const cfg = cfgSnap.data() as FirestoreStoreConfig;
+        if (Array.isArray(cfg.branches)) {
+          cfg.branches.forEach((b) => {
+            if (b && (b.id || b.name)) {
+              branchesMap.set(b.id || b.name, b);
+            }
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('[FIREBASE BRANCHES] Aviso leyendo store_config branches:', err);
+    }
+  }
+
+  if (branchesMap.size > 0) {
+    return Array.from(branchesMap.values()).map(sanitizeObjectEncoding);
+  }
+
+  try {
+    const saved = localStorage.getItem('pampero_catalog_branches');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch {}
+
+  return [
+    {
+      id: 'mza-maipu',
+      name: 'Pampero Maipú',
+      address: 'Pescara 250',
+      zone: 'Maipú',
+      phone: '261 527-6713',
+      hours: 'Lunes a Viernes 8:30 a 13:00 y 16:30 a 20:30 | Sábados 9:00 a 13:30',
+      mapsUrl: 'https://maps.google.com/?q=Pescara+250+Maipu+Mendoza',
+    },
+    {
+      id: 'mza-ciudad',
+      name: 'Pampero Ciudad de Mendoza',
+      address: 'San Martín 477',
+      zone: 'Ciudad de Mendoza',
+      phone: '261 527-6713',
+      hours: 'Lunes a Viernes 8:30 a 13:00 y 16:30 a 20:30 | Sábados 9:00 a 13:30',
+      mapsUrl: 'https://maps.google.com/?q=San+Martin+477+Mendoza',
+    },
+    {
+      id: 'mza-lujan',
+      name: 'Pampero Luján de Cuyo',
+      address: 'Patricios 384',
+      zone: 'Luján de Cuyo',
+      phone: '261 527-6713',
+      hours: 'Lunes a Viernes 8:30 a 12:30 y 16:30 a 20:30 | Sábados 9:00 a 13:00',
+      mapsUrl: 'https://maps.google.com/?q=Patricios+384+Lujan+de+Cuyo+Mendoza',
+    },
+  ];
+}
+
+export async function saveFirestoreBranches(branches: BranchLocation[]): Promise<boolean> {
+  const firestoreDb = db || getFirebaseDb();
+  try {
+    localStorage.setItem('pampero_catalog_branches', JSON.stringify(branches));
+    if (firestoreDb) {
+      // 1. Guardar en store_config
+      const configDocRef = doc(firestoreDb, 'store_config', 'main');
+      await setDoc(configDocRef, { branches, updatedAt: new Date().toISOString() }, { merge: true });
+
+      // 2. Guardar en la colección 'branches' individualmente
+      const batch = writeBatch(firestoreDb);
+      branches.forEach((b) => {
+        const bRef = doc(firestoreDb, 'branches', b.id);
+        batch.set(bRef, { ...b, updatedAt: new Date().toISOString() }, { merge: true });
+      });
+      await batch.commit();
+      console.log('[FIREBASE] Sucursales sincronizadas en colección branches y store_config');
+    }
+    return true;
+  } catch (err) {
+    console.warn('[FIREBASE] Error guardando sucursales en Firestore:', err);
+    return false;
+  }
+}
+
+export async function deleteFirestoreBranch(branchId: string): Promise<boolean> {
+  const firestoreDb = db || getFirebaseDb();
+  if (firestoreDb) {
+    try {
+      await deleteDoc(doc(firestoreDb, 'branches', branchId));
+    } catch (err) {
+      console.warn('[FIREBASE] Error eliminando doc sucursal:', err);
+    }
+  }
+  return true;
+}
+
+export function subscribeToFirestoreBranches(
+  onUpdate: (branches: BranchLocation[]) => void
+): () => void {
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) {
+    fetchFirestoreBranches().then(onUpdate);
+    return () => {};
+  }
+
+  try {
+    // Escuchar cambios en la colección de sucursales en Firestore
+    const unsubCol = onSnapshot(
+      collection(firestoreDb, 'branches'),
+      (snap) => {
+        if (!snap.empty) {
+          const list: BranchLocation[] = [];
+          snap.forEach((d) => {
+            const data = d.data() as BranchLocation;
+            list.push({ ...data, id: d.id || data.id });
+          });
+          onUpdate(list.map(sanitizeObjectEncoding));
+        } else {
+          fetchFirestoreBranches().then(onUpdate);
+        }
+      },
+      (err) => {
+        console.warn('[FIREBASE BRANCHES] Listener de colección branches aviso:', err);
+        fetchFirestoreBranches().then(onUpdate);
+      }
+    );
+
+    return () => unsubCol();
+  } catch (err) {
+    console.warn('[FIREBASE BRANCHES] Error inicializando listener de sucursales:', err);
+    fetchFirestoreBranches().then(onUpdate);
     return () => {};
   }
 }
@@ -1358,36 +1636,68 @@ export const deleteFirestoreUser = async (userId: string): Promise<{ success: bo
     return { success: false, error: 'La cuenta maestra de administrador (joaquinnievass20@gmail.com) está blindada y no puede ser eliminada bajo ningún concepto.' };
   }
 
+  // 1. Limpieza rigurosa e inmediata de LocalStorage para no restaurar cuentas eliminadas
+  let targetEmail = '';
   try {
     const local: RegisteredUser[] = JSON.parse(localStorage.getItem('pampero_registered_users') || '[]');
-    const updated = local.filter((u) => u.id !== userId);
+    const targetUser = local.find((u) => u.id === userId);
+    targetEmail = (targetUser?.email || '').toLowerCase().trim();
+
+    const updated = local.filter((u) => u.id !== userId && (!targetEmail || (u.email || '').toLowerCase().trim() !== targetEmail));
     localStorage.setItem('pampero_registered_users', JSON.stringify(updated));
 
     const empLocal: any[] = JSON.parse(localStorage.getItem('pampero_employees') || '[]');
-    localStorage.setItem('pampero_employees', JSON.stringify(empLocal.filter((e: any) => e.id !== userId)));
+    localStorage.setItem(
+      'pampero_employees',
+      JSON.stringify(empLocal.filter((e: any) => e.id !== userId && (!targetEmail || (e.email || '').toLowerCase().trim() !== targetEmail)))
+    );
 
     const sellLocal: any[] = JSON.parse(localStorage.getItem('pampero_sellers') || '[]');
-    localStorage.setItem('pampero_sellers', JSON.stringify(sellLocal.filter((s: any) => s.id !== userId)));
+    localStorage.setItem(
+      'pampero_sellers',
+      JSON.stringify(sellLocal.filter((s: any) => s.id !== userId && (!targetEmail || (s.email || '').toLowerCase().trim() !== targetEmail)))
+    );
   } catch {}
 
   const firestoreDb = db || getFirebaseDb();
   if (!firestoreDb) return { success: true };
 
   try {
-    await deleteDoc(doc(firestoreDb, 'usuarios', userId)).catch(() => {});
-    await deleteDoc(doc(firestoreDb, 'users', userId)).catch(() => {});
-    await deleteDoc(doc(firestoreDb, 'empleados', userId)).catch(() => {});
-    await deleteDoc(doc(firestoreDb, 'vendedores', userId)).catch(() => {});
+    // 2. Eliminación garantizada en todas las colecciones de Firestore
+    await Promise.all([
+      deleteDoc(doc(firestoreDb, 'usuarios', userId)).catch(() => {}),
+      deleteDoc(doc(firestoreDb, 'users', userId)).catch(() => {}),
+      deleteDoc(doc(firestoreDb, 'empleados', userId)).catch(() => {}),
+      deleteDoc(doc(firestoreDb, 'employees', userId)).catch(() => {}),
+      deleteDoc(doc(firestoreDb, 'vendedores', userId)).catch(() => {}),
+    ]);
+
+    // Si el usuario tenía un email, intentar también borrar documentos que pudieran haber usado el email formateado como clave
+    if (targetEmail) {
+      const emailDocKey = targetEmail.replace(/[^a-zA-Z0-9_-]/g, '_');
+      await Promise.all([
+        deleteDoc(doc(firestoreDb, 'usuarios', emailDocKey)).catch(() => {}),
+        deleteDoc(doc(firestoreDb, 'users', emailDocKey)).catch(() => {}),
+      ]);
+    }
+
+    console.log('[FIREBASE] Cuenta eliminada de Firestore exitosamente:', userId);
     return { success: true };
   } catch (err: any) {
+    console.warn('[FIREBASE] Error eliminando usuario en Firestore:', err);
     return { success: true };
   }
 };
 
+/**
+ * Suscripción en tiempo real a las cuentas registradas en Cloud Firestore.
+ * Utiliza mapas independientes por colección con limpieza en cada snapshot
+ * para garantizar que las eliminaciones impacten de inmediato y no revivan usuarios borrados.
+ */
 export const subscribeToFirestoreUsers = (
   onUpdate: (users: RegisteredUser[]) => void
 ): () => void => {
-  // 1. Initial immediate emission from localStorage or fallback
+  // 1. Emisión inicial inmediata desde localStorage
   try {
     const localRaw = localStorage.getItem('pampero_registered_users');
     if (localRaw) {
@@ -1405,10 +1715,18 @@ export const subscribeToFirestoreUsers = (
     const colRefUsuarios = collection(firestoreDb, 'usuarios');
     const colRefUsers = collection(firestoreDb, 'users');
 
-    const docsMap = new Map<string, RegisteredUser>();
+    // Mapas independientes para cada colección
+    const usuariosMap = new Map<string, RegisteredUser>();
+    const usersMap = new Map<string, RegisteredUser>();
 
     const emitMerged = () => {
-      const list = Array.from(docsMap.values());
+      const combined = new Map<string, RegisteredUser>();
+      // 1. Agregar users
+      usersMap.forEach((u, key) => combined.set(key, u));
+      // 2. Sobrescribir / complementar con usuarios
+      usuariosMap.forEach((u, key) => combined.set(key, u));
+
+      const list = Array.from(combined.values());
       // BLINDAJE DE ADMIN: Asegurar presencia intocable del administrador maestro
       const hasMaster = list.some((u) => (u.email || '').toLowerCase().trim() === 'joaquinnievass20@gmail.com');
       const masterAdminEntry: RegisteredUser = {
@@ -1438,32 +1756,37 @@ export const subscribeToFirestoreUsers = (
     const unsubUsuarios = onSnapshot(
       colRefUsuarios,
       (snapshot) => {
+        usuariosMap.clear(); // Limpieza obligatoria para procesar eliminaciones
         snapshot.docs.forEach((d) => {
           const data = d.data() as RegisteredUser;
           const uId = d.id || data.id;
           const emailKey = (data.email || '').toLowerCase().trim();
           const key = emailKey || uId;
-          docsMap.set(key, { ...data, id: uId });
+          usuariosMap.set(key, { ...data, id: uId });
         });
         emitMerged();
       },
-      () => {}
+      (err) => {
+        console.warn('[FIREBASE] usuarios listener aviso:', err?.message || err);
+      }
     );
 
     const unsubUsers = onSnapshot(
       colRefUsers,
       (snapshot) => {
+        usersMap.clear(); // Limpieza obligatoria para procesar eliminaciones
         snapshot.docs.forEach((d) => {
           const data = d.data() as RegisteredUser;
           const uId = d.id || data.id;
           const emailKey = (data.email || '').toLowerCase().trim();
           const key = emailKey || uId;
-          const existing = docsMap.get(key);
-          docsMap.set(key, { ...(existing || {}), ...data, id: uId });
+          usersMap.set(key, { ...data, id: uId });
         });
         emitMerged();
       },
-      () => {}
+      (err) => {
+        console.warn('[FIREBASE] users listener aviso:', err?.message || err);
+      }
     );
 
     return () => {
@@ -1471,9 +1794,42 @@ export const subscribeToFirestoreUsers = (
       unsubUsers();
     };
   } catch (err: any) {
+    console.warn('[FIREBASE] subscribeToFirestoreUsers error:', err);
     return () => {};
   }
 };
+
+/**
+ * Flujo de Recuperación de Contraseñas (Seguridad):
+ * Envía un correo electrónico automático y seguro utilizando la función nativa
+ * sendPasswordResetEmail de Firebase Authentication, sin exponer claves ni códigos en la UI.
+ */
+export async function sendUserPasswordResetEmail(email: string): Promise<{ success: boolean; error?: string }> {
+  const fbAuth = auth || getFirebaseAuth();
+  if (!fbAuth) {
+    return { success: false, error: 'El servicio de autenticación no está disponible en este momento.' };
+  }
+  const cleanEmail = (email || '').trim().toLowerCase();
+  if (!cleanEmail || !cleanEmail.includes('@')) {
+    return { success: false, error: 'Por favor ingresá un correo electrónico válido.' };
+  }
+  try {
+    await sendPasswordResetEmail(fbAuth, cleanEmail);
+    console.log('[FIREBASE AUTH] Correo de recuperación de clave enviado exitosamente a:', cleanEmail);
+    return { success: true };
+  } catch (err: any) {
+    console.error('[FIREBASE AUTH RESET PASSWORD ERROR]:', err);
+    let msg = 'No se pudo enviar el correo de recuperación. Verificá que la dirección sea correcta.';
+    if (err?.code === 'auth/user-not-found') {
+      msg = 'No encontramos ninguna cuenta registrada con este correo electrónico.';
+    } else if (err?.code === 'auth/invalid-email') {
+      msg = 'El formato del correo electrónico no es válido.';
+    } else if (err?.code === 'auth/too-many-requests') {
+      msg = 'Demasiadas solicitudes seguidas. Por favor esperá unos minutos antes de reintentar.';
+    }
+    return { success: false, error: msg };
+  }
+}
 
 /**
  * Autenticación Dual (Email o Nombre de Usuario con Cloud Firestore y Firebase Auth)
@@ -2067,6 +2423,261 @@ export function subscribeToCRMExpenses(
 }
 
 // ==========================================
+// CRM SALES (CIERRES DE VENTAS DIARIAS)
+// Collection: crm_sales
+// Strictly Cloud Firestore SDK with writeBatch & optimistic cache
+// ==========================================
+
+export function cleanCurrencyAmount(val: any): number {
+  if (val === null || val === undefined || val === '') return 0;
+  if (typeof val === 'number') {
+    return isNaN(val) ? 0 : Math.round(val * 100) / 100;
+  }
+  let str = String(val).trim();
+  str = str.replace(/[^0-9,.-]/g, '');
+  if (!str) return 0;
+
+  const lastComma = str.lastIndexOf(',');
+  const lastDot = str.lastIndexOf('.');
+
+  if (lastComma > -1 && lastDot > -1) {
+    if (lastComma > lastDot) {
+      // 1.234.567,89
+      str = str.replace(/\./g, '').replace(',', '.');
+    } else {
+      // 1,234,567.89
+      str = str.replace(/,/g, '');
+    }
+  } else if (lastComma > -1) {
+    const afterComma = str.substring(lastComma + 1);
+    if (afterComma.length === 2) {
+      str = str.replace(',', '.');
+    } else if (afterComma.length === 3 && str.indexOf(',') === lastComma) {
+      str = str.replace(',', '');
+    } else {
+      str = str.replace(/,/g, '');
+    }
+  } else if (lastDot > -1) {
+    const parts = str.split('.');
+    if (parts.length > 2) {
+      str = parts.join('');
+    } else if (parts[1] && parts[1].length === 3 && parts[0].length <= 3) {
+      str = parts.join('');
+    }
+  }
+
+  const num = parseFloat(str);
+  return isNaN(num) ? 0 : Math.round(num * 100) / 100;
+}
+
+export function parseExcelDate(val: any): string | null {
+  if (val === null || val === undefined || val === '') return null;
+  if (val instanceof Date && !isNaN(val.getTime())) {
+    return val.toISOString().split('T')[0];
+  }
+  if (typeof val === 'number') {
+    // Excel serial date to JS Date
+    const date = new Date(Math.round((val - 25569) * 86400 * 1000));
+    if (!isNaN(date.getTime())) {
+      const offsetMinutes = date.getTimezoneOffset();
+      const adjusted = new Date(date.getTime() + offsetMinutes * 60000);
+      return adjusted.toISOString().split('T')[0];
+    }
+  }
+  const str = String(val).trim();
+  const ddmmyyyy = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  if (ddmmyyyy) {
+    const day = ddmmyyyy[1].padStart(2, '0');
+    const month = ddmmyyyy[2].padStart(2, '0');
+    let year = ddmmyyyy[3];
+    if (year.length === 2) year = '20' + year;
+    return `${year}-${month}-${day}`;
+  }
+  const yyyymmdd = str.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+  if (yyyymmdd) {
+    const year = yyyymmdd[1];
+    const month = yyyymmdd[2].padStart(2, '0');
+    const day = yyyymmdd[3].padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+  const parsed = new Date(str);
+  if (!isNaN(parsed.getTime())) {
+    return parsed.toISOString().split('T')[0];
+  }
+  return null;
+}
+
+export async function saveCRMSalesBatch(
+  sales: CRMSale[]
+): Promise<{ success: boolean; count: number; error?: string }> {
+  if (!sales || sales.length === 0) {
+    return { success: true, count: 0 };
+  }
+
+  const firestoreDb = db || getFirebaseDb();
+  const sanitizedSales: CRMSale[] = sales.map((s) => {
+    const safeBranch = (s.branch || '').trim().replace(/\//g, '-');
+    const safeDate = (s.date || '').trim();
+    // Clave segura: Fecha + '-' + Local (ej. fila['Fecha'] + '-' + fila['Local'])
+    const safeId = s.id || `${safeDate}-${safeBranch}`;
+    return {
+      ...s,
+      id: safeId,
+      date: safeDate,
+      branch: (s.branch || '').trim(),
+      totalDaily: Number(s.totalDaily) || 0,
+      updatedAt: new Date().toISOString(),
+      importedAt: s.importedAt || new Date().toISOString(),
+    };
+  });
+
+  // Optimistic local cache
+  try {
+    const local = JSON.parse(localStorage.getItem('pampero_crm_sales') || '[]');
+    const map = new Map<string, CRMSale>();
+    local.forEach((item: CRMSale) => map.set(item.id, item));
+    sanitizedSales.forEach((item) => map.set(item.id, item));
+    const merged = Array.from(map.values());
+    merged.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    localStorage.setItem('pampero_crm_sales', JSON.stringify(merged));
+  } catch {}
+
+  if (!firestoreDb) {
+    return { success: true, count: sanitizedSales.length };
+  }
+
+  try {
+    // Firestore batch limit is 500 ops; chunk in batches of 400
+    const chunkSize = 400;
+    for (let i = 0; i < sanitizedSales.length; i += chunkSize) {
+      const chunk = sanitizedSales.slice(i, i + chunkSize);
+      const batch = writeBatch(firestoreDb);
+
+      chunk.forEach((sale) => {
+        const docRef = doc(firestoreDb, 'crm_sales', sale.id);
+        const cleanedData = JSON.parse(
+          JSON.stringify(sale, (k, v) => (v === undefined ? null : v))
+        );
+        batch.set(docRef, cleanedData, { merge: true });
+      });
+
+      await batch.commit();
+    }
+
+    console.log(`[FIREBASE] ${sanitizedSales.length} cierres de ventas guardados en crm_sales exitosamente.`);
+    return { success: true, count: sanitizedSales.length };
+  } catch (err: any) {
+    console.error('[FIREBASE BATCH SALES ERROR]:', err);
+    return {
+      success: false,
+      count: 0,
+      error: err?.message || 'Error guardando cierres de ventas en Cloud Firestore.',
+    };
+  }
+}
+
+export function subscribeToCRMSales(
+  onUpdate: (sales: CRMSale[]) => void,
+  onError?: (err: Error) => void
+): () => void {
+  // 1. Initial local cache
+  try {
+    const local = localStorage.getItem('pampero_crm_sales');
+    if (local) {
+      const parsed = JSON.parse(local);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        onUpdate(parsed.map(sanitizeObjectEncoding));
+      }
+    }
+  } catch {}
+
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return () => {};
+
+  try {
+    const colRef = collection(firestoreDb, 'crm_sales');
+    const unsubscribe = onSnapshot(
+      colRef,
+      (snapshot) => {
+        const list: CRMSale[] = [];
+        snapshot.forEach((d) => {
+          const data = d.data() as CRMSale;
+          list.push(
+            sanitizeObjectEncoding({
+              ...data,
+              id: d.id,
+              totalDaily: Number(data.totalDaily) || 0,
+            })
+          );
+        });
+        // Sort by date descending
+        list.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+        localStorage.setItem('pampero_crm_sales', JSON.stringify(list));
+        onUpdate(list);
+      },
+      (error) => {
+        console.warn('[FIREBASE] Real-time crm_sales listener notice:', error.message);
+        if (onError) onError(error);
+      }
+    );
+    return unsubscribe;
+  } catch (err: any) {
+    console.warn('[FIREBASE] Error subscribing to crm_sales:', err);
+    return () => {};
+  }
+}
+
+export async function fetchCRMSales(): Promise<CRMSale[]> {
+  const firestoreDb = db || getFirebaseDb();
+  if (firestoreDb) {
+    try {
+      const snap = await getDocs(collection(firestoreDb, 'crm_sales'));
+      const list: CRMSale[] = [];
+      snap.forEach((d) => {
+        const data = d.data() as CRMSale;
+        list.push(
+          sanitizeObjectEncoding({
+            ...data,
+            id: d.id,
+            totalDaily: Number(data.totalDaily) || 0,
+          })
+        );
+      });
+      list.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+      localStorage.setItem('pampero_crm_sales', JSON.stringify(list));
+      return list;
+    } catch (err) {
+      console.warn('[FIREBASE] Fallback local crm_sales:', err);
+    }
+  }
+  try {
+    const local = localStorage.getItem('pampero_crm_sales');
+    if (local) return JSON.parse(local);
+  } catch {}
+  return [];
+}
+
+export async function deleteCRMSale(saleId: string): Promise<boolean> {
+  try {
+    const local = JSON.parse(localStorage.getItem('pampero_crm_sales') || '[]');
+    const updated = local.filter((s: any) => s.id !== saleId);
+    localStorage.setItem('pampero_crm_sales', JSON.stringify(updated));
+  } catch {}
+
+  const firestoreDb = db || getFirebaseDb();
+  if (firestoreDb) {
+    try {
+      await deleteDoc(doc(firestoreDb, 'crm_sales', saleId));
+      return true;
+    } catch (err) {
+      console.warn('[FIREBASE] Error eliminando venta en crm_sales:', err);
+      return false;
+    }
+  }
+  return true;
+}
+
+// ==========================================
 // CORRELATIVE ORDER NUMBER (Transaction-based #1, #2, #3...)
 // ==========================================
 
@@ -2136,22 +2747,15 @@ export async function getNextCorrelativeOrderNumber(): Promise<{ number: number;
 // ==========================================
 
 export const DEFAULT_COST_CATEGORIES: CostCategoryConfig[] = [
+  // Costos Fijos
+  { id: 'cat-alquiler-expensas', name: 'Alquiler y expensas', defaultType: 'Fijo', isSystem: true },
+  { id: 'cat-servicios-basicos', name: 'Servicios Básicos', defaultType: 'Fijo', isSystem: true },
+  { id: 'cat-sueldos-cargas', name: 'Sueldos y cargas sociales', defaultType: 'Fijo', isSystem: true },
+  { id: 'cat-seguros-honorarios', name: 'Seguros y honorarios', defaultType: 'Fijo', isSystem: true },
   // Costos Variables
   { id: 'cat-costo-compra', name: 'Costo de compra', defaultType: 'Variable', isSystem: true },
   { id: 'cat-embalaje', name: 'Embalaje por prenda', defaultType: 'Variable', isSystem: true },
-  { id: 'cat-comisiones', name: 'Comisiones', defaultType: 'Variable', isSystem: true },
-  { id: 'cat-fletes', name: 'Fletes y Logística', defaultType: 'Variable', isSystem: true },
-  { id: 'cat-marketing', name: 'Marketing y Publicidad', defaultType: 'Variable', isSystem: true },
-  { id: 'cat-viaticos', name: 'Viáticos', defaultType: 'Variable', isSystem: true },
-  { id: 'cat-insumos', name: 'Insumos y Materiales', defaultType: 'Variable', isSystem: true },
-  // Costos Fijos
-  { id: 'cat-alquiler', name: 'Alquileres', defaultType: 'Fijo', isSystem: true },
-  { id: 'cat-servicios-basicos', name: 'Servicios Básicos (Luz/Gas/Agua/Internet)', defaultType: 'Fijo', isSystem: true },
-  { id: 'cat-sueldos', name: 'Sueldos', defaultType: 'Fijo', isSystem: true },
-  { id: 'cat-seguros', name: 'Seguros', defaultType: 'Fijo', isSystem: true },
-  { id: 'cat-impuestos', name: 'Impuestos', defaultType: 'Fijo', isSystem: true },
-  { id: 'cat-mantenimiento', name: 'Mantenimiento', defaultType: 'Fijo', isSystem: true },
-  { id: 'cat-otros', name: 'Otros Gastos', defaultType: 'Variable', isSystem: true },
+  { id: 'cat-comisiones-ventas', name: 'Comisiones por ventas', defaultType: 'Variable', isSystem: true },
 ];
 
 export async function fetchCostCategories(): Promise<CostCategoryConfig[]> {

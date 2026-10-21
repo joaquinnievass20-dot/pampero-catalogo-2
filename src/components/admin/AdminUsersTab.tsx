@@ -252,12 +252,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
       if (stored) {
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          // Asegurar que los usuarios iniciales no se pierdan si se cargó un backup parcial
-          const ids = new Set(parsed.map((u: any) => u.id || u.email?.toLowerCase()));
-          const missing = INITIAL_REGISTERED_USERS.filter(
-            (u) => !ids.has(u.id) && !ids.has(u.email.toLowerCase())
-          );
-          return [...parsed, ...missing];
+          return parsed;
         }
       }
     } catch {}
@@ -287,27 +282,15 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
   const [createError, setCreateError] = useState<string | null>(null);
   const [createdSuccessUser, setCreatedSuccessUser] = useState<RegisteredUser | null>(null);
 
-  // 1. Suscripción OBLIGATORIA a la colección 'usuarios' en Cloud Firestore en tiempo real usando onSnapshot
+  // 1. Suscripción en tiempo real a Cloud Firestore usando onSnapshot
   useEffect(() => {
-    // Sembrar usuarios iniciales a Firestore si está vacío
+    // Sembrar usuarios iniciales a Firestore SOLO si está absolutamente vacío
     seedInitialFirestoreUsersIfEmpty(INITIAL_REGISTERED_USERS).catch(() => {});
 
-    // SDK onSnapshot Listener
+    // SDK onSnapshot Listener directo sin retener usuarios eliminados
     const unsubscribe = subscribeToFirestoreUsers((remoteUsers) => {
-      if (Array.isArray(remoteUsers) && remoteUsers.length > 0) {
-        setUsers((prev) => {
-          const map = new Map<string, RegisteredUser>();
-          // Mantener locales actuales
-          prev.forEach((u) => map.set(u.id, u));
-          // Sobrescribir con remotos
-          remoteUsers.forEach((u) => map.set(u.id, u));
-          const merged = Array.from(map.values());
-          if (prev.length === merged.length) {
-            const hasDiff = merged.some((m, idx) => prev[idx]?.id !== m.id || prev[idx]?.status !== m.status || prev[idx]?.email !== m.email || prev[idx]?.role !== m.role);
-            if (!hasDiff) return prev;
-          }
-          return merged;
-        });
+      if (Array.isArray(remoteUsers)) {
+        setUsers(remoteUsers);
       }
       setIsLoading(false);
     });
@@ -368,7 +351,13 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
       return;
     }
     if (confirm(`¿Estás seguro de eliminar permanentemente la cuenta de "${name}"?`)) {
-      setUsers((prev) => prev.filter((u) => u.id !== id));
+      setUsers((prev) => {
+        const updated = prev.filter((u) => u.id !== id);
+        try {
+          localStorage.setItem('pampero_registered_users', JSON.stringify(updated));
+        } catch {}
+        return updated;
+      });
       await deleteFirestoreUser(id);
       triggerSaveNotice();
     }

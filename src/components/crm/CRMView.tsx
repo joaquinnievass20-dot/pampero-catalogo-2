@@ -568,13 +568,16 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
             )}
           </button>
 
-          <button
-            onClick={() => setShowNewOrderModal(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#18231C] text-white rounded-xs text-xs font-bold hover:bg-black transition-colors cursor-pointer shadow-xs"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Nuevo Pedido</span>
-          </button>
+          {/* Botón Nuevo Pedido: Renderizado condicional exclusivo en Visitas Comerciales y Seguimiento Empresas */}
+          {(activeTab === 'visits' || activeTab === 'board') && (
+            <button
+              onClick={() => setShowNewOrderModal(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#18231C] text-white rounded-xs text-xs font-bold hover:bg-black transition-colors cursor-pointer shadow-xs"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Nuevo Pedido</span>
+            </button>
+          )}
 
           <button
             onClick={onClose}

@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { UserSession, ThemeConfig, RegisteredUser } from '../types';
 import { PamperoLogo } from './PamperoLogo';
-import { ShieldCheck, ArrowLeft, AlertCircle, CheckCircle2, Sparkles } from 'lucide-react';
+import { ShieldCheck, ArrowLeft, AlertCircle, CheckCircle2, Sparkles, KeyRound, Mail, X, Send } from 'lucide-react';
 import { MASTER_ADMIN_EMAIL, MASTER_ADMIN_PASSWORD } from '../utils/authInit';
-import { saveFirestoreUser, authenticateDualUser } from '../services/firebase';
+import { saveFirestoreUser, authenticateDualUser, sendUserPasswordResetEmail } from '../services/firebase';
 
 interface AuthViewProps {
   onLogin: (session: UserSession) => void;
@@ -49,6 +49,35 @@ export const AuthView: React.FC<AuthViewProps> = ({
   // Errors & Alerts
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  // Forgot Password States (Recuperación Segura por Correo)
+  const [showForgotModal, setShowForgotModal] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [isSendingReset, setIsSendingReset] = useState(false);
+  const [forgotSuccess, setForgotSuccess] = useState<string | null>(null);
+  const [forgotError, setForgotError] = useState<string | null>(null);
+
+  const handleSendPasswordReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setForgotError(null);
+    setForgotSuccess(null);
+    setIsSendingReset(true);
+
+    try {
+      const res = await sendUserPasswordResetEmail(forgotEmail);
+      if (res.success) {
+        setForgotSuccess(
+          `¡Correo de recuperación enviado! Enviamos un enlace oficial para restablecer tu clave a ${forgotEmail}. Por favor revisá tu bandeja de entrada o carpeta de spam.`
+        );
+      } else {
+        setForgotError(res.error || 'No se pudo enviar el correo de recuperación.');
+      }
+    } catch (err: any) {
+      setForgotError(err?.message || 'Error al solicitar restablecimiento de contraseña.');
+    } finally {
+      setIsSendingReset(false);
+    }
+  };
 
   // Submit Registration
   const handleRegister = (e: React.FormEvent) => {
@@ -156,20 +185,26 @@ export const AuthView: React.FC<AuthViewProps> = ({
     try {
       const authResult = await authenticateDualUser(userClean, passClean);
       if (authResult.success && authResult.session) {
-        if (authResult.session.role !== 'admin' && authResult.session.role !== 'employee') {
-          setErrorMessage('Esta cuenta no cuenta con permisos de Administrador o Empleado. Por favor ingresá desde la pestaña principal "INGRESAR".');
+        const userDisplayName = authResult.session.clientData?.fullName || authResult.session.email || 'Usuario';
+        
+        // Si el usuario es un cliente autenticado, permitirle acceso directo al catálogo
+        if (authResult.session.role === 'client') {
+          setSuccessMessage(`¡Bienvenido/a, ${userDisplayName}! Ingresando al catálogo...`);
+          setTimeout(() => {
+            onLogin(authResult.session!);
+          }, 350);
           return;
         }
-        const userDisplayName = authResult.session.clientData?.fullName || authResult.session.email || 'Administrador';
+
         setSuccessMessage(`Acceso autorizado para ${userDisplayName}. Redirigiendo al Hub de Trabajo Interno...`);
         setTimeout(() => {
           onLogin(authResult.session!);
         }, 350);
       } else {
-        setErrorMessage(authResult.error || 'Credenciales incorrectas para el panel de administración.');
+        setErrorMessage(authResult.error || 'Credenciales incorrectas.');
       }
     } catch (err: any) {
-      setErrorMessage(err?.message || 'Error al autenticar en administración.');
+      setErrorMessage(err?.message || 'Error al autenticar.');
     }
   };
 
@@ -432,10 +467,22 @@ export const AuthView: React.FC<AuthViewProps> = ({
                         required
                         className="w-full px-3.5 py-2.5 bg-white border border-[#DCD4C9] rounded-xs text-sm text-[#18231C] focus:outline-none focus:border-[#FDB813]"
                       />
-                      <div className="mt-1">
+                      <div className="mt-1 flex items-center justify-between">
                         <span className="text-[10px] text-[#8C847B]">
-                          Acceso protegido exclusivo para la administración de Pampero Gran Mendoza.
+                          Acceso protegido exclusivo de Pampero Gran Mendoza.
                         </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setForgotEmail(adminUser || '');
+                            setForgotError(null);
+                            setForgotSuccess(null);
+                            setShowForgotModal(true);
+                          }}
+                          className="text-[11px] text-[#B9522F] hover:text-[#18231C] font-semibold underline cursor-pointer shrink-0 ml-2"
+                        >
+                          ¿Olvidaste tu clave?
+                        </button>
                       </div>
                     </div>
 
@@ -737,9 +784,23 @@ export const AuthView: React.FC<AuthViewProps> = ({
                       </div>
 
                       <div>
-                        <label className="block text-[10px] uppercase tracking-[0.25em] font-bold text-[#4A453F] mb-1.5">
-                          CONTRASEÑA
-                        </label>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <label className="block text-[10px] uppercase tracking-[0.25em] font-bold text-[#4A453F]">
+                            CONTRASEÑA
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setForgotEmail(email || '');
+                              setForgotError(null);
+                              setForgotSuccess(null);
+                              setShowForgotModal(true);
+                            }}
+                            className="text-[11px] text-[#B9522F] hover:text-[#18231C] font-semibold underline cursor-pointer"
+                          >
+                            ¿Olvidaste tu contraseña?
+                          </button>
+                        </div>
                         <input
                           type="password"
                           value={password}
@@ -787,6 +848,111 @@ export const AuthView: React.FC<AuthViewProps> = ({
 
         </div>
       </main>
+
+      {/* Modal: Recuperación de Contraseña Segura (Firebase Auth sendPasswordResetEmail) */}
+      {showForgotModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 backdrop-blur-xs p-4 animate-fadeIn">
+          <div className="bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs shadow-2xl max-w-md w-full p-6 sm:p-7 relative">
+            <button
+              type="button"
+              onClick={() => setShowForgotModal(false)}
+              className="absolute right-4 top-4 text-neutral-400 hover:text-neutral-800 transition-colors p-1"
+              title="Cerrar"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-2.5 mb-3">
+              <div 
+                style={{ backgroundColor: `${accent}25` }} 
+                className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
+              >
+                <KeyRound className="w-5 h-5" style={{ color: '#B9522F' }} />
+              </div>
+              <div>
+                <h3 className="font-bold text-base text-[#18231C] uppercase tracking-wider">
+                  Recuperar Contraseña
+                </h3>
+                <p className="text-xs text-[#6F6860]">
+                  Restablecimiento oficial de clave
+                </p>
+              </div>
+            </div>
+
+            <p className="text-xs text-[#544E47] leading-relaxed mb-4">
+              Ingresá el correo electrónico asociado a tu cuenta. Te enviaremos un enlace automático y seguro a tu casilla de correo para que puedas crear una nueva contraseña sin intermediarios.
+            </p>
+
+            {forgotError && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xs flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>{forgotError}</span>
+              </div>
+            )}
+
+            {forgotSuccess ? (
+              <div className="space-y-4">
+                <div className="p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-xs flex items-start gap-2.5">
+                  <CheckCircle2 className="w-5 h-5 shrink-0 text-emerald-600 mt-0.5" />
+                  <span className="leading-relaxed">{forgotSuccess}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowForgotModal(false)}
+                  style={{ backgroundColor: primary, color: btnText }}
+                  className="w-full py-2.5 font-bold text-xs uppercase tracking-wider rounded-xs hover:brightness-110 cursor-pointer transition-all"
+                >
+                  Entendido, volver a ingresar
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handleSendPasswordReset} className="space-y-4">
+                <div>
+                  <label className="block text-[10px] uppercase tracking-[0.2em] font-bold text-[#4A453F] mb-1.5">
+                    CORREO ELECTRÓNICO REGISTRADO
+                  </label>
+                  <div className="relative">
+                    <Mail className="w-4 h-4 text-neutral-400 absolute left-3 top-3" />
+                    <input
+                      type="email"
+                      value={forgotEmail}
+                      onChange={(e) => setForgotEmail(e.target.value)}
+                      placeholder="tunombre@ejemplo.com"
+                      required
+                      className="w-full pl-9 pr-3.5 py-2.5 bg-white border border-[#DCD4C9] rounded-xs text-sm text-[#18231C] focus:outline-none focus:border-[#FDB813]"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowForgotModal(false)}
+                    className="flex-1 py-2.5 border border-[#DCD4C9] text-xs font-bold uppercase tracking-wider text-[#6F6860] hover:text-[#18231C] bg-white rounded-xs cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSendingReset}
+                    style={{ backgroundColor: primary, color: btnText }}
+                    className="flex-1 py-2.5 font-bold text-xs uppercase tracking-wider rounded-xs hover:brightness-110 flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-50"
+                  >
+                    {isSendingReset ? (
+                      <span>Enviando...</span>
+                    ) : (
+                      <>
+                        <Send className="w-3.5 h-3.5" />
+                        <span>Enviar Enlace</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

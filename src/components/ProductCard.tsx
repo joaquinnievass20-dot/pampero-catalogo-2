@@ -153,6 +153,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           src={activeImageUrl}
           alt={product.name}
           loading="lazy"
+          decoding="async"
           className="aspect-[9/11] w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
           referrerPolicy="no-referrer"
         />

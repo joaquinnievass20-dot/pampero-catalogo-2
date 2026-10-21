@@ -99,7 +99,7 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
     });
 
     const unsubscribe = subscribeToFirestoreEmployees((remote) => {
-      if (Array.isArray(remote) && remote.length > 0) {
+      if (Array.isArray(remote)) {
         setEmployees(remote);
       }
     });
@@ -219,6 +219,13 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
 
   const handleDelete = async (id: string) => {
     if (confirm('¿Seguro que deseás dar de baja la cuenta de este operador?')) {
+      setEmployees((prev) => {
+        const updated = prev.filter((e) => e.id !== id);
+        try {
+          localStorage.setItem('pampero_employees', JSON.stringify(updated));
+        } catch {}
+        return updated;
+      });
       await deleteFirestoreEmployee(id);
       triggerSaveNotice();
     }

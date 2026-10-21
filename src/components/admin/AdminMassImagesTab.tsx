@@ -1,8 +1,12 @@
 import React, { useState, useRef } from 'react';
 import { Product } from '../../types';
 import { parseImageFileName, ParsedImageInfo } from '../../utils/imageNamingParser';
-import { compressImage } from '../../utils/imageCompressor';
-import { uploadImageToStorage, saveFirestoreProducts, saveSingleFirestoreProduct } from '../../services/firebase';
+import { 
+  uploadImageToStorage, 
+  saveFirestoreProducts, 
+  saveSingleFirestoreProduct,
+  formatStorageErrorMessage 
+} from '../../services/firebase';
 import { 
   Images, 
   Upload, 
@@ -109,6 +113,8 @@ export const AdminMassImagesTab: React.FC<AdminMassImagesTabProps> = ({
       parsedInfo: ParsedImageInfo;
     }> = [];
 
+    const uploadErrors: string[] = [];
+
     try {
       for (let i = 0; i < fileList.length; i++) {
         const file = fileList[i];
@@ -161,21 +167,25 @@ export const AdminMassImagesTab: React.FC<AdminMassImagesTabProps> = ({
             });
           }
         } catch (fileErr: any) {
-          console.error(`[CARGA MASIVA ERROR] Error subiendo ${file.name}:`, fileErr);
-          // Continuar con los siguientes archivos sin trabar la pantalla
+          const detailedMsg = formatStorageErrorMessage(fileErr);
+          uploadErrors.push(`${file.name}: ${detailedMsg}`);
+          console.error(`[CARGA MASIVA ERROR] Error subiendo ${file.name}:`, detailedMsg, fileErr);
         }
       }
 
       setUploadedFilesPreview(successfulPreviews);
       if (successfulPreviews.length === 0) {
-        setBatchErrorNotice('No se pudo subir ninguna de las imágenes seleccionadas a Firebase Storage.');
+        const errorReason = uploadErrors.length > 0 ? uploadErrors[0] : 'Verificá tu conexión y permisos de Firebase Storage.';
+        setBatchErrorNotice(`No se pudo subir ninguna de las imágenes seleccionadas a Firebase Storage: ${errorReason}`);
+      } else if (uploadErrors.length > 0) {
+        setBatchErrorNotice(`Se subieron ${successfulPreviews.length} imágenes correctamente, pero fallaron ${uploadErrors.length}: ${uploadErrors.slice(0, 2).join(' | ')}`);
       }
     } catch (err: any) {
       console.error('[CARGA MASIVA] Error general procesando archivos:', err);
-      const msg = err?.message || 'Error al procesar el lote de imágenes.';
+      const msg = err?.message || formatStorageErrorMessage(err) || 'Error al procesar el lote de imágenes.';
       setBatchErrorNotice(msg);
     } finally {
-      // Garantizar SIEMPRE que el spinner de carga se detenga
+      // Garantizar SIEMPRE que el spinner de carga se detenga para no congelar la pantalla
       setIsProcessing(false);
       setProcessingStatus('');
       // Limpiar el input para permitir seleccionar de nuevo los mismos archivos si se desea

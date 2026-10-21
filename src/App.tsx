@@ -33,6 +33,8 @@ import {
   saveFirestoreProducts,
   fetchFirestoreStoreConfig,
   saveFirestoreStoreConfig,
+  saveFirestoreBranches,
+  subscribeToFirestoreBranches,
   subscribeToFirestoreStoreConfig,
   subscribeToFirestoreProducts,
   subscribeToFirestorePromotions,
@@ -585,8 +587,8 @@ export default function App() {
       localStorage.setItem('pampero_catalog_branches', JSON.stringify(newBranches));
     } catch {}
 
-    // Persist to Cloud Firestore via Firebase SDK
-    saveFirestoreStoreConfig({ branches: newBranches });
+    // Persist to Cloud Firestore via Firebase SDK (both 'branches' collection and store_config)
+    saveFirestoreBranches(newBranches);
   };
 
   const handleUpdateCoupons = async (newCoupons: DiscountCoupon[]) => {

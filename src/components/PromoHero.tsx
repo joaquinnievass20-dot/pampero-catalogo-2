@@ -73,10 +73,12 @@ export const PromoHero: React.FC<PromoHeroProps> = ({
                 </div>
               )}
 
-              {/* Background image */}
+              {/* Background image with lazy loading and async decoding */}
               <img
                 src={promo.bannerImage}
                 alt={promo.title}
+                loading="lazy"
+                decoding="async"
                 onLoad={() => setLoadedImages((prev) => ({ ...prev, [promo.id]: true }))}
                 onError={() => setLoadedImages((prev) => ({ ...prev, [promo.id]: true }))}
                 className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 brightness-75 ${
