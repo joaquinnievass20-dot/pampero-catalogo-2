@@ -9,6 +9,7 @@ interface HubViewProps {
   onOpenAdmin: () => void;
   onOpenCatalog: () => void;
   onLogout: () => void;
+  onOpenProfile?: () => void;
 }
 
 export const HubView: React.FC<HubViewProps> = ({
@@ -18,6 +19,7 @@ export const HubView: React.FC<HubViewProps> = ({
   onOpenAdmin,
   onOpenCatalog,
   onLogout,
+  onOpenProfile,
 }) => {
   const accent = theme?.accentColor || '#FDB813';
   const primaryBg = theme?.primaryColor || '#18231C';
@@ -57,7 +59,7 @@ export const HubView: React.FC<HubViewProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3 sm:gap-4">
             <div className="flex items-center gap-2 text-right">
               <div className="hidden md:block">
                 <p className="text-xs font-bold text-white leading-tight">{operatorName}</p>
@@ -76,6 +78,18 @@ export const HubView: React.FC<HubViewProps> = ({
                 )}
               </div>
             </div>
+
+            {onOpenProfile && (
+              <button
+                type="button"
+                onClick={onOpenProfile}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xs bg-white/10 hover:bg-white/20 text-white text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer border border-white/20"
+                title="Mi Perfil & Seguridad (2FA)"
+              >
+                <ShieldCheck className="w-3.5 h-3.5 text-amber-300" />
+                <span className="hidden sm:inline">Seguridad 2FA</span>
+              </button>
+            )}
 
             <button
               type="button"
@@ -153,16 +167,16 @@ export const HubView: React.FC<HubViewProps> = ({
             </button>
           </div>
 
-          {/* 3. Ver Catálogo Público */}
+          {/* 3. Catálogo Público */}
           <div className="bg-white rounded-xs border-2 border-[#DCD4C9] hover:border-[#FDB813] shadow-sm hover:shadow-xl transition-all duration-200 flex flex-col p-6 sm:p-8 text-center group">
             <div className="w-16 h-16 rounded-xs bg-amber-50/60 text-[#18231C] flex items-center justify-center mx-auto mb-5 group-hover:scale-105 transition-transform border border-amber-300">
               <ShoppingBag className="w-8 h-8" style={{ color: accent }} />
             </div>
             <h2 className="text-lg font-black text-[#18231C] uppercase tracking-wider mb-2">
-              Ver Catálogo Público
+              Catálogo Público
             </h2>
             <p className="text-xs text-[#6F6860] leading-relaxed mb-6 flex-1">
-              Explorar la tienda digital y fichas de producto con la misma experiencia visual que tienen los clientes.
+              Acceso directo a la tienda y catálogo de productos para consultar prendas, precios y visualización desde la vista del cliente.
             </p>
             <button
               type="button"
@@ -171,8 +185,7 @@ export const HubView: React.FC<HubViewProps> = ({
               style={{ backgroundColor: accent }}
               className="w-full py-3.5 px-4 rounded-xs hover:brightness-105 text-[#18231C] text-xs font-black uppercase tracking-[0.15em] transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
             >
-              <span>Ver Catálogo Público</span>
-              <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+              <span>VER CATÁLOGO →</span>
             </button>
           </div>
         </div>

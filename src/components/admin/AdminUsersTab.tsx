@@ -27,8 +27,6 @@ import {
   UserCheck,
   Eye,
   EyeOff,
-  Copy,
-  Lock,
   X,
   Key,
   Briefcase,
@@ -44,8 +42,6 @@ interface AdminUsersTabProps {
 export const INITIAL_REGISTERED_USERS: RegisteredUser[] = [
   {
     ...MASTER_ADMIN_USER,
-    password: 'Jn05022000',
-    initialPassword: 'Jn05022000',
   },
   // Vendedores & Equipo Comercial
   {
@@ -57,8 +53,6 @@ export const INITIAL_REGISTERED_USERS: RegisteredUser[] = [
     branch: 'Maipú',
     phone: '261 527-6713',
     email: 'itati@pamperomaipu.com.ar',
-    password: 'itati_pampero',
-    initialPassword: 'itati_pampero',
     status: 'active',
     createdAt: '2026-02-01',
     notes: 'Encargada de sucursal Maipú.',
@@ -72,8 +66,6 @@ export const INITIAL_REGISTERED_USERS: RegisteredUser[] = [
     branch: 'Ciudad',
     phone: '261 423-1122',
     email: 'guada@pampero.com.ar',
-    password: 'guada_pampero',
-    initialPassword: 'guada_pampero',
     status: 'active',
     createdAt: '2026-02-01',
     notes: 'Encargada de sucursal Ciudad.',
@@ -87,8 +79,6 @@ export const INITIAL_REGISTERED_USERS: RegisteredUser[] = [
     branch: 'Luján',
     phone: '261 498-5544',
     email: 'carolina@pampero.com.ar',
-    password: 'carolina_pampero',
-    initialPassword: 'carolina_pampero',
     status: 'active',
     createdAt: '2026-02-01',
     notes: 'Encargada de sucursal Luján de Cuyo.',
@@ -102,8 +92,6 @@ export const INITIAL_REGISTERED_USERS: RegisteredUser[] = [
     branch: 'Maipú',
     phone: '261 527-6713',
     email: 'gustavo@pampero.com.ar',
-    password: 'gustavo_pampero',
-    initialPassword: 'gustavo_pampero',
     status: 'active',
     createdAt: '2026-02-05',
     notes: 'Vendedor corporativo en calle y visitas técnicas.',
@@ -117,8 +105,6 @@ export const INITIAL_REGISTERED_USERS: RegisteredUser[] = [
     branch: 'Ciudad',
     phone: '261 423-1122',
     email: 'martin@pampero.com.ar',
-    password: 'martin_pampero',
-    initialPassword: 'martin_pampero',
     status: 'active',
     createdAt: '2026-02-05',
     notes: 'Vendedor comercial mostrador y convenios.',
@@ -131,8 +117,6 @@ export const INITIAL_REGISTERED_USERS: RegisteredUser[] = [
     branch: 'Maipú',
     phone: '261 527-6713',
     email: 'ventas@pamperomaipu.com.ar',
-    password: 'ventas_pampero',
-    initialPassword: 'ventas_pampero',
     status: 'active',
     createdAt: '2026-02-10',
     notes: 'Acceso general ventas salón y pedidos.',
@@ -145,8 +129,6 @@ export const INITIAL_REGISTERED_USERS: RegisteredUser[] = [
     name: 'EDEMSA S.A. (Empresa Distribuidora de Electricidad de Mendoza)',
     repName: 'Ing. Martín Carrizo',
     email: 'compras.operativas@edemsa.com.ar',
-    password: 'edemsa_pampero',
-    initialPassword: 'edemsa_pampero',
     phone: '2614298100',
     cuitOrDni: '30-69278912-4',
     address: 'Av. Belgrano 847',
@@ -163,8 +145,6 @@ export const INITIAL_REGISTERED_USERS: RegisteredUser[] = [
     name: 'YPF Refinería Luján de Cuyo',
     repName: 'Lic. Pablo Godoy',
     email: 'licitaciones.pampero@ypf.com',
-    password: 'ypf_pampero',
-    initialPassword: 'ypf_pampero',
     phone: '2614980111',
     cuitOrDni: '30-54668997-9',
     address: 'Ruta Provincial 82 Km 27',
@@ -181,8 +161,6 @@ export const INITIAL_REGISTERED_USERS: RegisteredUser[] = [
     name: 'Bodegas & Viñedos Catena Zapata',
     repName: 'Arq. Florencia Morán',
     email: 'abastecimiento.cosecha@catenazapata.com',
-    password: 'catena_pampero',
-    initialPassword: 'catena_pampero',
     phone: '2614900210',
     cuitOrDni: '30-70891234-1',
     address: 'Cobos s/n, Agrelo',
@@ -199,8 +177,6 @@ export const INITIAL_REGISTERED_USERS: RegisteredUser[] = [
     name: 'Construcciones Cuyo S.R.L.',
     repName: 'Carlos Benítez',
     email: 'administracion@construccionescuyo.com.ar',
-    password: 'cuyo_pampero',
-    initialPassword: 'cuyo_pampero',
     phone: '2615112233',
     cuitOrDni: '30-71234567-8',
     address: 'Rodríguez Peña 1420',
@@ -208,6 +184,7 @@ export const INITIAL_REGISTERED_USERS: RegisteredUser[] = [
     createdAt: '2026-03-01',
     status: 'active',
     pricingTier: 'Corporativo / Mayorista',
+    notes: 'Equipamiento temporada Vendimia 2026 para cuadrillas de campo.',
   },
   // Clientes Consumidores Finales
   {
@@ -216,8 +193,6 @@ export const INITIAL_REGISTERED_USERS: RegisteredUser[] = [
     role: 'client',
     name: 'Juan Manuel Rossi',
     email: 'jmrossi.mza@gmail.com',
-    password: 'rossi_pampero',
-    initialPassword: 'rossi_pampero',
     phone: '2616890123',
     cuitOrDni: '34.891.220',
     address: 'San Martín 520, 2do B',
@@ -232,8 +207,6 @@ export const INITIAL_REGISTERED_USERS: RegisteredUser[] = [
     role: 'client',
     name: 'María Laura Morales',
     email: 'laura.morales@hotmail.com',
-    password: 'morales_pampero',
-    initialPassword: 'morales_pampero',
     phone: '2615438899',
     cuitOrDni: '36.452.190',
     address: 'Bandera de los Andes 1840',
@@ -263,7 +236,6 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
   const [searchQuery, setSearchQuery] = useState('');
   const [filterRole, setFilterRole] = useState<'all' | 'empresa' | 'consumidor' | 'empleado' | 'admin'>('all');
   const [filterBranch, setFilterBranch] = useState<string>('todas');
-  const [visiblePasswords, setVisiblePasswords] = useState<Record<string, boolean>>({});
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // Modal para Crear Nueva Cuenta con Asignación de Clave
@@ -300,7 +272,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
     };
   }, []);
 
-  // Generador de clave sugerida inicial
+  // Generador de clave sugerida inicial para la creación en Firebase Authentication
   const generateRandomPassword = () => {
     const chars = 'abcdefghjkmnpqrstuvwxyz23456789';
     let code = '';
@@ -312,26 +284,9 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
     setNewAccountPassword(generated);
   };
 
-  // Toggle visibilidad de clave en la tabla
-  const togglePasswordVisibility = (userId: string) => {
-    setVisiblePasswords((prev) => ({
-      ...prev,
-      [userId]: !prev[userId],
-    }));
-  };
-
-  // Copiar clave al portapapeles
-  const handleCopyPassword = (userId: string, pass: string) => {
-    if (!pass) return;
-    navigator.clipboard.writeText(pass);
-    setCopiedId(userId);
-    setTimeout(() => setCopiedId(null), 2000);
-  };
-
-  // Copiar mensaje completo con credenciales para enviar por WhatsApp
+  // Copiar mensaje de acceso para enviar por WhatsApp (sin exponer contraseñas en la tabla)
   const handleCopyCredentialsMessage = (u: RegisteredUser) => {
-    const pass = u.initialPassword || u.password || 'Pampero2026';
-    const msg = `¡Hola ${u.name}! Ya tenés habilitado tu acceso al Catálogo Oficial Pampero Gran Mendoza.\n\n👤 Usuario / Email: ${u.email}\n🔑 Contraseña inicial: ${pass}\n🔗 Ingresá acá: ${window.location.origin}\n\nAnte cualquier consulta técnica estamos a tu disposición.`;
+    const msg = `¡Hola ${u.name}! Ya tenés habilitado tu acceso al Catálogo Oficial Pampero Gran Mendoza.\n\n👤 Usuario / Email: ${u.email}\n🔗 Ingresá acá: ${window.location.origin}\n\nPodés ingresar con tu clave asignada o restablecerla desde la pantalla de ingreso con la opción "¿Olvidaste tu contraseña?".`;
     navigator.clipboard.writeText(msg);
     setCopiedId(`msg-${u.id}`);
     setTimeout(() => setCopiedId(null), 2500);
@@ -468,13 +423,19 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
     };
 
     try {
-      // Crear en Firebase Authentication Y simultáneamente crear el documento correspondiente en la colección users de Cloud Firestore usando el mismo uid en un bloque seguro.
-      // Las contraseñas asignadas manualmente OBLIGATORIAMENTE se usan al crear el usuario en Auth.
+      // 1. Crear en Firebase Authentication y SOLO SI es exitoso crear el perfil en Cloud Firestore con el mismo UID
       const authResult = await createFirebaseAuthAndFirestoreUser(newUser);
-      const finalUserId = authResult.uid || userId;
-      const finalUser: RegisteredUser = { ...newUser, id: finalUserId };
+      if (!authResult.success) {
+        setCreateError(authResult.error || 'Error al crear la cuenta en Firebase Authentication.');
+        return;
+      }
 
-      // Actualizar estado local inmediatamente con el UID unificado
+      const finalUserId = authResult.uid || userId;
+      // SEGURIDAD: La contraseña NO se conserva en el estado ni en Firestore
+      const { password: _p, initialPassword: _ip, ...safeUser } = newUser;
+      const finalUser: RegisteredUser = { ...safeUser, id: finalUserId };
+
+      // Actualizar estado local inmediatamente con el UID unificado de Auth
       setUsers((prev) => [finalUser, ...prev.filter((u) => u.id !== finalUserId && u.email?.toLowerCase() !== emailTrimmed)]);
       triggerSaveNotice();
 
@@ -495,7 +456,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
     }
   };
 
-  // Exportar a CSV
+  // Exportar a CSV (Seguridad: SIN campo de contraseñas)
   const handleExportCSV = () => {
     const headers = [
       'ID', 
@@ -503,7 +464,6 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
       'Nombre / Razón Social', 
       'Representante', 
       'Email', 
-      'Contraseña Inicial', 
       'Teléfono', 
       'Sucursal', 
       'CUIT / DNI', 
@@ -519,7 +479,6 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
       `"${(u.name || '').replace(/"/g, '""')}"`,
       `"${(u.repName || '').replace(/"/g, '""')}"`,
       u.email,
-      `"${(u.initialPassword || u.password || '').replace(/"/g, '""')}"`,
       u.phone,
       u.branch || '-',
       u.cuitOrDni || '',
@@ -554,7 +513,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
         if (u.branch && u.branch.toLowerCase() !== filterBranch.toLowerCase()) return false;
       }
 
-      // Filtro de búsqueda
+      // Filtro de búsqueda (sin incluir contraseñas)
       if (!searchQuery.trim()) return true;
       const q = searchQuery.toLowerCase();
       return (
@@ -563,8 +522,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
         u.email.toLowerCase().includes(q) ||
         u.phone.includes(q) ||
         (u.cuitOrDni && u.cuitOrDni.includes(q)) ||
-        (u.branch && u.branch.toLowerCase().includes(q)) ||
-        (u.initialPassword && u.initialPassword.toLowerCase().includes(q))
+        (u.branch && u.branch.toLowerCase().includes(q))
       );
     });
   }, [users, filterRole, filterBranch, searchQuery]);
@@ -704,7 +662,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Buscar por nombre, CUIT, email, clave, sucursal..."
+            placeholder="Buscar por nombre, CUIT, email, sucursal..."
             className="w-full pl-9 pr-3 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs text-[#18231C] focus:outline-none focus:border-[#B9522F]"
           />
         </div>
@@ -774,7 +732,6 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
                 <th className="py-3 px-4">Rol & Perfil</th>
                 <th className="py-3 px-4">Contacto Directo</th>
                 <th className="py-3 px-4">Identificación</th>
-                <th className="py-3 px-4 bg-[#233228]">Contraseña Inicial</th>
                 <th className="py-3 px-4 text-center">Estado</th>
                 <th className="py-3 px-4 text-right">Acciones</th>
               </tr>
@@ -782,7 +739,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
             <tbody className="divide-y divide-[#DCD4C9]">
               {filteredUsers.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-10 text-center text-[#6F6860]">
+                  <td colSpan={6} className="py-10 text-center text-[#6F6860]">
                     No se encontraron cuentas con el criterio de búsqueda "{searchQuery}".
                   </td>
                 </tr>
@@ -797,9 +754,6 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
                     u.email?.toLowerCase().trim() === 'joaquinnievass20@gmail.com' ||
                     u.email?.toLowerCase().trim() === MASTER_ADMIN_EMAIL.toLowerCase() ||
                     (u.email || '').toLowerCase().includes('joaquinnievass20');
-                  const initialPass = u.initialPassword || u.password || 'Pampero2026';
-                  const isPassVisible = Boolean(visiblePasswords[u.id]);
-                  const isCopied = copiedId === u.id;
                   const isMsgCopied = copiedId === `msg-${u.id}`;
 
                   return (
@@ -924,38 +878,6 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
                         )}
                       </td>
 
-                      {/* CONTRASEÑA INICIAL ASIGNADA (CRUCIAL) */}
-                      <td className="py-3 px-4 bg-amber-50/30">
-                        <div className="flex items-center gap-1.5">
-                          <div className="px-2 py-1 bg-white border border-amber-300 rounded-xs font-mono text-xs font-bold text-[#18231C] flex items-center gap-1 shadow-2xs">
-                            <Key className="w-3 h-3 text-[#B9522F] shrink-0" />
-                            <span>{isPassVisible ? initialPass : '••••••••'}</span>
-                          </div>
-                          
-                          {/* Toggle Ver / Ocultar */}
-                          <button
-                            type="button"
-                            onClick={() => togglePasswordVisibility(u.id)}
-                            className="p-1 hover:bg-amber-100 text-[#6F6860] hover:text-[#18231C] rounded-xs transition-colors cursor-pointer"
-                            title={isPassVisible ? 'Ocultar contraseña' : 'Ver contraseña'}
-                          >
-                            {isPassVisible ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                          </button>
-
-                          {/* Copiar Contraseña */}
-                          <button
-                            type="button"
-                            onClick={() => handleCopyPassword(u.id, initialPass)}
-                            className={`p-1 rounded-xs transition-colors cursor-pointer ${
-                              isCopied ? 'bg-emerald-600 text-white' : 'hover:bg-amber-100 text-[#6F6860] hover:text-[#18231C]'
-                            }`}
-                            title="Copiar contraseña para enviar al usuario"
-                          >
-                            {isCopied ? <CheckCircle2 className="w-3.5 h-3.5 text-white" /> : <Copy className="w-3.5 h-3.5" />}
-                          </button>
-                        </div>
-                      </td>
-
                       {/* Estado: Activo / Suspendido */}
                       <td className="py-3 px-4 text-center">
                         <button
@@ -985,7 +907,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
                             className={`p-1.5 rounded-xs transition-colors cursor-pointer ${
                               isMsgCopied ? 'bg-emerald-700 text-white' : 'text-emerald-700 hover:bg-emerald-50'
                             }`}
-                            title="Copiar mensaje con usuario y contraseña para WhatsApp"
+                            title="Copiar mensaje con usuario para WhatsApp"
                           >
                             <MessageCircle className="w-4 h-4" />
                           </button>
@@ -994,7 +916,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
                           {u.phone && (
                             <a
                               href={`https://wa.me/549${u.phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(
-                                `¡Hola ${u.name}! Tu cuenta en Pampero Catálogo está activa. Usuario: ${u.email} | Clave: ${initialPass}`
+                                `¡Hola ${u.name}! Tu cuenta en Pampero Catálogo está activa. Usuario: ${u.email}. Podés acceder en: ${window.location.origin}`
                               )}`}
                               target="_blank"
                               rel="noreferrer"
@@ -1080,9 +1002,9 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
                   </span>
                   <div className="font-mono text-xs space-y-1 bg-white p-2.5 rounded-xs border border-[#DCD4C9]">
                     <div><strong>Usuario / Email:</strong> {createdSuccessUser.email}</div>
-                    <div><strong>Contraseña asignada:</strong> <span className="bg-amber-100 text-amber-950 px-1 rounded-xs font-bold">{createdSuccessUser.initialPassword}</span></div>
-                    <div><strong>Rol:</strong> {createdSuccessUser.type.toUpperCase()}</div>
+                    <div><strong>Rol Asignado:</strong> {createdSuccessUser.type.toUpperCase()}</div>
                     {createdSuccessUser.branch && <div><strong>Sucursal:</strong> {createdSuccessUser.branch}</div>}
+                    <div className="text-[11px] text-emerald-700 font-sans mt-1">✓ Cuenta creada y activada con éxito en Firebase Authentication</div>
                   </div>
                 </div>
 
@@ -1318,7 +1240,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
                     </div>
 
                     <p className="text-[10px] text-neutral-600">
-                      Esta contraseña quedará registrada en el sistema de autenticación de Cloud Firestore para que puedas entregársela personalmente al usuario.
+                      Esta contraseña se enviará de forma segura y cifrada únicamente a Firebase Authentication. Nunca se guarda en texto plano en la base de datos.
                     </p>
                   </div>
                 </div>

@@ -75,7 +75,8 @@ import {
   Search,
   Sparkles,
   Shirt,
-  LayoutDashboard
+  LayoutDashboard,
+  Compass
 } from 'lucide-react';
 
 export default function App() {
@@ -631,6 +632,49 @@ export default function App() {
     saveFirestoreStoreConfig({ volumeDiscounts: newDiscounts });
   };
 
+  // Control de Rutas Estricto:
+  // - Administrador y Empleado (Staff): pueden acceder al Hub ('hub'), Panel de Control ('admin'),
+  //   CRM ('crm'), y expresamente al Catálogo Público ('catalog', 'landing', 'product_detail', 'lookbook', etc.)
+  //   para consultar prendas, precios y navegar la tienda desde la vista del cliente sin forzar redirección al Hub.
+  //   Si ya tienen sesión activa iniciada, se previene la vista de login ('auth') redirigiéndolos al Hub.
+  // - Usuarios no-staff / no autenticados: no pueden acceder a las vistas internas ('hub', 'admin', 'crm').
+  useEffect(() => {
+    const isStaff = Boolean(
+      userSession &&
+      (userSession.role === 'admin' ||
+       userSession.role === 'employee' ||
+       (userSession as any).type === 'admin' ||
+       (userSession as any).type === 'empleado' ||
+       (userSession as any).type === 'vendedor' ||
+       userSession.email?.toLowerCase() === 'joaquinnievass20@gmail.com')
+    );
+
+    if (isStaff) {
+      // El guardián permite expresamente al Administrador y Empleado navegar por el Catálogo Público y vistas asociadas
+      const allowedViewsForStaff: Array<typeof viewMode> = [
+        'hub',
+        'admin',
+        'crm',
+        'catalog',
+        'landing',
+        'product_detail',
+        'lookbook',
+        'uniform_simulator',
+        'sizing_portal',
+        'order_tracking',
+      ];
+      if (!allowedViewsForStaff.includes(viewMode)) {
+        setViewMode('hub');
+      }
+    } else {
+      // Si no es staff, se bloquea el acceso a rutas internas
+      const restrictedInternalViews: Array<typeof viewMode> = ['hub', 'admin', 'crm'];
+      if (restrictedInternalViews.includes(viewMode)) {
+        setViewMode(userSession ? 'catalog' : 'landing');
+      }
+    }
+  }, [userSession, viewMode]);
+
   const handleLogin = (session: UserSession) => {
     setUserSession(session);
     localStorage.setItem('pampero_user_session', JSON.stringify(session));
@@ -639,8 +683,17 @@ export default function App() {
     const userCart = loadCartFromStorage(session);
     setCart(userCart);
 
-    if (session.role === 'admin' || session.role === 'employee' || session.email?.toLowerCase() === 'joaquinnievass20@gmail.com') {
-      setViewMode('hub');
+    const isStaff = 
+      session.role === 'admin' || 
+      session.role === 'employee' || 
+      (session as any).type === 'admin' || 
+      (session as any).type === 'empleado' || 
+      (session as any).type === 'vendedor' || 
+      session.email?.toLowerCase() === 'joaquinnievass20@gmail.com';
+
+    if (isStaff) {
+      // Redirección obligatoria post-login a vista interna
+      setViewMode(session.role === 'admin' ? 'admin' : 'crm');
     } else {
       setViewMode('catalog');
     }
@@ -1082,6 +1135,7 @@ export default function App() {
               onOpenAdmin={() => setViewMode('admin')}
               onOpenCatalog={() => setViewMode('catalog')}
               onLogout={handleLogout}
+              onOpenProfile={() => setIsProfileOpen(true)}
             />
           )}
         </main>
@@ -1119,6 +1173,24 @@ export default function App() {
             style={{ color: theme.accentColor || '#FDB813' }} 
           />
           <span>Panel de Control</span>
+        </button>
+      )}
+
+      {/* Employee Floating Quick Access Button to Return to Hub */}
+      {userSession?.role === 'employee' && (viewMode === 'catalog' || viewMode === 'landing' || viewMode === 'product_detail') && (
+        <button
+          id="btn-employee-floating-hub"
+          type="button"
+          onClick={() => setViewMode('hub')}
+          className="fixed bottom-6 left-6 z-40 px-4 py-2.5 rounded-xs bg-[#18231C] text-[#F5F2EC] border-2 shadow-2xl hover:bg-black transition-all flex items-center gap-2 text-xs font-bold uppercase tracking-wider group cursor-pointer"
+          style={{ borderColor: theme.accentColor || '#FDB813' }}
+          title="Volver al Menú Principal / Hub"
+        >
+          <Compass 
+            className="w-4 h-4 group-hover:rotate-45 transition-transform" 
+            style={{ color: theme.accentColor || '#FDB813' }} 
+          />
+          <span>Volver al Hub</span>
         </button>
       )}
 

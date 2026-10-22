@@ -1,7 +1,21 @@
 import React, { useState } from 'react';
 import { UserSession, ThemeConfig, RegisteredUser } from '../types';
 import { PamperoLogo } from './PamperoLogo';
-import { ShieldCheck, ArrowLeft, AlertCircle, CheckCircle2, Sparkles, KeyRound, Mail, X, Send } from 'lucide-react';
+import { 
+  ShieldCheck, 
+  ArrowLeft, 
+  AlertCircle, 
+  CheckCircle2, 
+  Sparkles, 
+  KeyRound, 
+  Mail, 
+  X, 
+  Send,
+  Smartphone,
+  Eye,
+  EyeOff,
+  QrCode
+} from 'lucide-react';
 import { MASTER_ADMIN_EMAIL, MASTER_ADMIN_PASSWORD } from '../utils/authInit';
 import { saveFirestoreUser, authenticateDualUser, sendUserPasswordResetEmail } from '../services/firebase';
 
@@ -46,6 +60,17 @@ export const AuthView: React.FC<AuthViewProps> = ({
   const [adminUser, setAdminUser] = useState('');
   const [adminPass, setAdminPass] = useState('');
 
+  // Dual Login Method States (Contraseña tradicional o Código de Autenticador TOTP/MFA)
+  const [loginMethod, setLoginMethod] = useState<'password' | 'totp'>('password');
+  const [totpCode, setTotpCode] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showTotpModal, setShowTotpModal] = useState(false);
+
+  // Admin Dual Login Method States
+  const [adminLoginMethod, setAdminLoginMethod] = useState<'password' | 'totp'>('password');
+  const [adminTotpCode, setAdminTotpCode] = useState('');
+  const [showAdminPassword, setShowAdminPassword] = useState(false);
+
   // Errors & Alerts
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -67,13 +92,15 @@ export const AuthView: React.FC<AuthViewProps> = ({
       const res = await sendUserPasswordResetEmail(forgotEmail);
       if (res.success) {
         setForgotSuccess(
-          `¡Correo de recuperación enviado! Enviamos un enlace oficial para restablecer tu clave a ${forgotEmail}. Por favor revisá tu bandeja de entrada o carpeta de spam.`
+          `¡Correo de recuperación enviado con éxito! Se envió un enlace oficial para restablecer tu clave a ${forgotEmail}. Por favor revisá tu bandeja de entrada o carpeta de spam.`
         );
       } else {
+        console.error('[AUTH VIEW RESET PASSWORD ERROR]:', res.error);
         setForgotError(res.error || 'No se pudo enviar el correo de recuperación.');
       }
     } catch (err: any) {
-      setForgotError(err?.message || 'Error al solicitar restablecimiento de contraseña.');
+      console.error('[AUTH VIEW UNCAUGHT RESET PASSWORD ERROR]:', err?.code, err?.message, err);
+      setForgotError(err?.message || 'Error inesperado al solicitar restablecimiento de contraseña.');
     } finally {
       setIsSendingReset(false);
     }
@@ -138,52 +165,96 @@ export const AuthView: React.FC<AuthViewProps> = ({
     }, 400);
   };
 
-  // Submit Login (Dual Email o Nombre de Usuario con Cloud Firestore y Firebase Auth)
+  // Submit Login (Dual Email o Nombre de Usuario con Contraseña o Código de Autenticador)
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
     setSuccessMessage(null);
 
     const idClean = email.trim();
-    const passClean = password.trim();
 
-    if (!idClean || !passClean) {
-      setErrorMessage('Ingresá tu correo electrónico o nombre de usuario y tu contraseña.');
+    if (!idClean) {
+      setErrorMessage('Ingresá tu correo electrónico o nombre de usuario.');
       return;
     }
 
+    if (loginMethod === 'password') {
+      const passClean = password.trim();
+      if (!passClean) {
+        setErrorMessage('Ingresá tu contraseña para acceder.');
+        return;
+      }
+    } else {
+      const codeClean = totpCode.trim().replace(/\D/g, '');
+      if (codeClean.length !== 6) {
+        setErrorMessage('Ingresá el código numérico de 6 dígitos generado por tu aplicación de autenticador.');
+        return;
+      }
+    }
+
     try {
-      const authResult = await authenticateDualUser(idClean, passClean);
+      const credentialToValidate = loginMethod === 'password' ? password.trim() : totpCode.trim().replace(/\D/g, '');
+      const authResult = await authenticateDualUser(idClean, credentialToValidate, loginMethod);
+
       if (authResult.success && authResult.session) {
         const userDisplayName = authResult.session.clientData?.fullName || authResult.session.email || 'Usuario';
-        setSuccessMessage(`¡Bienvenido/a, ${userDisplayName}! Ingresando al sistema...`);
+        
+        // Control de Rutas Estricto: Administrador y Empleado redirigen a vista interna
+        if (authResult.session.role === 'admin') {
+          setSuccessMessage(`Acceso Administrador autorizado para ${userDisplayName}. Redirigiendo a Panel de Control...`);
+        } else if (authResult.session.role === 'employee') {
+          setSuccessMessage(`Acceso Personal autorizado para ${userDisplayName}. Redirigiendo a Gestión / CRM...`);
+        } else {
+          setSuccessMessage(`¡Bienvenido/a, ${userDisplayName}! Ingresando al catálogo...`);
+        }
+
         setTimeout(() => {
           onLogin(authResult.session!);
         }, 350);
       } else {
-        setErrorMessage(authResult.error || 'Credenciales incorrectas. Verificá tu correo o usuario y tu contraseña.');
+        setErrorMessage(
+          authResult.error || 
+          (loginMethod === 'totp' 
+            ? 'Código de autenticador incorrecto o expirado. Verificá tu aplicación e intentá nuevamente.' 
+            : 'Credenciales incorrectas. Verificá tu correo o usuario y tu contraseña.')
+        );
       }
     } catch (err: any) {
       setErrorMessage(err?.message || 'Error al autenticar. Intentá nuevamente.');
     }
   };
 
-  // Submit Admin or Employee Login (Dual Email o Nombre de Usuario con verificación segura)
+  // Submit Admin or Employee Login (Dual Email o Nombre de Usuario con Contraseña o Autenticador)
   const handleAdminLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
     setSuccessMessage(null);
 
     const userClean = adminUser.trim();
-    const passClean = adminPass.trim();
 
-    if (!userClean || !passClean) {
-      setErrorMessage('Completá usuario o email y contraseña.');
+    if (!userClean) {
+      setErrorMessage('Completá tu usuario o email de administración.');
       return;
     }
 
+    if (adminLoginMethod === 'password') {
+      const passClean = adminPass.trim();
+      if (!passClean) {
+        setErrorMessage('Ingresá tu contraseña de administrador o empleado.');
+        return;
+      }
+    } else {
+      const codeClean = adminTotpCode.trim().replace(/\D/g, '');
+      if (codeClean.length !== 6) {
+        setErrorMessage('Ingresá el código numérico de 6 dígitos del autenticador.');
+        return;
+      }
+    }
+
     try {
-      const authResult = await authenticateDualUser(userClean, passClean);
+      const credentialToValidate = adminLoginMethod === 'password' ? adminPass.trim() : adminTotpCode.trim().replace(/\D/g, '');
+      const authResult = await authenticateDualUser(userClean, credentialToValidate, adminLoginMethod);
+
       if (authResult.success && authResult.session) {
         const userDisplayName = authResult.session.clientData?.fullName || authResult.session.email || 'Usuario';
         
@@ -196,12 +267,20 @@ export const AuthView: React.FC<AuthViewProps> = ({
           return;
         }
 
-        setSuccessMessage(`Acceso autorizado para ${userDisplayName}. Redirigiendo al Hub de Trabajo Interno...`);
+        if (authResult.session.role === 'admin') {
+          setSuccessMessage(`Acceso Administrador autorizado para ${userDisplayName}. Redirigiendo a Panel de Control...`);
+        } else {
+          setSuccessMessage(`Acceso Personal autorizado para ${userDisplayName}. Redirigiendo a Gestión / CRM...`);
+        }
+
         setTimeout(() => {
           onLogin(authResult.session!);
         }, 350);
       } else {
-        setErrorMessage(authResult.error || 'Credenciales incorrectas.');
+        setErrorMessage(
+          authResult.error || 
+          (adminLoginMethod === 'totp' ? 'Código de autenticador no válido o expirado.' : 'Credenciales incorrectas.')
+        );
       }
     } catch (err: any) {
       setErrorMessage(err?.message || 'Error al autenticar.');
@@ -454,37 +533,119 @@ export const AuthView: React.FC<AuthViewProps> = ({
                       />
                     </div>
 
+                    {/* Selector de Método de Validación Dual: Contraseña vs Autenticador */}
                     <div>
                       <label className="block text-[10px] uppercase tracking-[0.25em] font-bold text-[#4A453F] mb-1.5">
-                        CONTRASEÑA
+                        MÉTODO DE INGRESO
                       </label>
-                      <input
-                        type="password"
-                        value={adminPass}
-                        onChange={(e) => setAdminPass(e.target.value)}
-                        placeholder="••••••••••••"
-                        autoComplete="new-password"
-                        required
-                        className="w-full px-3.5 py-2.5 bg-white border border-[#DCD4C9] rounded-xs text-sm text-[#18231C] focus:outline-none focus:border-[#FDB813]"
-                      />
-                      <div className="mt-1 flex items-center justify-between">
-                        <span className="text-[10px] text-[#8C847B]">
-                          Acceso protegido exclusivo de Pampero Gran Mendoza.
-                        </span>
+                      <div className="grid grid-cols-2 gap-2 bg-[#ECE5DC] p-1 rounded-xs">
                         <button
                           type="button"
                           onClick={() => {
-                            setForgotEmail(adminUser || '');
-                            setForgotError(null);
-                            setForgotSuccess(null);
-                            setShowForgotModal(true);
+                            setAdminLoginMethod('password');
+                            setErrorMessage(null);
                           }}
-                          className="text-[11px] text-[#B9522F] hover:text-[#18231C] font-semibold underline cursor-pointer shrink-0 ml-2"
+                          className={`py-2 px-3 text-xs font-bold rounded-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                            adminLoginMethod === 'password'
+                              ? 'bg-[#18231C] text-white shadow-2xs'
+                              : 'text-[#6F6860] hover:text-[#18231C]'
+                          }`}
                         >
-                          ¿Olvidaste tu clave?
+                          <KeyRound className="w-3.5 h-3.5" />
+                          <span>Contraseña</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAdminLoginMethod('totp');
+                            setErrorMessage(null);
+                          }}
+                          className={`py-2 px-3 text-xs font-bold rounded-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                            adminLoginMethod === 'totp'
+                              ? 'bg-[#18231C] text-white shadow-2xs'
+                              : 'text-[#6F6860] hover:text-[#18231C]'
+                          }`}
+                        >
+                          <Smartphone className="w-3.5 h-3.5" />
+                          <span>Autenticador</span>
                         </button>
                       </div>
                     </div>
+
+                    {adminLoginMethod === 'password' ? (
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <label className="block text-[10px] uppercase tracking-[0.25em] font-bold text-[#4A453F]">
+                            CONTRASEÑA
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setForgotEmail(adminUser || '');
+                              setForgotError(null);
+                              setForgotSuccess(null);
+                              setShowForgotModal(true);
+                            }}
+                            className="text-[11px] text-[#B9522F] hover:text-[#18231C] font-semibold underline cursor-pointer shrink-0 ml-2"
+                          >
+                            ¿Olvidaste tu clave?
+                          </button>
+                        </div>
+                        <div className="relative">
+                          <input
+                            type={showAdminPassword ? 'text' : 'password'}
+                            value={adminPass}
+                            onChange={(e) => setAdminPass(e.target.value)}
+                            placeholder="••••••••••••"
+                            autoComplete="new-password"
+                            required={adminLoginMethod === 'password'}
+                            className="w-full pl-3.5 pr-10 py-2.5 bg-white border border-[#DCD4C9] rounded-xs text-sm text-[#18231C] focus:outline-none focus:border-[#FDB813]"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowAdminPassword(!showAdminPassword)}
+                            className="absolute right-3 top-2.5 text-neutral-400 hover:text-neutral-700 cursor-pointer p-0.5"
+                            title={showAdminPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
+                          >
+                            {showAdminPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
+                        </div>
+                        <span className="text-[10px] text-[#8C847B] block mt-1">
+                          Acceso protegido exclusivo de Pampero Gran Mendoza.
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="block text-[10px] uppercase tracking-[0.25em] font-bold text-[#4A453F]">
+                            CÓDIGO DE AUTENTICADOR (MFA)
+                          </label>
+                          <span className="text-[10px] text-[#8C847B]">6 dígitos numéricos</span>
+                        </div>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          maxLength={6}
+                          value={adminTotpCode}
+                          onChange={(e) => setAdminTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                          placeholder="000 000"
+                          autoComplete="one-time-code"
+                          required={adminLoginMethod === 'totp'}
+                          className="w-full px-4 py-3 bg-white border border-[#DCD4C9] rounded-xs text-center font-mono text-xl tracking-[0.35em] text-[#18231C] font-bold focus:outline-none focus:border-[#FDB813] placeholder:text-neutral-300 placeholder:tracking-widest"
+                        />
+                        <div className="flex items-center justify-between pt-1">
+                          <button
+                            type="button"
+                            onClick={() => setShowTotpModal(true)}
+                            className="text-xs text-[#B9522F] hover:text-[#18231C] font-semibold flex items-center gap-1.5 cursor-pointer underline transition-colors"
+                          >
+                            <span>ℹ️ ¿Cómo funciona el Autenticador?</span>
+                          </button>
+                          <span className="text-[10px] text-[#6F6860]">Token temporal (30s)</span>
+                        </div>
+                      </div>
+                    )}
 
                     <button
                       type="submit"
@@ -494,7 +655,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
                       }}
                       className="w-full mt-4 py-3.5 hover:brightness-110 font-bold text-[11px] uppercase tracking-[0.3em] rounded-xs transition-all shadow-xs cursor-pointer"
                     >
-                      INGRESAR AL PANEL
+                      {adminLoginMethod === 'totp' ? 'INGRESAR AL PANEL CON AUTENTICADOR' : 'INGRESAR AL PANEL'}
                     </button>
 
                     <div className="text-center pt-3">
@@ -783,34 +944,116 @@ export const AuthView: React.FC<AuthViewProps> = ({
                         />
                       </div>
 
+                      {/* Selector de Método de Validación Dual: Contraseña vs Autenticador */}
                       <div>
-                        <div className="flex items-center justify-between mb-1.5">
-                          <label className="block text-[10px] uppercase tracking-[0.25em] font-bold text-[#4A453F]">
-                            CONTRASEÑA
-                          </label>
+                        <label className="block text-[10px] uppercase tracking-[0.25em] font-bold text-[#4A453F] mb-1.5">
+                          MÉTODO DE VALIDACIÓN
+                        </label>
+                        <div className="grid grid-cols-2 gap-2 bg-[#ECE5DC] p-1 rounded-xs">
                           <button
                             type="button"
                             onClick={() => {
-                              setForgotEmail(email || '');
-                              setForgotError(null);
-                              setForgotSuccess(null);
-                              setShowForgotModal(true);
+                              setLoginMethod('password');
+                              setErrorMessage(null);
                             }}
-                            className="text-[11px] text-[#B9522F] hover:text-[#18231C] font-semibold underline cursor-pointer"
+                            className={`py-2 px-3 text-xs font-bold rounded-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                              loginMethod === 'password'
+                                ? 'bg-[#18231C] text-white shadow-2xs'
+                                : 'text-[#6F6860] hover:text-[#18231C]'
+                            }`}
                           >
-                            ¿Olvidaste tu contraseña?
+                            <KeyRound className="w-3.5 h-3.5" />
+                            <span>Contraseña</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setLoginMethod('totp');
+                              setErrorMessage(null);
+                            }}
+                            className={`py-2 px-3 text-xs font-bold rounded-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                              loginMethod === 'totp'
+                                ? 'bg-[#18231C] text-white shadow-2xs'
+                                : 'text-[#6F6860] hover:text-[#18231C]'
+                            }`}
+                          >
+                            <Smartphone className="w-3.5 h-3.5" />
+                            <span>Autenticador</span>
                           </button>
                         </div>
-                        <input
-                          type="password"
-                          value={password}
-                          onChange={(e) => setPassword(e.target.value)}
-                          placeholder="••••••••••••"
-                          autoComplete="new-password"
-                          required
-                          className="w-full px-3.5 py-2.5 bg-white border border-[#DCD4C9] rounded-xs text-sm text-[#18231C] focus:outline-none focus:border-[#FDB813]"
-                        />
                       </div>
+
+                      {loginMethod === 'password' ? (
+                        <div>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <label className="block text-[10px] uppercase tracking-[0.25em] font-bold text-[#4A453F]">
+                              CONTRASEÑA
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setForgotEmail(email || '');
+                                setForgotError(null);
+                                setForgotSuccess(null);
+                                setShowForgotModal(true);
+                              }}
+                              className="text-[11px] text-[#B9522F] hover:text-[#18231C] font-semibold underline cursor-pointer"
+                            >
+                              ¿Olvidaste tu contraseña?
+                            </button>
+                          </div>
+                          <div className="relative">
+                            <input
+                              type={showPassword ? 'text' : 'password'}
+                              value={password}
+                              onChange={(e) => setPassword(e.target.value)}
+                              placeholder="••••••••••••"
+                              autoComplete="new-password"
+                              required={loginMethod === 'password'}
+                              className="w-full pl-3.5 pr-10 py-2.5 bg-white border border-[#DCD4C9] rounded-xs text-sm text-[#18231C] focus:outline-none focus:border-[#FDB813]"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowPassword(!showPassword)}
+                              className="absolute right-3 top-2.5 text-neutral-400 hover:text-neutral-700 cursor-pointer p-0.5"
+                              title={showPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
+                            >
+                              {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <label className="block text-[10px] uppercase tracking-[0.25em] font-bold text-[#4A453F]">
+                              CÓDIGO DE AUTENTICADOR (MFA)
+                            </label>
+                            <span className="text-[10px] text-[#8C847B]">6 dígitos numéricos</span>
+                          </div>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            pattern="[0-9]*"
+                            maxLength={6}
+                            value={totpCode}
+                            onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                            placeholder="000 000"
+                            autoComplete="one-time-code"
+                            required={loginMethod === 'totp'}
+                            className="w-full px-4 py-3 bg-white border border-[#DCD4C9] rounded-xs text-center font-mono text-xl tracking-[0.35em] text-[#18231C] font-bold focus:outline-none focus:border-[#FDB813] placeholder:text-neutral-300 placeholder:tracking-widest"
+                          />
+                          <div className="flex items-center justify-between pt-1">
+                            <button
+                              type="button"
+                              onClick={() => setShowTotpModal(true)}
+                              className="text-xs text-[#B9522F] hover:text-[#18231C] font-semibold flex items-center gap-1.5 cursor-pointer underline transition-colors"
+                            >
+                              <span>ℹ️ ¿Cómo funciona el Autenticador?</span>
+                            </button>
+                            <span className="text-[10px] text-[#6F6860]">Expira cada 30 seg</span>
+                          </div>
+                        </div>
+                      )}
 
                       <button
                         type="submit"
@@ -820,7 +1063,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
                         }}
                         className="w-full mt-4 py-3.5 hover:brightness-110 font-bold text-[11px] uppercase tracking-[0.3em] rounded-xs transition-all shadow-xs cursor-pointer"
                       >
-                        INGRESAR
+                        {loginMethod === 'totp' ? 'INGRESAR CON AUTENTICADOR' : 'INGRESAR'}
                       </button>
 
                       <p className="text-center text-xs text-[#6F6860] pt-2">
@@ -950,6 +1193,112 @@ export const AuthView: React.FC<AuthViewProps> = ({
                 </div>
               </form>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal Instructivo: ¿Cómo funciona el Autenticador? */}
+      {showTotpModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 backdrop-blur-xs p-4 animate-fadeIn">
+          <div className="bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs shadow-2xl max-w-lg w-full p-6 sm:p-7 relative max-h-[90vh] overflow-y-auto">
+            <button
+              type="button"
+              onClick={() => setShowTotpModal(false)}
+              className="absolute right-4 top-4 text-neutral-400 hover:text-neutral-800 transition-colors p-1 cursor-pointer"
+              title="Cerrar instructivo"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-3 mb-4">
+              <div 
+                style={{ backgroundColor: `${accent}25` }} 
+                className="w-11 h-11 rounded-full flex items-center justify-center shrink-0"
+              >
+                <Smartphone className="w-6 h-6" style={{ color: '#B9522F' }} />
+              </div>
+              <div>
+                <span className="text-[10px] uppercase tracking-[0.25em] font-bold text-[#B9522F]">
+                  SEGURIDAD Y ACCESO PROTEGIDO
+                </span>
+                <h3 className="font-bold text-lg text-[#18231C] uppercase tracking-wide">
+                  ¿Cómo funciona el Autenticador?
+                </h3>
+              </div>
+            </div>
+
+            <p className="text-xs text-[#544E47] leading-relaxed mb-5">
+              El acceso mediante código temporal de autenticador te brinda protección reforzada contra accesos no autorizados. Seguí estos 3 pasos:
+            </p>
+
+            {/* 3 Pasos requeridos paso a paso */}
+            <div className="space-y-3.5 mb-6">
+              {/* Paso 1 */}
+              <div className="p-3.5 bg-white border border-[#DCD4C9] rounded-xs flex items-start gap-3 shadow-2xs">
+                <div className="w-7 h-7 rounded-full bg-[#18231C] text-white flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">
+                  1
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-[#18231C] mb-1">
+                    Paso 1: Descargá la aplicación.
+                  </h4>
+                  <p className="text-xs text-[#544E47] leading-relaxed">
+                    Instalás <strong>Google Authenticator</strong> o <strong>Authy</strong> en tu celular.
+                  </p>
+                  <div className="mt-2 flex items-center gap-2 text-[10px] text-[#6F6860]">
+                    <span className="bg-[#ECE5DC] px-2 py-0.5 rounded-xs font-semibold">Google Play Store</span>
+                    <span className="bg-[#ECE5DC] px-2 py-0.5 rounded-xs font-semibold">Apple App Store</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Paso 2 */}
+              <div className="p-3.5 bg-white border border-[#DCD4C9] rounded-xs flex items-start gap-3 shadow-2xs">
+                <div className="w-7 h-7 rounded-full bg-[#18231C] text-white flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">
+                  2
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-[#18231C] mb-1">
+                    Paso 2: Primer Ingreso y Vinculación.
+                  </h4>
+                  <p className="text-xs text-[#544E47] leading-relaxed">
+                    Si es tu primera vez, ingresá seleccionando la opción "Contraseña" (usando la clave que te entregó la administración). Una vez adentro, andá al menú de tu Perfil, entrá a la sección "Seguridad" y hacé clic en "Vincular Autenticador". Escaneá el código QR con tu aplicación.
+                  </p>
+                </div>
+              </div>
+
+              {/* Paso 3 */}
+              <div className="p-3.5 bg-white border border-[#DCD4C9] rounded-xs flex items-start gap-3 shadow-2xs">
+                <div className="w-7 h-7 rounded-full bg-[#18231C] text-white flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">
+                  3
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-[#18231C] mb-1">
+                    Paso 3: Ingresos Diarios.
+                  </h4>
+                  <p className="text-xs text-[#544E47] leading-relaxed">
+                    ¡Listo! A partir de tu próximo inicio de sesión, simplemente seleccioná la opción "Autenticador" en esta pantalla e ingresá el código de 6 dígitos de tu celular para acceder de forma rápida y segura.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Aviso informativo de seguridad */}
+            <div className="p-3 bg-[#FAF8F5] border border-[#DCD4C9]/80 rounded-xs text-[11px] text-[#6F6860] mb-5 flex items-start gap-2.5">
+              <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+              <span>
+                <strong>Consejo de seguridad:</strong> Cada código es de uso temporal y se regenera automáticamente. No compartas nunca tus códigos con nadie.
+              </span>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowTotpModal(false)}
+              style={{ backgroundColor: primary, color: btnText }}
+              className="w-full py-3 font-bold text-xs uppercase tracking-wider rounded-xs hover:brightness-110 cursor-pointer transition-all shadow-xs"
+            >
+              Entendido, volver a la pantalla de ingreso
+            </button>
           </div>
         </div>
       )}

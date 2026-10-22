@@ -32,6 +32,8 @@ export interface UserSession {
   permissions?: string[];
   loggedAt?: string;
   quoteHistory?: ReceivedQuote[];
+  totpSecret?: string;
+  mfaEnrolled?: boolean;
 }
 
 export interface Seller {

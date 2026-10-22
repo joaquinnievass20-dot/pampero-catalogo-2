@@ -260,8 +260,8 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
                   </button>
                 )}
 
-                {/* 4. CLIENT & ADMIN ONLY: Armador de Uniformes */}
-                {(userSession.role === 'client' || userSession.role === 'admin') && onOpenUniformSimulator && (
+                {/* 4. CLIENT ONLY: Armador de Uniformes */}
+                {userSession.role === 'client' && onOpenUniformSimulator && (
                   <button
                     type="button"
                     onClick={() => {
@@ -280,8 +280,8 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
                   </button>
                 )}
 
-                {/* 5. CLIENT (Empresas) & ADMIN: Portal de Talles */}
-                {(userSession.role === 'admin' || (userSession.role === 'client' && userSession.clientType === 'empresa')) && onOpenSizingPortal && (
+                {/* 5. CLIENT (Empresas): Portal de Talles */}
+                {userSession.role === 'client' && userSession.clientType === 'empresa' && onOpenSizingPortal && (
                   <button
                     type="button"
                     onClick={() => {
@@ -297,8 +297,8 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
                   </button>
                 )}
 
-                {/* 6. CLIENT & ALL USERS: Estado de mi pedido (Seguimiento en Vivo) */}
-                {onOpenOrderTracking && (
+                {/* 6. CLIENT ONLY: Estado de mi pedido (Seguimiento en Vivo) */}
+                {userSession.role === 'client' && onOpenOrderTracking && (
                   <button
                     type="button"
                     onClick={() => {
@@ -317,18 +317,25 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
                   </button>
                 )}
 
-                {/* 7. CLIENT ONLY: Perfil & Datos de Entrega */}
-                {userSession.role === 'client' && onOpenProfile && (
+                {/* 7. Perfil & Seguridad (Visible para Admin, Empleados y Clientes) */}
+                {onOpenProfile && (
                   <button
                     type="button"
                     onClick={() => {
                       setDropdownOpen(false);
                       onOpenProfile();
                     }}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-[#4A453F] hover:text-[#18231C] hover:bg-[#FAF8F5] rounded-xs transition-colors cursor-pointer"
+                    className="w-full flex items-center justify-between px-3 py-2 text-left text-xs font-bold text-[#18231C] hover:bg-[#FAF8F5] rounded-xs transition-colors cursor-pointer group"
                   >
-                    <UserIcon className="w-4 h-4 text-[#8C827A]" />
-                    <span>Mi Perfil & Datos de Entrega</span>
+                    <div className="flex items-center gap-2">
+                      <UserIcon className="w-4 h-4 text-[#8C827A]" />
+                      <span>{userSession.role === 'client' ? 'Mi Perfil & Datos de Entrega' : 'Mi Perfil & Seguridad'}</span>
+                    </div>
+                    {(userSession.role === 'admin' || userSession.role === 'employee') && (
+                      <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded-xs bg-[#B9522F]/10 text-[#B9522F] border border-[#B9522F]/20">
+                        2FA / QR
+                      </span>
+                    )}
                   </button>
                 )}
 

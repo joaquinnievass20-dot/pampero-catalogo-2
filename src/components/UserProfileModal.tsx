@@ -1,6 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { UserSession, ThemeConfig, RegisteredUser } from '../types';
-import { saveFirestoreUser } from '../services/firebase';
+import { 
+  saveFirestoreUser,
+  generateRandomBase32Secret,
+  buildTotpUri,
+  verifyAndEnrollUserTotp,
+  disableUserTotp
+} from '../services/firebase';
+import { QRCodeSVG } from 'qrcode.react';
 import { 
   User, 
   Mail, 
@@ -14,7 +21,12 @@ import {
   ShoppingBag,
   Calendar,
   Clock,
-  Package
+  Package,
+  Smartphone,
+  Copy,
+  AlertCircle,
+  RefreshCw,
+  KeyRound
 } from 'lucide-react';
 
 interface UserProfileModalProps {
@@ -23,6 +35,7 @@ interface UserProfileModalProps {
   userSession: UserSession | null;
   onUpdateSession: (updatedSession: UserSession) => void;
   theme: ThemeConfig;
+  initialTab?: 'profile' | 'quotes' | 'security';
 }
 
 export const UserProfileModal: React.FC<UserProfileModalProps> = ({
@@ -31,6 +44,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   userSession,
   onUpdateSession,
   theme,
+  initialTab = 'profile',
 }) => {
   if (!isOpen || !userSession) return null;
 
@@ -38,8 +52,19 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   const isCompany = userSession.clientType === 'empresa';
   const d = userSession.clientData || {};
 
-  const [activeTab, setActiveTab] = useState<'profile' | 'quotes'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'quotes' | 'security'>(initialTab);
   const [quoteHistory, setQuoteHistory] = useState<any[]>([]);
+
+  // MFA / TOTP 2FA States
+  const [isEnrolled, setIsEnrolled] = useState(false);
+  const [isEnrolling, setIsEnrolling] = useState(false);
+  const [mfaSecret, setMfaSecret] = useState('');
+  const [mfaUri, setMfaUri] = useState('');
+  const [mfaCode, setMfaCode] = useState('');
+  const [isSubmittingMfa, setIsSubmittingMfa] = useState(false);
+  const [enrollError, setEnrollError] = useState<string | null>(null);
+  const [enrollSuccess, setEnrollSuccess] = useState<string | null>(null);
+  const [copyFeedback, setCopyFeedback] = useState(false);
 
   // Extract initial address parts
   let initialStreet = '';
@@ -64,6 +89,44 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   const [city, setCity] = useState(initialCity);
   const [savedSuccess, setSavedSuccess] = useState(false);
 
+  // Check initial MFA enrollment status
+  useEffect(() => {
+    if (userSession.mfaEnrolled || userSession.totpSecret) {
+      setIsEnrolled(true);
+      return;
+    }
+    if (typeof window !== 'undefined') {
+      const adminMfa = localStorage.getItem('pampero_admin_mfa_enrolled');
+      const adminSecret = localStorage.getItem('pampero_admin_totp_secret');
+      if (userSession.role === 'admin' && (adminMfa === 'true' || Boolean(adminSecret))) {
+        setIsEnrolled(true);
+        return;
+      }
+
+      const userEmail = (userSession.email || '').toLowerCase().trim();
+      const userId = userSession.id;
+
+      try {
+        const empList: any[] = JSON.parse(localStorage.getItem('pampero_employees') || '[]');
+        const emp = empList.find((e: any) => (e.id && e.id === userId) || (e.email && e.email.toLowerCase().trim() === userEmail));
+        if (emp?.mfaEnrolled || emp?.totpSecret) {
+          setIsEnrolled(true);
+          return;
+        }
+      } catch {}
+
+      try {
+        const uList: any[] = JSON.parse(localStorage.getItem('pampero_registered_users') || '[]');
+        const u = uList.find((e: any) => (e.id && e.id === userId) || (e.email && e.email.toLowerCase().trim() === userEmail));
+        if (u?.mfaEnrolled || u?.totpSecret) {
+          setIsEnrolled(true);
+          return;
+        }
+      } catch {}
+    }
+    setIsEnrolled(false);
+  }, [userSession]);
+
   // Load quote history for this user
   useEffect(() => {
     const userKey = userSession.email ? userSession.email.toLowerCase().trim() : 'guest';
@@ -80,6 +143,79 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
       }
     } catch {}
   }, [userSession.email]);
+
+  const handleStartEnrollment = () => {
+    const newSecret = generateRandomBase32Secret(16);
+    const accountLabel = userSession.email || fullName || 'usuario';
+    const uri = buildTotpUri(accountLabel, newSecret, 'Pampero Gran Mendoza');
+    setMfaSecret(newSecret);
+    setMfaUri(uri);
+    setMfaCode('');
+    setEnrollError(null);
+    setEnrollSuccess(null);
+    setIsEnrolling(true);
+  };
+
+  const handleCopySecret = () => {
+    if (mfaSecret && typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(mfaSecret);
+      setCopyFeedback(true);
+      setTimeout(() => setCopyFeedback(false), 2000);
+    }
+  };
+
+  const handleConfirmEnrollment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setEnrollError(null);
+    setEnrollSuccess(null);
+    setIsSubmittingMfa(true);
+
+    try {
+      const res = await verifyAndEnrollUserTotp(userSession, mfaSecret, mfaCode);
+      if (res.success) {
+        setIsEnrolled(true);
+        setIsEnrolling(false);
+        setEnrollSuccess('¡Autenticador vinculado y activado con éxito! A partir de tu próximo inicio de sesión, podés ingresar seleccionando la opción "Autenticador" con el código de tu celular.');
+        const updatedSession: UserSession = {
+          ...userSession,
+          totpSecret: mfaSecret,
+          mfaEnrolled: true,
+        };
+        onUpdateSession(updatedSession);
+      } else {
+        setEnrollError(res.error || 'Código incorrecto. Verificá los 6 dígitos generados por tu aplicación.');
+      }
+    } catch (err: any) {
+      setEnrollError(err?.message || 'Error al validar el código.');
+    } finally {
+      setIsSubmittingMfa(false);
+    }
+  };
+
+  const handleDisableMfa = async () => {
+    if (!window.confirm('¿Estás seguro de que deseás desvincular el autenticador de tu cuenta?')) {
+      return;
+    }
+    setEnrollError(null);
+    setEnrollSuccess(null);
+    try {
+      await disableUserTotp(userSession);
+      setIsEnrolled(false);
+      setIsEnrolling(false);
+      setMfaSecret('');
+      setMfaUri('');
+      setMfaCode('');
+      setEnrollSuccess('Autenticador desvinculado con éxito. Podés ingresar únicamente con tu contraseña.');
+      const updatedSession: UserSession = {
+        ...userSession,
+        totpSecret: undefined,
+        mfaEnrolled: false,
+      };
+      onUpdateSession(updatedSession);
+    } catch (err: any) {
+      setEnrollError(err?.message || 'Error al desvincular autenticador.');
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -202,12 +338,12 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
         </div>
 
         {/* Tab switcher */}
-        <div className="flex border-b border-[#DCD4C9] bg-[#ECE5DC]/60 px-6 pt-2 gap-2">
+        <div className="flex border-b border-[#DCD4C9] bg-[#ECE5DC]/60 px-6 pt-2 gap-2 overflow-x-auto">
           <button
             type="button"
             onClick={() => setActiveTab('profile')}
             style={activeTab === 'profile' ? { borderColor: accent, color: '#18231C' } : {}}
-            className={`pb-2.5 px-3 text-xs font-bold uppercase tracking-wider transition-colors border-b-2 cursor-pointer ${
+            className={`pb-2.5 px-3 text-xs font-bold uppercase tracking-wider transition-colors border-b-2 cursor-pointer shrink-0 ${
               activeTab === 'profile'
                 ? 'border-b-2 font-black'
                 : 'border-transparent text-[#6F6860] hover:text-[#18231C]'
@@ -215,11 +351,37 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
           >
             Datos de Contacto
           </button>
+
+          {/* Apartado de Seguridad (Visible y funcional TANTO para cuentas con rol admin como employee) */}
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('security');
+              setEnrollError(null);
+            }}
+            style={activeTab === 'security' ? { borderColor: accent, color: '#18231C' } : {}}
+            className={`pb-2.5 px-3 text-xs font-bold uppercase tracking-wider transition-colors border-b-2 flex items-center gap-1.5 cursor-pointer shrink-0 ${
+              activeTab === 'security'
+                ? 'border-b-2 font-black'
+                : 'border-transparent text-[#6F6860] hover:text-[#18231C]'
+            }`}
+          >
+            <ShieldCheck className="w-3.5 h-3.5 text-[#B9522F]" />
+            <span>Seguridad</span>
+            {isEnrolled ? (
+              <span className="px-1.5 py-0.2 text-[9px] rounded-full bg-emerald-100 text-emerald-800 font-bold border border-emerald-300">
+                2FA Activo
+              </span>
+            ) : (
+              <span className="w-2 h-2 rounded-full bg-amber-500 inline-block" title="2FA Pendiente" />
+            )}
+          </button>
+
           <button
             type="button"
             onClick={() => setActiveTab('quotes')}
             style={activeTab === 'quotes' ? { borderColor: accent, color: '#18231C' } : {}}
-            className={`pb-2.5 px-3 text-xs font-bold uppercase tracking-wider transition-colors border-b-2 flex items-center gap-1.5 cursor-pointer ${
+            className={`pb-2.5 px-3 text-xs font-bold uppercase tracking-wider transition-colors border-b-2 flex items-center gap-1.5 cursor-pointer shrink-0 ${
               activeTab === 'quotes'
                 ? 'border-b-2 font-black'
                 : 'border-transparent text-[#6F6860] hover:text-[#18231C]'
@@ -510,6 +672,216 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                     </div>
                   );
                 })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* SECCIÓN SEGURIDAD: Enrolamiento MFA / TOTP para Admins, Empleados y Clientes */}
+        {activeTab === 'security' && (
+          <div className="p-6 overflow-y-auto space-y-5">
+            {/* Header de la sección */}
+            <div className="flex items-start gap-3 p-3.5 bg-white border border-[#DCD4C9] rounded-xs shadow-2xs">
+              <div 
+                style={{ backgroundColor: `${accent}25` }}
+                className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
+              >
+                <Smartphone className="w-5 h-5" style={{ color: '#B9522F' }} />
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <h4 className="font-bold text-sm text-[#18231C] uppercase tracking-wider">
+                    Autenticación en Dos Pasos (2FA)
+                  </h4>
+                  <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded-xs bg-[#18231C] text-white">
+                    {userSession.role === 'admin' ? 'Super Admin' : userSession.role === 'employee' ? 'Personal / CRM' : 'Cliente'}
+                  </span>
+                </div>
+                <p className="text-xs text-[#544E47] leading-relaxed mt-0.5">
+                  Generá tu código QR personal para vincular <strong>Google Authenticator</strong> o <strong>Authy</strong> y proteger tus inicios de sesión.
+                </p>
+              </div>
+            </div>
+
+            {/* Mensajes de Alerta / Éxito */}
+            {enrollError && (
+              <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-xs text-xs flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>{enrollError}</span>
+              </div>
+            )}
+
+            {enrollSuccess && (
+              <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xs text-xs flex items-start gap-2">
+                <Check className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" />
+                <span>{enrollSuccess}</span>
+              </div>
+            )}
+
+            {/* Estado 1: Ya enrolado y no en modo de generación */}
+            {isEnrolled && !isEnrolling && (
+              <div className="space-y-4">
+                <div className="p-4 bg-emerald-50/70 border border-emerald-200 rounded-xs">
+                  <div className="flex items-center gap-2 text-emerald-800 font-bold text-xs uppercase tracking-wider mb-1">
+                    <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                    <span>Autenticador Vinculado y Activo</span>
+                  </div>
+                  <p className="text-xs text-emerald-900 leading-relaxed">
+                    Tu cuenta cuenta con protección de doble factor. Podés ingresar tanto con contraseña como mediante el token numérico de 6 dígitos de tu celular en la pantalla de inicio de sesión.
+                  </p>
+                </div>
+
+                <div className="pt-2 flex flex-col sm:flex-row gap-2.5">
+                  <button
+                    type="button"
+                    onClick={handleStartEnrollment}
+                    className="flex-1 py-2.5 px-4 bg-white border border-[#DCD4C9] hover:border-[#18231C] text-xs font-bold uppercase tracking-wider text-[#18231C] rounded-xs flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-2xs"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Re-vincular / Nuevo QR</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDisableMfa}
+                    className="py-2.5 px-4 bg-white border border-red-200 hover:bg-red-50 text-xs font-bold uppercase tracking-wider text-red-600 rounded-xs cursor-pointer transition-colors"
+                  >
+                    Desvincular 2FA
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Estado 2: No enrolado y no en modo de generación -> Botón para iniciar */}
+            {!isEnrolled && !isEnrolling && (
+              <div className="space-y-4">
+                <div className="p-4 bg-amber-50/70 border border-amber-200 rounded-xs text-xs text-amber-950 leading-relaxed">
+                  <p className="font-bold mb-1">Tu cuenta aún no tiene un autenticador vinculado.</p>
+                  <p>
+                    Al vincular tu aplicación, contarás con la máxima capa de seguridad corporativa. Si olvidás tu contraseña o necesitás acceso rápido, podrás entrar con el código de 6 dígitos que cambia cada 30 segundos.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleStartEnrollment}
+                  style={{ backgroundColor: '#18231C', color: '#FFFFFF' }}
+                  className="w-full py-3.5 px-4 font-bold text-xs uppercase tracking-[0.2em] rounded-xs hover:brightness-110 flex items-center justify-center gap-2.5 cursor-pointer transition-all shadow-xs"
+                >
+                  <Smartphone className="w-4 h-4 text-amber-400" />
+                  <span>Vincular Autenticador (App)</span>
+                </button>
+              </div>
+            )}
+
+            {/* Estado 3: En proceso de enrolamiento (Muestra Código QR real + Clave secreta + Validación de 6 dígitos) */}
+            {isEnrolling && (
+              <div className="space-y-4 bg-white border border-[#DCD4C9] p-5 rounded-xs shadow-2xs">
+                <div className="border-b border-[#DCD4C9] pb-3 flex items-center justify-between">
+                  <h5 className="font-bold text-xs text-[#18231C] uppercase tracking-wider">
+                    Vinculación de Dispositivo
+                  </h5>
+                  <span className="text-[10px] text-[#6F6860]">Paso obligatorio</span>
+                </div>
+
+                {/* Paso A: Código QR */}
+                <div className="text-center">
+                  <p className="text-xs text-[#544E47] mb-3">
+                    <strong>1.</strong> Escaneá este código QR con <strong>Google Authenticator</strong> o <strong>Authy</strong>:
+                  </p>
+                  <div className="inline-block p-3.5 bg-white border-2 border-[#18231C] rounded-xs shadow-sm">
+                    <QRCodeSVG 
+                      value={mfaUri} 
+                      size={180} 
+                      level="M" 
+                      marginSize={1}
+                    />
+                  </div>
+                </div>
+
+                {/* Paso B: Clave Secreta en texto plano por si falla la cámara */}
+                <div className="space-y-1.5 pt-1">
+                  <p className="text-[11px] text-[#6F6860] font-semibold">
+                    <strong>2.</strong> O ingresá la clave secreta manualmente (si tu cámara no escanea):
+                  </p>
+                  <div className="flex items-center justify-between bg-[#FAF8F5] border border-[#DCD4C9] px-3 py-2 rounded-xs">
+                    <span className="font-mono text-xs font-black tracking-widest text-[#18231C] select-all">
+                      {mfaSecret}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleCopySecret}
+                      className="text-xs text-[#B9522F] hover:text-[#18231C] font-bold flex items-center gap-1 cursor-pointer ml-2"
+                      title="Copiar clave al portapapeles"
+                    >
+                      {copyFeedback ? (
+                        <>
+                          <Check className="w-3.5 h-3.5 text-emerald-600" />
+                          <span className="text-emerald-600">¡Copiada!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3.5 h-3.5" />
+                          <span>Copiar</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-[#8C847B]">
+                    En tu app móvil elegí: "Ingresar clave de configuración" y escribí esta clave.
+                  </p>
+                </div>
+
+                {/* Paso C: Formulario de Validación y Sellado de Enrolamiento con 6 dígitos */}
+                <form onSubmit={handleConfirmEnrollment} className="pt-2 border-t border-[#DCD4C9]/70 space-y-3">
+                  <div>
+                    <label className="block text-[10px] uppercase tracking-[0.2em] font-bold text-[#4A453F] mb-1.5">
+                      <strong>3.</strong> INGRESÁ EL CÓDIGO DE 6 DÍGITOS GENERADO POR TU APP
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      maxLength={6}
+                      value={mfaCode}
+                      onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      placeholder="000 000"
+                      autoComplete="one-time-code"
+                      required
+                      className="w-full px-4 py-3 bg-white border border-[#DCD4C9] rounded-xs text-center font-mono text-2xl tracking-[0.35em] text-[#18231C] font-black focus:outline-none focus:border-[#FDB813]"
+                    />
+                    <p className="text-[10px] text-[#8C847B] mt-1 text-center">
+                      El código cambia cada 30 segundos en tu teléfono móvil.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsEnrolling(false);
+                        setEnrollError(null);
+                      }}
+                      className="flex-1 py-2.5 border border-[#DCD4C9] text-xs font-bold uppercase tracking-wider text-[#6F6860] hover:text-[#18231C] bg-white rounded-xs cursor-pointer"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isSubmittingMfa || mfaCode.length !== 6}
+                      style={{ backgroundColor: '#18231C', color: '#FFFFFF' }}
+                      className="flex-1 py-2.5 font-bold text-xs uppercase tracking-wider rounded-xs hover:brightness-110 flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-50"
+                    >
+                      {isSubmittingMfa ? (
+                        <span>Validando...</span>
+                      ) : (
+                        <>
+                          <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                          <span>Confirmar y Sellar</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
               </div>
             )}
           </div>
