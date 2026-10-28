@@ -8,6 +8,7 @@ interface CorporateServicesDropdownProps {
   onOpenUniformSimulator: () => void;
   theme?: ThemeConfig;
   className?: string;
+  isDarkHeader?: boolean;
 }
 
 export const CorporateServicesDropdown: React.FC<CorporateServicesDropdownProps> = ({
@@ -16,6 +17,7 @@ export const CorporateServicesDropdown: React.FC<CorporateServicesDropdownProps>
   onOpenUniformSimulator,
   theme,
   className = '',
+  isDarkHeader = false,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -62,10 +64,13 @@ export const CorporateServicesDropdown: React.FC<CorporateServicesDropdownProps>
         id="btn-nav-servicios-corporativos"
         onClick={() => setIsOpen((prev) => !prev)}
         style={{
-          borderColor: isOpen ? accent : 'transparent',
-          color: isOpen ? accent : '#18231C',
+          borderColor: isOpen ? accent : (isDarkHeader ? 'rgba(255, 255, 255, 0.2)' : 'transparent'),
+          color: isOpen ? accent : (isDarkHeader ? '#F5F2EC' : '#18231C'),
+          backgroundColor: isDarkHeader ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
         }}
-        className="px-3.5 py-2 rounded-xs border border-transparent hover:border-[#DCD4C9] text-xs font-black uppercase tracking-wider transition-all cursor-pointer select-none flex items-center gap-1.5 shadow-2xs hover:bg-[#FAF8F5]"
+        className={`px-3.5 py-2 rounded-xs border text-xs font-black uppercase tracking-wider transition-all cursor-pointer select-none flex items-center gap-1.5 shadow-2xs ${
+          isDarkHeader ? 'hover:bg-white/15' : 'hover:border-[#DCD4C9] hover:bg-[#FAF8F5]'
+        }`}
         title="Servicios Corporativos Pampero"
         aria-expanded={isOpen}
       >

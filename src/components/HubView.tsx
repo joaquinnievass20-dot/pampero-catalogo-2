@@ -1,6 +1,9 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { UserSession, ThemeConfig } from '../types';
-import { LayoutDashboard, Settings, ShoppingBag, LogOut, ShieldCheck, User, ArrowRight } from 'lucide-react';
+import { LayoutDashboard, Settings, ShoppingBag, LogOut, ShieldCheck, User, ArrowRight, Bell, Sparkles } from 'lucide-react';
+import { subscribeToCRMOrders } from '../services/firebase';
+import { PamperoLogo } from './PamperoLogo';
+import { isColorDark } from '../context/ThemeContext';
 
 interface HubViewProps {
   userSession: UserSession;
@@ -22,7 +25,19 @@ export const HubView: React.FC<HubViewProps> = ({
   onOpenProfile,
 }) => {
   const accent = theme?.accentColor || '#FDB813';
-  const primaryBg = theme?.primaryColor || '#18231C';
+  const hubBg = theme?.hubBgColor || theme?.panelBgColor || theme?.primaryColor || '#18231C';
+  const isHubDark = isColorDark(hubBg);
+  const hubText = theme?.hubTextColor || theme?.panelTextColor || (isHubDark ? '#F5F2EC' : '#18231C');
+
+  const [newQuotesCount, setNewQuotesCount] = useState<number>(0);
+
+  useEffect(() => {
+    const unsub = subscribeToCRMOrders((orders) => {
+      const pending = orders.filter((o) => (o.columnId || o.status) === 'cotizacion').length;
+      setNewQuotesCount(pending);
+    });
+    return () => unsub();
+  }, []);
 
   const operatorName =
     userSession.clientData?.fullName ||
@@ -34,20 +49,15 @@ export const HubView: React.FC<HubViewProps> = ({
     <div className="min-h-screen bg-[#F5F2EC] flex flex-col font-sans selection:bg-[#FDB813] selection:text-black">
       {/* Top Header */}
       <header
-        style={{ backgroundColor: primaryBg }}
-        className="text-[#F5F2EC] border-b border-black/40 px-4 sm:px-8 py-3.5 shadow-md sticky top-0 z-40"
+        style={{ backgroundColor: hubBg, color: hubText }}
+        className="border-b border-black/40 px-4 sm:px-8 py-3.5 shadow-md sticky top-0 z-40 transition-colors"
       >
         <div className="max-w-6xl mx-auto flex items-center justify-between gap-4">
           <div className="flex items-center gap-3.5">
-            <img
-              src="/logo-oficial.png.png"
-              alt="Pampero Oficial"
-              className="h-10 w-auto object-contain"
-              onError={(e) => {
-                if (e.currentTarget.src !== window.location.origin + '/logo.png') {
-                  e.currentTarget.src = '/logo.png';
-                }
-              }}
+            <PamperoLogo 
+              customUrl={theme?.customLogoUrl || theme?.logoUrl}
+              height={36}
+              navBgColor={hubBg}
             />
             <div className="border-l border-white/20 pl-3.5 hidden sm:block">
               <span className="text-[10px] tracking-[0.25em] font-extrabold uppercase text-amber-400 block leading-tight">
@@ -120,12 +130,47 @@ export const HubView: React.FC<HubViewProps> = ({
           </p>
         </div>
 
+        {/* Notificación Toast/Banner de Nuevo Pedido en el CRM al entrar al Hub */}
+        {newQuotesCount > 0 && (
+          <div className="mb-8 p-4 bg-amber-50 border-2 border-[#FDB813] rounded-xs shadow-md flex flex-col sm:flex-row items-center justify-between gap-4 animate-fadeIn">
+            <div className="flex items-center gap-3 text-center sm:text-left">
+              <div className="w-10 h-10 rounded-full bg-[#FDB813] text-[#18231C] flex items-center justify-center shrink-0 font-black shadow-xs">
+                <Bell className="w-5 h-5 text-[#18231C] animate-bounce" />
+              </div>
+              <div>
+                <h3 className="font-display font-bold text-sm sm:text-base text-[#18231C] uppercase tracking-wider flex items-center gap-2 justify-center sm:justify-start">
+                  <span>¡Nuevo pedido para cotizar recibido!</span>
+                  <span className="px-2 py-0.5 bg-red-600 text-white text-[10px] rounded-full font-black animate-pulse shadow-xs">
+                    +{newQuotesCount} {newQuotesCount === 1 ? 'nuevo' : 'nuevos'}
+                  </span>
+                </h3>
+                <p className="text-xs text-[#6F6860] mt-0.5">
+                  Hay cotizaciones entrantes registradas desde la plataforma esperando armado de cotización oficial y asignación de asesor.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={onOpenCRM}
+              className="px-4 py-2 bg-[#18231C] hover:bg-black text-[#FDB813] rounded-xs text-xs font-black uppercase tracking-wider whitespace-nowrap cursor-pointer transition-all shadow-xs flex items-center gap-1.5 shrink-0"
+            >
+              <span>Atender en CRM</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
         {/* 3 Large Action Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8">
           {/* 1. Gestión / CRM */}
-          <div className="bg-white rounded-xs border-2 border-[#DCD4C9] hover:border-[#B9522F] shadow-sm hover:shadow-xl transition-all duration-200 flex flex-col p-6 sm:p-8 text-center group">
-            <div className="w-16 h-16 rounded-xs bg-amber-50 text-[#B9522F] flex items-center justify-center mx-auto mb-5 group-hover:scale-105 transition-transform border border-amber-200">
+          <div className="bg-white rounded-xs border-2 border-[#DCD4C9] hover:border-[#B9522F] shadow-sm hover:shadow-xl transition-all duration-200 flex flex-col p-6 sm:p-8 text-center group relative">
+            <div className="relative w-16 h-16 rounded-xs bg-amber-50 text-[#B9522F] flex items-center justify-center mx-auto mb-5 group-hover:scale-105 transition-transform border border-amber-200">
               <LayoutDashboard className="w-8 h-8" />
+              {newQuotesCount > 0 && (
+                <span className="absolute -top-2 -right-2 px-2 py-0.5 rounded-full bg-red-600 text-white text-[10px] font-black uppercase tracking-wider animate-pulse shadow-md border-2 border-white">
+                  +{newQuotesCount}
+                </span>
+              )}
             </div>
             <h2 className="text-lg font-black text-[#18231C] uppercase tracking-wider mb-2">
               Gestión / CRM
@@ -159,7 +204,7 @@ export const HubView: React.FC<HubViewProps> = ({
               type="button"
               id="btn-hub-admin"
               onClick={onOpenAdmin}
-              style={{ backgroundColor: primaryBg }}
+              style={{ backgroundColor: hubBg }}
               className="w-full py-3.5 px-4 rounded-xs hover:bg-black text-[#F5F2EC] text-xs font-black uppercase tracking-[0.15em] transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
             >
               <span>Panel de Control</span>

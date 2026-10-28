@@ -365,7 +365,7 @@ export const AdminUniformSimulatorConfigTab: React.FC<AdminUniformSimulatorConfi
               filteredProducts.map((p) => {
                 const pId = p.id || p.code;
                 const isEnabled = (config.enabledProductIds || []).includes(pId);
-                const thumb = p.image || (p.images && p.images[0]) || '/placeholder.jpg';
+                const thumb = (p.image && p.image.trim()) || (p.images && p.images[0]) || '/logo.png';
 
                 return (
                   <label
@@ -382,9 +382,10 @@ export const AdminUniformSimulatorConfigTab: React.FC<AdminUniformSimulatorConfi
                         className="rounded-xs text-[#B9522F] accent-[#B9522F] cursor-pointer w-4 h-4 shrink-0"
                       />
                       <img
-                        src={thumb}
+                        src={thumb || '/logo.png'}
                         alt={p.name}
                         className="w-10 h-10 object-contain rounded-xs border border-[#DCD4C9] bg-white shrink-0"
+                        onError={(e) => { e.currentTarget.src = '/logo.png'; }}
                       />
                       <div className="min-w-0">
                         <p className="text-xs font-bold text-[#18231C] truncate">{p.name}</p>
@@ -512,9 +513,10 @@ export const AdminUniformSimulatorConfigTab: React.FC<AdminUniformSimulatorConfi
                 <div key={cg.id} className="p-3 bg-neutral-50 border border-neutral-200 rounded-xs flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2.5 min-w-0">
                     <img
-                      src={cg.baseImage}
+                      src={cg.baseImage || '/logo.png'}
                       alt={cg.name}
                       className="w-10 h-10 object-contain rounded-xs border border-neutral-300 bg-white shrink-0"
+                      onError={(e) => { e.currentTarget.src = '/logo.png'; }}
                     />
                     <div className="min-w-0">
                       <p className="text-xs font-bold text-neutral-800 truncate">{cg.name}</p>

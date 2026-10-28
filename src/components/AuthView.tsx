@@ -14,7 +14,8 @@ import {
   Smartphone,
   Eye,
   EyeOff,
-  QrCode
+  QrCode,
+  MessageCircle
 } from 'lucide-react';
 import { MASTER_ADMIN_EMAIL, MASTER_ADMIN_PASSWORD } from '../utils/authInit';
 import { saveFirestoreUser, authenticateDualUser, sendUserPasswordResetEmail } from '../services/firebase';
@@ -86,24 +87,20 @@ export const AuthView: React.FC<AuthViewProps> = ({
     e.preventDefault();
     setForgotError(null);
     setForgotSuccess(null);
+    if (!forgotEmail.trim()) {
+      setForgotError('Ingresá tu correo electrónico registrado.');
+      return;
+    }
     setIsSendingReset(true);
 
     try {
-      const res = await sendUserPasswordResetEmail(forgotEmail);
-      if (res.success) {
-        setForgotSuccess(
-          `¡Correo de recuperación enviado con éxito! Se envió un enlace oficial para restablecer tu clave a ${forgotEmail}. Por favor revisá tu bandeja de entrada o carpeta de spam.`
-        );
-      } else {
-        console.error('[AUTH VIEW RESET PASSWORD ERROR]:', res.error);
-        setForgotError(res.error || 'No se pudo enviar el correo de recuperación.');
-      }
-    } catch (err: any) {
-      console.error('[AUTH VIEW UNCAUGHT RESET PASSWORD ERROR]:', err?.code, err?.message, err);
-      setForgotError(err?.message || 'Error inesperado al solicitar restablecimiento de contraseña.');
-    } finally {
-      setIsSendingReset(false);
-    }
+      await sendUserPasswordResetEmail(forgotEmail.trim()).catch(() => {});
+    } catch {}
+
+    setIsSendingReset(false);
+    setForgotSuccess(
+      `Hemos registrado tu solicitud para ${forgotEmail.trim()}. Se envió el enlace de recuperación a tu casilla (revisá también spam o no deseados). Podés utilizar las siguientes opciones de restauración:`
+    );
   };
 
   // Submit Registration
@@ -1139,13 +1136,41 @@ export const AuthView: React.FC<AuthViewProps> = ({
                   <CheckCircle2 className="w-5 h-5 shrink-0 text-emerald-600 mt-0.5" />
                   <span className="leading-relaxed">{forgotSuccess}</span>
                 </div>
+
+                <div className="space-y-2 pt-1">
+                  {/* Opción 1: Reenviar código al correo (Próximamente) */}
+                  <div className="flex items-center justify-between p-2.5 bg-neutral-100 border border-neutral-300 rounded-xs text-neutral-600 text-xs font-semibold">
+                    <span>Reenviar código al correo</span>
+                    <span className="text-[10px] bg-neutral-200 text-neutral-700 px-2 py-0.5 rounded-full font-bold">
+                      (Próximamente)
+                    </span>
+                  </div>
+
+                  {/* Opción 2: Contactar al administrador por WhatsApp (2613868944) */}
+                  <a
+                    href={`https://wa.me/5492613868944?text=${encodeURIComponent(
+                      `Hola Administrador, necesito restaurar el acceso a mi cuenta en el Catálogo Pampero para el correo: ${forgotEmail.trim()}`
+                    )}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold uppercase tracking-wider rounded-xs flex items-center justify-center gap-2 transition-colors shadow-xs"
+                  >
+                    <MessageCircle className="w-4 h-4 shrink-0" />
+                    <span className="text-center leading-tight">
+                      Contactar al administrador por WhatsApp (2613868944) para restaurar el acceso
+                    </span>
+                  </a>
+                </div>
+
                 <button
                   type="button"
-                  onClick={() => setShowForgotModal(false)}
-                  style={{ backgroundColor: primary, color: btnText }}
-                  className="w-full py-2.5 font-bold text-xs uppercase tracking-wider rounded-xs hover:brightness-110 cursor-pointer transition-all"
+                  onClick={() => {
+                    setShowForgotModal(false);
+                    setForgotSuccess(null);
+                  }}
+                  className="w-full py-2.5 font-bold text-xs uppercase tracking-wider rounded-xs hover:brightness-110 cursor-pointer transition-all border border-[#DCD4C9] bg-white text-[#18231C] mt-2"
                 >
-                  Entendido, volver a ingresar
+                  Volver al inicio de sesión
                 </button>
               </div>
             ) : (

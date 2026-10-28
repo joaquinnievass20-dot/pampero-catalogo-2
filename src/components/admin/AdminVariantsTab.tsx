@@ -638,9 +638,10 @@ export const AdminVariantsTab: React.FC<AdminVariantsTabProps> = ({
                       }`}
                     >
                       <img
-                        src={p.image}
+                        src={(p.image && p.image.trim()) || (p.images && p.images[0]) || '/logo.png'}
                         alt={p.name}
                         className="w-10 h-10 object-cover rounded-xs border border-[#DCD4C9] shrink-0"
+                        onError={(e) => { e.currentTarget.src = '/logo.png'; }}
                       />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5">
@@ -674,9 +675,10 @@ export const AdminVariantsTab: React.FC<AdminVariantsTabProps> = ({
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 bg-[#FAF8F5] rounded-xs border border-[#DCD4C9]">
                 <div className="flex items-center gap-3.5">
                   <img
-                    src={currentProduct.image}
+                    src={(currentProduct.image && currentProduct.image.trim()) || (currentProduct.images && currentProduct.images[0]) || '/logo.png'}
                     alt={currentProduct.name}
                     className="w-14 h-14 object-cover rounded-xs border border-[#DCD4C9] shadow-xs"
+                    onError={(e) => { e.currentTarget.src = '/logo.png'; }}
                   />
                   <div>
                     <div className="flex items-center gap-2">

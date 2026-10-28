@@ -41,6 +41,7 @@ import {
   subscribeToFirestoreLookbook,
   saveFirestorePromotionsBatch,
   seedInitialPromotionsIfEmpty,
+  recordAuditLog,
   db,
   getFirebaseDb,
 } from './services/firebase';
@@ -65,6 +66,7 @@ import { PamperoLogo } from './components/PamperoLogo';
 import { CategoryMenuNav } from './components/CategoryMenuNav';
 import { UserNavMenu } from './components/UserNavMenu';
 import { CorporateServicesDropdown } from './components/CorporateServicesDropdown';
+import { isColorDark, applyThemeToDocument } from './context/ThemeContext';
 import { 
   Settings, 
   ShoppingBag, 
@@ -99,7 +101,20 @@ export default function App() {
   const [theme, setTheme] = useState<ThemeConfig>(() => {
     try {
       const saved = localStorage.getItem('pampero_theme_config');
-      return saved ? JSON.parse(saved) : INITIAL_THEME;
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        // Si la cabecera quedó fijada con el color oscuro #18231C, restaurar al color oficial #FFFFFF
+        if (parsed.headerBgColor === '#18231C') {
+          parsed.headerBgColor = '#FFFFFF';
+          parsed.headerTextColor = '#18231C';
+          try {
+            localStorage.setItem('pampero_theme_config', JSON.stringify(parsed));
+            localStorage.setItem('pampero_catalog_theme', JSON.stringify(parsed));
+          } catch {}
+        }
+        return parsed;
+      }
+      return INITIAL_THEME;
     } catch {
       return INITIAL_THEME;
     }
@@ -107,50 +122,7 @@ export default function App() {
 
   // Sync theme CSS variables and global font to document and :root
   useEffect(() => {
-    const selectedFont = theme.fontFamily || 'Montserrat';
-
-    // 1. Set font-family directly on body and document
-    document.body.style.fontFamily = `'${selectedFont}', sans-serif`;
-    document.documentElement.style.fontFamily = `'${selectedFont}', sans-serif`;
-    document.documentElement.style.setProperty('--font-family', `'${selectedFont}', sans-serif`);
-    document.documentElement.style.setProperty('--font-display', `'${selectedFont}', sans-serif`);
-
-    // 2. Ensure Google Font stylesheet is loaded dynamically
-    const fontLinkId = 'pampero-dynamic-font';
-    let linkEl = document.getElementById(fontLinkId) as HTMLLinkElement | null;
-    if (!linkEl) {
-      linkEl = document.createElement('link');
-      linkEl.id = fontLinkId;
-      linkEl.rel = 'stylesheet';
-      document.head.appendChild(linkEl);
-    }
-    const fontQuery = encodeURIComponent(selectedFont).replace(/%20/g, '+');
-    linkEl.href = `https://fonts.googleapis.com/css2?family=${fontQuery}:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,400;1,700&display=swap`;
-
-    if (theme.backgroundColor) {
-      document.documentElement.style.setProperty('--background', theme.backgroundColor);
-    }
-    if (theme.textColor) {
-      document.documentElement.style.setProperty('--foreground', theme.textColor);
-    }
-    if (theme.accentColor) {
-      document.documentElement.style.setProperty('--accent', theme.accentColor);
-    }
-    if (theme.headerBgColor) {
-      document.documentElement.style.setProperty('--primary', theme.headerBgColor);
-    }
-    if (theme.seasonBadgeBg) {
-      document.documentElement.style.setProperty('--season-badge-bg', theme.seasonBadgeBg);
-    }
-    if (theme.seasonBadgeText) {
-      document.documentElement.style.setProperty('--season-badge-text', theme.seasonBadgeText);
-    }
-    if (theme.discountBadgeBg) {
-      document.documentElement.style.setProperty('--discount-badge-bg', theme.discountBadgeBg);
-    }
-    if (theme.discountBadgeText) {
-      document.documentElement.style.setProperty('--discount-badge-text', theme.discountBadgeText);
-    }
+    applyThemeToDocument(theme);
   }, [theme]);
 
   // 2. Catalog Products State (initialized from indestructible local backup or defaults)
@@ -493,6 +465,7 @@ export default function App() {
 
   // Quote Drawer
   const [isCartOpen, setIsCartOpen] = useState(false);
+  const themeSaveTimeoutRef = React.useRef<any>(null);
 
   // Persist handlers - Writes directly to Cloud Firestore & updates local state
   const handleUpdateProducts = async (newProducts: Product[]) => {
@@ -505,6 +478,13 @@ export default function App() {
 
     // 1. Persist to Cloud Firestore via Firebase SDK
     saveFirestoreProducts(sanitized);
+
+    // Record audit event silently
+    recordAuditLog({
+      module: 'Catálogo de Productos',
+      action: 'Actualizar Catálogo',
+      details: `Catálogo sincronizado exitosamente con ${sanitized.length} productos`,
+    });
 
     // 2. Persist to local server storage
     try {
@@ -535,16 +515,12 @@ export default function App() {
       }
     } catch (error) {
       console.warn('[FIREBASE] Error al eliminar documento en backend (forzando eliminación en UI):', error);
-      // Crucial: Si deleteDoc falla (porque el ID está corrupto o es de la base vieja),
-      // el bloque catch DEBE forzar la eliminación del producto del estado local de React
       setProducts((prev) => {
         const remaining = prev.filter((p) => p.id !== id && String(p.id || '').trim() !== targetId && String(p.code || '').trim() !== targetId);
         saveCatalogBackup(remaining);
         return remaining;
       });
     } finally {
-      // El bloque catch o finally DEBE forzar la eliminación del producto del estado local de React
-      // (setProducts(prev => prev.filter(p => p.id !== id))) para que desaparezcan visualmente de la tabla sí o sí al apretar el botón
       setProducts((prev) => {
         const remaining = prev.filter((p) => {
           const pId = String(p.id || '').trim();
@@ -554,6 +530,14 @@ export default function App() {
         });
         saveCatalogBackup(remaining);
         return remaining;
+      });
+
+      // Record audit event
+      recordAuditLog({
+        module: 'Catálogo de Productos',
+        action: 'Eliminar Producto',
+        details: `Producto eliminado del catálogo (ID: ${targetId || id})`,
+        metadata: { productId: targetId || id }
       });
     }
   };
@@ -567,6 +551,7 @@ export default function App() {
 
   const handleUpdateTheme = async (newTheme: ThemeConfig) => {
     setTheme(newTheme);
+    applyThemeToDocument(newTheme);
     try {
       localStorage.setItem('pampero_theme_config', JSON.stringify(newTheme));
       localStorage.setItem('pampero_catalog_theme', JSON.stringify(newTheme));
@@ -578,8 +563,18 @@ export default function App() {
       }
     } catch {}
 
-    // Persist to Cloud Firestore via Firebase SDK
-    saveFirestoreStoreConfig({ theme: newTheme });
+    // Persist to Cloud Firestore with debounce to eliminate re-render storms during color dragging
+    if (themeSaveTimeoutRef.current) {
+      clearTimeout(themeSaveTimeoutRef.current);
+    }
+    themeSaveTimeoutRef.current = setTimeout(() => {
+      saveFirestoreStoreConfig({ theme: newTheme });
+      recordAuditLog({
+        module: 'Diseño & Tema',
+        action: 'Actualizar Tema',
+        details: `Configuración visual actualizada (Color Navbar: ${newTheme.headerBgColor || 'Blanco'}, Principal: ${newTheme.primaryColor}, Fuente: ${newTheme.fontFamily})`,
+      });
+    }, 450);
   };
 
   const handleUpdateBranches = async (newBranches: BranchLocation[]) => {
@@ -692,8 +687,9 @@ export default function App() {
       session.email?.toLowerCase() === 'joaquinnievass20@gmail.com';
 
     if (isStaff) {
-      // Redirección obligatoria post-login a vista interna
-      setViewMode(session.role === 'admin' ? 'admin' : 'crm');
+      // Redirección obligatoria post-login a vista interna:
+      // Cuando un administrador o empleado inicia sesión, la primera pantalla obligatoria es el Menú Principal (Hub de trabajo)
+      setViewMode('hub');
     } else {
       setViewMode('catalog');
     }
@@ -826,6 +822,20 @@ export default function App() {
     } catch {}
   };
 
+  const handleUpdateCartItem = (index: number, updatedItem: CartItem) => {
+    setCart((prev) => {
+      const updated = [...prev];
+      if (index >= 0 && index < updated.length) {
+        updated[index] = updatedItem;
+      }
+      try {
+        const storageKey = getCartStorageKey(userSession);
+        localStorage.setItem(storageKey, JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+  };
+
   // Navigation: Open Auth with specific config
   const openAuthScreen = (tab: 'login' | 'register' | 'admin' = 'register', type: 'consumidor' | 'empresa' = 'consumidor') => {
     setAuthInitialTab(tab);
@@ -869,109 +879,131 @@ export default function App() {
     <div className="min-h-screen flex flex-col bg-[#F5F2EC] text-[#22201D] font-sans antialiased selection:bg-[#FDB813] selection:text-black">
       
       {/* Top Header shown on Catalog and Product Detail (Screenshot 3 & 4) */}
-      {(viewMode === 'catalog' || viewMode === 'product_detail') && (
-        <header className="sticky top-0 z-50 w-full bg-white border-b border-[#DCD4C9] shadow-xs">
-          {/* Top Micro Announcement */}
-          <div 
+      {(viewMode === 'catalog' || viewMode === 'product_detail') && (() => {
+        const isDarkHeader = isColorDark(theme.headerBgColor || '#FFFFFF');
+        return (
+          <header 
             style={{ 
-              backgroundColor: theme.primaryColor || '#18231C',
-              color: theme.primaryTextColor || '#F5F2EC'
+              backgroundColor: theme.headerBgColor || '#FFFFFF',
+              borderColor: isDarkHeader ? 'rgba(255, 255, 255, 0.15)' : '#DCD4C9',
             }}
-            className="text-[10px] sm:text-[11px] py-1.5 px-4 flex items-center justify-center gap-3 uppercase tracking-[0.25em] font-medium select-none"
+            className="sticky top-0 z-50 w-full border-b shadow-xs transition-colors"
           >
-            <span>CATÁLOGO DIGITAL · EXHIBICIÓN DE PRODUCTO</span>
-          </div>
-
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex items-center justify-between gap-4">
-            {/* Logo con tamaño bloqueado estrictamente por CSS */}
-            <div
-              className="cursor-pointer shrink-0"
-              onClick={() => setViewMode('landing')}
-              title="Volver a la portada principal"
+            {/* Top Micro Announcement */}
+            <div 
+              style={{ 
+                backgroundColor: theme.primaryColor || '#18231C',
+                color: theme.primaryTextColor || '#F5F2EC'
+              }}
+              className="text-[10px] sm:text-[11px] py-1.5 px-4 flex items-center justify-center gap-3 uppercase tracking-[0.25em] font-medium select-none"
             >
-              <img 
-                src="/logo-oficial.png.png" 
-                alt="Pampero Oficial" 
-                className="h-14 w-auto object-contain shrink-0" 
-                onError={(e) => {
-                  if (e.currentTarget.src !== window.location.origin + '/logo.png') {
-                    e.currentTarget.src = '/logo.png';
-                  }
-                }}
-              />
+              <span>CATÁLOGO DIGITAL · EXHIBICIÓN DE PRODUCTO</span>
             </div>
 
-            {/* Center Category Navigation with persistent mega-menu dropdown */}
-            <div className="hidden lg:flex items-center gap-4">
-              <CategoryMenuNav
-                currentCategory={currentCategory}
-                activePromoFilter={activePromoFilter}
-                categoriesHierarchy={categories}
-                onSelectCategoryItem={(cat, sec, sub) => {
-                  setCurrentCategory(cat);
-                  setCurrentSection(sec || 'Todos');
-                  setCurrentSubCategory(sub || 'Todos');
-                  setActivePromoFilter(null);
-                  setViewMode('catalog');
-                }}
-                onSelectPromo={(tag) => {
-                  setActivePromoFilter(tag);
-                  setViewMode('catalog');
-                }}
-                theme={theme}
-              />
-              <CorporateServicesDropdown
-                onOpenLookbook={() => setViewMode('lookbook')}
-                onOpenSizingPortal={() => setViewMode('sizing_portal')}
-                onOpenUniformSimulator={() => setViewMode('uniform_simulator')}
-                theme={theme}
-              />
-            </div>
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex items-center justify-between gap-4">
+              {/* Logo con auto-adaptación al color de fondo */}
+              <div
+                className="cursor-pointer shrink-0"
+                onClick={() => setViewMode('landing')}
+                title="Volver a la portada principal"
+              >
+                <PamperoLogo 
+                  customLogoUrl={theme.customLogoUrl}
+                  height={theme.logoHeight || 48}
+                  onDarkBackground={isDarkHeader}
+                  navBgColor={theme.headerBgColor}
+                />
+              </div>
 
-            {/* Quick Product Search in Header */}
-            <div className="relative hidden md:flex items-center flex-1 max-w-xs mx-2">
-              <Search className="w-3.5 h-3.5 text-[#8C827A] absolute left-3 pointer-events-none" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  if (viewMode !== 'catalog') setViewMode('catalog');
-                }}
-                placeholder="Buscar artículos..."
-                className="w-full pl-8.5 pr-7 py-1.5 bg-white border border-[#DCD4C9] rounded-xs text-xs text-[#18231C] placeholder-[#8C827A] focus:outline-none focus:border-[#FDB813] transition-all font-medium"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-2 text-[#8C827A] hover:text-[#18231C] text-xs font-bold p-0.5 cursor-pointer"
-                  title="Borrar búsqueda"
-                >
-                  ✕
-                </button>
-              )}
-            </div>
+              {/* Center Category Navigation with persistent mega-menu dropdown */}
+              <div className="hidden lg:flex items-center justify-center gap-4 flex-1 mx-4">
+                <CategoryMenuNav
+                  currentCategory={currentCategory}
+                  activePromoFilter={activePromoFilter}
+                  categoriesHierarchy={categories}
+                  onSelectCategoryItem={(cat, sec, sub) => {
+                    setCurrentCategory(cat);
+                    setCurrentSection(sec || 'Todos');
+                    setCurrentSubCategory(sub || 'Todos');
+                    setActivePromoFilter(null);
+                    setViewMode('catalog');
+                  }}
+                  onSelectPromo={(tag) => {
+                    setActivePromoFilter(tag);
+                    setViewMode('catalog');
+                  }}
+                  theme={theme}
+                  isDarkHeader={isDarkHeader}
+                />
+                <CorporateServicesDropdown
+                  onOpenLookbook={() => setViewMode('lookbook')}
+                  onOpenSizingPortal={() => setViewMode('sizing_portal')}
+                  onOpenUniformSimulator={() => setViewMode('uniform_simulator')}
+                  theme={theme}
+                  isDarkHeader={isDarkHeader}
+                />
+              </div>
 
-            {/* Right User & Quote Actions - Harmonized Dropdown Menu */}
-            <UserNavMenu
-              userSession={userSession}
-              cartCount={totalCartCount}
-              onOpenCart={() => setIsCartOpen(true)}
-              onOpenAuth={() => openAuthScreen('login', 'consumidor')}
-              onLogout={handleLogout}
-              onOpenAdmin={() => setViewMode('admin')}
-              onOpenCRM={() => setViewMode('crm')}
-              onOpenHub={() => setViewMode('hub')}
-              onOpenUniformSimulator={() => setViewMode('uniform_simulator')}
-              onOpenSizingPortal={() => setViewMode('sizing_portal')}
-              onOpenProfile={() => setIsProfileOpen(true)}
-              onOpenOrderTracking={() => setViewMode('order_tracking')}
-              theme={theme}
-            />
-          </div>
-        </header>
-      )}
+              {/* Right User & Quote Actions + Quick Search */}
+              <div className="flex items-center gap-3 shrink-0">
+                <div className="relative hidden md:flex items-center w-48 lg:w-60">
+                  <Search 
+                    className={`w-3.5 h-3.5 absolute left-3 pointer-events-none ${
+                      isDarkHeader ? 'text-gray-400' : 'text-[#8C827A]'
+                    }`} 
+                  />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => {
+                      setSearchQuery(e.target.value);
+                      if (viewMode !== 'catalog') setViewMode('catalog');
+                    }}
+                    placeholder="Buscar artículos..."
+                    style={{
+                      backgroundColor: isDarkHeader ? 'rgba(255, 255, 255, 0.1)' : '#FFFFFF',
+                      borderColor: isDarkHeader ? 'rgba(255, 255, 255, 0.2)' : '#DCD4C9',
+                      color: isDarkHeader ? '#FFFFFF' : '#18231C',
+                    }}
+                    className={`w-full pl-8.5 pr-7 py-1.5 rounded-xs text-xs focus:outline-none focus:border-[#FDB813] transition-all font-medium ${
+                      isDarkHeader ? 'placeholder-white/60' : 'placeholder-[#8C827A]'
+                    }`}
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery('')}
+                      className={`absolute right-2 text-xs font-bold p-0.5 cursor-pointer ${
+                        isDarkHeader ? 'text-gray-300 hover:text-white' : 'text-[#8C827A] hover:text-[#18231C]'
+                      }`}
+                      title="Borrar búsqueda"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+
+                <UserNavMenu
+                  userSession={userSession}
+                  cartCount={totalCartCount}
+                  onOpenCart={() => setIsCartOpen(true)}
+                  onOpenAuth={() => openAuthScreen('login', 'consumidor')}
+                  onLogout={handleLogout}
+                  onOpenAdmin={() => setViewMode('admin')}
+                  onOpenCRM={() => setViewMode('crm')}
+                  onOpenHub={() => setViewMode('hub')}
+                  onOpenUniformSimulator={() => setViewMode('uniform_simulator')}
+                  onOpenSizingPortal={() => setViewMode('sizing_portal')}
+                  onOpenProfile={() => setIsProfileOpen(true)}
+                  onOpenOrderTracking={() => setViewMode('order_tracking')}
+                  theme={theme}
+                  isDarkHeader={isDarkHeader}
+                />
+              </div>
+            </div>
+          </header>
+        );
+      })()}
 
       {/* Main View Router */}
       <main className="flex-1 w-full flex flex-col items-center">
@@ -1042,7 +1074,9 @@ export default function App() {
             userSession={userSession}
             theme={theme}
             onBackToCatalog={() => setViewMode('catalog')}
-            onAddToCart={(prod, col, sz) => handleAddToCart(prod, 1, col, sz)}
+            onAddToCart={(prod, col, sz, sRange, adjPrice, codeSuffix) =>
+              handleAddToCart(prod, 1, col, sz, sRange, adjPrice, codeSuffix)
+            }
           />
         )}
 
@@ -1217,6 +1251,7 @@ export default function App() {
         theme={theme}
         coupons={coupons}
         volumeDiscounts={volumeDiscounts}
+        onUpdateCartItem={handleUpdateCartItem}
       />
 
       {/* User Profile / Address Editing Modal */}

@@ -4,6 +4,7 @@ import { PamperoLogo } from './PamperoLogo';
 import { CategoryMenuNav } from './CategoryMenuNav';
 import { UserNavMenu } from './UserNavMenu';
 import { CorporateServicesDropdown } from './CorporateServicesDropdown';
+import { isColorDark } from '../context/ThemeContext';
 import { 
   ArrowRight, 
   ChevronLeft, 
@@ -310,57 +311,66 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
       </div>
 
       {/* 2. Top Header Navigation */}
-      <header className="sticky top-0 z-50 bg-white border-b border-[#DCD4C9] px-4 sm:px-8 py-3.5 shadow-xs">
-        <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
-          <div className="cursor-pointer shrink-0" onClick={() => onOpenCatalog(null, null)} title="Inicio">
-            <img 
-              src="/logo-oficial.png.png" 
-              alt="Pampero Oficial" 
-              className="h-14 w-auto object-contain shrink-0" 
-              onError={(e) => {
-                if (e.currentTarget.src !== window.location.origin + '/logo.png') {
-                  e.currentTarget.src = '/logo.png';
-                }
-              }}
-            />
-          </div>
+      {(() => {
+        const isDarkHeader = isColorDark(theme?.headerBgColor || '#FFFFFF');
+        return (
+          <header 
+            style={{ 
+              backgroundColor: theme?.headerBgColor || '#FFFFFF',
+              borderColor: isDarkHeader ? 'rgba(255, 255, 255, 0.15)' : '#DCD4C9',
+            }}
+            className="sticky top-0 z-50 border-b px-4 sm:px-8 py-3.5 shadow-xs transition-colors"
+          >
+            <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
+              <div className="cursor-pointer shrink-0" onClick={() => onOpenCatalog(null, null)} title="Inicio">
+                <PamperoLogo 
+                  customLogoUrl={theme?.customLogoUrl}
+                  height={theme?.logoHeight || 48}
+                  onDarkBackground={isDarkHeader}
+                  navBgColor={theme?.headerBgColor}
+                />
+              </div>
 
-          {/* Desktop Categories links with hover mega-menu dropdown */}
-          <div className="hidden md:flex items-center gap-4">
-            <CategoryMenuNav
-              categoriesHierarchy={categoriesHierarchy}
-              onSelectCategoryItem={(cat, sec, sub) => {
-                onSelectCategory(cat, sec, sub);
-              }}
-              onSelectPromo={(tag) => onOpenCatalog(tag, null)}
-              theme={theme}
-            />
-            <CorporateServicesDropdown
-              onOpenLookbook={onOpenLookbook || (() => {})}
-              onOpenSizingPortal={onOpenSizingPortal || (() => {})}
-              onOpenUniformSimulator={onOpenUniformSimulator || (() => {})}
-              theme={theme}
-            />
-          </div>
+              {/* Desktop Categories links with hover mega-menu dropdown */}
+              <div className="hidden md:flex items-center gap-4">
+                <CategoryMenuNav
+                  categoriesHierarchy={categoriesHierarchy}
+                  onSelectCategoryItem={(cat, sec, sub) => {
+                    onSelectCategory(cat, sec, sub);
+                  }}
+                  onSelectPromo={(tag) => onOpenCatalog(tag, null)}
+                  theme={theme}
+                />
+                <CorporateServicesDropdown
+                  onOpenLookbook={onOpenLookbook || (() => {})}
+                  onOpenSizingPortal={onOpenSizingPortal || (() => {})}
+                  onOpenUniformSimulator={onOpenUniformSimulator || (() => {})}
+                  theme={theme}
+                  isDarkHeader={isDarkHeader}
+                />
+              </div>
 
-          {/* User / Session State & Quote Cart (Harmonized Dropdown Menu) */}
-          <UserNavMenu
-            userSession={userSession}
-            cartCount={cartCount}
-            onOpenCart={onOpenCart}
-            onOpenAuth={() => onOpenAuth('login', 'consumidor')}
-            onLogout={onLogout}
-            onOpenAdmin={onOpenAdmin}
-            onOpenCRM={onOpenCRM}
-            onOpenHub={onOpenHub}
-            onOpenUniformSimulator={onOpenUniformSimulator}
-            onOpenSizingPortal={onOpenSizingPortal}
-            onOpenProfile={onOpenProfile}
-            onOpenCatalog={() => onOpenCatalog(null, null)}
-            theme={theme}
-          />
-        </div>
-      </header>
+              {/* User / Session State & Quote Cart (Harmonized Dropdown Menu) */}
+              <UserNavMenu
+                userSession={userSession}
+                cartCount={cartCount}
+                onOpenCart={onOpenCart}
+                onOpenAuth={() => onOpenAuth('login', 'consumidor')}
+                onLogout={onLogout}
+                onOpenAdmin={onOpenAdmin}
+                onOpenCRM={onOpenCRM}
+                onOpenHub={onOpenHub}
+                onOpenUniformSimulator={onOpenUniformSimulator}
+                onOpenSizingPortal={onOpenSizingPortal}
+                onOpenProfile={onOpenProfile}
+                onOpenCatalog={() => onOpenCatalog(null, null)}
+                theme={theme}
+                isDarkHeader={isDarkHeader}
+              />
+            </div>
+          </header>
+        );
+      })()}
 
       {/* 3. Hero Section with SLIDING COVERS / DYNAMIC PROMOTIONS + DRAGGABLE */}
       <section 
@@ -386,21 +396,26 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
           )}
 
           {/* Solo renderiza la imagen cuando onSnapshot entregue los datos y la foto termine de cargar */}
-          {!isPromotionsLoading && activeSlide.bannerImage && (
+          {!isPromotionsLoading && Boolean(activeSlide.bannerImage && activeSlide.bannerImage.trim()) && (
             <img
               key={activeSlide.id + '_' + activeSlide.bannerImage}
-              src={activeSlide.bannerImage}
+              src={activeSlide.bannerImage.trim()}
               alt={activeSlide.titleLine1}
+              loading="lazy"
+              decoding="async"
               onLoad={() => setIsImageLoading(false)}
-              onError={() => setIsImageLoading(false)}
+              onError={(e) => {
+                setIsImageLoading(false);
+                e.currentTarget.src = '/logo.png';
+              }}
               className={`h-full w-full object-cover transition-opacity duration-700 ${
                 !isImageLoading ? 'opacity-100 animate-fadeIn' : 'opacity-0'
               }`}
             />
           )}
 
-          {/* Gradient overlay */}
-          <div className="absolute inset-0 bg-gradient-to-r from-[#18231C]/92 via-[#18231C]/65 to-transparent z-20 pointer-events-none" />
+          {/* Gradient overlay - luminosidad natural recuperada */}
+          <div className="absolute inset-0 bg-gradient-to-r from-black/45 via-black/20 to-transparent z-20 pointer-events-none" />
         </div>
 
         {/* Square, semi-transparent navigation arrows matching user specification */}

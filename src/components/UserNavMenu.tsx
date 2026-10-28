@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { UserSession, ThemeConfig } from '../types';
+import { subscribeToCRMOrders } from '../services/firebase';
 import { 
   ShoppingBag, 
   User as UserIcon, 
@@ -32,6 +33,7 @@ interface UserNavMenuProps {
   onOpenOrderTracking?: () => void;
   onOpenCatalog?: () => void;
   theme?: ThemeConfig;
+  isDarkHeader?: boolean;
 }
 
 export const UserNavMenu: React.FC<UserNavMenuProps> = ({
@@ -49,12 +51,24 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
   onOpenOrderTracking,
   onOpenCatalog,
   theme,
+  isDarkHeader = false,
 }) => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [pendingQuotesCount, setPendingQuotesCount] = useState(0);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const accent = theme?.accentColor || '#FDB813';
   const primaryBg = theme?.primaryColor || '#18231C';
+
+  useEffect(() => {
+    if (userSession?.role === 'admin' || userSession?.role === 'employee') {
+      const unsub = subscribeToCRMOrders((orders) => {
+        const count = orders.filter((o) => (o.columnId || o.status) === 'cotizacion').length;
+        setPendingQuotesCount(count);
+      });
+      return () => unsub();
+    }
+  }, [userSession?.role]);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -103,9 +117,9 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
           type="button"
           onClick={onOpenCart}
           style={{
-            backgroundColor: cartCount > 0 ? primaryBg : '#FFFFFF',
-            borderColor: cartCount > 0 ? accent : '#DCD4C9',
-            color: cartCount > 0 ? '#F5F2EC' : '#18231C',
+            backgroundColor: cartCount > 0 ? primaryBg : (isDarkHeader ? 'rgba(255, 255, 255, 0.08)' : '#FFFFFF'),
+            borderColor: cartCount > 0 ? accent : (isDarkHeader ? 'rgba(255, 255, 255, 0.2)' : '#DCD4C9'),
+            color: cartCount > 0 || isDarkHeader ? '#F5F2EC' : '#18231C',
           }}
           className="relative px-3 sm:px-3.5 py-2 rounded-xs border text-xs font-bold uppercase tracking-wider flex items-center gap-2 shadow-2xs transition-all hover:brightness-105 shrink-0 cursor-pointer select-none"
           title="Ver Mi Pedido"
@@ -113,13 +127,13 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
         >
           <ShoppingBag 
             className="w-4 h-4 shrink-0" 
-            style={{ color: cartCount > 0 ? accent : '#18231C' }} 
+            style={{ color: cartCount > 0 ? accent : (isDarkHeader ? '#F5F2EC' : '#18231C') }} 
           />
           <span className="hidden sm:inline font-sans text-xs">Mi Pedido</span>
           <span 
             style={{
-              backgroundColor: cartCount > 0 ? accent : '#EAE6DF',
-              color: cartCount > 0 ? '#18231C' : '#6F6860',
+              backgroundColor: cartCount > 0 ? accent : (isDarkHeader ? 'rgba(255, 255, 255, 0.2)' : '#EAE6DF'),
+              color: cartCount > 0 ? '#18231C' : (isDarkHeader ? '#F5F2EC' : '#6F6860'),
             }}
             className="w-5 h-5 rounded-full text-[10px] font-black flex items-center justify-center shrink-0 shadow-2xs"
           >
@@ -135,25 +149,44 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
             type="button"
             id="btn-user-dropdown-toggle"
             onClick={() => setDropdownOpen((prev) => !prev)}
-            className="flex items-center gap-2 p-1.5 sm:px-2.5 sm:py-1.5 rounded-xs border border-[#DCD4C9] bg-white hover:bg-[#FAF8F5] transition-all cursor-pointer select-none shadow-2xs"
+            style={{
+              backgroundColor: isDarkHeader ? 'rgba(255, 255, 255, 0.1)' : '#FFFFFF',
+              borderColor: isDarkHeader ? 'rgba(255, 255, 255, 0.25)' : '#DCD4C9',
+            }}
+            className={`flex items-center gap-2 p-1.5 sm:px-2.5 sm:py-1.5 rounded-xs border transition-all cursor-pointer select-none shadow-2xs ${
+              isDarkHeader ? 'hover:bg-white/20' : 'hover:bg-[#FAF8F5]'
+            }`}
             title="Opciones de cuenta y administración"
             aria-expanded={dropdownOpen}
           >
             {/* Avatar Circle */}
             <div 
               style={{ backgroundColor: `${accent}22`, borderColor: `${accent}66` }}
-              className="w-7 h-7 rounded-full border flex items-center justify-center text-xs font-black shrink-0"
+              className="w-7 h-7 rounded-full border flex items-center justify-center text-xs font-black shrink-0 overflow-hidden"
             >
-              <span style={{ color: primaryBg }}>{getInitial()}</span>
+              {Boolean(userSession.avatarUrl && userSession.avatarUrl.trim()) ? (
+                <img 
+                  src={userSession.avatarUrl} 
+                  alt={getDisplayName()} 
+                  className="w-full h-full object-cover rounded-full" 
+                  onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                />
+              ) : (
+                <span style={{ color: isDarkHeader ? '#FFFFFF' : primaryBg }}>{getInitial()}</span>
+              )}
             </div>
 
             {/* Name + Chevron (visible on sm+) */}
             <div className="hidden sm:flex items-center gap-1.5 text-left max-w-[130px]">
-              <span className="text-xs font-bold text-[#18231C] truncate leading-tight">
+              <span 
+                style={{ color: isDarkHeader ? '#F5F2EC' : '#18231C' }}
+                className="text-xs font-bold truncate leading-tight"
+              >
                 {getDisplayName()}
               </span>
               <ChevronDown 
-                className={`w-3.5 h-3.5 text-[#6F6860] transition-transform duration-200 shrink-0 ${
+                style={{ color: isDarkHeader ? '#DCD4C9' : '#6F6860' }}
+                className={`w-3.5 h-3.5 transition-transform duration-200 shrink-0 ${
                   dropdownOpen ? 'rotate-180' : ''
                 }`} 
               />
@@ -171,9 +204,18 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
                 <div className="flex items-center gap-2.5">
                   <div 
                     style={{ backgroundColor: primaryBg, color: accent }}
-                    className="w-9 h-9 rounded-full flex items-center justify-center font-black text-sm shrink-0 shadow-2xs"
+                    className="w-9 h-9 rounded-full flex items-center justify-center font-black text-sm shrink-0 shadow-2xs overflow-hidden"
                   >
-                    {getInitial()}
+                    {Boolean(userSession.avatarUrl && userSession.avatarUrl.trim()) ? (
+                      <img 
+                        src={userSession.avatarUrl} 
+                        alt={getDisplayName()} 
+                        className="w-full h-full object-cover rounded-full" 
+                        onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                      />
+                    ) : (
+                      getInitial()
+                    )}
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-xs font-bold text-[#18231C] truncate">
@@ -257,6 +299,11 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
                       <LayoutDashboard className="w-4 h-4 text-[#B9522F]" />
                       <span>CRM Pampero</span>
                     </div>
+                    {pendingQuotesCount > 0 && (
+                      <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full bg-red-600 text-white animate-pulse">
+                        +{pendingQuotesCount} NUEVOS
+                      </span>
+                    )}
                   </button>
                 )}
 
@@ -388,8 +435,8 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
           type="button"
           onClick={onOpenAuth}
           style={{
-            backgroundColor: primaryBg,
-            color: '#F5F2EC'
+            backgroundColor: isDarkHeader ? accent : primaryBg,
+            color: isDarkHeader ? '#18231C' : '#F5F2EC'
           }}
           className="px-4 sm:px-5 py-2 rounded-xs text-[11px] uppercase tracking-[0.25em] font-bold transition-all shadow-2xs hover:brightness-110 cursor-pointer shrink-0"
         >

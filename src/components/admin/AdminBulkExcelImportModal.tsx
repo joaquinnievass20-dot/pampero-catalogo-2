@@ -371,42 +371,123 @@ export const AdminBulkExcelImportModal: React.FC<AdminBulkExcelImportModalProps>
         throw new Error('No se pudo establecer conexión con Firebase Firestore. Verificá tu conexión a internet.');
       }
 
-      // Preparar los productos asegurando que el código SKU sea el ID único de documento
-      const fullProducts: Product[] = parsedRows
-        .filter((p) => Boolean(p.code || p.id))
-        .map((p) => {
-          const sku = String(p.code || p.id).trim();
-          const priceCleaned = typeof p.price === 'number' ? p.price : cleanPrice(p.price);
-          const corporatePriceCleaned = p.corporatePrice !== undefined && p.corporatePrice !== null
-            ? (typeof p.corporatePrice === 'number' ? p.corporatePrice : cleanPrice(p.corporatePrice))
+      // 1. Clasificación inteligente: detectar códigos terminados en -1 para actualizar el talle especial del producto padre
+      const existingMap = new Map<string, Product>();
+      (existingProducts || []).forEach((ep) => {
+        const k = (ep.code || ep.id).trim().toUpperCase();
+        existingMap.set(k, ep);
+      });
+
+      const parentProductsMap = new Map<string, Partial<Product>>();
+      const specialVariantRows: { parentSku: string; price: number; corporatePrice?: number; rawRow: Partial<Product> }[] = [];
+
+      parsedRows.forEach((r) => {
+        const rawSku = String(r.code || r.id || '').trim();
+        if (!rawSku) return;
+
+        const matchSuffix = rawSku.match(/^(.*?)(?:-1|_1)$/i);
+        const parentCandidate = matchSuffix ? matchSuffix[1].trim() : null;
+
+        const isSpecialSuffix = parentCandidate && (
+          existingMap.has(parentCandidate.toUpperCase()) || 
+          parsedRows.some((pr) => String(pr.code || pr.id || '').trim().toUpperCase() === parentCandidate.toUpperCase())
+        );
+
+        if (isSpecialSuffix && parentCandidate) {
+          const priceCleaned = typeof r.price === 'number' ? r.price : cleanPrice(r.price);
+          const corpCleaned = r.corporatePrice !== undefined && r.corporatePrice !== null
+            ? (typeof r.corporatePrice === 'number' ? r.corporatePrice : cleanPrice(r.corporatePrice))
             : Math.round(priceCleaned * 0.85);
 
-          return {
-            id: sku,
-            code: sku,
-            name: p.name || sku,
-            category: p.category || '',
-            section: p.section || '',
-            subCategory: p.subCategory || '',
-            description: p.description || '',
-            features: Array.isArray(p.features) ? p.features : [],
+          specialVariantRows.push({
+            parentSku: parentCandidate,
             price: priceCleaned,
-            corporatePrice: corporatePriceCleaned,
-            discountPercentage: typeof p.discountPercentage === 'number' ? p.discountPercentage : cleanPrice(p.discountPercentage),
-            promotionTag: p.promotionTag || '',
-            image: p.image || '',
-            images: Array.isArray(p.images) && p.images.length > 0 ? p.images : (p.image ? [p.image] : []),
-            imagesMen: Array.isArray(p.imagesMen) ? p.imagesMen : [],
-            imagesWomen: Array.isArray(p.imagesWomen) ? p.imagesWomen : [],
-            availableColors: Array.isArray(p.availableColors) ? p.availableColors : [],
-            availableSizes: Array.isArray(p.availableSizes) ? p.availableSizes : [],
-            standardSizes: p.standardSizes || '',
-            isUnisex: Boolean(p.isUnisex),
-            isCorporateOnly: Boolean(p.isCorporateOnly),
-            specialSizeRanges: p.specialSizeRanges,
-            inStock: true,
-          };
+            corporatePrice: corpCleaned,
+            rawRow: r,
+          });
+        } else {
+          parentProductsMap.set(rawSku.toUpperCase(), r);
+        }
+      });
+
+      // 2. Construir productos regulares a partir de las filas principales
+      const fullProductsMap = new Map<string, Product>();
+
+      parentProductsMap.forEach((p) => {
+        const sku = String(p.code || p.id).trim();
+        const priceCleaned = typeof p.price === 'number' ? p.price : cleanPrice(p.price);
+        const corporatePriceCleaned = p.corporatePrice !== undefined && p.corporatePrice !== null
+          ? (typeof p.corporatePrice === 'number' ? p.corporatePrice : cleanPrice(p.corporatePrice))
+          : Math.round(priceCleaned * 0.85);
+
+        const existing = existingMap.get(sku.toUpperCase());
+
+        fullProductsMap.set(sku.toUpperCase(), {
+          id: sku,
+          code: sku,
+          name: p.name || existing?.name || sku,
+          category: p.category || existing?.category || 'Hombre',
+          section: p.section || existing?.section || 'Todos',
+          subCategory: p.subCategory || existing?.subCategory || 'Todos',
+          description: p.description || existing?.description || '',
+          features: Array.isArray(p.features) ? p.features : (existing?.features || []),
+          price: priceCleaned,
+          corporatePrice: corporatePriceCleaned,
+          discountPercentage: typeof p.discountPercentage === 'number' ? p.discountPercentage : cleanPrice(p.discountPercentage),
+          promotionTag: p.promotionTag || existing?.promotionTag || '',
+          image: p.image || existing?.image || '',
+          images: Array.isArray(p.images) && p.images.length > 0 ? p.images : (p.image ? [p.image] : (existing?.images || [])),
+          imagesMen: Array.isArray(p.imagesMen) ? p.imagesMen : (existing?.imagesMen || []),
+          imagesWomen: Array.isArray(p.imagesWomen) ? p.imagesWomen : (existing?.imagesWomen || []),
+          availableColors: Array.isArray(p.availableColors) ? p.availableColors : (existing?.availableColors || []),
+          availableSizes: Array.isArray(p.availableSizes) ? p.availableSizes : (existing?.availableSizes || []),
+          standardSizes: p.standardSizes || existing?.standardSizes || '',
+          isUnisex: p.isUnisex !== undefined ? Boolean(p.isUnisex) : Boolean(existing?.isUnisex),
+          isCorporateOnly: p.isCorporateOnly !== undefined ? Boolean(p.isCorporateOnly) : Boolean(existing?.isCorporateOnly),
+          specialSizeRanges: p.specialSizeRanges || existing?.specialSizeRanges || [],
+          inStock: true,
         });
+      });
+
+      // 3. Aplicar terminaciones -1 al talle especial del producto padre correspondiente
+      specialVariantRows.forEach(({ parentSku, price, corporatePrice }) => {
+        let parentProd = fullProductsMap.get(parentSku.toUpperCase());
+        if (!parentProd) {
+          const ex = existingMap.get(parentSku.toUpperCase());
+          if (ex) {
+            parentProd = { ...ex };
+            fullProductsMap.set(parentSku.toUpperCase(), parentProd);
+          }
+        }
+
+        if (parentProd) {
+          const existingRanges = parentProd.specialSizeRanges ? [...parentProd.specialSizeRanges] : [];
+          const idx = existingRanges.findIndex((r) => r.suffix === '-1' || r.suffix === '_1');
+          if (idx >= 0) {
+            existingRanges[idx] = {
+              ...existingRanges[idx],
+              price,
+              corporatePrice: corporatePrice || Math.round(price * 0.85),
+            };
+          } else {
+            existingRanges.push({
+              id: `range-${Date.now()}-special-1`,
+              suffix: '-1',
+              rangeLabel: 'Talles Especiales 50 al 58',
+              label: 'Talles Especiales 50 al 58',
+              sizeRangeLabel: 'Talles Especiales 50 al 58',
+              fromSize: '50',
+              toSize: '58',
+              sizes: ['50', '52', '54', '56', '58'],
+              price,
+              corporatePrice: corporatePrice || Math.round(price * 0.85),
+            });
+          }
+          parentProd.specialSizeRanges = existingRanges;
+        }
+      });
+
+      const fullProducts = Array.from(fullProductsMap.values());
 
       // Optimización Extrema: Chunks de 450 elementos y ejecución de batch.commit() en paralelo con Promise.all()
       // Firestore limita cada batch a 500 operaciones. Sin await bloqueante en el bucle principal.

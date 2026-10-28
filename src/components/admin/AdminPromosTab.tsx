@@ -462,11 +462,17 @@ export const AdminPromosTab: React.FC<AdminPromosTabProps> = ({
                 Vista Previa en Tiempo Real del Banner (Estilos en línea dinámicos)
               </span>
               <div className="relative h-48 sm:h-56 w-full rounded-xs overflow-hidden border border-[#DCD4C9] shadow-sm bg-neutral-900">
-                <img
-                  src={form.bannerImage}
-                  alt={form.title || 'Banner Preview'}
-                  className="w-full h-full object-cover object-center opacity-85"
-                />
+                {Boolean(form.bannerImage && form.bannerImage.trim()) ? (
+                  <img
+                    src={form.bannerImage}
+                    alt={form.title || 'Banner Preview'}
+                    className="w-full h-full object-cover object-center opacity-85"
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-neutral-500 text-xs font-medium">
+                    Sin imagen cargada
+                  </div>
+                )}
                 <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/40 to-black/25" />
                 <div className="absolute inset-0 p-5 sm:p-6 flex flex-col justify-end text-white">
                   <span className="inline-block self-start px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider rounded-xs bg-[#B9522F] text-white shadow-xs mb-2">
@@ -806,7 +812,7 @@ export const AdminPromosTab: React.FC<AdminPromosTabProps> = ({
                 className="w-full px-3 py-2 bg-white border border-[#DCD4C9] rounded-xs text-xs font-mono text-[#18231C]"
               />
 
-              {form.bannerImage && (
+              {Boolean(form.bannerImage && form.bannerImage.trim()) && (
                 <div className="flex items-center gap-3 pt-1">
                   <div className="w-16 h-10 rounded-xs overflow-hidden border border-[#DCD4C9] shrink-0 bg-neutral-200">
                     <img 
@@ -814,6 +820,7 @@ export const AdminPromosTab: React.FC<AdminPromosTabProps> = ({
                       alt="Vista previa" 
                       className="w-full h-full object-cover"
                       referrerPolicy="no-referrer"
+                      onError={(e) => { e.currentTarget.src = '/logo.png'; }}
                     />
                   </div>
                   <div className="min-w-0 flex-1">
@@ -1060,9 +1067,10 @@ export const AdminPromosTab: React.FC<AdminPromosTabProps> = ({
                         className="w-4 h-4 rounded-xs text-[#B9522F] accent-[#B9522F]"
                       />
                       <img
-                        src={p.image}
+                        src={(p.image && p.image.trim()) || (p.images && p.images[0]) || '/logo.png'}
                         alt={p.name}
                         className="w-10 h-10 object-cover rounded-xs border border-[#DCD4C9] shrink-0"
+                        onError={(e) => { e.currentTarget.src = '/logo.png'; }}
                       />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
@@ -1124,12 +1132,15 @@ export const AdminPromosTab: React.FC<AdminPromosTabProps> = ({
           >
             {/* Banner Header */}
             <div className="relative h-40 w-full overflow-hidden bg-black">
-              <img
-                src={promo.bannerImage}
-                alt={promo.title}
-                className="w-full h-full object-cover opacity-80"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
+              {Boolean(promo.bannerImage && promo.bannerImage.trim()) && (
+                <img
+                  src={promo.bannerImage}
+                  alt={promo.title}
+                  className="w-full h-full object-cover opacity-95"
+                  onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                />
+              )}
+              <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/20 to-transparent" />
               <div className="absolute inset-0 p-4 flex flex-col justify-end text-white">
                 <span className="self-start px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded-xs bg-[#B9522F] mb-1">
                   {promo.badge}

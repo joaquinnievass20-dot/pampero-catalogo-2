@@ -17,6 +17,7 @@ import {
   fetchFirestoreBranches,
   subscribeToFirestoreBranches,
   subscribeToCRMSales,
+  saveCRMSale,
   deleteCRMSale,
 } from '../../services/firebase';
 import { fixUtf8Encoding, sanitizeObjectEncoding } from '../../utils/encodingUtils';
@@ -46,7 +47,7 @@ import {
   CheckCircle2,
   Sparkles,
 } from 'lucide-react';
-import { CRMImportSalesModal } from './CRMImportSalesModal';
+import { CRMSalesModal } from './CRMSalesModal';
 
 interface CRMCostsTabProps {
   accentColor?: string;
@@ -97,8 +98,54 @@ export const CRMCostsTab: React.FC<CRMCostsTabProps> = ({
     } catch {}
     return [];
   });
-  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
-  const [showSalesListModal, setShowSalesListModal] = useState(false);
+  const [isSalesModalOpen, setIsSalesModalOpen] = useState(false);
+
+  const handleSaveSale = async (sale: Partial<CRMSale>): Promise<boolean> => {
+    try {
+      const res = await saveCRMSale(sale);
+      if (res.success) {
+        setSales((prev) => {
+          const cleanAmt = Number(sale.amount ?? sale.totalDaily ?? 0) || 0;
+          const updatedItem: CRMSale = {
+            id: res.id,
+            date: sale.date || new Date().toISOString().split('T')[0],
+            branch: sale.branch || 'Maipú',
+            period: sale.period || 'Diario',
+            amount: cleanAmt,
+            totalDaily: cleanAmt,
+            detail: sale.detail || '',
+            registeredBy: 'Admin / Operador',
+            updatedAt: new Date().toISOString(),
+          };
+          const map = new Map<string, CRMSale>();
+          prev.forEach((s) => map.set(s.id, s));
+          map.set(res.id, updatedItem);
+          const list = Array.from(map.values());
+          list.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+          return list;
+        });
+        return true;
+      }
+      return false;
+    } catch (err) {
+      console.error('[CRMCostsTab] Error al guardar venta:', err);
+      return false;
+    }
+  };
+
+  const handleDeleteSale = async (id: string): Promise<boolean> => {
+    try {
+      const ok = await deleteCRMSale(id);
+      if (ok) {
+        setSales((prev) => prev.filter((s) => s.id !== id));
+        return true;
+      }
+      return false;
+    } catch (err) {
+      console.error('[CRMCostsTab] Error al eliminar venta:', err);
+      return false;
+    }
+  };
 
   // Orders source (prop or local storage fallback)
   const allOrdersList = useMemo(() => {
@@ -296,22 +343,15 @@ export const CRMCostsTab: React.FC<CRMCostsTabProps> = ({
       };
     }
 
-    // 1. Sumatoria de todos los ingresos (TOTAL DEL DÍA obtenidos de crm_sales)
-    const totalVentasReales = filteredSales.reduce((acc, s) => acc + (Number(s.totalDaily) || 0), 0);
+    // 1. Sumatoria de todos los ingresos (Suma de las ventas cargadas desde el Modal crm_sales)
+    const totalVentasReales = filteredSales.reduce((acc, s) => acc + (Number(s.amount ?? s.totalDaily) || 0), 0);
     const ventasDiasCount = filteredSales.length;
     const hasRealSales = ventasDiasCount > 0;
 
-    // Si hay ventas cargadas en crm_sales para este filtro, usamos esa sumatoria exacta.
-    const totalOrdersRev = filteredOrders.reduce((acc, o) => acc + (Number(o.totalEstimated) || 0), 0);
-    const hasAnyRealData = sales.length > 0 || expenses.length > 0 || allOrdersList.length > 0;
+    // Ingresos Totales: Suma directa de las ventas cargadas para los filtros aplicados
+    const ingresosTotales = totalVentasReales;
 
-    const ingresosTotales = hasRealSales
-      ? totalVentasReales
-      : (totalOrdersRev > 0
-          ? totalOrdersRev
-          : (hasAnyRealData ? 0 : 11890000));
-
-    // 2. Sumatoria de todos los gastos (Costos Fijos y Variables obtenidos de crm_expenses)
+    // 2. Sumatoria de todos los gastos (Suma de la tabla de costos principal crm_expenses)
     let totalFijos = 0;
     let totalVariables = 0;
     filteredExpenses.forEach((exp) => {
@@ -323,16 +363,13 @@ export const CRMCostsTab: React.FC<CRMCostsTabProps> = ({
       }
     });
 
-    if (!hasAnyRealData && totalFijos === 0 && totalVariables === 0) {
-      totalVariables = 5140000;
-      totalFijos = 4340000;
-    }
-
     const costosTotales = totalFijos + totalVariables;
 
     // 3. Rentabilidad Neta = Ingresos Totales MENOS Costos Totales
     const rentabilidadNeta = ingresosTotales - costosTotales;
-    const margenRentabilidadPct = ingresosTotales > 0 ? Math.round((rentabilidadNeta / ingresosTotales) * 100) : 0;
+    const margenRentabilidadPct = ingresosTotales > 0 
+      ? Math.round((rentabilidadNeta / ingresosTotales) * 100) 
+      : (costosTotales > 0 ? -100 : 0);
     const esPositiva = rentabilidadNeta >= 0;
 
     return {
@@ -657,61 +694,51 @@ export const CRMCostsTab: React.FC<CRMCostsTabProps> = ({
           </div>
         </div>
 
-        {/* Filter Selectors: Mes/Año, Sucursal e Importador de Ventas (Admin only) */}
-        {isAdmin && (
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex items-center gap-1.5 bg-[#FAF8F5] border border-[#DCD4C9] px-2.5 py-1.5 rounded-xs text-xs">
-              <Calendar className="w-3.5 h-3.5 text-neutral-500" />
-              <select
-                value={selectedMonthYear}
-                onChange={(e) => setSelectedMonthYear(e.target.value)}
-                className="bg-transparent font-bold text-[#18231C] outline-none cursor-pointer"
-              >
-                <option value="todos">Todos los Meses</option>
-                {monthYearOptions.map((ym) => (
-                  <option key={ym} value={ym}>{formatMonthYearLabel(ym)}</option>
-                ))}
-              </select>
-            </div>
+        {/* Filter Selectors: Mes/Año, Sucursal y Cargar Ventas */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {isAdmin && (
+            <>
+              <div className="flex items-center gap-1.5 bg-[#FAF8F5] border border-[#DCD4C9] px-2.5 py-1.5 rounded-xs text-xs">
+                <Calendar className="w-3.5 h-3.5 text-neutral-500" />
+                <select
+                  value={selectedMonthYear}
+                  onChange={(e) => setSelectedMonthYear(e.target.value)}
+                  className="bg-transparent font-bold text-[#18231C] outline-none cursor-pointer"
+                >
+                  <option value="todos">Todos los Meses</option>
+                  {monthYearOptions.map((ym) => (
+                    <option key={ym} value={ym}>{formatMonthYearLabel(ym)}</option>
+                  ))}
+                </select>
+              </div>
 
-            <div className="flex items-center gap-1.5 bg-[#FAF8F5] border border-[#DCD4C9] px-2.5 py-1.5 rounded-xs text-xs">
-              <Building2 className="w-3.5 h-3.5 text-neutral-500" />
-              <select
-                value={selectedBranch}
-                onChange={(e) => setSelectedBranch(e.target.value)}
-                className="bg-transparent font-bold text-[#18231C] outline-none cursor-pointer"
-              >
-                <option value="todas">Todas las Sucursales</option>
-                {dynamicBranches.map((b) => (
-                  <option key={b} value={b}>{fixUtf8Encoding(b)}</option>
-                ))}
-              </select>
-            </div>
+              <div className="flex items-center gap-1.5 bg-[#FAF8F5] border border-[#DCD4C9] px-2.5 py-1.5 rounded-xs text-xs">
+                <Building2 className="w-3.5 h-3.5 text-neutral-500" />
+                <select
+                  value={selectedBranch}
+                  onChange={(e) => setSelectedBranch(e.target.value)}
+                  className="bg-transparent font-bold text-[#18231C] outline-none cursor-pointer"
+                >
+                  <option value="todas">Todas las Sucursales</option>
+                  {dynamicBranches.map((b) => (
+                    <option key={b} value={b}>{fixUtf8Encoding(b)}</option>
+                  ))}
+                </select>
+              </div>
+            </>
+          )}
 
-            {/* Botón exclusivo Administrador: Importar Cierres de Ventas */}
-            <button
-              type="button"
-              id="btn-import-sales-excel"
-              onClick={() => setIsImportModalOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#18231C] hover:bg-black text-[#FDB813] text-xs font-bold uppercase tracking-wider rounded-xs transition-colors cursor-pointer border border-[#18231C] shadow-2xs"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5 text-[#FDB813]" />
-              <span>Importar Cierres de Ventas</span>
-            </button>
-
-            {filteredSales.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setShowSalesListModal(true)}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 bg-[#FAF8F5] hover:bg-[#ECE5DC] text-[#18231C] text-xs font-bold rounded-xs transition-colors cursor-pointer border border-[#DCD4C9]"
-                title="Ver lista de cierres diarios importados"
-              >
-                <DollarSign className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Cierres ({filteredSales.length})</span>
-              </button>
-            )}
-          </div>
-        )}
+          {/* Botón Principal: Cargar Ventas */}
+          <button
+            type="button"
+            id="btn-open-sales-modal"
+            onClick={() => setIsSalesModalOpen(true)}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#18231C] hover:bg-black text-[#FDB813] text-xs font-black uppercase tracking-wider rounded-xs transition-colors cursor-pointer border border-[#18231C] shadow-2xs"
+          >
+            <DollarSign className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Cargar Ventas</span>
+          </button>
+        </div>
       </div>
 
       {syncError && isAdmin && (
@@ -1257,6 +1284,17 @@ export const CRMCostsTab: React.FC<CRMCostsTabProps> = ({
           </div>
         </div>
       )}
+
+      {/* Modal Emergente de Carga de Ventas & Registro de Ingresos */}
+      <CRMSalesModal
+        isOpen={isSalesModalOpen}
+        onClose={() => setIsSalesModalOpen(false)}
+        sales={sales}
+        accentColor={accentColor}
+        branches={dynamicBranches}
+        onSaveSale={handleSaveSale}
+        onDeleteSale={handleDeleteSale}
+      />
     </div>
   );
 };

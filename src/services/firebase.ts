@@ -46,6 +46,7 @@ import {
   CostCategoryConfig,
   CRMSale,
   UserSession,
+  AuditLogEntry,
 } from '../types';
 
 /**
@@ -3039,6 +3040,52 @@ export async function saveCRMSalesBatch(
   }
 }
 
+export async function saveCRMSale(
+  sale: Partial<CRMSale>
+): Promise<{ success: boolean; id: string; error?: string }> {
+  const firestoreDb = db || getFirebaseDb();
+  const safeId = sale.id || `sale-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+  const cleanAmount = Number(sale.amount ?? sale.totalDaily ?? 0) || 0;
+  const cleanSale: CRMSale = {
+    id: safeId,
+    date: sale.date || new Date().toISOString().split('T')[0],
+    branch: (sale.branch || 'Maipú').trim(),
+    period: sale.period || 'Diario',
+    amount: cleanAmount,
+    totalDaily: cleanAmount,
+    detail: sale.detail ? String(sale.detail).trim() : '',
+    registeredBy: sale.registeredBy || 'Admin',
+    createdAt: sale.createdAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  // Optimistic local cache
+  try {
+    const local = JSON.parse(localStorage.getItem('pampero_crm_sales') || '[]');
+    const map = new Map<string, CRMSale>();
+    local.forEach((item: CRMSale) => map.set(item.id, item));
+    map.set(cleanSale.id, cleanSale);
+    const merged = Array.from(map.values());
+    merged.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    localStorage.setItem('pampero_crm_sales', JSON.stringify(merged));
+  } catch {}
+
+  if (firestoreDb) {
+    try {
+      const docRef = doc(firestoreDb, 'crm_sales', cleanSale.id);
+      const cleanedData = JSON.parse(
+        JSON.stringify(cleanSale, (k, v) => (v === undefined ? null : v))
+      );
+      await setDoc(docRef, cleanedData, { merge: true });
+      return { success: true, id: cleanSale.id };
+    } catch (err: any) {
+      console.warn('[FIREBASE] saveCRMSale warning:', err?.message || err);
+      return { success: false, id: cleanSale.id, error: err?.message || 'Error guardando venta en Cloud Firestore' };
+    }
+  }
+  return { success: true, id: cleanSale.id };
+}
+
 export function subscribeToCRMSales(
   onUpdate: (sales: CRMSale[]) => void,
   onError?: (err: Error) => void
@@ -3065,11 +3112,14 @@ export function subscribeToCRMSales(
         const list: CRMSale[] = [];
         snapshot.forEach((d) => {
           const data = d.data() as CRMSale;
+          const amt = Number(data.amount ?? data.totalDaily ?? 0) || 0;
           list.push(
             sanitizeObjectEncoding({
               ...data,
               id: d.id,
-              totalDaily: Number(data.totalDaily) || 0,
+              amount: amt,
+              totalDaily: amt,
+              period: data.period || 'Diario',
             })
           );
         });
@@ -3098,11 +3148,14 @@ export async function fetchCRMSales(): Promise<CRMSale[]> {
       const list: CRMSale[] = [];
       snap.forEach((d) => {
         const data = d.data() as CRMSale;
+        const amt = Number(data.amount ?? data.totalDaily ?? 0) || 0;
         list.push(
           sanitizeObjectEncoding({
             ...data,
             id: d.id,
-            totalDaily: Number(data.totalDaily) || 0,
+            amount: amt,
+            totalDaily: amt,
+            period: data.period || 'Diario',
           })
         );
       });
@@ -3515,8 +3568,133 @@ export function subscribeToFirestoreSimulatorConfig(
   }
 }
 
+// ==========================================
+// REGISTRO DE AUDITORÍA SILENCIOSO (AUDIT LOGS)
+// Collection: audit_logs
+// Guarda silenciosamente acciones críticas en CRM, Catálogo, Usuarios y Configuración
+// ==========================================
 
+export async function recordAuditLog(
+  entry: Partial<AuditLogEntry> & { module: string; action: string; [key: string]: any }
+): Promise<void> {
+  const logId = entry.id || `log-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+  
+  // Auto-detect user session if not explicitly provided
+  let activeUserEmail = entry.userEmail || (typeof entry.user === 'string' && entry.user.includes('@') ? entry.user : '');
+  let activeUserName = entry.userName || (typeof entry.user === 'string' && !entry.user.includes('@') ? entry.user : '');
+  let activeUserRole = entry.userRole || entry.role || '';
 
+  if (!activeUserEmail || !activeUserName || !activeUserRole) {
+    try {
+      const sessStr = typeof window !== 'undefined' ? localStorage.getItem('pampero_user_session') : null;
+      if (sessStr) {
+        const sess = JSON.parse(sessStr);
+        if (!activeUserEmail && sess.email) activeUserEmail = sess.email;
+        if (!activeUserName) activeUserName = sess.clientData?.fullName || sess.name || sess.username || sess.displayName || sess.email?.split('@')[0] || 'Administrador Pampero';
+        if (!activeUserRole) activeUserRole = sess.role || sess.type || 'admin';
+      }
+    } catch {}
+  }
 
+  if (!activeUserName) activeUserName = 'Personal Pampero';
+  if (!activeUserEmail) activeUserEmail = 'sistema@pampero.com.ar';
+  if (!activeUserRole) activeUserRole = 'admin';
 
+  const cleanLog: AuditLogEntry = sanitizeObjectEncoding({
+    id: logId,
+    timestamp: entry.timestamp || new Date().toISOString(),
+    userEmail: activeUserEmail,
+    userName: activeUserName,
+    userRole: activeUserRole,
+    module: entry.module || 'General',
+    action: entry.action || 'Modificación',
+    details: entry.details || entry.detail || '',
+    metadata: entry.metadata || (entry.targetId ? { targetId: entry.targetId } : {}),
+  });
 
+  // 1. Respaldo local en localStorage
+  try {
+    const local = JSON.parse(localStorage.getItem('pampero_audit_logs') || '[]');
+    const updated = [cleanLog, ...local.filter((l: any) => l.id !== cleanLog.id)].slice(0, 500); // mantener últimos 500
+    localStorage.setItem('pampero_audit_logs', JSON.stringify(updated));
+  } catch {}
+
+  // 2. Guardado en Cloud Firestore
+  const firestoreDb = db || getFirebaseDb();
+  if (firestoreDb) {
+    try {
+      const docRef = doc(firestoreDb, 'audit_logs', cleanLog.id);
+      const cleaned = JSON.parse(
+        JSON.stringify(cleanLog, (k, v) => (v === undefined ? null : v))
+      );
+      await setDoc(docRef, cleaned, { merge: true });
+      console.log('[FIREBASE AUDIT] Audit event registered successfully:', cleanLog.module, '-', cleanLog.action);
+    } catch (err) {
+      console.warn('[AUDIT LOG] Warning recording audit log:', err);
+    }
+  }
+}
+
+export function subscribeToAuditLogs(
+  onUpdate: (logs: AuditLogEntry[]) => void
+): () => void {
+  // Carga inicial local inmediata
+  try {
+    const local = localStorage.getItem('pampero_audit_logs');
+    if (local) {
+      const parsed = JSON.parse(local);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        onUpdate(parsed.map(sanitizeObjectEncoding));
+      }
+    }
+  } catch {}
+
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return () => {};
+
+  try {
+    const colRef = collection(firestoreDb, 'audit_logs');
+    const unsubscribe = onSnapshot(
+      colRef,
+      (snapshot) => {
+        const logs: AuditLogEntry[] = [];
+        snapshot.docs.forEach((d) => {
+          logs.push(sanitizeObjectEncoding({ id: d.id, ...d.data() }) as AuditLogEntry);
+        });
+        logs.sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
+        
+        if (logs.length > 0) {
+          localStorage.setItem('pampero_audit_logs', JSON.stringify(logs));
+          onUpdate(logs);
+        } else {
+          // If Firestore is empty, check localStorage
+          try {
+            const local = localStorage.getItem('pampero_audit_logs');
+            if (local) {
+              const parsed = JSON.parse(local);
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                onUpdate(parsed.map(sanitizeObjectEncoding));
+                return;
+              }
+            }
+          } catch {}
+          onUpdate([]);
+        }
+      },
+      (error) => {
+        console.warn('[FIREBASE AUDIT] Listener offline notice:', error.message);
+        try {
+          const local = localStorage.getItem('pampero_audit_logs');
+          if (local) {
+            const parsed = JSON.parse(local);
+            if (Array.isArray(parsed)) onUpdate(parsed.map(sanitizeObjectEncoding));
+          }
+        } catch {}
+      }
+    );
+    return unsubscribe;
+  } catch (err) {
+    console.warn('[FIREBASE AUDIT] Error subscribing to audit_logs:', err);
+    return () => {};
+  }
+}

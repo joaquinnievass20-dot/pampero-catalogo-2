@@ -456,12 +456,18 @@ export const AdminLookbookTab: React.FC<AdminLookbookTabProps> = ({
                 onClick={handleImageClick}
                 className="relative rounded-xs overflow-hidden bg-neutral-900 cursor-crosshair border border-neutral-300 select-none"
               >
-                <img
-                  ref={imageRef}
-                  src={activeLook.imageUrl}
-                  alt={activeLook.title}
-                  className="w-full h-auto max-h-[600px] object-cover pointer-events-none"
-                />
+                {Boolean(activeLook.imageUrl && activeLook.imageUrl.trim()) ? (
+                  <img
+                    ref={imageRef}
+                    src={activeLook.imageUrl}
+                    alt={activeLook.title}
+                    className="w-full h-auto max-h-[600px] object-cover pointer-events-none"
+                  />
+                ) : (
+                  <div className="w-full h-64 flex items-center justify-center text-neutral-400 text-xs">
+                    Sin foto cargada para este lookbook
+                  </div>
+                )}
 
                 {/* Hotspot Pins Overlay */}
                 {activeLook.hotspots.map((hs, index) => {

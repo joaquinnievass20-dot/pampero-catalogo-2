@@ -7,6 +7,8 @@ import {
 } from '../types';
 import { CATEGORY_HIERARCHY } from '../data/categories';
 import { CorporateServicesDropdown } from './CorporateServicesDropdown';
+import { PamperoLogo } from './PamperoLogo';
+import { isColorDark } from '../context/ThemeContext';
 import { 
   Search, 
   ShoppingBag, 
@@ -160,8 +162,18 @@ export const Navbar: React.FC<NavbarProps> = ({
     }, 200);
   };
 
+  const navBg = theme.headerBgColor || '#FFFFFF';
+  const isNavDark = isColorDark(navBg);
+  const navTextColor = theme.headerTextColor || (isNavDark ? '#F5F2EC' : '#22201D');
+
   return (
-    <header className="sticky top-0 z-50 bg-white shadow-xs border-b border-neutral-200">
+    <header 
+      className="sticky top-0 z-50 shadow-xs border-b transition-colors"
+      style={{
+        backgroundColor: navBg,
+        borderColor: isNavDark ? 'rgba(255, 255, 255, 0.15)' : '#E5E5E5',
+      }}
+    >
       <div 
         className="text-white text-[11px] py-1.5 px-4 sm:px-8 border-b border-black/30 transition-colors select-none"
         style={{ backgroundColor: theme.primaryColor || '#18231C' }}
@@ -237,7 +249,7 @@ export const Navbar: React.FC<NavbarProps> = ({
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-3.5">
         <div className="flex items-center justify-between gap-4 sm:gap-6">
           
-          {/* LOGO BLOQUEADO ESTRICTAMENTE POR CSS */}
+          {/* LOGO BLOQUEADO ESTRICTAMENTE POR CSS (IZQUIERDA) CON DETECCIÓN CLARO/OSCURO */}
           <div 
             className="cursor-pointer shrink-0" 
             onClick={() => {
@@ -246,94 +258,142 @@ export const Navbar: React.FC<NavbarProps> = ({
               onSelectSubCategory('Todos');
             }}
           >
-            <img 
-              src="/logo-oficial.png.png" 
-              alt="Pampero Indumentaria" 
-              className="h-14 w-auto object-contain shrink-0" 
-              onError={(e) => {
-                if (e.currentTarget.src !== window.location.origin + '/logo.png') {
-                  e.currentTarget.src = '/logo.png';
-                }
-              }}
+            <PamperoLogo 
+              customUrl={theme.customLogoUrl || theme.logoUrl} 
+              height={theme.logoHeight || 48} 
+              navBgColor={navBg} 
             />
           </div>
 
-          <div className="hidden sm:flex flex-1 max-w-md relative">
-            <Search className="w-4 h-4 text-neutral-400 absolute left-3.5 top-3 pointer-events-none" />
-            <input
-              id="main-search-input"
-              type="text"
-              value={searchQuery}
-              onFocus={() => setIsSearchFocused(true)}
-              onBlur={() => {
-                setTimeout(() => setIsSearchFocused(false), 250);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  handleSearchSubmit(searchQuery);
-                }
-              }}
-              onChange={(e) => onSearchChange(e.target.value)}
-              placeholder="Buscar en el catálogo (bombacha, borcego, campera)..."
-              className="w-full pl-10 pr-8 py-2 text-xs rounded-full border border-neutral-300 outline-none bg-neutral-50/70 transition-all"
-              style={{
-                borderColor: isSearchFocused ? accent : undefined,
-                boxShadow: isSearchFocused ? `0 0 0 2px ${accent}22` : undefined,
-              }}
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => onSearchChange('')}
-                className="absolute right-3 top-2.5 text-neutral-400 hover:text-neutral-600 text-xs font-bold"
-              >
-                ✕
-              </button>
-            )}
+          {/* Menú al centro en desktop */}
+          <div className="hidden lg:flex items-center justify-center gap-1 xl:gap-2 flex-1 mx-2">
+            {mainCategories.map((cat) => {
+              const categoryDef = CATEGORY_HIERARCHY.find((c) => c.name === cat);
+              const isCurrent = currentCategory === cat;
+              const isDropdownOpen = activeDropdown === cat;
 
-            {isSearchFocused && recentSearches.length > 0 && (
-              <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-neutral-200 rounded-xl shadow-lg p-3 z-50 animate-fadeIn">
-                <div className="flex items-center justify-between pb-2 mb-2 border-b border-neutral-100 text-[10px] uppercase font-bold text-neutral-500 tracking-wider">
-                  <span className="flex items-center gap-1">
-                    <History className="w-3 h-3" style={{ color: accent }} /> Búsquedas recientes
-                  </span>
+              return (
+                <div
+                  key={cat}
+                  className="relative group"
+                  onMouseEnter={() => handleDropdownEnter(cat)}
+                  onMouseLeave={handleDropdownLeave}
+                >
                   <button
                     type="button"
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      localStorage.removeItem('pampero_search_history');
-                      setRecentSearches([]);
+                    onClick={() => {
+                      onSelectCategory(cat);
+                      onSelectSection('Todos');
+                      onSelectSubCategory('Todos');
+                      setActiveDropdown(null);
                     }}
-                    className="text-neutral-400 hover:text-neutral-700 normal-case tracking-normal"
+                    style={{
+                      color: (isCurrent || isDropdownOpen) ? accent : navTextColor,
+                      textDecorationLine: isCurrent ? 'underline' : 'none',
+                      textDecorationColor: accent,
+                      textUnderlineOffset: '6px',
+                    }}
+                    className="py-2.5 px-3.5 font-bold text-xs uppercase tracking-wider flex items-center gap-1 transition-all cursor-pointer font-display no-underline hover:text-amber-500 hover:underline"
                   >
-                    Borrar historial
+                    <span>{cat}</span>
+                    {categoryDef?.sections && categoryDef.sections.length > 0 && (
+                      <ChevronDown 
+                        className={`w-3 h-3 transition-transform duration-200 ${isDropdownOpen ? 'rotate-180' : 'opacity-60'}`} 
+                      />
+                    )}
                   </button>
                 </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {recentSearches.map((term) => (
+              );
+            })}
+
+            {/* Servicios corporativos dropdown */}
+            <div className="ml-1">
+              <CorporateServicesDropdown
+                onOpenLookbook={onOpenLookbook || (() => {})}
+                onOpenSizingPortal={onOpenSizingPortal || (() => {})}
+                onOpenUniformSimulator={onOpenUniformSimulator || (() => {})}
+                theme={theme}
+              />
+            </div>
+          </div>
+
+          {/* DERECHA: Buscador + Carrito */}
+          <div className="flex items-center gap-3 shrink-0">
+            <div className="hidden md:flex relative w-48 lg:w-60">
+              <Search className="w-4 h-4 text-neutral-400 absolute left-3.5 top-2.5 pointer-events-none" />
+              <input
+                id="main-search-input"
+                type="text"
+                value={searchQuery}
+                onFocus={() => setIsSearchFocused(true)}
+                onBlur={() => {
+                  setTimeout(() => setIsSearchFocused(false), 250);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handleSearchSubmit(searchQuery);
+                  }
+                }}
+                onChange={(e) => onSearchChange(e.target.value)}
+                placeholder="Buscar en el catálogo..."
+                className="w-full pl-9 pr-7 py-1.5 text-xs rounded-full border border-neutral-300 outline-none bg-neutral-50/70 transition-all focus:border-amber-400"
+                style={{
+                  borderColor: isSearchFocused ? accent : undefined,
+                  boxShadow: isSearchFocused ? `0 0 0 2px ${accent}22` : undefined,
+                }}
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => onSearchChange('')}
+                  className="absolute right-2.5 top-2 text-neutral-400 hover:text-neutral-600 text-xs font-bold"
+                >
+                  ✕
+                </button>
+              )}
+
+              {isSearchFocused && recentSearches.length > 0 && (
+                <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-neutral-200 rounded-xl shadow-lg p-3 z-50 animate-fadeIn">
+                  <div className="flex items-center justify-between pb-2 mb-2 border-b border-neutral-100 text-[10px] uppercase font-bold text-neutral-500 tracking-wider">
+                    <span className="flex items-center gap-1">
+                      <History className="w-3 h-3" style={{ color: accent }} /> Recientes
+                    </span>
                     <button
-                      key={term}
                       type="button"
                       onMouseDown={(e) => {
                         e.preventDefault();
-                        handleSearchSubmit(term);
+                        localStorage.removeItem('pampero_search_history');
+                        setRecentSearches([]);
                       }}
-                      className="px-2.5 py-1 rounded-full text-xs bg-neutral-100 hover:bg-neutral-200 text-neutral-800 flex items-center gap-1 transition-colors"
+                      className="text-neutral-400 hover:text-neutral-700 normal-case tracking-normal"
                     >
-                      <span>{term}</span>
+                      Borrar
                     </button>
-                  ))}
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {recentSearches.map((term) => (
+                      <button
+                        key={term}
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          handleSearchSubmit(term);
+                        }}
+                        className="px-2 py-0.5 rounded-full text-[11px] bg-neutral-100 hover:bg-neutral-200 text-neutral-800 flex items-center gap-1 transition-colors"
+                      >
+                        <span>{term}</span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
 
-          <div className="flex items-center gap-2 sm:gap-3">
             <button
               id="btn-open-quote-drawer"
               type="button"
               onClick={onOpenCart}
-              className="relative p-2.5 rounded-xl bg-neutral-100 hover:bg-neutral-200 text-neutral-800 transition-all flex items-center gap-2 cursor-pointer"
+              className="relative p-2.5 rounded-xl bg-neutral-100 hover:bg-neutral-200 text-neutral-800 transition-all flex items-center gap-2 cursor-pointer shrink-0"
               title="Ver lista de cotización"
             >
               <ShoppingBag className="w-5 h-5" style={{ color: iconColor }} />
@@ -357,22 +417,6 @@ export const Navbar: React.FC<NavbarProps> = ({
               {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
             </button>
           </div>
-        </div>
-
-        <div className="sm:hidden mt-3 relative">
-          <Search className="w-4 h-4 text-neutral-400 absolute left-3 top-2.5" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => onSearchChange(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                recordSearch(searchQuery);
-              }
-            }}
-            placeholder="Buscar en el catálogo..."
-            className="w-full pl-9 pr-3 py-2 text-xs rounded-lg border border-neutral-300 outline-none"
-          />
         </div>
       </div>
 
@@ -675,6 +719,29 @@ export const Navbar: React.FC<NavbarProps> = ({
                 Iniciar Sesión / Crear Cuenta
               </button>
             )}
+          </div>
+
+          {/* Buscador en la parte inferior del menú móvil */}
+          <div className="pt-3 border-t border-neutral-200">
+            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block mb-1.5">
+              Buscador de Productos
+            </span>
+            <div className="relative">
+              <Search className="w-4 h-4 text-neutral-400 absolute left-3 top-2.5" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => onSearchChange(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    recordSearch(searchQuery);
+                    setMobileMenuOpen(false);
+                  }
+                }}
+                placeholder="Buscar en el catálogo..."
+                className="w-full pl-9 pr-3 py-2 text-xs rounded-lg border border-neutral-300 outline-none bg-neutral-50/70"
+              />
+            </div>
           </div>
         </div>
       )}

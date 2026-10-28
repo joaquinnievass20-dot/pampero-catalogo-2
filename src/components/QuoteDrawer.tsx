@@ -31,6 +31,7 @@ interface QuoteDrawerProps {
   theme: ThemeConfig;
   coupons?: DiscountCoupon[];
   volumeDiscounts?: QuantityDiscountRule[];
+  onUpdateCartItem?: (index: number, updatedItem: CartItem) => void;
 }
 
 export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
@@ -44,6 +45,7 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
   theme,
   coupons = [],
   volumeDiscounts = [],
+  onUpdateCartItem,
 }) => {
   const [couponCodeInput, setCouponCodeInput] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState<DiscountCoupon | null>(null);
@@ -54,6 +56,7 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
   const [copied, setCopied] = useState(false);
   const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
   const [orderNotice, setOrderNotice] = useState<string | null>(null);
+  const [toastNotification, setToastNotification] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
@@ -213,6 +216,35 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
       return 'cotizacion';
     };
 
+    const handleColorChange = (idx: number, newColor: string) => {
+      const item = safeItems[idx];
+      if (!item || !onUpdateCartItem) return;
+      onUpdateCartItem(idx, {
+        ...item,
+        selectedColor: newColor,
+      });
+    };
+
+    const handleSizeChange = (idx: number, newSize: string) => {
+      const item = safeItems[idx];
+      if (!item || !onUpdateCartItem) return;
+      const matchingRange = item.product.specialSizeRanges?.find((r) => r.sizes.includes(newSize));
+      const targetCode = matchingRange?.suffix
+        ? `${item.product.code}${matchingRange.suffix}`
+        : item.product.code;
+      const newUnitPrice = matchingRange
+        ? (isCompany && matchingRange.corporatePrice ? matchingRange.corporatePrice : matchingRange.price)
+        : undefined;
+
+      onUpdateCartItem(idx, {
+        ...item,
+        selectedSize: newSize,
+        specialSizeRange: matchingRange || undefined,
+        unitPriceAdjusted: newUnitPrice,
+        codeWithSuffix: targetCode,
+      });
+    };
+
     // 1. Export to Excel (.xlsx) con numeración progresiva y sincronización automática a Kanban
     const handleExportToExcel = async () => {
       if (safeItems.length === 0 || isSubmittingOrder) return;
@@ -296,7 +328,11 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
         XLSX.writeFile(workbook, `Pedido_Pampero_${cleanNum}_${dateStr}.xlsx`);
 
         setOrderNotice(`¡Pedido ${formattedOrderNum} generado en Excel y sincronizado en el tablero de Gestión!`);
-        setTimeout(() => setOrderNotice(null), 5000);
+        setToastNotification('¡Nuevo pedido de cotización enviado y registrado con éxito!');
+        setTimeout(() => {
+          setOrderNotice(null);
+          setToastNotification(null);
+        }, 6000);
       } catch (err: any) {
         console.error('Error exportando Excel:', err);
         setOrderNotice(`Error al generar Excel: ${err?.message || 'Fallo inesperado'}`);
@@ -351,7 +387,11 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
         const whatsappUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(text)}`;
 
         setOrderNotice(`¡Pedido ${formattedOrderNum} vinculado al Tablero Kanban de Gestión!`);
-        setTimeout(() => setOrderNotice(null), 5000);
+        setToastNotification('¡Nuevo pedido de cotización enviado y registrado con éxito!');
+        setTimeout(() => {
+          setOrderNotice(null);
+          setToastNotification(null);
+        }, 6000);
 
         // Open WhatsApp
         if (typeof window !== 'undefined') {
@@ -371,6 +411,30 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
 
     return (
       <div className="fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-xs animate-fadeIn">
+        {/* Toast Notificación de Nuevo Pedido de Cotización en esquina superior */}
+        {toastNotification && (
+          <div className="fixed top-5 right-5 z-[100] max-w-sm bg-[#18231C] text-white p-3.5 rounded-xs border-2 border-emerald-500 shadow-2xl flex items-center gap-3 animate-fadeIn">
+            <div className="w-8 h-8 rounded-full bg-emerald-500 text-white flex items-center justify-center shrink-0">
+              <Check className="w-5 h-5 font-black" />
+            </div>
+            <div className="flex-1">
+              <h5 className="font-bold text-xs uppercase tracking-wider text-emerald-400">
+                ¡Pedido Registrado!
+              </h5>
+              <p className="text-xs text-neutral-100 mt-0.5 font-medium leading-snug">
+                {toastNotification}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setToastNotification(null)}
+              className="text-neutral-400 hover:text-white p-1 cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
         <div 
           id="quote-cart-drawer"
           className="w-full max-w-md bg-white h-full shadow-2xl flex flex-col justify-between border-l border-[#DCD4C9]"
@@ -446,7 +510,7 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
                     className="bg-[#FAF8F5] rounded-xs p-3 border border-[#DCD4C9] flex gap-3 items-center hover:border-[#18231C]/30 transition-colors shadow-2xs"
                   >
                     <img
-                      src={prod.image || '/logo.png'}
+                      src={(prod.image && prod.image.trim()) || '/logo.png'}
                       alt={prod.name}
                       className="w-16 h-16 object-cover rounded-xs border border-[#DCD4C9] shrink-0 bg-white"
                       onError={(e) => { e.currentTarget.src = '/logo.png'; }}
@@ -459,16 +523,52 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
                         Cód: <span className="font-semibold text-[#18231C]">{displayCode}</span>
                       </p>
 
-                      {/* Prominent Color and Size badges */}
+                      {/* Controles de Selección y Edición Rápida de Color y Talle */}
                       <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-xs bg-[#18231C] text-white text-[10px] font-bold">
-                          <span>Color:</span>
-                          <strong className="text-amber-300">{item.selectedColor || 'Único'}</strong>
-                        </span>
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-xs bg-amber-100 text-amber-950 border border-amber-300 text-[10px] font-bold">
-                          <span>Talle:</span>
-                          <strong className="text-[#18231C]">{item.selectedSize || 'Estándar'}</strong>
-                        </span>
+                        <div className="flex items-center gap-1 bg-[#18231C] text-white px-2 py-0.5 rounded-xs">
+                          <span className="text-[10px] text-neutral-400 font-semibold">Color:</span>
+                          <select
+                            value={item.selectedColor || ''}
+                            onChange={(e) => handleColorChange(idx, e.target.value)}
+                            className="bg-transparent text-amber-300 text-[10px] font-bold outline-none cursor-pointer"
+                            title="Cambiar color del artículo"
+                          >
+                            {(item.product.availableColors && item.product.availableColors.length > 0
+                              ? item.product.availableColors
+                              : [item.selectedColor || 'Estándar']
+                            ).map((c) => (
+                              <option key={c} value={c} className="bg-white text-black font-semibold">
+                                {c}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="flex items-center gap-1 bg-amber-100 text-amber-950 border border-amber-300 px-2 py-0.5 rounded-xs">
+                          <span className="text-[10px] text-amber-800 font-semibold">Talle:</span>
+                          <select
+                            value={item.selectedSize || ''}
+                            onChange={(e) => handleSizeChange(idx, e.target.value)}
+                            className="bg-transparent text-[#18231C] text-[10px] font-bold outline-none cursor-pointer"
+                            title="Cambiar talle del artículo"
+                          >
+                            {(item.product.availableSizes && item.product.availableSizes.length > 0
+                              ? item.product.availableSizes
+                              : [item.selectedSize || 'Estándar']
+                            ).map((s) => (
+                              <option key={`std-${s}`} value={s} className="bg-white text-black font-semibold">
+                                {s} (Estándar)
+                              </option>
+                            ))}
+                            {(item.product.specialSizeRanges || []).map((range) =>
+                              range.sizes.map((s) => (
+                                <option key={`spec-${range.suffix}-${s}`} value={s} className="bg-amber-50 text-amber-900 font-bold">
+                                  {s} ({range.rangeLabel} {range.suffix})
+                                </option>
+                              ))
+                            )}
+                          </select>
+                        </div>
                       </div>
 
                       <div className="text-xs font-bold text-[#18231C] mt-1.5">

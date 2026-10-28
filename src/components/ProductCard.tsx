@@ -61,8 +61,9 @@ export const ProductCard: React.FC<ProductCardProps> = ({
     if (colorImg && !list.includes(colorImg)) {
       list.unshift(colorImg);
     }
-    const unique = list.filter((url, idx, self) => self.indexOf(url) === idx);
-    return unique.length > 0 ? unique : [displayedImage];
+    const unique = list.filter((url, idx, self) => Boolean(url && url.trim()) && self.indexOf(url) === idx);
+    const fallback = (displayedImage && displayedImage.trim()) || (product.image && product.image.trim()) || '/logo.png';
+    return unique.length > 0 ? unique : [fallback];
   }, [product, selectedColor, displayedImage]);
 
   const [currentImgIndex, setCurrentImgIndex] = useState(0);
@@ -92,7 +93,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   }, [selectedColor, product.id]);
 
   const safeImgIndex = Math.min(currentImgIndex, Math.max(0, allImages.length - 1));
-  const activeImageUrl = allImages[safeImgIndex] || displayedImage;
+  const activeImageUrl = allImages[safeImgIndex] || (displayedImage && displayedImage.trim()) || (product.image && product.image.trim()) || '/logo.png';
 
   const handlePrevImage = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -154,7 +155,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           alt={product.name}
           loading="lazy"
           decoding="async"
-          className="aspect-[9/11] w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+          className="aspect-[9/11] w-full object-cover transition-transform duration-200 ease-in-out group-hover:scale-[1.03]"
           referrerPolicy="no-referrer"
         />
 

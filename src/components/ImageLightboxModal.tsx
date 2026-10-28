@@ -42,7 +42,10 @@ export const ImageLightboxModal: React.FC<ImageLightboxModalProps> = ({
     initialPanY: 0,
   });
 
-  const validImages = images && images.length > 0 ? images : ['https://images.unsplash.com/photo-1544923246-77307dd654cb?auto=format&fit=crop&w=800&q=80'];
+  const filteredImages = (images || []).filter((img): img is string => Boolean(img && img.trim() !== ''));
+  const validImages = filteredImages.length > 0 
+    ? filteredImages 
+    : ['https://images.unsplash.com/photo-1544923246-77307dd654cb?auto=format&fit=crop&w=800&q=80'];
 
   // Sync initialIndex when opened
   useEffect(() => {

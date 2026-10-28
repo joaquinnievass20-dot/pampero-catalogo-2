@@ -635,7 +635,7 @@ export const AdminMassImagesTab: React.FC<AdminMassImagesTabProps> = ({
                 {uploadedFilesPreview.map((item, idx) => (
                   <div key={idx} className="bg-white p-2 rounded-xs border border-[#DCD4C9] space-y-1.5 shadow-2xs">
                     <div className="aspect-[4/5] bg-neutral-100 rounded-xs overflow-hidden relative">
-                      <img src={item.dataUrl} alt={item.name} className="w-full h-full object-cover" />
+                      <img src={item.dataUrl || '/logo.png'} alt={item.name} className="w-full h-full object-cover" onError={(e) => { e.currentTarget.src = '/logo.png'; }} />
                       {item.parsedInfo.gender && (
                         <span className={`absolute top-1 left-1 px-1.5 py-0.2 rounded-xs text-[9px] font-bold text-white uppercase ${
                           item.parsedInfo.gender === 'Mujer' ? 'bg-rose-600' : 'bg-blue-600'
@@ -733,7 +733,7 @@ export const AdminMassImagesTab: React.FC<AdminMassImagesTabProps> = ({
               .map((p) => (
                 <div key={p.id} className="p-3 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs flex gap-3">
                   <div className="w-20 h-24 bg-neutral-200 rounded-xs overflow-hidden shrink-0 border border-[#DCD4C9]">
-                    <img src={p.image} alt={p.name} className="w-full h-full object-cover" />
+                    <img src={(p.image && p.image.trim()) || (p.images && p.images[0]) || '/logo.png'} alt={p.name} className="w-full h-full object-cover" onError={(e) => { e.currentTarget.src = '/logo.png'; }} />
                   </div>
                   <div className="flex-1 min-w-0 space-y-1.5">
                     <div className="flex items-center justify-between">

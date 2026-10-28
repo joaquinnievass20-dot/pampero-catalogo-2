@@ -327,9 +327,10 @@ export const CRMUniformSimulatorTab: React.FC = () => {
 
             {/* Base Garment Photo */}
             <img 
-              src={selectedGarment.baseImage} 
+              src={selectedGarment.baseImage || '/logo.png'} 
               alt={selectedGarment.name}
               className="w-full h-full object-cover shrink-0"
+              onError={(e) => { e.currentTarget.src = '/logo.png'; }}
             />
 
             {/* Overlaid Logo with Embroidery / Transfer Effect */}

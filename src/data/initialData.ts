@@ -39,8 +39,8 @@ export const INITIAL_THEME: ThemeConfig = {
   secondaryColor: '#DCD4C9',   // Warm Stone / Linen Border
   backgroundColor: '#F5F2EC',  // Warm off-white / canvas
   textColor: '#18231C',        // Primary text
-  headerBgColor: '#18231C',    // Top bar & footer
-  headerTextColor: '#F5F2EC',  // Header text
+  headerBgColor: '#FFFFFF',    // Navbar fondo oficial blanco limpio
+  headerTextColor: '#18231C',  // Header text oficial oscuro
   seasonBadgeBg: '#18231C',    // Cuadrito de temporada fondo
   seasonBadgeText: '#F5F2EC',  // Cuadrito de temporada texto
   discountBadgeBg: '#FDB813',  // Cuadrito de descuento fondo (Amarillo oficial)

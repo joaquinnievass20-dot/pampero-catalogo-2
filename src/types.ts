@@ -34,6 +34,9 @@ export interface UserSession {
   quoteHistory?: ReceivedQuote[];
   totpSecret?: string;
   mfaEnrolled?: boolean;
+  avatarUrl?: string;
+  mustChangePassword?: boolean;
+  password?: string;
 }
 
 export interface Seller {
@@ -56,6 +59,8 @@ export interface EmployeeAccount {
   branch?: string; // 'Maipú' | 'Ciudad' | 'Luján' | 'Todas'
   sellerName?: string;
   crmScope?: 'all' | 'branch_only' | 'own_only'; // 'all': todas las empresas, 'branch_only': sucursal, 'own_only': solo su cartera
+  avatarUrl?: string;
+  mustChangePassword?: boolean;
   createdAt: string;
   active: boolean;
 }
@@ -204,6 +209,8 @@ export interface RegisteredUser {
   updatedAt?: string;
   status: 'active' | 'pending' | 'suspended';
   pricingTier?: 'Consumidor Final' | 'Corporativo / Mayorista' | 'Administrador';
+  avatarUrl?: string;
+  mustChangePassword?: boolean;
   notes?: string;
 }
 
@@ -264,8 +271,13 @@ export interface ThemeConfig {
   secondaryColor: string; // e.g., #DCD4C9
   backgroundColor?: string; // e.g., #F5F2EC
   textColor?: string; // e.g., #18231C
-  headerBgColor?: string; // e.g., #18231C
-  headerTextColor?: string; // e.g., #F5F2EC
+  headerBgColor?: string; // e.g., #FFFFFF (Navbar)
+  headerTextColor?: string; // e.g., #18231C
+  hubBgColor?: string; // Menú de Administrador/Empleados (Hub y CRM)
+  hubTextColor?: string; // Color de texto en Menú Administrador
+  catalogTitleColor?: string; // Textos y títulos del catálogo
+  catalogTextColor?: string; // Textos descriptivos del catálogo
+  buttonBgColor?: string; // Color de fondo de botones generales
   seasonBadgeBg?: string; // e.g., #18231C
   seasonBadgeText?: string; // e.g., #F5F2EC
   discountBadgeBg?: string; // e.g., #FDB813
@@ -289,6 +301,10 @@ export interface ThemeConfig {
   whatsappNumber: string;
   instagramHandle: string;
   emailContact: string;
+  crmCardBgColor?: string; // Color de fondo de la ficha de pedido en CRM
+  crmCardTextColor?: string; // Color de texto de la ficha de pedido en CRM
+  crmCardBorderColor?: string; // Color de borde de la ficha de pedido en CRM
+  crmCardHeaderBg?: string; // Color de cabecera de la ficha de pedido en CRM
   screenTexts?: {
     landingTitle1?: string;
     landingTitle2?: string;
@@ -344,7 +360,22 @@ export type CategoryHierarchyItem = {
   }>;
 };
 
-
+// --- AUDIT LOGS (REGISTRO DE AUDITORÍA) ---
+export interface AuditLogEntry {
+  id: string;
+  timestamp: string; // ISO date
+  userEmail?: string;
+  userName?: string;
+  userRole?: string;
+  user?: string; // alias
+  role?: string; // alias
+  module: 'Catálogo' | 'Precios' | 'CRM' | 'Usuarios' | 'Sucursales' | 'Promociones' | 'Portal Talles' | 'Configuración' | 'Perfil' | string;
+  action: 'Crear' | 'Editar' | 'Eliminar' | 'Estado' | 'Subir Archivo' | 'Importación' | 'Seguridad' | string;
+  details?: string;
+  detail?: string; // alias
+  targetId?: string;
+  metadata?: Record<string, any>;
+}
 
 // --- CRM & MANAGEMENT TYPES ---
 export type CRMOrderStatus = 'cotizacion' | 'sena_50' | 'produccion' | 'listo' | 'entregado' | 'cancelado';
@@ -353,6 +384,7 @@ export interface CRMOrder {
   id: string;
   orderNumber?: string; // Correlative integer order #1, #2, #3...
   date: string;
+  createdAt?: string;
   quoteId?: string;
   clientName: string;
   clientType: 'consumidor_final' | 'empresa';
@@ -371,6 +403,14 @@ export interface CRMOrder {
   blockReason?: string;
   items?: any[];
   updatedAt: string;
+  userId?: string;
+  quotePdfUrl?: string; // Archivo PDF oficial adjunto por ventas/empleado
+  quotePdfName?: string;
+  quotePdfUploadedAt?: string;
+  quotePdfUploadedBy?: string;
+  clientApprovalStatus?: 'pendiente' | 'aprobada' | 'rechazada' | 'approved' | 'rejected';
+  clientApprovalDate?: string;
+  clientRejectionReason?: string;
 }
 
 export type LeadVisitStatus = 'programada' | 'realizada' | 'presupuesto_enviado' | 'cerrada' | 'cancelada';
@@ -489,11 +529,16 @@ export interface CostCategoryConfig {
 }
 
 export interface CRMSale {
-  id: string; // e.g. "2026-10-15-Maipú"
+  id: string; // e.g. "sale-123456" o "2026-10-15-Maipú"
   date: string; // YYYY-MM-DD
   branch: string; // Local e.g. "Maipú", "Ciudad", "Luján"
-  totalDaily: number; // TOTAL DEL DÍA limpio
+  period?: 'Diario' | 'Semanal' | 'Mensual' | string;
+  amount?: number; // Monto Total de Venta
+  totalDaily?: number; // Compatibilidad con cierres diarios
+  detail?: string; // Detalle opcional de la venta/cierre
+  registeredBy?: string;
   rawDate?: string;
   importedAt?: string;
+  createdAt?: string;
   updatedAt?: string;
 }

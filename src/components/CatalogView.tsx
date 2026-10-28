@@ -1087,9 +1087,10 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                       className="group cursor-pointer bg-white p-2.5 rounded-xs border border-[#DCD4C9] hover:border-neutral-700 transition-all shadow-2xs"
                     >
                       <img 
-                        src={p.image} 
+                        src={(p.image && p.image.trim()) || (p.images && p.images[0]) || '/logo.png'} 
                         alt={p.name} 
                         className="w-full aspect-square object-cover rounded-xs" 
+                        onError={(e) => { e.currentTarget.src = '/logo.png'; }}
                       />
                       <p className="mt-1.5 text-xs font-semibold text-neutral-900 truncate">
                         {p.name}

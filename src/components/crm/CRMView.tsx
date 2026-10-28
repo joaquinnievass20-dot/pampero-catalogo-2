@@ -26,9 +26,11 @@ import {
   subscribeToKanbanColumns,
   DEFAULT_COMPANY_COLUMNS,
   KanbanColumnConfig,
-  getNextCorrelativeOrderNumber
+  getNextCorrelativeOrderNumber,
+  recordAuditLog,
 } from '../../services/firebase';
 import { fixUtf8Encoding, sanitizeObjectEncoding } from '../../utils/encodingUtils';
+import { formatDateTime } from '../../utils/dateUtils';
 import { 
   LayoutDashboard, 
   Filter, 
@@ -55,7 +57,8 @@ import {
   DollarSign,
   Download,
   Upload,
-  FileSpreadsheet
+  FileSpreadsheet,
+  FileText
 } from 'lucide-react';
 import { exportOrdersToExcel, importOrdersFromExcel } from '../../utils/kanbanExcelUtils';
 import { CRMNotificationsModal } from './CRMNotificationsModal';
@@ -297,6 +300,12 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
         setOrders((prev) => [updated, ...prev.filter((o) => o.id !== orderId)]);
         try {
           await saveCRMOrder(updated);
+          recordAuditLog({
+            module: 'CRM / Kanban',
+            action: 'Mover Tarjeta',
+            details: `Pedido #${order.orderNumber || order.id} (${order.clientName || 'Cliente'}) movido a etapa "${newStatus}"`,
+            metadata: { orderId: order.id, previousStatus: currentOrderCol, newStatus }
+          });
         } catch (err) {
           console.error('Error al actualizar estado en Drag & Drop:', err);
         }
@@ -379,6 +388,12 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
       setOrders((prev) => [newOrder, ...prev.filter((o) => o.id !== newOrder.id)]);
 
       await saveCRMOrder(newOrder);
+      recordAuditLog({
+        module: 'CRM / Kanban',
+        action: 'Crear Pedido',
+        details: `Nuevo pedido #${newOrder.orderNumber || newOrder.id} (${newOrder.clientName}) creado en etapa "${newOrder.status}"`,
+        metadata: { orderId: newOrder.id }
+      });
       setShowNewOrderModal(false);
     } catch (err) {
       console.error('Error al registrar pedido manual:', err);
@@ -595,6 +610,38 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
         {/* === TAB 1: KANBAN BOARD === */}
         {activeTab === 'board' && (
           <div className="flex flex-col h-full space-y-4">
+            {/* Phase 1 User Request: Notificación visual de nuevo pedido para cotizar recibido */}
+            {orders.filter((o) => (o.columnId || o.status) === 'cotizacion').length > 0 && (
+              <div className="bg-amber-50 border-l-4 border-[#FDB813] p-3.5 rounded-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-amber-950 shadow-2xs animate-fadeIn">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 bg-[#FDB813] text-[#18231C] rounded-xs font-black">
+                    <Sparkles className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h5 className="font-bold text-xs uppercase tracking-wider text-amber-950 flex items-center gap-2">
+                      <span>¡Nuevo pedido para cotizar recibido!</span>
+                      <span className="px-1.5 py-0.5 bg-[#18231C] text-[#FDB813] rounded-xs text-[10px] font-black uppercase font-mono">
+                        {orders.filter((o) => (o.columnId || o.status) === 'cotizacion').length} pendientes
+                      </span>
+                    </h5>
+                    <p className="text-[11px] text-amber-900 mt-0.5">
+                      Hay cotizaciones entrantes registradas desde WhatsApp, Excel o la tienda web esperando cotización oficial y asignación de asesor.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const firstCot = orders.find((o) => (o.columnId || o.status) === 'cotizacion');
+                    if (firstCot) setSelectedOrderForDetail(firstCot);
+                  }}
+                  className="px-3 py-1.5 bg-[#18231C] hover:bg-black text-[#FDB813] rounded-xs text-xs font-bold uppercase tracking-wider whitespace-nowrap cursor-pointer transition-colors shadow-2xs"
+                >
+                  Ver Primera Cotización
+                </button>
+              </div>
+            )}
+
             {/* Phase 3: High-visibility Urgent Alerts Banner */}
             {(delayedOrdersCount > 0 || blockedOrdersCount > 0) && (
               <div className="bg-red-50 border-l-4 border-red-600 p-3.5 rounded-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-red-950 shadow-2xs">
@@ -817,10 +864,15 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
                               draggable
                               onDragStart={(e) => handleDragStart(e, order.id)}
                               onClick={() => setSelectedOrderForDetail(order)}
-                              className={`bg-white p-3 rounded-xs border shadow-xs cursor-grab active:cursor-grabbing hover:shadow-md transition-all select-none ${
+                              style={{
+                                backgroundColor: theme.crmCardBgColor || '#FFFFFF',
+                                borderColor: isDelayed ? '#FCA5A5' : (theme.crmCardBorderColor || '#DCD4C9'),
+                                color: theme.crmCardTextColor || '#18231C',
+                              }}
+                              className={`p-3 rounded-xs border shadow-xs cursor-grab active:cursor-grabbing hover:shadow-md transition-all select-none ${
                                 isDelayed
-                                  ? 'border-red-300 border-l-4 border-l-red-500 bg-red-50/20'
-                                  : 'border-[#DCD4C9] hover:border-[#B9522F]'
+                                  ? 'border-l-4 border-l-red-500 bg-red-50/20'
+                                  : 'hover:border-[#B9522F]'
                               }`}
                             >
                               {/* Card Top */}
@@ -831,16 +883,36 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
                                   ) : (
                                     <User className="w-3 h-3 text-emerald-600" />
                                   )}
-                                  <span className="text-[11px] text-[#18231C] font-black font-mono">
+                                  <span className="text-[11px] font-black font-mono">
                                     {order.orderNumber || `#${order.id.slice(-6)}`}
                                   </span>
                                 </div>
-                                {isDelayed && (
-                                  <span className="text-[9px] font-bold px-1.5 py-0.5 bg-red-100 text-red-700 rounded-xs uppercase flex items-center gap-0.5 animate-pulse">
-                                    <AlertTriangle className="w-2.5 h-2.5" />
-                                    {daysOld}d demorado
-                                  </span>
-                                )}
+                                <div className="flex items-center gap-1">
+                                  {order.quotePdfUrl && (
+                                    <span 
+                                      className="text-[9px] font-bold px-1 py-0.2 bg-purple-50 text-purple-700 border border-purple-200 rounded-xs flex items-center gap-0.5"
+                                      title="Cotización oficial en PDF adjunta"
+                                    >
+                                      📄 PDF
+                                    </span>
+                                  )}
+                                  {order.clientApprovalStatus === 'aprobada' && (
+                                    <span className="text-[9px] font-bold px-1 py-0.2 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-xs">
+                                      ✓ Aprobada
+                                    </span>
+                                  )}
+                                  {order.clientApprovalStatus === 'rechazada' && (
+                                    <span className="text-[9px] font-bold px-1 py-0.2 bg-red-50 text-red-700 border border-red-200 rounded-xs">
+                                      ✕ Rechazada
+                                    </span>
+                                  )}
+                                  {isDelayed && (
+                                    <span className="text-[9px] font-bold px-1.5 py-0.5 bg-red-100 text-red-700 rounded-xs uppercase flex items-center gap-0.5 animate-pulse">
+                                      <AlertTriangle className="w-2.5 h-2.5" />
+                                      {daysOld}d demorado
+                                    </span>
+                                  )}
+                                </div>
                               </div>
 
                               {/* Client Name */}
@@ -911,6 +983,12 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
                                         const updated = sanitizeObjectEncoding({ ...order, status: nextCol.id as CRMOrderStatus, columnId: nextCol.id, updatedAt: new Date().toISOString() });
                                         setOrders((prev) => [updated, ...prev.filter((o) => o.id !== order.id)]);
                                         saveCRMOrder(updated).catch(console.error);
+                                        recordAuditLog({
+                                          module: 'CRM / Kanban',
+                                          action: 'Avanzar Fase',
+                                          details: `Pedido #${order.orderNumber || order.id} (${order.clientName || 'Cliente'}) avanzado a etapa "${nextCol.label}"`,
+                                          metadata: { orderId: order.id, toStatus: nextCol.id }
+                                        });
                                       }}
                                       className="px-2 py-1 bg-[#18231C] hover:bg-[#B9522F] text-white rounded-xs text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 transition-colors cursor-pointer"
                                       title={`Avanzar a ${fixUtf8Encoding(nextCol.label)}`}
@@ -982,20 +1060,40 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
         <OrderDetailModal
           order={selectedOrderForDetail}
           onClose={() => setSelectedOrderForDetail(null)}
+          theme={theme}
+          activeStaffUser={activeStaffUser}
+          sellersList={sellersList}
           onSave={async (updated) => {
             const cleanUpdated = sanitizeObjectEncoding(updated);
             setOrders((prev) => [cleanUpdated, ...prev.filter((o) => o.id !== cleanUpdated.id)]);
             try {
               await saveCRMOrder(cleanUpdated);
+              recordAuditLog({
+                userEmail: userSession?.email || 'operador@pampero.com.ar',
+                userName: activeStaffUser,
+                userRole: userSession?.role || 'employee',
+                module: 'CRM',
+                action: 'Editar',
+                details: `Modificó pedido ${cleanUpdated.orderNumber || cleanUpdated.id} (${cleanUpdated.clientName}) - Fase: ${cleanUpdated.status}, Sucursal: ${cleanUpdated.branch}, Asesor: ${cleanUpdated.seller}${cleanUpdated.quotePdfUrl ? ' [PDF cargado]' : ''}`,
+              });
             } catch (err) {
               console.error('Error al guardar orden:', err);
             }
             setSelectedOrderForDetail(null);
           }}
           onDelete={async (id) => {
+            const ord = orders.find((o) => o.id === id);
             setOrders((prev) => prev.filter((o) => o.id !== id));
             try {
               await deleteCRMOrder(id);
+              recordAuditLog({
+                userEmail: userSession?.email || 'operador@pampero.com.ar',
+                userName: activeStaffUser,
+                userRole: userSession?.role || 'employee',
+                module: 'CRM',
+                action: 'Eliminar',
+                details: `Eliminó pedido ${ord?.orderNumber || id} (${ord?.clientName || 'Cliente'}) del CRM`,
+              });
             } catch (err) {
               console.error('Error al eliminar orden:', err);
             }
@@ -1024,13 +1122,40 @@ const OrderDetailModal: React.FC<{
   onClose: () => void;
   onSave: (order: CRMOrder) => void;
   onDelete: (id: string) => void;
-}> = ({ order, onClose, onSave, onDelete }) => {
+  theme?: ThemeConfig;
+  activeStaffUser?: string;
+  sellersList?: Seller[];
+}> = ({ order, onClose, onSave, onDelete, theme, activeStaffUser = 'Personal Pampero', sellersList = [] }) => {
   const [status, setStatus] = useState<CRMOrderStatus>(order.status);
   const [seller, setSeller] = useState(order.seller || 'Sin asignar');
   const [branch, setBranch] = useState(order.branch || 'Ciudad');
   const [totalEstimated, setTotalEstimated] = useState(String(order.totalEstimated || ''));
   const [blockReason, setBlockReason] = useState(order.blockReason || '');
   const [observations, setObservations] = useState(order.observations || '');
+  const [quotePdfUrl, setQuotePdfUrl] = useState<string | undefined>(order.quotePdfUrl);
+  const [quotePdfName, setQuotePdfName] = useState<string | undefined>(order.quotePdfName);
+  const [clientApprovalStatus, setClientApprovalStatus] = useState<'pendiente' | 'aprobada' | 'rechazada'>(order.clientApprovalStatus || 'pendiente');
+  const [clientRejectionReason, setClientRejectionReason] = useState<string>(order.clientRejectionReason || '');
+
+  const handlePdfFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+      alert('Por favor seleccioná un archivo en formato PDF.');
+      return;
+    }
+    if (file.size > 12 * 1024 * 1024) {
+      alert('El archivo PDF no debe superar los 12MB.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setQuotePdfUrl(reader.result as string);
+      setQuotePdfName(file.name);
+      setClientApprovalStatus('pendiente');
+    };
+    reader.readAsDataURL(file);
+  };
 
   const handleUpdate = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1042,35 +1167,53 @@ const OrderDetailModal: React.FC<{
       totalEstimated: Number(totalEstimated) || order.totalEstimated,
       blockReason: blockReason.trim() || undefined,
       observations: observations.trim() || undefined,
+      quotePdfUrl,
+      quotePdfName,
+      quotePdfUploadedAt: quotePdfUrl ? (order.quotePdfUploadedAt || new Date().toISOString()) : undefined,
+      quotePdfUploadedBy: quotePdfUrl ? (order.quotePdfUploadedBy || activeStaffUser) : undefined,
+      clientApprovalStatus,
+      clientRejectionReason: clientRejectionReason.trim() || undefined,
       updatedAt: new Date().toISOString(),
     });
   };
 
   const handleContactWhatsApp = () => {
     const text = encodeURIComponent(
-      `Hola ${order.clientName}, nos comunicamos de Pampero Mendoza respecto a la cotización / pedido #${order.id.slice(-6)}. ¿Cómo podemos ayudarte?`
+      `Hola ${order.clientName}, nos comunicamos de Pampero Mendoza respecto a la cotización / pedido ${order.orderNumber || `#${order.id.slice(-6)}`}. ¿Cómo podemos ayudarte?`
     );
     window.open(`https://wa.me/?text=${text}`, '_blank');
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fadeIn">
-      <div className="bg-white rounded-xs border border-[#DCD4C9] shadow-2xl max-w-lg w-full overflow-hidden flex flex-col max-h-[90vh]">
-        <div className="bg-[#18231C] px-6 py-4 flex items-center justify-between text-white">
+      <div 
+        style={{
+          backgroundColor: theme?.crmCardBgColor || '#FFFFFF',
+          borderColor: theme?.crmCardBorderColor || '#DCD4C9',
+          color: theme?.crmCardTextColor || '#18231C'
+        }}
+        className="rounded-xs border shadow-2xl max-w-lg w-full overflow-hidden flex flex-col max-h-[92vh]"
+      >
+        <div 
+          style={{ backgroundColor: theme?.crmCardHeaderBg || '#18231C' }}
+          className="px-6 py-4 flex items-center justify-between text-white"
+        >
           <div>
-            <h3 className="font-bold text-sm uppercase tracking-wider">
-              Pedido #{order.id.slice(-6)} · {order.clientName}
+            <h3 className="font-bold text-sm uppercase tracking-wider flex items-center gap-2">
+              <span>{order.orderNumber || `#${order.id.slice(-6)}`}</span>
+              <span>·</span>
+              <span className="truncate max-w-[200px]">{order.clientName}</span>
             </h3>
-            <p className="text-[11px] text-[#DCD4C9]/70">
-              Fecha: {new Date(order.date).toLocaleDateString('es-AR')}
+            <p className="text-[11px] text-[#DCD4C9]/80 font-mono mt-0.5">
+              Registrado el {formatDateTime(order.date)}
             </p>
           </div>
-          <button onClick={onClose} className="text-white/60 hover:text-white cursor-pointer">
+          <button onClick={onClose} className="text-white/60 hover:text-white cursor-pointer p-1">
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <form onSubmit={handleUpdate} className="p-6 space-y-4 overflow-y-auto flex-1">
+        <form onSubmit={handleUpdate} className="p-6 space-y-4 overflow-y-auto flex-1 text-xs">
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-[10px] text-[#6F6860] uppercase font-bold mb-1">
@@ -1079,7 +1222,7 @@ const OrderDetailModal: React.FC<{
               <select
                 value={status}
                 onChange={(e) => setStatus(e.target.value as any)}
-                className="w-full px-2.5 py-1.5 text-xs border border-[#DCD4C9] rounded-xs bg-[#FAF8F5] outline-none font-bold"
+                className="w-full px-2.5 py-1.5 text-xs border border-[#DCD4C9] rounded-xs bg-[#FAF8F5] outline-none font-bold text-[#18231C]"
               >
                 <option value="cotizacion">Cotización Recibida</option>
                 <option value="sena_50">Aprobado / Seña 50%</option>
@@ -1091,7 +1234,7 @@ const OrderDetailModal: React.FC<{
             </div>
             <div>
               <label className="block text-[10px] text-[#6F6860] uppercase font-bold mb-1">
-                Monto $ Total
+                Monto $ Total Estimado
               </label>
               <input
                 type="number"
@@ -1102,16 +1245,25 @@ const OrderDetailModal: React.FC<{
             </div>
           </div>
 
+          {/* Asesor y Sucursal como selectores interactivos y autoasignables */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-[10px] text-[#6F6860] uppercase font-bold mb-1">
-                Vendedora
+                Asesor Comercial (Editable)
               </label>
               <select
                 value={seller}
                 onChange={(e) => setSeller(e.target.value)}
-                className="w-full px-2.5 py-1.5 text-xs border border-[#DCD4C9] rounded-xs bg-white"
+                className="w-full px-2.5 py-1.5 text-xs border border-[#DCD4C9] rounded-xs bg-white text-[#18231C] font-semibold outline-none focus:border-[#FDB813]"
               >
+                {activeStaffUser && (
+                  <option value={activeStaffUser}>👤 Asignarme a mí ({activeStaffUser})</option>
+                )}
+                {sellersList.map((s) => (
+                  <option key={s.id} value={s.name}>
+                    {s.name} ({s.branch})
+                  </option>
+                ))}
                 <option value="Itatí">Itatí</option>
                 <option value="Guada">Guada</option>
                 <option value="Carolina">Carolina</option>
@@ -1121,18 +1273,138 @@ const OrderDetailModal: React.FC<{
             </div>
             <div>
               <label className="block text-[10px] text-[#6F6860] uppercase font-bold mb-1">
-                Sucursal
+                Sucursal Asignada (Editable)
               </label>
               <select
                 value={branch}
                 onChange={(e) => setBranch(e.target.value)}
-                className="w-full px-2.5 py-1.5 text-xs border border-[#DCD4C9] rounded-xs bg-white"
+                className="w-full px-2.5 py-1.5 text-xs border border-[#DCD4C9] rounded-xs bg-white text-[#18231C] font-semibold outline-none focus:border-[#FDB813]"
               >
-                <option value="Ciudad">Ciudad</option>
-                <option value="Maipú">Maipú</option>
-                <option value="Luján">Luján</option>
+                <option value="Ciudad">Ciudad (San Martín 1500)</option>
+                <option value="Maipú">Maipú (Pescara 149)</option>
+                <option value="Luján de Cuyo">Luján de Cuyo (Sáenz Peña)</option>
+                <option value="Todas">Todas las sucursales</option>
               </select>
             </div>
+          </div>
+
+          {/* Subir PDF de Cotización Oficial desde Google Sheets */}
+          <div className="pt-3 border-t border-[#ECE5DC] space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="block text-[10px] text-[#6F6860] uppercase font-bold flex items-center gap-1.5">
+                <FileText className="w-3.5 h-3.5 text-[#B9522F]" />
+                <span>Cotización Oficial en PDF</span>
+              </label>
+              {quotePdfUrl && (
+                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-xs flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3" /> PDF Cargado
+                </span>
+              )}
+            </div>
+
+            {quotePdfUrl ? (
+              <div className="p-3 bg-neutral-50 rounded-xs border border-[#DCD4C9] space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 overflow-hidden">
+                    <FileSpreadsheet className="w-4 h-4 text-purple-600 shrink-0" />
+                    <span className="text-xs font-bold text-[#18231C] truncate font-mono">
+                      {quotePdfName || 'Cotizacion_Oficial.pdf'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <a
+                      href={quotePdfUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      download={quotePdfName || 'Cotizacion_Oficial.pdf'}
+                      className="px-2.5 py-1 bg-white hover:bg-neutral-100 border border-[#DCD4C9] text-xs font-bold text-[#18231C] rounded-xs flex items-center gap-1 cursor-pointer transition-colors"
+                    >
+                      <Download className="w-3 h-3 text-[#B9522F]" />
+                      <span>Ver / Descargar</span>
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setQuotePdfUrl(undefined);
+                        setQuotePdfName(undefined);
+                        setClientApprovalStatus('pendiente');
+                      }}
+                      className="p-1 text-red-600 hover:bg-red-50 rounded-xs transition-colors cursor-pointer"
+                      title="Quitar archivo PDF"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Estado de Aprobación por el Cliente */}
+                <div className="pt-2 border-t border-neutral-200 text-xs">
+                  {clientApprovalStatus === 'aprobada' ? (
+                    <div className="p-2 bg-emerald-50 border border-emerald-200 rounded-xs text-emerald-900 flex items-center gap-2 font-medium">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <div>
+                        <span className="font-bold">✓ Cotización Aceptada y Confirmada por el Cliente</span>
+                        {order.clientApprovalDate && (
+                          <span className="text-[10px] text-emerald-700 block">
+                            Fecha: {formatDateTime(order.clientApprovalDate)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ) : clientApprovalStatus === 'rechazada' ? (
+                    <div className="p-2.5 bg-red-50 border border-red-200 rounded-xs text-red-950 space-y-1.5">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-1.5 text-xs font-bold text-red-800">
+                          <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+                          <span>Cotización Rechazada por el Cliente</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setClientApprovalStatus('pendiente');
+                            setClientRejectionReason('');
+                          }}
+                          className="text-[10px] font-bold text-[#18231C] underline hover:text-[#B9522F] cursor-pointer"
+                        >
+                          Reiniciar ciclo
+                        </button>
+                      </div>
+                      {clientRejectionReason && (
+                        <p className="text-[11px] text-red-800 italic bg-white/60 p-2 rounded-xs border border-red-100">
+                          "{clientRejectionReason}"
+                        </p>
+                      )}
+                      <p className="text-[10px] text-red-700">
+                        Cargá un nuevo PDF corregido desde tus planillas para reiniciar el proceso de aprobación.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 text-[#6F6860] text-[11px]">
+                      <Clock className="w-3.5 h-3.5 text-amber-500" />
+                      <span>Esperando respuesta / confirmación del cliente en su panel.</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div>
+                <label
+                  className="w-full py-2.5 px-3 bg-[#FAF8F5] hover:bg-[#ECE5DC] border-2 border-dashed border-[#DCD4C9] rounded-xs text-xs font-bold text-[#18231C] uppercase flex items-center justify-center gap-2 cursor-pointer transition-colors"
+                >
+                  <Upload className="w-4 h-4 text-[#B9522F]" />
+                  <span>Subir PDF de Cotización (desde planilla de Google)</span>
+                  <input
+                    type="file"
+                    accept=".pdf,application/pdf"
+                    className="hidden"
+                    onChange={handlePdfFileChange}
+                  />
+                </label>
+                <p className="text-[10px] text-[#8C827A] mt-1 text-center">
+                  Cargá el archivo PDF generado desde tus planillas de Google para que el cliente pueda revisarlo y confirmar el pedido.
+                </p>
+              </div>
+            )}
           </div>
 
           <div>
@@ -1155,7 +1427,7 @@ const OrderDetailModal: React.FC<{
             <textarea
               value={observations}
               onChange={(e) => setObservations(e.target.value)}
-              rows={3}
+              rows={2}
               placeholder="Observaciones de entrega, bordados especiales..."
               className="w-full px-2.5 py-1.5 text-xs border border-[#DCD4C9] rounded-xs outline-none resize-none"
             />
@@ -1167,7 +1439,7 @@ const OrderDetailModal: React.FC<{
               <label className="block text-[10px] text-[#6F6860] uppercase font-bold mb-1.5">
                 Artículos Cotizados ({order.items.length})
               </label>
-              <div className="bg-[#FAF8F5] p-2.5 rounded-xs border border-[#ECE5DC] space-y-1 text-xs">
+              <div className="bg-[#FAF8F5] p-2.5 rounded-xs border border-[#ECE5DC] space-y-1 text-xs max-h-36 overflow-y-auto">
                 {order.items.map((it: any, idx: number) => (
                   <div key={idx} className="flex justify-between py-0.5 border-b border-neutral-200/60 last:border-none">
                     <span>

@@ -74,21 +74,23 @@ export const PromoHero: React.FC<PromoHeroProps> = ({
               )}
 
               {/* Background image with lazy loading and async decoding */}
-              <img
-                src={promo.bannerImage}
-                alt={promo.title}
-                loading="lazy"
-                decoding="async"
-                onLoad={() => setLoadedImages((prev) => ({ ...prev, [promo.id]: true }))}
-                onError={() => setLoadedImages((prev) => ({ ...prev, [promo.id]: true }))}
-                className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 brightness-75 ${
-                  isImgLoaded ? 'opacity-100' : 'opacity-0'
-                }`}
-                referrerPolicy="no-referrer"
-              />
+              {Boolean(promo.bannerImage && promo.bannerImage.trim()) && (
+                <img
+                  src={promo.bannerImage}
+                  alt={promo.title}
+                  loading="lazy"
+                  decoding="async"
+                  onLoad={() => setLoadedImages((prev) => ({ ...prev, [promo.id]: true }))}
+                  onError={() => setLoadedImages((prev) => ({ ...prev, [promo.id]: true }))}
+                  className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 brightness-95 ${
+                    isImgLoaded ? 'opacity-100' : 'opacity-0'
+                  }`}
+                  referrerPolicy="no-referrer"
+                />
+              )}
 
-              {/* Gradient overlay */}
-              <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent p-4 flex flex-col justify-between">
+              {/* Gradient overlay ligero para permitir brillo natural y máxima legibilidad */}
+              <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/25 to-transparent p-4 flex flex-col justify-between">
                 <div className="flex items-center justify-between">
                   <span className="px-2.5 py-0.5 rounded-full bg-[#E52421] text-white text-[10px] font-black uppercase tracking-wider shadow-sm flex items-center gap-1">
                     <Sparkles className="w-3 h-3" />

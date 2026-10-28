@@ -137,11 +137,13 @@ export const LookbookView: React.FC<LookbookViewProps> = ({
               <div className="relative w-full aspect-[4/5] sm:aspect-[16/11] max-h-[680px] bg-black flex items-center justify-center rounded-xs">
                 {/* Background image & vignette cleanly clipped */}
                 <div className="absolute inset-0 overflow-hidden rounded-xs pointer-events-none">
-                  <img
-                    src={currentLook.imageUrl}
-                    alt={currentLook.title}
-                    className="w-full h-full object-cover object-center"
-                  />
+                  {Boolean(currentLook.imageUrl && currentLook.imageUrl.trim()) && (
+                    <img
+                      src={currentLook.imageUrl}
+                      alt={currentLook.title}
+                      className="w-full h-full object-cover object-center"
+                    />
+                  )}
 
                   {/* Dark Vignette Overlay to pop the hotspots */}
                   <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/20 pointer-events-none" />
@@ -258,9 +260,10 @@ export const LookbookView: React.FC<LookbookViewProps> = ({
                         >
                           <div className="flex items-start gap-3">
                             <img
-                              src={product.image || product.images?.[0]}
+                              src={(product.image && product.image.trim()) || (product.images && product.images[0]) || '/logo.png'}
                               alt={product.name}
                               className="w-16 h-16 sm:w-20 sm:h-20 object-cover rounded-xs border border-neutral-200 shrink-0 bg-neutral-100"
+                              onError={(e) => { e.currentTarget.src = '/logo.png'; }}
                             />
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center justify-between gap-1">
@@ -419,9 +422,10 @@ export const LookbookView: React.FC<LookbookViewProps> = ({
 
                       {/* Product Thumbnail */}
                       <img
-                        src={product.image || product.images?.[0]}
+                        src={(product.image && product.image.trim()) || (product.images && product.images[0]) || '/logo.png'}
                         alt={product.name}
                         className="w-12 h-12 object-cover rounded-xs border border-neutral-200 shrink-0 bg-neutral-100"
+                        onError={(e) => { e.currentTarget.src = '/logo.png'; }}
                       />
 
                       {/* Product Info */}

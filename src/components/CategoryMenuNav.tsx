@@ -96,12 +96,14 @@ export const CategoryMenuNav: React.FC<CategoryMenuNavProps> = ({
                 }}
                 style={{
                   color: isActive || isHovered ? accent : textColor,
+                  textDecorationLine: isActive || isHovered ? 'underline' : 'none',
+                  textDecorationColor: accent,
+                  textDecorationThickness: '2px',
+                  textUnderlineOffset: '6px',
                 }}
-                className={`text-xs font-bold uppercase tracking-[0.18em] transition-colors inline-flex items-center gap-1 cursor-pointer select-none ${
-                  isActive ? 'underline underline-offset-8 decoration-2' : ''
-                }`}
+                className="text-xs font-bold uppercase tracking-[0.18em] transition-colors inline-flex items-center gap-1 cursor-pointer select-none no-underline hover:text-amber-500"
               >
-                <span>{cat}</span>
+                <span className="no-underline">{cat}</span>
                 <ChevronDown 
                   className={`w-3 h-3 transition-transform duration-200 ${
                     isHovered ? 'rotate-180' : ''

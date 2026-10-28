@@ -116,8 +116,9 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
       list.unshift(colorImg);
     }
 
-    const unique = list.filter((url, index, self): url is string => Boolean(url) && self.indexOf(url) === index);
-    return unique.length > 0 ? unique : (product.image ? [product.image] : []);
+    const unique = list.filter((url, index, self): url is string => Boolean(url && url.trim()) && self.indexOf(url) === index);
+    const fallback = (product.image && product.image.trim()) || '/logo.png';
+    return unique.length > 0 ? unique : [fallback];
   }, [product, selectedColor, unisexModelView]);
 
   // Safe active index clamped to current images length
@@ -158,7 +159,8 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
     : currentBasePrice;
 
   const accent = theme.accentColor || '#FDB813';
-  const displayedImage = allImages[safeActiveIndex] || getProductImageForColor(product, selectedColor) || product.image || '';
+  const rawDisplayedImage = allImages[safeActiveIndex] || getProductImageForColor(product, selectedColor) || product.image;
+  const displayedImage = (rawDisplayedImage && rawDisplayedImage.trim()) ? rawDisplayedImage.trim() : '/logo.png';
 
   const handleAddToCart = () => {
     trackAddToCart({
@@ -370,7 +372,7 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
             {/* Thumbnail Strip Gallery */}
             {allImages.length > 1 && (
               <div className="flex items-center gap-2.5 overflow-x-auto pb-1">
-                {allImages.map((imgUrl, idx) => (
+                {allImages.filter(url => Boolean(url && url.trim())).map((imgUrl, idx) => (
                   <button
                     key={idx}
                     type="button"
@@ -385,10 +387,11 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
                     }`}
                   >
                     <img 
-                      src={imgUrl} 
+                      src={imgUrl || '/logo.png'} 
                       alt={`Miniatura ${idx + 1}`} 
                       className="w-full h-full object-cover" 
                       referrerPolicy="no-referrer"
+                      onError={(e) => { e.currentTarget.src = '/logo.png'; }}
                     />
                   </button>
                 ))}

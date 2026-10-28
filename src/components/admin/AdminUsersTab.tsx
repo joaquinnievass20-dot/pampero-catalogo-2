@@ -254,6 +254,66 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
   const [createError, setCreateError] = useState<string | null>(null);
   const [createdSuccessUser, setCreatedSuccessUser] = useState<RegisteredUser | null>(null);
 
+  // Visibilidad de contraseñas por usuario y avisos
+  const [visiblePasswords, setVisiblePasswords] = useState<Record<string, boolean>>({});
+  const [tempPassNotice, setTempPassNotice] = useState<string | null>(null);
+
+  const togglePasswordVisibility = (userId: string) => {
+    setVisiblePasswords((prev) => ({
+      ...prev,
+      [userId]: !prev[userId],
+    }));
+  };
+
+  const handleGenerateTempPassword = async (u: RegisteredUser) => {
+    const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+    let randomPart = '';
+    for (let i = 0; i < 4; i++) {
+      randomPart += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    const tempPass = `Pampero${randomPart}!`;
+
+    const updatedUser: RegisteredUser = {
+      ...u,
+      password: tempPass,
+      mustChangePassword: true,
+      updatedAt: new Date().toISOString(),
+    };
+
+    setUsers((prev) => prev.map((item) => (item.id === u.id ? updatedUser : item)));
+
+    try {
+      const stored = JSON.parse(localStorage.getItem('pampero_registered_users') || '[]');
+      const nextStored = stored.map((item: any) => (item.id === u.id ? updatedUser : item));
+      localStorage.setItem('pampero_registered_users', JSON.stringify(nextStored));
+    } catch {}
+
+    if (u.type === 'empleado' || u.role === 'employee') {
+      try {
+        const emps: any[] = JSON.parse(localStorage.getItem('pampero_employees') || '[]');
+        const nextEmps = emps.map((emp) =>
+          emp.id === u.id || emp.email?.toLowerCase().trim() === u.email?.toLowerCase().trim()
+            ? { ...emp, password: tempPass, mustChangePassword: true }
+            : emp
+        );
+        localStorage.setItem('pampero_employees', JSON.stringify(nextEmps));
+      } catch {}
+    }
+
+    try {
+      await saveFirestoreUser(updatedUser);
+    } catch (err) {
+      console.error('Error guardando contraseña temporal en Firestore:', err);
+    }
+
+    setVisiblePasswords((prev) => ({ ...prev, [u.id]: true }));
+
+    navigator.clipboard.writeText(tempPass);
+    setTempPassNotice(`¡Contraseña temporal generada para ${u.name}: "${tempPass}" (copiada)! Deberá cambiarla al iniciar sesión por primera vez.`);
+    setTimeout(() => setTempPassNotice(null), 7000);
+    triggerSaveNotice();
+  };
+
   // 1. Suscripción en tiempo real a Cloud Firestore usando onSnapshot
   useEffect(() => {
     // Sembrar usuarios iniciales a Firestore SOLO si está absolutamente vacío
@@ -284,9 +344,10 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
     setNewAccountPassword(generated);
   };
 
-  // Copiar mensaje de acceso para enviar por WhatsApp (sin exponer contraseñas en la tabla)
+  // Copiar mensaje de acceso para enviar por WhatsApp
   const handleCopyCredentialsMessage = (u: RegisteredUser) => {
-    const msg = `¡Hola ${u.name}! Ya tenés habilitado tu acceso al Catálogo Oficial Pampero Gran Mendoza.\n\n👤 Usuario / Email: ${u.email}\n🔗 Ingresá acá: ${window.location.origin}\n\nPodés ingresar con tu clave asignada o restablecerla desde la pantalla de ingreso con la opción "¿Olvidaste tu contraseña?".`;
+    const passInfo = u.password ? `\n🔑 Contraseña temporal: ${u.password}${u.mustChangePassword ? ' (deberás cambiarla al ingresar)' : ''}` : '';
+    const msg = `¡Hola ${u.name}! Ya tenés habilitado tu acceso al Catálogo Oficial Pampero Gran Mendoza.\n\n👤 Usuario / Email: ${u.email}${passInfo}\n🔗 Ingresá acá: ${window.location.origin}\n\nPodés ingresar con tu clave asignada o restablecerla desde la pantalla de ingreso.`;
     navigator.clipboard.writeText(msg);
     setCopiedId(`msg-${u.id}`);
     setTimeout(() => setCopiedId(null), 2500);
@@ -722,6 +783,23 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
         </div>
       </div>
 
+      {/* Aviso de Contraseña Temporal Generada */}
+      {tempPassNotice && (
+        <div className="mb-4 p-3 bg-amber-50 border border-amber-300 text-amber-950 rounded-xs text-xs font-bold flex items-center justify-between shadow-xs animate-fadeIn">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>{tempPassNotice}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setTempPassNotice(null)}
+            className="text-amber-800 hover:text-amber-950 text-xs font-bold p-1"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* Unified Centralized Users Table */}
       <div className="bg-white rounded-xs border border-[#DCD4C9] overflow-hidden shadow-2xs">
         <div className="overflow-x-auto">
@@ -732,6 +810,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
                 <th className="py-3 px-4">Rol & Perfil</th>
                 <th className="py-3 px-4">Contacto Directo</th>
                 <th className="py-3 px-4">Identificación</th>
+                <th className="py-3 px-4">Contraseña</th>
                 <th className="py-3 px-4 text-center">Estado</th>
                 <th className="py-3 px-4 text-right">Acciones</th>
               </tr>
@@ -739,7 +818,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
             <tbody className="divide-y divide-[#DCD4C9]">
               {filteredUsers.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-10 text-center text-[#6F6860]">
+                  <td colSpan={7} className="py-10 text-center text-[#6F6860]">
                     No se encontraron cuentas con el criterio de búsqueda "{searchQuery}".
                   </td>
                 </tr>
@@ -875,6 +954,39 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
                             <MapPin className="w-3 h-3 text-[#B9522F] shrink-0" />
                             <span>{u.address}</span>
                           </div>
+                        )}
+                      </td>
+
+                      {/* Contraseña Asignada + Generar Clave Temporal */}
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono font-bold text-[#18231C] bg-[#FAF8F5] px-2 py-0.5 rounded-xs border border-[#DCD4C9] text-[11px] select-all">
+                            {visiblePasswords[u.id] ? (u.password || u.initialPassword || 'pampero2026') : '••••••••'}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => togglePasswordVisibility(u.id)}
+                            className="p-1 text-[#6F6860] hover:text-[#18231C] cursor-pointer"
+                            title={visiblePasswords[u.id] ? 'Ocultar contraseña' : 'Ver contraseña'}
+                          >
+                            {visiblePasswords[u.id] ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                          </button>
+                        </div>
+                        {u.mustChangePassword && (
+                          <span className="inline-block mt-1 text-[9px] font-bold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded-xs border border-amber-300">
+                            Debe cambiar al ingresar
+                          </span>
+                        )}
+                        {!isMasterAdmin && (
+                          <button
+                            type="button"
+                            onClick={() => handleGenerateTempPassword(u)}
+                            className="mt-1 text-[10px] font-bold text-amber-700 hover:text-amber-900 flex items-center gap-1 cursor-pointer hover:underline"
+                            title="Generar contraseña temporal aleatoria"
+                          >
+                            <Key className="w-3 h-3 text-amber-600" />
+                            <span>Generar clave temporal</span>
+                          </button>
                         )}
                       </td>
 

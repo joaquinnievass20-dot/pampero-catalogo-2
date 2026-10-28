@@ -32,6 +32,7 @@ import { AdminNotificationsTab } from './admin/AdminNotificationsTab';
 import { AdminPermissionsTab } from './admin/AdminPermissionsTab';
 import { AdminKanbanConfigTab } from './admin/AdminKanbanConfigTab';
 import { AdminCostCategoriesTab } from './admin/AdminCostCategoriesTab';
+import { AdminAuditLogsTab } from './admin/AdminAuditLogsTab';
 import { compressImage } from '../utils/imageCompressor';
 import { parseImageFileName } from '../utils/imageNamingParser';
 import { PamperoLogo } from './PamperoLogo';
@@ -46,7 +47,8 @@ import {
   uploadImageToStorage,
   formatStorageErrorMessage,
   saveFirestoreBranches,
-  deleteFirestoreBranch
+  deleteFirestoreBranch,
+  recordAuditLog,
 } from '../services/firebase';
 import { 
   Palette, 
@@ -90,7 +92,10 @@ import {
   Bell,
   Shirt,
   Receipt,
-  DollarSign
+  DollarSign,
+  ChevronRight,
+  Menu,
+  FileText
 } from 'lucide-react';
 
 export type AdminTabKey = 
@@ -113,7 +118,8 @@ export type AdminTabKey =
   | 'uniform_simulator'
   | 'notifications'
   | 'security' 
-  | 'analytics';
+  | 'analytics'
+  | 'audit_logs';
 
 interface AdminPanelProps {
   isOpen?: boolean;
@@ -183,7 +189,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   const isTabVisible = React.useCallback((tabKey: AdminTabKey) => {
     if (!isEmployee) return true;
-    if (tabKey === 'security' || tabKey === 'permissions' || tabKey === 'kanban_config') return false;
+    if (tabKey === 'security' || tabKey === 'permissions' || tabKey === 'kanban_config' || tabKey === 'audit_logs') return false;
     return employeePermissions.includes(tabKey);
   }, [isEmployee, employeePermissions]);
 
@@ -195,13 +201,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [savedNotice, setSavedNotice] = useState(false);
 
   useEffect(() => {
-    if (!isTabVisible(activeTab)) {
+    if (isEmployee && employeePermissions.length > 0 && !isTabVisible(activeTab)) {
       const firstAllowed = employeePermissions[0] as AdminTabKey;
       if (firstAllowed && firstAllowed !== activeTab) {
         setActiveTab(firstAllowed);
       }
     }
-  }, [userSession?.id, userSession?.role, isTabVisible, activeTab, employeePermissions]);
+  }, [isEmployee, employeePermissions, isTabVisible, activeTab]);
 
   const currentHierarchy: CategoryHierarchyItem[] = (categories && categories.length > 0) ? categories : CATEGORY_HIERARCHY;
 
@@ -374,6 +380,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     isPrimary: false,
   });
 
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+
   if (!isOpen) return null;
 
   const triggerSaveNotice = () => {
@@ -512,6 +520,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       onUpdateProducts(updatedList);
       saveCatalogBackup(updatedList);
 
+      recordAuditLog({
+        module: 'Catálogo de Productos',
+        action: editingProduct ? 'Editar Producto' : 'Crear Producto',
+        details: `${editingProduct ? 'Modificó' : 'Creó'} producto "${prodToSave.name}" (SKU: ${prodToSave.code}, Categoría: ${prodToSave.category})`,
+        metadata: { productId: prodToSave.id, code: prodToSave.code }
+      });
+
       setEditingProduct(null);
       setIsCreatingProduct(false);
       setFirebaseErrorNotice(null);
@@ -528,8 +543,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     const updated = products.map((p) =>
       p.id === productId ? { ...p, inStock: !currentStock } : p
     );
+    const targetProd = products.find((p) => p.id === productId);
     onUpdateProducts(updated);
     saveCatalogBackup(updated);
+    recordAuditLog({
+      module: 'Catálogo de Productos',
+      action: 'Cambio de Stock',
+      details: `Stock de "${targetProd?.name || productId}" cambiado a ${!currentStock ? 'Disponible' : 'Agotado'}`,
+      metadata: { productId, inStock: !currentStock }
+    });
     triggerSaveNotice();
   };
 
@@ -561,6 +583,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       });
       onUpdateProducts(remainingProducts);
       saveCatalogBackup(remainingProducts);
+      recordAuditLog({
+        module: 'Catálogo de Productos',
+        action: 'Eliminar Producto',
+        details: `Eliminó producto "${targetName || targetCode || targetId}" (ID: ${targetId})`,
+        metadata: { productId: targetId, code: targetCode }
+      });
       if (onDeleteProduct) {
         onDeleteProduct(id || targetId || targetCode);
       }
@@ -666,474 +694,263 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       p.subCategory.toLowerCase().includes(productSearch.toLowerCase())
   );
 
+  const TAB_CATEGORIES = [
+    {
+      title: 'Catálogo & Productos',
+      tabs: [
+        { key: 'products', label: 'Productos & SKU', icon: Package },
+        { key: 'variants', label: 'Talles & Especiales', icon: Shirt },
+        { key: 'categories', label: 'Categorías y Árbol', icon: FolderTree },
+        { key: 'mass_images', label: 'Carga Masiva Fotos', icon: Images },
+        { key: 'lookbook', label: 'Lookbook & Estilos', icon: Sparkles },
+        { key: 'uniform_simulator', label: 'Simulador Dotación', icon: Layers },
+      ],
+    },
+    {
+      title: 'Ventas & Operaciones',
+      tabs: [
+        { key: 'promos', label: 'Promociones & Banners', icon: Tag },
+        { key: 'coupons', label: 'Cupones de Descuento', icon: Ticket },
+        { key: 'quotes', label: 'Solicitudes y Cotizaciones', icon: Receipt },
+        { key: 'kanban_config', label: 'CRM & Etapas Kanban', icon: Sliders },
+        { key: 'branches', label: 'Sucursales Mendoza', icon: Building2 },
+      ],
+    },
+    {
+      title: 'Finanzas & Costos',
+      tabs: [
+        { key: 'prices', label: 'Precios & Descuentos', icon: DollarSign },
+        { key: 'cost_categories', label: 'Categorías de Costo', icon: Scale },
+      ],
+    },
+    {
+      title: 'Configuración del Sitio',
+      tabs: [
+        { key: 'theme', label: 'Identidad & Ficha CRM', icon: Palette },
+        { key: 'sizing_portal', label: 'Portal Curva de Talles', icon: Sliders },
+        { key: 'notifications', label: 'Notificaciones', icon: Bell },
+      ],
+    },
+    {
+      title: 'Usuarios & Seguridad',
+      tabs: [
+        { key: 'users', label: 'Usuarios & Clientes', icon: Users },
+        { key: 'permissions', label: 'Permisos & Roles', icon: UserCheck },
+        { key: 'security', label: 'Seguridad & 2FA', icon: ShieldCheck },
+      ],
+    },
+    {
+      title: 'Auditoría & Analítica',
+      tabs: [
+        { key: 'audit_logs', label: 'Registro de Auditoría', icon: FileText },
+        { key: 'analytics', label: 'Métricas & Estadísticas', icon: BarChart3 },
+      ],
+    },
+  ];
+
+  const getActiveTabInfo = () => {
+    for (const cat of TAB_CATEGORIES) {
+      const found = cat.tabs.find((t) => t.key === activeTab);
+      if (found) {
+        return { category: cat.title, tab: found.label, Icon: found.icon };
+      }
+    }
+    return { category: 'Administración', tab: 'Panel General', Icon: Sliders };
+  };
+
+  const activeTabInfo = getActiveTabInfo();
+  const ActiveIcon = activeTabInfo.Icon;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 md:p-6 bg-black/80 backdrop-blur-xs animate-fadeIn">
-      <div 
-        id="pampero-admin-modal"
-        style={{
-          borderColor: theme.cardBorderColor || '#DCD4C9',
-          backgroundColor: theme.panelBgColor || '#FFFFFF'
-        }}
-        className="w-full max-w-6xl h-[92vh] max-h-[900px] rounded-xs shadow-2xl flex flex-col overflow-hidden border"
-      >
-        {/* Top Header matching Pampero brand colors and dynamic theme */}
+    <div className="fixed inset-0 z-50 flex flex-col md:flex-row bg-[#FAF8F5] text-[#18231C] w-screen h-screen overflow-hidden animate-fadeIn font-sans">
+      
+      {/* Mobile Sidebar Overlay */}
+      {isMobileSidebarOpen && (
         <div 
-          style={{ 
-            backgroundColor: theme.primaryColor || '#18231C',
-            color: theme.headerTextColor || '#F5F2EC'
-          }}
-          className="px-5 sm:px-6 py-3.5 flex items-center justify-between border-b border-black/40 transition-colors"
-        >
-          <div className="flex items-center gap-3">
+          onClick={() => setIsMobileSidebarOpen(false)}
+          className="md:hidden fixed inset-0 bg-black/60 z-30 backdrop-blur-2xs"
+        />
+      )}
+
+      {/* SIDEBAR DASHBOARD NAVIGATION */}
+      <aside 
+        style={{ backgroundColor: theme.primaryColor || '#18231C' }}
+        className={`fixed md:static inset-y-0 left-0 z-40 w-72 max-w-[85vw] flex flex-col h-full border-r border-black/40 text-white transition-transform duration-200 ease-in-out shrink-0 ${
+          isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
+        }`}
+      >
+        {/* Sidebar Brand Header */}
+        <div className="p-4 border-b border-white/10 flex items-center justify-between">
+          <div className="flex items-center gap-3 min-w-0">
             <PamperoLogo 
               customUrl={theme.customLogoUrl || theme.logoUrl}
-              height={theme.logoHeight ? Math.min(theme.logoHeight, 38) : 32}
+              height={theme.logoHeight ? Math.min(theme.logoHeight, 36) : 32}
               size="sm"
             />
-            <div>
-              <h2 className="font-display text-lg sm:text-xl uppercase tracking-wider flex items-center gap-2 leading-none">
-                PANEL DE ADMINISTRACIÓN GENERAL · GRAN MENDOZA
-                <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded-xs font-mono font-bold tracking-normal">
-                  v2.5.0
+            <div className="min-w-0">
+              <h2 className="font-display font-bold text-sm uppercase tracking-wider text-[#FDB813] truncate">
+                Panel de Control
+              </h2>
+              <span className="text-[10px] text-neutral-300 block font-mono">
+                Gran Mendoza · v2.5.0
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsMobileSidebarOpen(false)}
+            className="md:hidden p-1.5 text-neutral-400 hover:text-white rounded-xs cursor-pointer"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Sidebar Grouped Nav Categories */}
+        <div className="flex-1 overflow-y-auto px-3 py-3 space-y-4 scrollbar-thin">
+          {TAB_CATEGORIES.map((cat, catIdx) => {
+            const visibleTabs = cat.tabs.filter((t) => isTabVisible(t.key as AdminTabKey));
+            if (visibleTabs.length === 0) return null;
+
+            return (
+              <div key={catIdx} className="space-y-1">
+                <span className="px-3 text-[10px] font-black uppercase tracking-[0.18em] text-[#A69E94] block">
+                  {cat.title}
                 </span>
+
+                <div className="space-y-0.5">
+                  {visibleTabs.map((t) => {
+                    const isSelected = activeTab === t.key;
+                    const TabIcon = t.icon;
+                    return (
+                      <button
+                        key={t.key}
+                        id={`admin-tab-${t.key}`}
+                        type="button"
+                        onClick={() => {
+                          setActiveTab(t.key as AdminTabKey);
+                          setIsMobileSidebarOpen(false);
+                        }}
+                        className={`w-full flex items-center justify-between px-3 py-2 rounded-xs text-xs font-bold transition-all cursor-pointer group text-left ${
+                          isSelected
+                            ? 'bg-[#2B3B30] text-[#FDB813] shadow-xs'
+                            : 'text-[#DCD4C9] hover:bg-white/10 hover:text-white'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 truncate">
+                          <TabIcon 
+                            className={`w-4 h-4 shrink-0 transition-colors ${
+                              isSelected ? 'text-[#FDB813]' : 'text-neutral-400 group-hover:text-white'
+                            }`}
+                          />
+                          <span className="truncate">{t.label}</span>
+                        </div>
+                        {isSelected && (
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#FDB813] shrink-0" />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Sidebar Bottom Footer Actions */}
+        <div className="p-3 border-t border-white/10 space-y-2 bg-black/20">
+          <button
+            id="btn-sidebar-global-save"
+            type="button"
+            onClick={handleGlobalSave}
+            className="w-full py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xs text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+          >
+            <Save className="w-3.5 h-3.5" />
+            <span>Guardar Cambios</span>
+          </button>
+
+          <button
+            id="btn-sidebar-return-hub"
+            type="button"
+            onClick={onClose}
+            className="w-full py-2 px-3 bg-[#2B3B30] hover:bg-[#3d5244] text-[#FAF8F5] rounded-xs text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span>Volver al menú</span>
+          </button>
+        </div>
+      </aside>
+
+      {/* MAIN DASHBOARD CONTENT AREA */}
+      <div className="flex-1 flex flex-col h-full min-w-0 bg-[#FAF8F5]">
+        
+        {/* Top Header Navigation Bar */}
+        <header className="bg-white border-b border-[#DCD4C9] px-4 sm:px-6 py-3 flex items-center justify-between shrink-0 shadow-2xs z-10">
+          <div className="flex items-center gap-3 min-w-0">
+            <button
+              type="button"
+              onClick={() => setIsMobileSidebarOpen(true)}
+              className="md:hidden p-2 text-[#18231C] hover:bg-[#FAF8F5] rounded-xs cursor-pointer"
+              title="Abrir menú lateral"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+
+            <div>
+              <div className="flex items-center gap-1.5 text-[11px] text-[#6F6860] uppercase font-bold tracking-wider">
+                <span>{activeTabInfo.category}</span>
+                <ChevronRight className="w-3 h-3 text-[#A69E94]" />
+                <span className="text-[#B9522F]">{activeTabInfo.tab}</span>
+              </div>
+              <h1 className="font-display font-bold text-lg sm:text-xl uppercase tracking-wider text-[#18231C] flex items-center gap-2 mt-0.5 leading-none">
+                <ActiveIcon className="w-5 h-5 text-[#B9522F]" />
+                <span>{activeTabInfo.tab}</span>
                 {savedNotice && (
-                  <span className="text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2 py-0.5 rounded-xs flex items-center gap-1 font-sans font-semibold">
-                    <Check className="w-3 h-3" /> Cambios Guardados
+                  <span className="text-[10px] bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-xs flex items-center gap-1 font-sans font-semibold">
+                    <Check className="w-3 h-3 text-emerald-600" /> Guardado
                   </span>
                 )}
-              </h2>
-              <p className="text-[11px] opacity-75 mt-0.5 font-sans">
-                Gestión oficial de promociones, imágenes masivas, lista de precios, códigos y estilos de marca.
-              </p>
+              </h1>
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2">
             <button
               id="btn-return-hub-admin"
               type="button"
               onClick={onClose}
-              className="px-3.5 py-1.5 bg-[#2B3B30] hover:bg-[#3d5244] text-[#F5F2EC] rounded-xs text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-colors cursor-pointer"
-              title="Volver al menú principal (Hub de Trabajo Interno)"
+              className="px-3 py-1.5 bg-[#FAF8F5] hover:bg-[#ECE5DC] text-[#18231C] border border-[#DCD4C9] rounded-xs text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-colors cursor-pointer"
+              title="Volver al menú principal"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
-              <span>Volver al menú principal</span>
+              <span className="hidden sm:inline">Volver al Menú</span>
             </button>
+
             <button
               id="btn-global-save-admin"
               type="button"
               onClick={handleGlobalSave}
               className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xs text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
-              title="Guardar todos los cambios en el sistema"
+              title="Guardar todos los cambios"
             >
               <Save className="w-3.5 h-3.5" />
-              Guardar Cambios
+              <span>Guardar</span>
             </button>
+
             <button
               id="btn-close-admin-panel"
+              type="button"
               onClick={onClose}
-              className="opacity-75 hover:opacity-100 p-1.5 rounded-xs hover:bg-white/10 transition-colors cursor-pointer"
-              title="Volver al menú principal"
+              className="p-1.5 text-[#6F6860] hover:text-[#18231C] hover:bg-[#FAF8F5] rounded-xs transition-colors cursor-pointer"
+              title="Cerrar panel"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
-        </div>
-
-        {/* Navigation Tabs */}
-        {(() => {
-          const iconColor = theme.iconColor || theme.accentColor || '#FDB813';
-          const activeBorderColor = theme.accentColor || '#FDB813';
-          return (
-            <div className="flex border-b border-[#DCD4C9] bg-[#ECE5DC] px-4 pt-2 gap-1.5 overflow-x-auto text-xs font-bold uppercase tracking-wider">
-              
-              {/* Promociones */}
-              {isTabVisible('promos') && (
-                <button
-                  id="admin-tab-promos"
-                  onClick={() => setActiveTab('promos')}
-                  style={{
-                    borderTopColor: activeTab === 'promos' ? activeBorderColor : 'transparent',
-                  }}
-                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                    activeTab === 'promos'
-                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
-                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
-                  }`}
-                >
-                  <Tag className="w-4 h-4" style={{ color: iconColor }} />
-                  Promociones ({promotions.length})
-                </button>
-              )}
-
-              {/* Carga Masiva de Imágenes */}
-              {isTabVisible('mass_images') && (
-                <button
-                  id="admin-tab-mass-images"
-                  onClick={() => setActiveTab('mass_images')}
-                  style={{
-                    borderTopColor: activeTab === 'mass_images' ? activeBorderColor : 'transparent',
-                  }}
-                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                    activeTab === 'mass_images'
-                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
-                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
-                  }`}
-                >
-                  <Images className="w-4 h-4" style={{ color: iconColor }} />
-                  Carga Masiva de Imágenes
-                </button>
-              )}
-
-              {/* Sincronización de Precios & Excel */}
-              {isTabVisible('prices') && (
-                <button
-                  id="admin-tab-prices"
-                  onClick={() => setActiveTab('prices')}
-                  style={{
-                    borderTopColor: activeTab === 'prices' ? activeBorderColor : 'transparent',
-                  }}
-                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                    activeTab === 'prices'
-                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
-                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
-                  }`}
-                >
-                  <FileSpreadsheet className="w-4 h-4" style={{ color: iconColor }} />
-                  Precios & Planillas ({products.length})
-                </button>
-              )}
-
-              {/* Categorías & Rubros (Subcategorías dinámicas) */}
-              {isTabVisible('categories') && (
-                <button
-                  id="admin-tab-categories"
-                  onClick={() => setActiveTab('categories')}
-                  style={{
-                    borderTopColor: activeTab === 'categories' ? activeBorderColor : 'transparent',
-                  }}
-                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                    activeTab === 'categories'
-                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
-                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
-                  }`}
-                >
-                  <FolderTree className="w-4 h-4" style={{ color: iconColor }} />
-                  Categorías & Rubros
-                </button>
-              )}
-
-              {/* Códigos de Descuento */}
-              {isTabVisible('coupons') && (
-                <button
-                  id="admin-tab-coupons"
-                  onClick={() => setActiveTab('coupons')}
-                  style={{
-                    borderTopColor: activeTab === 'coupons' ? activeBorderColor : 'transparent',
-                  }}
-                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                    activeTab === 'coupons'
-                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
-                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
-                  }`}
-                >
-                  <Ticket className="w-4 h-4" style={{ color: iconColor }} />
-                  Cupones ({coupons.length})
-                </button>
-              )}
-
-              {/* Logo, Colores & Fuentes */}
-              {isTabVisible('theme') && (
-                <button
-                  id="admin-tab-theme"
-                  onClick={() => setActiveTab('theme')}
-                  style={{
-                    borderTopColor: activeTab === 'theme' ? activeBorderColor : 'transparent',
-                  }}
-                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                    activeTab === 'theme'
-                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
-                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
-                  }`}
-                >
-                  <Palette className="w-4 h-4" style={{ color: iconColor }} />
-                  Logo & Estilos
-                </button>
-              )}
-
-              {/* Lookbook Interactivo */}
-              {isTabVisible('lookbook') && (
-                <button
-                  id="admin-tab-lookbook"
-                  onClick={() => setActiveTab('lookbook')}
-                  style={{
-                    borderTopColor: activeTab === 'lookbook' ? activeBorderColor : 'transparent',
-                  }}
-                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                    activeTab === 'lookbook'
-                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
-                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
-                  }`}
-                >
-                  <Sparkles className="w-4 h-4" style={{ color: iconColor }} />
-                  Lookbook Interactivo
-                </button>
-              )}
-
-              {/* Productos */}
-              {isTabVisible('products') && (
-                <button
-                  id="admin-tab-products"
-                  onClick={() => setActiveTab('products')}
-                  style={{
-                    borderTopColor: activeTab === 'products' ? activeBorderColor : 'transparent',
-                  }}
-                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                    activeTab === 'products'
-                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
-                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
-                  }`}
-                >
-                  <Package className="w-4 h-4" style={{ color: iconColor }} />
-                  Productos ({products.length})
-                </button>
-              )}
-
-              {/* Colores y Talles por Artículo */}
-              {isTabVisible('variants') && (
-                <button
-                  id="admin-tab-variants"
-                  onClick={() => setActiveTab('variants')}
-                  style={{
-                    borderTopColor: activeTab === 'variants' ? activeBorderColor : 'transparent',
-                  }}
-                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                    activeTab === 'variants'
-                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
-                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
-                  }`}
-                >
-                  <Layers className="w-4 h-4" style={{ color: iconColor }} />
-                  Colores & Talles
-                </button>
-              )}
-
-              {/* Cotizaciones Recibidas */}
-              {isTabVisible('quotes') && (
-                <button
-                  id="admin-tab-quotes"
-                  onClick={() => setActiveTab('quotes')}
-                  style={{
-                    borderTopColor: activeTab === 'quotes' ? activeBorderColor : 'transparent',
-                  }}
-                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                    activeTab === 'quotes'
-                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
-                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
-                  }`}
-                >
-                  <ShoppingBag className="w-4 h-4" style={{ color: iconColor }} />
-                  Cotizaciones
-                </button>
-              )}
-
-              {/* Sucursales & Locales (Base unificada) */}
-              {isTabVisible('branches') && (
-                <button
-                  id="admin-tab-branches"
-                  onClick={() => setActiveTab('branches')}
-                  style={{
-                    borderTopColor: activeTab === 'branches' ? activeBorderColor : 'transparent',
-                  }}
-                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                    activeTab === 'branches'
-                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
-                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
-                  }`}
-                >
-                  <Building2 className="w-4 h-4" style={{ color: iconColor }} />
-                  Sucursales & Locales ({branches.length})
-                </button>
-              )}
-
-              {/* Vendedores & Cuentas Creadas (Fusionado) */}
-              {isTabVisible('users') && (
-                <button
-                  id="admin-tab-users"
-                  onClick={() => setActiveTab('users')}
-                  style={{
-                    borderTopColor: activeTab === 'users' ? activeBorderColor : 'transparent',
-                  }}
-                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                    activeTab === 'users'
-                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
-                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
-                  }`}
-                >
-                  <Users className="w-4 h-4" style={{ color: iconColor }} />
-                  Cuentas & Vendedores
-                </button>
-              )}
-
-              {/* Permisos del CRM */}
-              {isTabVisible('permissions') && (
-                <button
-                  id="admin-tab-permissions"
-                  onClick={() => setActiveTab('permissions')}
-                  style={{
-                    borderTopColor: activeTab === 'permissions' ? activeBorderColor : 'transparent',
-                  }}
-                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                    activeTab === 'permissions'
-                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
-                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
-                  }`}
-                >
-                  <ShieldCheck className="w-4 h-4" style={{ color: iconColor }} />
-                  Permisos CRM
-                </button>
-              )}
-
-              {/* Editar Gestión (Restaurado para modificar columnas Kanban) */}
-              {isTabVisible('kanban_config') && (
-                <button
-                  id="admin-tab-kanban-config"
-                  onClick={() => setActiveTab('kanban_config')}
-                  style={{
-                    borderTopColor: activeTab === 'kanban_config' ? activeBorderColor : 'transparent',
-                  }}
-                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                    activeTab === 'kanban_config'
-                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
-                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
-                  }`}
-                >
-                  <Sliders className="w-4 h-4" style={{ color: iconColor }} />
-                  Editar Gestión
-                </button>
-              )}
-
-              {/* Categorías de Costos (Fijo / Variable) */}
-              {isTabVisible('cost_categories') && (
-                <button
-                  id="admin-tab-cost-categories"
-                  onClick={() => setActiveTab('cost_categories')}
-                  style={{
-                    borderTopColor: activeTab === 'cost_categories' ? activeBorderColor : 'transparent',
-                  }}
-                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                    activeTab === 'cost_categories'
-                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
-                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
-                  }`}
-                >
-                  <Receipt className="w-4 h-4" style={{ color: iconColor }} />
-                  Categorías de Costos
-                </button>
-              )}
-
-              {/* Configuración Portal de Talles */}
-              {isTabVisible('sizing_portal') && (
-                <button
-                  id="admin-tab-sizing-portal"
-                  onClick={() => setActiveTab('sizing_portal')}
-                  style={{
-                    borderTopColor: activeTab === 'sizing_portal' ? activeBorderColor : 'transparent',
-                  }}
-                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                    activeTab === 'sizing_portal'
-                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
-                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
-                  }`}
-                >
-                  <Shirt className="w-4 h-4" style={{ color: iconColor }} />
-                  Portal de Talles
-                </button>
-              )}
-
-              {/* Configuración Armador de Uniformes */}
-              {isTabVisible('uniform_simulator') && (
-                <button
-                  id="admin-tab-uniform-simulator"
-                  onClick={() => setActiveTab('uniform_simulator')}
-                  style={{
-                    borderTopColor: activeTab === 'uniform_simulator' ? activeBorderColor : 'transparent',
-                  }}
-                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                    activeTab === 'uniform_simulator'
-                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
-                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
-                  }`}
-                >
-                  <Sparkles className="w-4 h-4" style={{ color: iconColor }} />
-                  Armador de Uniformes
-                </button>
-              )}
-
-              {/* Métricas & Búsquedas */}
-              {isTabVisible('analytics') && (
-                <button
-                  id="admin-tab-analytics"
-                  onClick={() => setActiveTab('analytics')}
-                  style={{
-                    borderTopColor: activeTab === 'analytics' ? activeBorderColor : 'transparent',
-                  }}
-                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                    activeTab === 'analytics'
-                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
-                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
-                  }`}
-                >
-                  <BarChart3 className="w-4 h-4" style={{ color: iconColor }} />
-                  Métricas
-                </button>
-              )}
-
-              {/* Notificaciones & Alertas */}
-              {isTabVisible('notifications') && (
-                <button
-                  id="admin-tab-notifications"
-                  onClick={() => setActiveTab('notifications')}
-                  style={{
-                    borderTopColor: activeTab === 'notifications' ? activeBorderColor : 'transparent',
-                  }}
-                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                    activeTab === 'notifications'
-                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
-                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
-                  }`}
-                >
-                  <Bell className="w-4 h-4" style={{ color: iconColor }} />
-                  Notificaciones
-                </button>
-              )}
-
-              {/* Seguridad & Claves */}
-              {isTabVisible('security') && (
-                <button
-                  id="admin-tab-security"
-                  onClick={() => setActiveTab('security')}
-                  style={{
-                    borderTopColor: activeTab === 'security' ? activeBorderColor : 'transparent',
-                  }}
-                  className={`py-2.5 px-4 rounded-t-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                    activeTab === 'security'
-                      ? 'bg-white text-[#18231C] border-t-2 shadow-2xs'
-                      : 'text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
-                  }`}
-                >
-                  <ShieldCheck className="w-4 h-4" style={{ color: iconColor }} />
-                  Seguridad
-                </button>
-              )}
-
-            </div>
-          );
-        })()}
+        </header>
 
         {/* Tab Content Body */}
-        <div className="flex-1 overflow-y-auto bg-neutral-50/50">
-          
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-[#FAF8F5]">
+
           {/* TAB 1: PROMOCIONES */}
           {activeTab === 'promos' && (
             <AdminPromosTab
@@ -2049,7 +1866,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           </div>
 
                           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                            {activeList.map((imgUrl, idx) => (
+                            {activeList.filter(url => Boolean(url && url.trim())).map((imgUrl, idx) => (
                               <div
                                 key={idx}
                                 className={`bg-white border rounded-xs p-2 flex flex-col justify-between space-y-2 relative transition-all ${
@@ -2060,10 +1877,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                               >
                                 <div className="w-full h-28 rounded-xs overflow-hidden bg-neutral-100 relative">
                                   <img
-                                    src={imgUrl}
+                                    src={imgUrl || '/logo.png'}
                                     alt={`Foto ${idx + 1}`}
                                     className="w-full h-full object-cover"
                                     referrerPolicy="no-referrer"
+                                    onError={(e) => { e.currentTarget.src = '/logo.png'; }}
                                   />
                                   <span
                                     className={`absolute top-1 left-1 px-1.5 py-0.5 rounded-xs text-[10px] font-bold ${
@@ -2244,9 +2062,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       <tr key={p.id || p.code || p.name || `p-row-${pIdx}`} className="hover:bg-[#FAF8F5]">
                         <td className="p-3">
                           <img
-                            src={p.image}
+                            src={(p.image && p.image.trim()) || (p.images && p.images[0]) || '/logo.png'}
                             alt={p.name}
                             className="w-10 h-10 object-cover rounded-xs border border-[#DCD4C9]"
+                            onError={(e) => { e.currentTarget.src = '/logo.png'; }}
                           />
                         </td>
                         <td className="p-3 font-mono text-[11px] text-[#6F6860]">{p.code}</td>
@@ -2732,6 +2551,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             <AdminNotificationsTab
               triggerSaveNotice={triggerSaveNotice}
             />
+          )}
+
+          {/* TAB 16: REGISTRO DE AUDITORÍA (EXCLUSIVO ADMIN) */}
+          {activeTab === 'audit_logs' && (
+            <AdminAuditLogsTab />
           )}
 
         </div>

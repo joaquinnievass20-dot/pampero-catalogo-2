@@ -85,11 +85,13 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
 
   const accent = theme.accentColor || '#FDB813';
   const displayedImage = getProductImageForColor(product, currentColor);
+  const fallbackImg = (displayedImage && displayedImage.trim()) || (product.image && product.image.trim()) || '/logo.png';
   
-  const allImages: string[] = Array.isArray(product.images) && product.images.length > 0
+  const rawList = Array.isArray(product.images) && product.images.length > 0
     ? product.images
-    : [displayedImage];
-  const activeImageUrl = allImages[selectedImageIndex] || displayedImage;
+    : [fallbackImg];
+  const allImages: string[] = rawList.filter(url => Boolean(url && url.trim()));
+  const activeImageUrl = (allImages[selectedImageIndex] && allImages[selectedImageIndex].trim()) || fallbackImg;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/75 backdrop-blur-sm animate-fadeIn">
@@ -177,12 +179,12 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
           </div>
 
           {/* Multiple Photos Thumbnail Strip */}
-          {allImages.length > 1 && (
+          {allImages.filter(url => Boolean(url && url.trim())).length > 1 && (
             <div className="bg-[#FAF8F5] p-2 border-t border-[#DCD4C9] flex items-center gap-2 overflow-x-auto">
               <span className="text-[10px] font-bold text-[#6F6860] uppercase tracking-wider px-1">
-                Fotos ({allImages.length}):
+                Fotos ({allImages.filter(url => Boolean(url && url.trim())).length}):
               </span>
-              {allImages.map((imgUrl, imgIdx) => (
+              {allImages.filter(url => Boolean(url && url.trim())).map((imgUrl, imgIdx) => (
                 <button
                   key={imgIdx}
                   type="button"
@@ -198,10 +200,11 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                   title={`Ver foto ${imgIdx + 1}`}
                 >
                   <img
-                    src={imgUrl}
+                    src={imgUrl || '/logo.png'}
                     alt={`${product.name} foto ${imgIdx + 1}`}
                     className="w-full h-full object-cover"
                     referrerPolicy="no-referrer"
+                    onError={(e) => { e.currentTarget.src = '/logo.png'; }}
                   />
                 </button>
               ))}
