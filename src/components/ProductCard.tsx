@@ -21,8 +21,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   promotions,
   onViewDetail,
 }) => {
-  const isCompany = userSession?.clientType === 'empresa';
-  const basePrice = isCompany && product.corporatePrice ? product.corporatePrice : product.price;
+  const basePrice = product.price;
   const hasDiscount = Boolean(product.discountPercentage && product.discountPercentage > 0);
   const discountedPrice = hasDiscount
     ? Math.round(basePrice * (1 - (product.discountPercentage || 0) / 100))
@@ -315,15 +314,6 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               </span>
             )}
           </div>
-
-          {isCompany && (
-            <span 
-              style={{ color: iconColor }}
-              className="text-[9px] font-bold flex items-center gap-0.5 uppercase tracking-wider"
-            >
-              <Building2 className="w-2.5 h-2.5" /> Mayorista
-            </span>
-          )}
         </div>
       </div>
     </div>

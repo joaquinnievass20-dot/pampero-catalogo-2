@@ -150,8 +150,8 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
     : product.code;
 
   const currentBasePrice = activeSpecialRange
-    ? (isCompany && activeSpecialRange.corporatePrice ? activeSpecialRange.corporatePrice : activeSpecialRange.price)
-    : (isCompany && product.corporatePrice ? product.corporatePrice : product.price);
+    ? activeSpecialRange.price
+    : product.price;
 
   const hasDiscount = Boolean(product.discountPercentage && product.discountPercentage > 0);
   const discountedPrice = hasDiscount
@@ -466,15 +466,6 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
                 <span className="text-xs font-bold text-amber-900 bg-amber-50 px-2.5 py-1 rounded-xs border border-amber-300 flex items-center gap-1.5">
                   <Tag className="w-3 h-3 text-amber-700" />
                   Precio {activeSpecialRange.rangeLabel}
-                </span>
-              )}
-
-              {isCompany && (
-                <span 
-                  style={{ color: accent }}
-                  className="text-xs font-bold uppercase tracking-wider flex items-center gap-1"
-                >
-                  <Building2 className="w-3.5 h-3.5" /> Precio Corporativo
                 </span>
               )}
             </div>

@@ -69,9 +69,7 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
       ? items.filter((it) => it && it.product && typeof it.product === 'object' && Number(it.quantity) > 0)
       : [];
 
-    const isCompany = userSession?.clientType === 'empresa';
     const totalUnits = safeItems.reduce((acc, item) => acc + (Number(item.quantity) || 0), 0);
-    const qualifiesForCorporatePrice = isCompany || totalUnits > 10;
 
     // Price calculation with safety
     const calculateItemPrice = (item: CartItem): number => {
@@ -81,11 +79,7 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
 
         let basePrice = Number(prod.price) || 0;
         if (item.specialSizeRange) {
-          basePrice = (qualifiesForCorporatePrice && item.specialSizeRange.corporatePrice)
-            ? Number(item.specialSizeRange.corporatePrice)
-            : Number(item.specialSizeRange.price || item.unitPriceAdjusted || prod.price || 0);
-        } else if (qualifiesForCorporatePrice && prod.corporatePrice) {
-          basePrice = Number(prod.corporatePrice);
+          basePrice = Number(item.specialSizeRange.price || item.unitPriceAdjusted || prod.price || 0);
         } else if (item.unitPriceAdjusted) {
           basePrice = Number(item.unitPriceAdjusted);
         }
@@ -232,9 +226,7 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
       const targetCode = matchingRange?.suffix
         ? `${item.product.code}${matchingRange.suffix}`
         : item.product.code;
-      const newUnitPrice = matchingRange
-        ? (isCompany && matchingRange.corporatePrice ? matchingRange.corporatePrice : matchingRange.price)
-        : undefined;
+      const newUnitPrice = matchingRange ? matchingRange.price : undefined;
 
       onUpdateCartItem(idx, {
         ...item,
@@ -264,7 +256,7 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
           clientName: userSession?.clientData?.fullName || (userSession?.clientData as any)?.companyName || 'Cliente Catálogo',
           clientPhone: (userSession?.clientData as any)?.phone || '',
           clientEmail: userSession?.email || '',
-          clientType: isCompany ? 'empresa' : 'consumidor_final',
+          clientType: userSession?.clientType === 'empresa' ? 'empresa' : 'consumidor_final',
           channel: 'Excel',
           status: firstColId,
           seller: 'Sin Asignar',
@@ -370,7 +362,7 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
           clientName: userSession?.clientData?.fullName || (userSession?.clientData as any)?.companyName || 'Cliente Catálogo',
           clientPhone: (userSession?.clientData as any)?.phone || '',
           clientEmail: userSession?.email || '',
-          clientType: isCompany ? 'empresa' : 'consumidor_final',
+          clientType: userSession?.clientType === 'empresa' ? 'empresa' : 'consumidor_final',
           channel: 'WhatsApp',
           status: firstColId,
           seller: 'Sin Asignar',
@@ -466,7 +458,7 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
           {userSession?.clientData && (
             <div className="bg-[#FAF8F5] px-4 py-2 text-xs text-[#6F6860] flex items-center justify-between border-b border-[#DCD4C9] shrink-0">
               <div className="flex items-center gap-1.5 font-medium truncate">
-                {isCompany ? (
+                {userSession.clientType === 'empresa' ? (
                   <>
                     <Building2 className="w-3.5 h-3.5 text-blue-800 shrink-0" />
                     <span className="truncate font-semibold text-[#18231C]">
@@ -482,9 +474,6 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
                   </>
                 )}
               </div>
-              <span className="text-[10px] font-bold uppercase tracking-wider text-[#18231C] bg-[#ECE5DC] px-2 py-0.5 rounded-xs">
-                {isCompany ? 'Tarifa Empresa' : 'Consumidor'}
-              </span>
             </div>
           )}
 

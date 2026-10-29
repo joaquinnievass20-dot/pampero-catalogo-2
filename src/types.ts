@@ -305,6 +305,36 @@ export interface ThemeConfig {
   crmCardTextColor?: string; // Color de texto de la ficha de pedido en CRM
   crmCardBorderColor?: string; // Color de borde de la ficha de pedido en CRM
   crmCardHeaderBg?: string; // Color de cabecera de la ficha de pedido en CRM
+  // 9-Section Deep Theme Customization
+  announcementBgColor?: string; // Barra de micro-anuncios
+  announcementTextColor?: string;
+  announcementAccentColor?: string;
+  hubBorderColor?: string; // Menú Interno Admin/Empleados
+  hubAccentColor?: string;
+  heroBgColor?: string; // Hero / Portada
+  heroTextColor?: string;
+  heroButtonBg?: string;
+  heroButtonText?: string;
+  heroAccentColor?: string;
+  cardTextColor?: string; // Ficha de Producto
+  cardButtonBg?: string;
+  quoteDrawerBgColor?: string; // Ventana Emergente de Mi Pedido
+  quoteDrawerTextColor?: string;
+  quoteDrawerBorderColor?: string;
+  quoteDrawerButtonBg?: string;
+  quoteDrawerButtonText?: string;
+  loginModalBgColor?: string; // Modal de Login / Registro
+  loginModalTextColor?: string;
+  loginModalBorderColor?: string;
+  loginModalButtonBg?: string;
+  loginModalButtonText?: string;
+  crmHeaderBgColor?: string; // CRM Header
+  crmHeaderTextColor?: string;
+  crmHeaderBorderColor?: string;
+  footerBgColor?: string; // Footer
+  footerTextColor?: string;
+  footerBorderColor?: string;
+  footerAccentColor?: string;
   screenTexts?: {
     landingTitle1?: string;
     landingTitle2?: string;

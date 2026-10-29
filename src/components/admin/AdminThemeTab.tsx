@@ -306,7 +306,19 @@ export const AdminThemeTab: React.FC<AdminThemeTabProps> = ({
   // Mode selection: 'sections' | 'palettes' | 'manual'
   const [editorMode, setEditorMode] = useState<'sections' | 'palettes' | 'manual'>('sections');
   const [selectedSection, setSelectedSection] = useState<
-    'navbar' | 'hub_admin' | 'buttons' | 'catalog_texts' | 'page_background' | 'crm_card'
+    | 'navbar'
+    | 'announcement_bar'
+    | 'hub_admin'
+    | 'hero'
+    | 'product_card'
+    | 'quote_drawer'
+    | 'login_modal'
+    | 'crm_header'
+    | 'footer'
+    | 'buttons'
+    | 'catalog_texts'
+    | 'page_background'
+    | 'crm_card'
   >('navbar');
   const [currentTheme, setCurrentTheme] = useState<ThemeConfig>(theme);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -665,14 +677,21 @@ export const AdminThemeTab: React.FC<AdminThemeTabProps> = ({
                 id="section-select-dropdown"
                 value={selectedSection}
                 onChange={(e) => setSelectedSection(e.target.value as any)}
-                className="px-3.5 py-2.5 bg-[#FAF8F5] border-2 border-[#18231C] rounded-xs text-xs font-bold text-[#18231C] uppercase tracking-wider focus:outline-none focus:ring-2 focus:ring-[#FDB813] cursor-pointer shadow-xs min-w-[260px]"
+                className="px-3.5 py-2.5 bg-[#FAF8F5] border-2 border-[#18231C] rounded-xs text-xs font-bold text-[#18231C] uppercase tracking-wider focus:outline-none focus:ring-2 focus:ring-[#FDB813] cursor-pointer shadow-xs min-w-[280px]"
               >
-                <option value="navbar">Menú Principal (Navbar)</option>
-                <option value="hub_admin">Menú de Administrador/Empleados</option>
-                <option value="buttons">Botones Generales</option>
-                <option value="catalog_texts">Textos del Catálogo</option>
-                <option value="page_background">Fondo de Pantalla & Tarjetas</option>
-                <option value="crm_card">Ficha de Pedido en CRM</option>
+                <option value="navbar">1. Navbar Principal</option>
+                <option value="announcement_bar">2. Barra de Micro-anuncios (WhatsApp)</option>
+                <option value="hub_admin">3. Menú Interno de Admin/Empleados (Hub)</option>
+                <option value="hero">4. Hero / Portada (Landing Hero)</option>
+                <option value="product_card">5. Ficha de Producto (Tarjetas & Detalle)</option>
+                <option value="quote_drawer">6. Ventana Emergente de Mi Pedido (QuoteDrawer)</option>
+                <option value="login_modal">7. Modal de Login / Registro (Auth)</option>
+                <option value="crm_header">8. CRM Header (Cabecera Kanban & Gestión)</option>
+                <option value="footer">9. Footer (Pie de Página)</option>
+                <option value="crm_card">Ficha de Pedido en CRM (Detallada)</option>
+                <option value="buttons">Botones Generales del Sistema</option>
+                <option value="catalog_texts">Textos & Fichas Técnicas</option>
+                <option value="page_background">Lienzo General (Fondo de Pantalla)</option>
               </select>
             </div>
           </div>
@@ -1624,6 +1643,753 @@ export const AdminThemeTab: React.FC<AdminThemeTabProps> = ({
                   <div className="flex items-center justify-between text-[10px] pt-1 border-t opacity-90" style={{ borderColor: currentTheme.crmCardBorderColor || '#DCD4C9' }}>
                     <span>Asesor: Joaquín N.</span>
                     <span className="font-bold">Sucursal: Gran Mendoza</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ========================================================= */}
+          {/* SECCIÓN 2: BARRA DE MICRO-ANUNCIOS (WHATSAPP) */}
+          {/* ========================================================= */}
+          {selectedSection === 'announcement_bar' && (
+            <div className="space-y-6 animate-fadeIn">
+              <div className="bg-[#FAF8F5] p-4 rounded-xs border border-[#DCD4C9] flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="size-9 rounded-full bg-emerald-700 text-white flex items-center justify-center font-bold text-xs">
+                    MSG
+                  </div>
+                  <div>
+                    <h5 className="font-bold text-xs uppercase tracking-wider text-[#18231C]">
+                      2. Barra de Micro-anuncios — WhatsApp y Anuncios Superiores
+                    </h5>
+                    <p className="text-[11px] text-[#6F6860]">
+                      Personalizá la franja superior de micro-anuncios donde se informa el WhatsApp de ventas y distribución oficial.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* 1. Fondo Barra Anuncios */}
+                <div className="p-4 bg-white border border-[#DCD4C9] rounded-xs space-y-2">
+                  <span className="text-xs font-bold uppercase text-[#18231C] block">
+                    Fondo de la Barra
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={currentTheme.announcementBgColor || currentTheme.primaryColor || '#18231C'}
+                      onChange={(e) => applyLiveChange('announcementBgColor', e.target.value)}
+                      className="size-8 rounded-xs cursor-pointer border border-[#DCD4C9]"
+                    />
+                    <input
+                      type="text"
+                      value={currentTheme.announcementBgColor || currentTheme.primaryColor || '#18231C'}
+                      onChange={(e) => applyLiveChange('announcementBgColor', e.target.value)}
+                      className="flex-1 px-2.5 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs font-mono font-bold uppercase"
+                    />
+                  </div>
+                </div>
+
+                {/* 2. Texto de Anuncios */}
+                <div className="p-4 bg-white border border-[#DCD4C9] rounded-xs space-y-2">
+                  <span className="text-xs font-bold uppercase text-[#18231C] block">
+                    Texto del Anuncio
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={currentTheme.announcementTextColor || '#FFFFFF'}
+                      onChange={(e) => applyLiveChange('announcementTextColor', e.target.value)}
+                      className="size-8 rounded-xs cursor-pointer border border-[#DCD4C9]"
+                    />
+                    <input
+                      type="text"
+                      value={currentTheme.announcementTextColor || '#FFFFFF'}
+                      onChange={(e) => applyLiveChange('announcementTextColor', e.target.value)}
+                      className="flex-1 px-2.5 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs font-mono font-bold uppercase"
+                    />
+                  </div>
+                </div>
+
+                {/* 3. Acento / Ícono WhatsApp */}
+                <div className="p-4 bg-white border border-[#DCD4C9] rounded-xs space-y-2">
+                  <span className="text-xs font-bold uppercase text-[#18231C] block">
+                    Acento / Ícono WhatsApp
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={currentTheme.announcementAccentColor || currentTheme.accentColor || '#FDB813'}
+                      onChange={(e) => applyLiveChange('announcementAccentColor', e.target.value)}
+                      className="size-8 rounded-xs cursor-pointer border border-[#DCD4C9]"
+                    />
+                    <input
+                      type="text"
+                      value={currentTheme.announcementAccentColor || currentTheme.accentColor || '#FDB813'}
+                      onChange={(e) => applyLiveChange('announcementAccentColor', e.target.value)}
+                      className="flex-1 px-2.5 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs font-mono font-bold uppercase"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Previsualización en Vivo */}
+              <div className="p-4 bg-[#FAF8F5] rounded-xs border border-[#DCD4C9] space-y-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[#6F6860] block">
+                  Previsualización en Vivo de la Barra de Anuncios:
+                </span>
+                <div 
+                  className="rounded-xs py-2 px-4 flex items-center justify-between text-xs font-medium shadow-xs"
+                  style={{
+                    backgroundColor: currentTheme.announcementBgColor || currentTheme.primaryColor || '#18231C',
+                    color: currentTheme.announcementTextColor || '#FFFFFF'
+                  }}
+                >
+                  <span className="flex items-center gap-2">
+                    <span style={{ color: currentTheme.announcementAccentColor || currentTheme.accentColor || '#FDB813' }}>●</span>
+                    Ventas WhatsApp: <strong>+{currentTheme.whatsappNumber || '5492615276713'}</strong>
+                  </span>
+                  <span className="opacity-75">Distribución oficial en Gran Mendoza</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ========================================================= */}
+          {/* SECCIÓN 4: HERO / PORTADA */}
+          {/* ========================================================= */}
+          {selectedSection === 'hero' && (
+            <div className="space-y-6 animate-fadeIn">
+              <div className="bg-[#FAF8F5] p-4 rounded-xs border border-[#DCD4C9] flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="size-9 rounded-full bg-amber-600 text-white flex items-center justify-center font-bold text-xs">
+                    HERO
+                  </div>
+                  <div>
+                    <h5 className="font-bold text-xs uppercase tracking-wider text-[#18231C]">
+                      4. Hero / Portada — Gran Banner de Entrada
+                    </h5>
+                    <p className="text-[11px] text-[#6F6860]">
+                      Ajustá los colores de fondo, textos, títulos y botones de acción principal de la portada.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                {/* 1. Fondo / Overlay Hero */}
+                <div className="p-4 bg-white border border-[#DCD4C9] rounded-xs space-y-2">
+                  <span className="text-xs font-bold uppercase text-[#18231C] block">
+                    Fondo / Base Hero
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={currentTheme.heroBgColor || '#18231C'}
+                      onChange={(e) => applyLiveChange('heroBgColor', e.target.value)}
+                      className="size-8 rounded-xs cursor-pointer border border-[#DCD4C9]"
+                    />
+                    <input
+                      type="text"
+                      value={currentTheme.heroBgColor || '#18231C'}
+                      onChange={(e) => applyLiveChange('heroBgColor', e.target.value)}
+                      className="flex-1 px-2.5 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs font-mono font-bold uppercase"
+                    />
+                  </div>
+                </div>
+
+                {/* 2. Texto Principal Hero */}
+                <div className="p-4 bg-white border border-[#DCD4C9] rounded-xs space-y-2">
+                  <span className="text-xs font-bold uppercase text-[#18231C] block">
+                    Texto Principal Hero
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={currentTheme.heroTextColor || '#FFFFFF'}
+                      onChange={(e) => applyLiveChange('heroTextColor', e.target.value)}
+                      className="size-8 rounded-xs cursor-pointer border border-[#DCD4C9]"
+                    />
+                    <input
+                      type="text"
+                      value={currentTheme.heroTextColor || '#FFFFFF'}
+                      onChange={(e) => applyLiveChange('heroTextColor', e.target.value)}
+                      className="flex-1 px-2.5 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs font-mono font-bold uppercase"
+                    />
+                  </div>
+                </div>
+
+                {/* 3. Fondo Botón Hero */}
+                <div className="p-4 bg-white border border-[#DCD4C9] rounded-xs space-y-2">
+                  <span className="text-xs font-bold uppercase text-[#18231C] block">
+                    Fondo Botón Acción
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={currentTheme.heroButtonBg || currentTheme.accentColor || '#FDB813'}
+                      onChange={(e) => applyLiveChange('heroButtonBg', e.target.value)}
+                      className="size-8 rounded-xs cursor-pointer border border-[#DCD4C9]"
+                    />
+                    <input
+                      type="text"
+                      value={currentTheme.heroButtonBg || currentTheme.accentColor || '#FDB813'}
+                      onChange={(e) => applyLiveChange('heroButtonBg', e.target.value)}
+                      className="flex-1 px-2.5 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs font-mono font-bold uppercase"
+                    />
+                  </div>
+                </div>
+
+                {/* 4. Texto Botón Hero */}
+                <div className="p-4 bg-white border border-[#DCD4C9] rounded-xs space-y-2">
+                  <span className="text-xs font-bold uppercase text-[#18231C] block">
+                    Texto Botón Acción
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={currentTheme.heroButtonText || '#18231C'}
+                      onChange={(e) => applyLiveChange('heroButtonText', e.target.value)}
+                      className="size-8 rounded-xs cursor-pointer border border-[#DCD4C9]"
+                    />
+                    <input
+                      type="text"
+                      value={currentTheme.heroButtonText || '#18231C'}
+                      onChange={(e) => applyLiveChange('heroButtonText', e.target.value)}
+                      className="flex-1 px-2.5 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs font-mono font-bold uppercase"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ========================================================= */}
+          {/* SECCIÓN 5: FICHA DE PRODUCTO */}
+          {/* ========================================================= */}
+          {selectedSection === 'product_card' && (
+            <div className="space-y-6 animate-fadeIn">
+              <div className="bg-[#FAF8F5] p-4 rounded-xs border border-[#DCD4C9] flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="size-9 rounded-full bg-blue-700 text-white flex items-center justify-center font-bold text-xs">
+                    PROD
+                  </div>
+                  <div>
+                    <h5 className="font-bold text-xs uppercase tracking-wider text-[#18231C]">
+                      5. Ficha de Producto — Tarjetas del Catálogo y Modal Detallado
+                    </h5>
+                    <p className="text-[11px] text-[#6F6860]">
+                      Definí el color de fondo de las tarjetas, borde, texto del artículo, títulos y precio de lista.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                {/* 1. Fondo Tarjeta Producto */}
+                <div className="p-4 bg-white border border-[#DCD4C9] rounded-xs space-y-2">
+                  <span className="text-xs font-bold uppercase text-[#18231C] block">
+                    Fondo de la Ficha
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={currentTheme.cardBgColor || '#FAF8F5'}
+                      onChange={(e) => applyLiveChange('cardBgColor', e.target.value)}
+                      className="size-8 rounded-xs cursor-pointer border border-[#DCD4C9]"
+                    />
+                    <input
+                      type="text"
+                      value={currentTheme.cardBgColor || '#FAF8F5'}
+                      onChange={(e) => applyLiveChange('cardBgColor', e.target.value)}
+                      className="flex-1 px-2.5 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs font-mono font-bold uppercase"
+                    />
+                  </div>
+                </div>
+
+                {/* 2. Borde de la Tarjeta */}
+                <div className="p-4 bg-white border border-[#DCD4C9] rounded-xs space-y-2">
+                  <span className="text-xs font-bold uppercase text-[#18231C] block">
+                    Borde de la Ficha
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={currentTheme.cardBorderColor || '#DCD4C9'}
+                      onChange={(e) => applyLiveChange('cardBorderColor', e.target.value)}
+                      className="size-8 rounded-xs cursor-pointer border border-[#DCD4C9]"
+                    />
+                    <input
+                      type="text"
+                      value={currentTheme.cardBorderColor || '#DCD4C9'}
+                      onChange={(e) => applyLiveChange('cardBorderColor', e.target.value)}
+                      className="flex-1 px-2.5 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs font-mono font-bold uppercase"
+                    />
+                  </div>
+                </div>
+
+                {/* 3. Texto del Producto */}
+                <div className="p-4 bg-white border border-[#DCD4C9] rounded-xs space-y-2">
+                  <span className="text-xs font-bold uppercase text-[#18231C] block">
+                    Texto del Artículo
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={currentTheme.cardTextColor || currentTheme.catalogTextColor || '#22201D'}
+                      onChange={(e) => {
+                        applyLiveChange('cardTextColor', e.target.value);
+                        applyLiveChange('catalogTextColor', e.target.value);
+                      }}
+                      className="size-8 rounded-xs cursor-pointer border border-[#DCD4C9]"
+                    />
+                    <input
+                      type="text"
+                      value={currentTheme.cardTextColor || currentTheme.catalogTextColor || '#22201D'}
+                      onChange={(e) => {
+                        applyLiveChange('cardTextColor', e.target.value);
+                        applyLiveChange('catalogTextColor', e.target.value);
+                      }}
+                      className="flex-1 px-2.5 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs font-mono font-bold uppercase"
+                    />
+                  </div>
+                </div>
+
+                {/* 4. Acento / Botón Ficha */}
+                <div className="p-4 bg-white border border-[#DCD4C9] rounded-xs space-y-2">
+                  <span className="text-xs font-bold uppercase text-[#18231C] block">
+                    Acento / Botón Ficha
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={currentTheme.cardButtonBg || currentTheme.primaryColor || '#18231C'}
+                      onChange={(e) => applyLiveChange('cardButtonBg', e.target.value)}
+                      className="size-8 rounded-xs cursor-pointer border border-[#DCD4C9]"
+                    />
+                    <input
+                      type="text"
+                      value={currentTheme.cardButtonBg || currentTheme.primaryColor || '#18231C'}
+                      onChange={(e) => applyLiveChange('cardButtonBg', e.target.value)}
+                      className="flex-1 px-2.5 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs font-mono font-bold uppercase"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ========================================================= */}
+          {/* SECCIÓN 6: VENTANA EMERGENTE DE MI PEDIDO (QUOTEDRAWER) */}
+          {/* ========================================================= */}
+          {selectedSection === 'quote_drawer' && (
+            <div className="space-y-6 animate-fadeIn">
+              <div className="bg-[#FAF8F5] p-4 rounded-xs border border-[#DCD4C9] flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="size-9 rounded-full bg-indigo-700 text-white flex items-center justify-center font-bold text-xs">
+                    CART
+                  </div>
+                  <div>
+                    <h5 className="font-bold text-xs uppercase tracking-wider text-[#18231C]">
+                      6. Ventana Emergente de Mi Pedido — Lateral de Cotización (Drawer)
+                    </h5>
+                    <p className="text-[11px] text-[#6F6860]">
+                      Personalizá los colores de fondo, texto, bordes y botones de acción de la ventana lateral donde los clientes arman su pedido.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                {/* 1. Fondo del Drawer */}
+                <div className="p-4 bg-white border border-[#DCD4C9] rounded-xs space-y-2">
+                  <span className="text-xs font-bold uppercase text-[#18231C] block">
+                    Fondo del Panel
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={currentTheme.quoteDrawerBgColor || '#FFFFFF'}
+                      onChange={(e) => applyLiveChange('quoteDrawerBgColor', e.target.value)}
+                      className="size-8 rounded-xs cursor-pointer border border-[#DCD4C9]"
+                    />
+                    <input
+                      type="text"
+                      value={currentTheme.quoteDrawerBgColor || '#FFFFFF'}
+                      onChange={(e) => applyLiveChange('quoteDrawerBgColor', e.target.value)}
+                      className="flex-1 px-2.5 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs font-mono font-bold uppercase"
+                    />
+                  </div>
+                </div>
+
+                {/* 2. Texto del Drawer */}
+                <div className="p-4 bg-white border border-[#DCD4C9] rounded-xs space-y-2">
+                  <span className="text-xs font-bold uppercase text-[#18231C] block">
+                    Texto del Panel
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={currentTheme.quoteDrawerTextColor || '#18231C'}
+                      onChange={(e) => applyLiveChange('quoteDrawerTextColor', e.target.value)}
+                      className="size-8 rounded-xs cursor-pointer border border-[#DCD4C9]"
+                    />
+                    <input
+                      type="text"
+                      value={currentTheme.quoteDrawerTextColor || '#18231C'}
+                      onChange={(e) => applyLiveChange('quoteDrawerTextColor', e.target.value)}
+                      className="flex-1 px-2.5 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs font-mono font-bold uppercase"
+                    />
+                  </div>
+                </div>
+
+                {/* 3. Fondo Botón Confirmar */}
+                <div className="p-4 bg-white border border-[#DCD4C9] rounded-xs space-y-2">
+                  <span className="text-xs font-bold uppercase text-[#18231C] block">
+                    Fondo Botón Acción
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={currentTheme.quoteDrawerButtonBg || currentTheme.accentColor || '#FDB813'}
+                      onChange={(e) => applyLiveChange('quoteDrawerButtonBg', e.target.value)}
+                      className="size-8 rounded-xs cursor-pointer border border-[#DCD4C9]"
+                    />
+                    <input
+                      type="text"
+                      value={currentTheme.quoteDrawerButtonBg || currentTheme.accentColor || '#FDB813'}
+                      onChange={(e) => applyLiveChange('quoteDrawerButtonBg', e.target.value)}
+                      className="flex-1 px-2.5 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs font-mono font-bold uppercase"
+                    />
+                  </div>
+                </div>
+
+                {/* 4. Texto Botón Confirmar */}
+                <div className="p-4 bg-white border border-[#DCD4C9] rounded-xs space-y-2">
+                  <span className="text-xs font-bold uppercase text-[#18231C] block">
+                    Texto Botón Acción
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={currentTheme.quoteDrawerButtonText || '#18231C'}
+                      onChange={(e) => applyLiveChange('quoteDrawerButtonText', e.target.value)}
+                      className="size-8 rounded-xs cursor-pointer border border-[#DCD4C9]"
+                    />
+                    <input
+                      type="text"
+                      value={currentTheme.quoteDrawerButtonText || '#18231C'}
+                      onChange={(e) => applyLiveChange('quoteDrawerButtonText', e.target.value)}
+                      className="flex-1 px-2.5 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs font-mono font-bold uppercase"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ========================================================= */}
+          {/* SECCIÓN 7: MODAL DE LOGIN / REGISTRO */}
+          {/* ========================================================= */}
+          {selectedSection === 'login_modal' && (
+            <div className="space-y-6 animate-fadeIn">
+              <div className="bg-[#FAF8F5] p-4 rounded-xs border border-[#DCD4C9] flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="size-9 rounded-full bg-rose-700 text-white flex items-center justify-center font-bold text-xs">
+                    AUTH
+                  </div>
+                  <div>
+                    <h5 className="font-bold text-xs uppercase tracking-wider text-[#18231C]">
+                      7. Modal de Login / Registro — Acceso y Creación de Cuentas
+                    </h5>
+                    <p className="text-[11px] text-[#6F6860]">
+                      Ajustá los colores del cuadro de autenticación, textos, bordes y botones de ingreso.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                {/* 1. Fondo Modal Login */}
+                <div className="p-4 bg-white border border-[#DCD4C9] rounded-xs space-y-2">
+                  <span className="text-xs font-bold uppercase text-[#18231C] block">
+                    Fondo del Modal
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={currentTheme.loginModalBgColor || '#FFFFFF'}
+                      onChange={(e) => applyLiveChange('loginModalBgColor', e.target.value)}
+                      className="size-8 rounded-xs cursor-pointer border border-[#DCD4C9]"
+                    />
+                    <input
+                      type="text"
+                      value={currentTheme.loginModalBgColor || '#FFFFFF'}
+                      onChange={(e) => applyLiveChange('loginModalBgColor', e.target.value)}
+                      className="flex-1 px-2.5 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs font-mono font-bold uppercase"
+                    />
+                  </div>
+                </div>
+
+                {/* 2. Texto Modal Login */}
+                <div className="p-4 bg-white border border-[#DCD4C9] rounded-xs space-y-2">
+                  <span className="text-xs font-bold uppercase text-[#18231C] block">
+                    Texto del Modal
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={currentTheme.loginModalTextColor || '#18231C'}
+                      onChange={(e) => applyLiveChange('loginModalTextColor', e.target.value)}
+                      className="size-8 rounded-xs cursor-pointer border border-[#DCD4C9]"
+                    />
+                    <input
+                      type="text"
+                      value={currentTheme.loginModalTextColor || '#18231C'}
+                      onChange={(e) => applyLiveChange('loginModalTextColor', e.target.value)}
+                      className="flex-1 px-2.5 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs font-mono font-bold uppercase"
+                    />
+                  </div>
+                </div>
+
+                {/* 3. Fondo Botón Login */}
+                <div className="p-4 bg-white border border-[#DCD4C9] rounded-xs space-y-2">
+                  <span className="text-xs font-bold uppercase text-[#18231C] block">
+                    Fondo Botón Ingresar
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={currentTheme.loginModalButtonBg || currentTheme.primaryColor || '#18231C'}
+                      onChange={(e) => applyLiveChange('loginModalButtonBg', e.target.value)}
+                      className="size-8 rounded-xs cursor-pointer border border-[#DCD4C9]"
+                    />
+                    <input
+                      type="text"
+                      value={currentTheme.loginModalButtonBg || currentTheme.primaryColor || '#18231C'}
+                      onChange={(e) => applyLiveChange('loginModalButtonBg', e.target.value)}
+                      className="flex-1 px-2.5 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs font-mono font-bold uppercase"
+                    />
+                  </div>
+                </div>
+
+                {/* 4. Texto Botón Login */}
+                <div className="p-4 bg-white border border-[#DCD4C9] rounded-xs space-y-2">
+                  <span className="text-xs font-bold uppercase text-[#18231C] block">
+                    Texto Botón Ingresar
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={currentTheme.loginModalButtonText || '#FFFFFF'}
+                      onChange={(e) => applyLiveChange('loginModalButtonText', e.target.value)}
+                      className="size-8 rounded-xs cursor-pointer border border-[#DCD4C9]"
+                    />
+                    <input
+                      type="text"
+                      value={currentTheme.loginModalButtonText || '#FFFFFF'}
+                      onChange={(e) => applyLiveChange('loginModalButtonText', e.target.value)}
+                      className="flex-1 px-2.5 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs font-mono font-bold uppercase"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ========================================================= */}
+          {/* SECCIÓN 8: CRM HEADER */}
+          {/* ========================================================= */}
+          {selectedSection === 'crm_header' && (
+            <div className="space-y-6 animate-fadeIn">
+              <div className="bg-[#FAF8F5] p-4 rounded-xs border border-[#DCD4C9] flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="size-9 rounded-full bg-slate-800 text-white flex items-center justify-center font-bold text-xs">
+                    CRM
+                  </div>
+                  <div>
+                    <h5 className="font-bold text-xs uppercase tracking-wider text-[#18231C]">
+                      8. CRM Header — Barra Superior de Gestión y Filtros Kanban
+                    </h5>
+                    <p className="text-[11px] text-[#6F6860]">
+                      Definí los colores de fondo, texto y bordes de la barra superior donde se muestran los filtros, solapas y acciones del CRM.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* 1. Fondo Cabecera CRM */}
+                <div className="p-4 bg-white border border-[#DCD4C9] rounded-xs space-y-2">
+                  <span className="text-xs font-bold uppercase text-[#18231C] block">
+                    Fondo de la Barra CRM
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={currentTheme.crmHeaderBgColor || '#FFFFFF'}
+                      onChange={(e) => applyLiveChange('crmHeaderBgColor', e.target.value)}
+                      className="size-8 rounded-xs cursor-pointer border border-[#DCD4C9]"
+                    />
+                    <input
+                      type="text"
+                      value={currentTheme.crmHeaderBgColor || '#FFFFFF'}
+                      onChange={(e) => applyLiveChange('crmHeaderBgColor', e.target.value)}
+                      className="flex-1 px-2.5 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs font-mono font-bold uppercase"
+                    />
+                  </div>
+                </div>
+
+                {/* 2. Texto Cabecera CRM */}
+                <div className="p-4 bg-white border border-[#DCD4C9] rounded-xs space-y-2">
+                  <span className="text-xs font-bold uppercase text-[#18231C] block">
+                    Texto de la Barra CRM
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={currentTheme.crmHeaderTextColor || '#18231C'}
+                      onChange={(e) => applyLiveChange('crmHeaderTextColor', e.target.value)}
+                      className="size-8 rounded-xs cursor-pointer border border-[#DCD4C9]"
+                    />
+                    <input
+                      type="text"
+                      value={currentTheme.crmHeaderTextColor || '#18231C'}
+                      onChange={(e) => applyLiveChange('crmHeaderTextColor', e.target.value)}
+                      className="flex-1 px-2.5 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs font-mono font-bold uppercase"
+                    />
+                  </div>
+                </div>
+
+                {/* 3. Borde Cabecera CRM */}
+                <div className="p-4 bg-white border border-[#DCD4C9] rounded-xs space-y-2">
+                  <span className="text-xs font-bold uppercase text-[#18231C] block">
+                    Borde de la Barra CRM
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={currentTheme.crmHeaderBorderColor || '#DCD4C9'}
+                      onChange={(e) => applyLiveChange('crmHeaderBorderColor', e.target.value)}
+                      className="size-8 rounded-xs cursor-pointer border border-[#DCD4C9]"
+                    />
+                    <input
+                      type="text"
+                      value={currentTheme.crmHeaderBorderColor || '#DCD4C9'}
+                      onChange={(e) => applyLiveChange('crmHeaderBorderColor', e.target.value)}
+                      className="flex-1 px-2.5 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs font-mono font-bold uppercase"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ========================================================= */}
+          {/* SECCIÓN 9: FOOTER */}
+          {/* ========================================================= */}
+          {selectedSection === 'footer' && (
+            <div className="space-y-6 animate-fadeIn">
+              <div className="bg-[#FAF8F5] p-4 rounded-xs border border-[#DCD4C9] flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="size-9 rounded-full bg-neutral-900 text-white flex items-center justify-center font-bold text-xs">
+                    FOOT
+                  </div>
+                  <div>
+                    <h5 className="font-bold text-xs uppercase tracking-wider text-[#18231C]">
+                      9. Footer — Pie de Página Institucional y Sucursales
+                    </h5>
+                    <p className="text-[11px] text-[#6F6860]">
+                      Personalizá el fondo del pie de página, los textos informativos, bordes de separación y enlaces activos.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                {/* 1. Fondo Footer */}
+                <div className="p-4 bg-white border border-[#DCD4C9] rounded-xs space-y-2">
+                  <span className="text-xs font-bold uppercase text-[#18231C] block">
+                    Fondo del Footer
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={currentTheme.footerBgColor || currentTheme.primaryColor || '#18231C'}
+                      onChange={(e) => applyLiveChange('footerBgColor', e.target.value)}
+                      className="size-8 rounded-xs cursor-pointer border border-[#DCD4C9]"
+                    />
+                    <input
+                      type="text"
+                      value={currentTheme.footerBgColor || currentTheme.primaryColor || '#18231C'}
+                      onChange={(e) => applyLiveChange('footerBgColor', e.target.value)}
+                      className="flex-1 px-2.5 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs font-mono font-bold uppercase"
+                    />
+                  </div>
+                </div>
+
+                {/* 2. Texto Footer */}
+                <div className="p-4 bg-white border border-[#DCD4C9] rounded-xs space-y-2">
+                  <span className="text-xs font-bold uppercase text-[#18231C] block">
+                    Texto del Footer
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={currentTheme.footerTextColor || '#F5F2EC'}
+                      onChange={(e) => applyLiveChange('footerTextColor', e.target.value)}
+                      className="size-8 rounded-xs cursor-pointer border border-[#DCD4C9]"
+                    />
+                    <input
+                      type="text"
+                      value={currentTheme.footerTextColor || '#F5F2EC'}
+                      onChange={(e) => applyLiveChange('footerTextColor', e.target.value)}
+                      className="flex-1 px-2.5 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs font-mono font-bold uppercase"
+                    />
+                  </div>
+                </div>
+
+                {/* 3. Borde Footer */}
+                <div className="p-4 bg-white border border-[#DCD4C9] rounded-xs space-y-2">
+                  <span className="text-xs font-bold uppercase text-[#18231C] block">
+                    Borde Superior
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={currentTheme.footerBorderColor || '#2B2B2B'}
+                      onChange={(e) => applyLiveChange('footerBorderColor', e.target.value)}
+                      className="size-8 rounded-xs cursor-pointer border border-[#DCD4C9]"
+                    />
+                    <input
+                      type="text"
+                      value={currentTheme.footerBorderColor || '#2B2B2B'}
+                      onChange={(e) => applyLiveChange('footerBorderColor', e.target.value)}
+                      className="flex-1 px-2.5 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs font-mono font-bold uppercase"
+                    />
+                  </div>
+                </div>
+
+                {/* 4. Acento / Enlaces */}
+                <div className="p-4 bg-white border border-[#DCD4C9] rounded-xs space-y-2">
+                  <span className="text-xs font-bold uppercase text-[#18231C] block">
+                    Acento / Enlaces
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={currentTheme.footerAccentColor || currentTheme.accentColor || '#FDB813'}
+                      onChange={(e) => applyLiveChange('footerAccentColor', e.target.value)}
+                      className="size-8 rounded-xs cursor-pointer border border-[#DCD4C9]"
+                    />
+                    <input
+                      type="text"
+                      value={currentTheme.footerAccentColor || currentTheme.accentColor || '#FDB813'}
+                      onChange={(e) => applyLiveChange('footerAccentColor', e.target.value)}
+                      className="flex-1 px-2.5 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs font-mono font-bold uppercase"
+                    />
                   </div>
                 </div>
               </div>

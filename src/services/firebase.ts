@@ -485,6 +485,12 @@ export async function saveSingleFirestoreProduct(product: Product): Promise<{ su
     await setDoc(docRefEs, cleaned, { merge: true });
     await setDoc(docRefEn, cleaned, { merge: true });
     console.log(`[FIREBASE] Producto guardado exitosamente en Firestore (${sku}):`, product.name);
+    recordAuditLog({
+      module: 'Catálogo',
+      action: 'Guardar Producto',
+      details: `Producto guardado/actualizado: ${product.name} (SKU: ${sku}) - Precio Lista: $${Number(product.price || 0).toLocaleString('es-AR')}.`,
+      targetId: sku,
+    }).catch(() => {});
     return { success: true };
   } catch (err: any) {
     const errorMsg = err?.message || String(err);
@@ -507,6 +513,12 @@ export async function deleteFirestoreProductDoc(productId: string): Promise<{ su
     await deleteDoc(docRef);
     await deleteDoc(docRefEs).catch(() => {});
     console.log(`[FIREBASE] Producto eliminado de Firestore: ${productId}`);
+    recordAuditLog({
+      module: 'Catálogo',
+      action: 'Eliminar Producto',
+      details: `Producto eliminado del catálogo: SKU ${productId}.`,
+      targetId: productId,
+    }).catch(() => {});
     return { success: true };
   } catch (err: any) {
     const errorMsg = err?.message || String(err);
@@ -605,6 +617,11 @@ export async function saveFirestoreStoreConfig(partialConfig: Partial<FirestoreS
       { merge: true }
     );
     console.log('[FIREBASE] Updated store_config in Cloud Firestore');
+    recordAuditLog({
+      module: 'Diseño & Estilos',
+      action: 'Editar Configuración',
+      details: 'Configuración visual ThemeConfig y estructura de la tienda actualizada.',
+    }).catch(() => {});
     return true;
   } catch (err: any) {
     console.warn('[FIREBASE] store_config modo offline / permisos:', err?.message || err);
@@ -877,6 +894,12 @@ export async function saveFirestorePromotion(promo: Promotion): Promise<boolean>
 
     await setDoc(docRef, payload, { merge: true });
     console.log('[FIREBASE] Promoción guardada en colección dedicated promotions:', promoId);
+    recordAuditLog({
+      module: 'Promociones',
+      action: 'Guardar Promoción',
+      details: `Promoción guardada/actualizada: "${promo.title || promoId}" (${promo.discountPercentage || 0}% desc).`,
+      targetId: promoId,
+    }).catch(() => {});
     return true;
   } catch (err: any) {
     console.error('[FIREBASE ERROR] Error guardando promoción en Firestore:', err);
@@ -898,6 +921,12 @@ export async function deleteFirestorePromotion(promoId: string): Promise<boolean
     const docRef = doc(firestoreDb, 'promotions', cleanId);
     await deleteDoc(docRef);
     console.log('[FIREBASE] Promoción eliminada de Firestore:', cleanId);
+    recordAuditLog({
+      module: 'Promociones',
+      action: 'Eliminar Promoción',
+      details: `Promoción eliminada: ID ${cleanId}.`,
+      targetId: cleanId,
+    }).catch(() => {});
     return true;
   } catch (err: any) {
     console.error('[FIREBASE ERROR] Error eliminando promoción de Firestore:', err);
@@ -1070,6 +1099,12 @@ export const saveCRMOrder = async (orderData: any): Promise<{ success: boolean; 
       const cleaned = JSON.parse(JSON.stringify(fullOrder, (k, v) => (v === undefined ? null : v)));
       await setDoc(docRef, cleaned, { merge: true });
       console.log('[FIREBASE] CRM Order Saved to crm_orders:', fullOrder.id);
+      recordAuditLog({
+        module: 'CRM / Kanban',
+        action: 'Actualizar Pedido',
+        details: `Pedido #${fullOrder.orderNumber || fullOrder.id} (${fullOrder.clientName}) actualizado a estado "${fullOrder.status || fullOrder.columnId}". Total: $${Number(fullOrder.totalEstimated || 0).toLocaleString('es-AR')}.`,
+        targetId: fullOrder.id,
+      }).catch(() => {});
       return { success: true, id: fullOrder.id };
     } catch (err: any) {
       console.error('[FIREBASE ERROR] Error saving CRM order:', err);
@@ -1091,6 +1126,12 @@ export const deleteCRMOrder = async (orderId: string): Promise<{ success: boolea
     try {
       await deleteDoc(doc(firestoreDb, 'crm_orders', orderId));
       console.log('[FIREBASE] CRM Order Deleted from crm_orders:', orderId);
+      recordAuditLog({
+        module: 'CRM / Kanban',
+        action: 'Eliminar Pedido',
+        details: `Pedido #${orderId} eliminado del tablero CRM.`,
+        targetId: orderId,
+      }).catch(() => {});
       return { success: true };
     } catch (err: any) {
       console.error('[FIREBASE ERROR] Error deleting CRM order:', err);
@@ -1418,14 +1459,15 @@ export const saveFirestoreUser = async (user: RegisteredUser): Promise<{ success
   }
 
   const userId = user.id || (user.email ? user.email.replace(/[^a-zA-Z0-9_-]/g, '_') : `user-${Date.now()}`);
-  // SEGURIDAD ESTRICTA: Las contraseñas BAJO NINGÚN CONCEPTO deben guardarse en Firestore
-  const { password: _pwd, initialPassword: _initPwd, ...safeProfile } = user;
+  const passwordToKeep = (user.password || user.initialPassword || '').trim();
   const sanitizedUser: RegisteredUser = {
-    ...safeProfile,
+    ...user,
     id: userId,
+    password: passwordToKeep || undefined,
+    initialPassword: passwordToKeep || undefined,
   };
 
-  // 1. Keep local backup as safety in pampero_registered_users (SIN CONTRASEÑAS)
+  // 1. Keep local backup as safety in pampero_registered_users
   try {
     const local: RegisteredUser[] = JSON.parse(localStorage.getItem('pampero_registered_users') || '[]');
     const updated = [
@@ -1444,6 +1486,7 @@ export const saveFirestoreUser = async (user: RegisteredUser): Promise<{ success
         id: userId,
         name: sanitizedUser.name,
         email: sanitizedUser.email,
+        password: passwordToKeep || undefined,
         role: 'employee',
         branch: sanitizedUser.branch || 'Maipú',
         allowedTabs: sanitizedUser.allowedTabs || ['products', 'variants', 'prices', 'mass_images', 'promos', 'quotes', 'crm'],
@@ -1475,6 +1518,14 @@ export const saveFirestoreUser = async (user: RegisteredUser): Promise<{ success
       localStorage.setItem('pampero_sellers', JSON.stringify(updatedSell));
     } catch {}
   }
+
+  // Record audit log
+  recordAuditLog({
+    module: 'Usuarios',
+    action: 'Guardar Usuario',
+    details: `Cuenta guardada/actualizada: ${sanitizedUser.name} (${sanitizedUser.email || userId}) con rol "${sanitizedUser.role || sanitizedUser.type || 'client'}".`,
+    metadata: { userId },
+  }).catch(() => {});
 
   if (!firestoreDb) {
     return { success: true };
@@ -1593,13 +1644,13 @@ export async function createFirebaseAuthAndFirestoreUser(
   }
 
   // 2. SOLO SI la acción en Auth es exitosa: Crear el documento en Cloud Firestore con el mismo UID
-  // OCULTAMIENTO ESTRICTO: NO guardar contraseña en texto plano en Firestore
-  const { password: _p, initialPassword: _ip, ...safeProfile } = user;
   const userPayload: RegisteredUser = {
-    ...safeProfile,
+    ...user,
     id: authUid,
     email: cleanEmail,
     username: derivedUsername,
+    password: passwordToUse,
+    initialPassword: passwordToUse,
     createdAt: user.createdAt || new Date().toISOString().split('T')[0],
   };
 
@@ -1630,6 +1681,14 @@ export async function createFirebaseAuthAndFirestoreUser(
       };
     }
   }
+
+  // Audit log for new user creation
+  recordAuditLog({
+    module: 'Usuarios',
+    action: 'Crear Usuario',
+    details: `Nueva cuenta creada en Firebase Auth y Firestore: ${user.name} (${cleanEmail}) con rol "${user.role || user.type || 'client'}".`,
+    targetId: authUid,
+  }).catch(() => {});
 
   // 3. Sincronización en LocalStorage (SIN CONTRASEÑAS)
   try {
@@ -1720,6 +1779,12 @@ export const deleteFirestoreUser = async (userId: string): Promise<{ success: bo
     }
 
     console.log('[FIREBASE] Cuenta eliminada de Firestore exitosamente:', userId);
+    recordAuditLog({
+      module: 'Usuarios',
+      action: 'Eliminar Usuario',
+      details: `Cuenta eliminada permanentemente del sistema: ${targetEmail || userId} (ID: ${userId}).`,
+      targetId: userId,
+    }).catch(() => {});
     return { success: true };
   } catch (err: any) {
     console.warn('[FIREBASE] Error eliminando usuario en Firestore:', err);
@@ -1856,6 +1921,14 @@ export async function sendUserPasswordResetEmail(email: string): Promise<{ succe
     console.log(`[FIREBASE AUTH] Solicitando restablecimiento de contraseña para: ${cleanEmail}`);
     await sendPasswordResetEmail(fbAuth, cleanEmail);
     console.log('[FIREBASE AUTH] Correo de recuperación de clave enviado exitosamente a:', cleanEmail);
+    recordAuditLog({
+      module: 'Autenticación',
+      action: 'Recuperar Clave',
+      details: `Correo de recuperación de contraseña enviado a: ${cleanEmail}.`,
+      userEmail: cleanEmail,
+      userName: cleanEmail.split('@')[0],
+      userRole: 'client',
+    }).catch(() => {});
     return { success: true };
   } catch (err: any) {
     const errCode = err?.code || 'auth/unknown-error';
@@ -2288,6 +2361,14 @@ export async function authenticateDualUser(
         { role: 'admin', totpSecret: customAdminTotp || 'JBSWY3DPEHPK3PXP' }
       );
       if (isTotpOk) {
+        recordAuditLog({
+          module: 'Autenticación',
+          action: 'Login Admin',
+          details: `Inicio de sesión exitoso de Administrador Maestro (${idClean}) mediante código TOTP.`,
+          userEmail: 'joaquinnievass20@gmail.com',
+          userName: 'Administrador Maestro Joaquín Nievas',
+          userRole: 'admin',
+        }).catch(() => {});
         return {
           success: true,
           session: {
@@ -2303,6 +2384,14 @@ export async function authenticateDualUser(
           },
         };
       } else {
+        recordAuditLog({
+          module: 'Autenticación',
+          action: 'Login Fallido',
+          details: `Código de autenticador inválido para cuenta administradora: ${idClean}.`,
+          userEmail: 'joaquinnievass20@gmail.com',
+          userName: 'Administrador Maestro',
+          userRole: 'admin',
+        }).catch(() => {});
         return { success: false, error: 'Código de autenticador inválido o expirado para la cuenta administradora.' };
       }
     } else {
@@ -2313,6 +2402,14 @@ export async function authenticateDualUser(
         (customPass && credClean === customPass);
 
       if (validPass) {
+        recordAuditLog({
+          module: 'Autenticación',
+          action: 'Login Admin',
+          details: `Inicio de sesión exitoso de Administrador Maestro (${idClean}).`,
+          userEmail: 'joaquinnievass20@gmail.com',
+          userName: 'Administrador Maestro Joaquín Nievas',
+          userRole: 'admin',
+        }).catch(() => {});
         return {
           success: true,
           session: {
@@ -2328,6 +2425,14 @@ export async function authenticateDualUser(
           },
         };
       } else {
+        recordAuditLog({
+          module: 'Autenticación',
+          action: 'Login Fallido',
+          details: `Contraseña incorrecta para cuenta administradora: ${idClean}.`,
+          userEmail: 'joaquinnievass20@gmail.com',
+          userName: 'Administrador Maestro',
+          userRole: 'admin',
+        }).catch(() => {});
         return { success: false, error: 'Contraseña incorrecta para la cuenta administradora.' };
       }
     }
@@ -2476,6 +2581,14 @@ export async function authenticateDualUser(
       }
 
       if (!passValid) {
+        recordAuditLog({
+          module: 'Autenticación',
+          action: 'Login Fallido',
+          details: `Contraseña incorrecta para el usuario "${matchedUserDoc.name || idClean}" (${matchedUserDoc.email || idClean}).`,
+          userEmail: matchedUserDoc.email || idClean,
+          userName: matchedUserDoc.name || idClean,
+          userRole: matchedUserDoc.role || 'client',
+        }).catch(() => {});
         return { success: false, error: 'Contraseña incorrecta. Por favor ingresá la clave correcta de tu cuenta.' };
       }
     }
@@ -2500,6 +2613,15 @@ export async function authenticateDualUser(
       },
       loggedAt: new Date().toISOString(),
     };
+
+    recordAuditLog({
+      module: 'Autenticación',
+      action: 'Login',
+      details: `Inicio de sesión exitoso: ${session.clientData?.fullName || matchedUserDoc.name} (${session.email}) con rol "${session.role}".`,
+      userEmail: session.email,
+      userName: session.clientData?.fullName || matchedUserDoc.name,
+      userRole: session.role,
+    }).catch(() => {});
 
     return { success: true, session };
   }
@@ -2597,7 +2719,7 @@ export async function authenticateDualUser(
             } catch {}
           }
 
-          return {
+          const sessionObj = {
             success: true,
             session: {
               id: cred.user.uid,
@@ -2608,14 +2730,40 @@ export async function authenticateDualUser(
               loggedAt: new Date().toISOString(),
             },
           };
+          recordAuditLog({
+            module: 'Autenticación',
+            action: 'Login',
+            details: `Inicio de sesión exitoso vía Firebase Auth: ${sessionObj.session.email} con rol "${sessionObj.session.role}".`,
+            userEmail: sessionObj.session.email,
+            userName: sessionObj.session.clientData?.fullName || idClean,
+            userRole: sessionObj.session.role,
+          }).catch(() => {});
+          return sessionObj;
         }
       } catch (authErr: any) {
         if (authErr?.code === 'auth/wrong-password') {
+          recordAuditLog({
+            module: 'Autenticación',
+            action: 'Login Fallido',
+            details: `Contraseña incorrecta en Firebase Auth para: ${idClean}.`,
+            userEmail: idClean.includes('@') ? idClean : undefined,
+            userName: idClean,
+            userRole: 'client',
+          }).catch(() => {});
           return { success: false, error: 'Contraseña incorrecta.' };
         }
       }
     }
   }
+
+  recordAuditLog({
+    module: 'Autenticación',
+    action: 'Login Fallido',
+    details: `No se encontró cuenta para el identificador: "${idClean}".`,
+    userEmail: idClean.includes('@') ? idClean : undefined,
+    userName: idClean,
+    userRole: 'client',
+  }).catch(() => {});
 
   return {
     success: false,

@@ -18,7 +18,12 @@ import {
   MessageCircle
 } from 'lucide-react';
 import { MASTER_ADMIN_EMAIL, MASTER_ADMIN_PASSWORD } from '../utils/authInit';
-import { saveFirestoreUser, authenticateDualUser, sendUserPasswordResetEmail } from '../services/firebase';
+import { 
+  saveFirestoreUser, 
+  authenticateDualUser, 
+  sendUserPasswordResetEmail,
+  createFirebaseAuthAndFirestoreUser 
+} from '../services/firebase';
 
 interface AuthViewProps {
   onLogin: (session: UserSession) => void;
@@ -104,12 +109,19 @@ export const AuthView: React.FC<AuthViewProps> = ({
   };
 
   // Submit Registration
-  const handleRegister = (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
 
-    if (!email || !password) {
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanPass = password.trim();
+
+    if (!cleanEmail || !cleanPass) {
       setErrorMessage('Por favor completá el email y contraseña.');
+      return;
+    }
+    if (cleanPass.length < 6) {
+      setErrorMessage('La contraseña debe tener al menos 6 caracteres.');
       return;
     }
     if (tab === 'register' && !fullName && accountType === 'consumidor') {
@@ -121,28 +133,16 @@ export const AuthView: React.FC<AuthViewProps> = ({
       return;
     }
 
-    const session: UserSession = {
-      id: 'usr-' + Date.now(),
-      email: email.trim(),
-      role: 'client',
-      clientType: accountType,
-      clientData: {
-        fullName: fullName.trim() || (email ? email.split('@')[0] : 'Usuario'),
-        companyName: companyName.trim(),
-        cuit: cuit.trim(),
-        phone: phone.trim(),
-        address: `${street.trim()} ${streetNumber.trim()}`.trim(),
-        postalCode: postalCode.trim(),
-      },
-    };
-
-    // Save to Firestore & local registered users pool for AdminPanel
+    const assignedId = `usr-${Date.now()}`;
     const newUser: RegisteredUser = {
-      id: session.id || `usr-${Date.now()}`,
+      id: assignedId,
       type: accountType === 'empresa' ? 'empresa' : 'consumidor',
-      name: accountType === 'empresa' ? companyName.trim() : (fullName.trim() || (email ? email.split('@')[0] : 'Usuario')),
+      role: 'client',
+      name: accountType === 'empresa' ? companyName.trim() : (fullName.trim() || cleanEmail.split('@')[0]),
       repName: accountType === 'empresa' ? fullName.trim() : undefined,
-      email: email.trim(),
+      email: cleanEmail,
+      password: cleanPass,
+      initialPassword: cleanPass,
       phone: phone.trim(),
       cuitOrDni: cuit.trim(),
       address: `${street.trim()} ${streetNumber.trim()}`.trim(),
@@ -152,14 +152,53 @@ export const AuthView: React.FC<AuthViewProps> = ({
       pricingTier: accountType === 'empresa' ? 'Corporativo / Mayorista' : 'Consumidor Final',
     };
 
-    saveFirestoreUser(newUser).catch((err) => {
-      console.warn('[FIREBASE] Error guardando usuario registrado:', err);
-    });
+    try {
+      // 1. Creación atómica en Firebase Authentication y Cloud Firestore
+      const authResult = await createFirebaseAuthAndFirestoreUser(newUser);
+      const finalUserId = (authResult.success && authResult.uid) ? authResult.uid : assignedId;
 
-    setSuccessMessage('¡Cuenta creada con éxito! Ingresando al catálogo...');
-    setTimeout(() => {
-      onLogin(session);
-    }, 400);
+      const session: UserSession = {
+        id: finalUserId,
+        email: cleanEmail,
+        role: 'client',
+        clientType: accountType,
+        clientData: {
+          fullName: fullName.trim() || cleanEmail.split('@')[0],
+          companyName: companyName.trim(),
+          cuit: cuit.trim(),
+          phone: phone.trim(),
+          address: `${street.trim()} ${streetNumber.trim()}`.trim(),
+          postalCode: postalCode.trim(),
+        },
+      };
+
+      setSuccessMessage('¡Cuenta creada con éxito! Ingresando al catálogo...');
+      setTimeout(() => {
+        onLogin(session);
+      }, 400);
+    } catch (err: any) {
+      console.warn('[AUTH] Error en creación de cuenta:', err);
+      // Fallback seguro de guardado
+      await saveFirestoreUser(newUser).catch(() => {});
+      const session: UserSession = {
+        id: assignedId,
+        email: cleanEmail,
+        role: 'client',
+        clientType: accountType,
+        clientData: {
+          fullName: fullName.trim() || cleanEmail.split('@')[0],
+          companyName: companyName.trim(),
+          cuit: cuit.trim(),
+          phone: phone.trim(),
+          address: `${street.trim()} ${streetNumber.trim()}`.trim(),
+          postalCode: postalCode.trim(),
+        },
+      };
+      setSuccessMessage('¡Cuenta registrada exitosamente! Ingresando al catálogo...');
+      setTimeout(() => {
+        onLogin(session);
+      }, 400);
+    }
   };
 
   // Submit Login (Dual Email o Nombre de Usuario con Contraseña o Código de Autenticador)

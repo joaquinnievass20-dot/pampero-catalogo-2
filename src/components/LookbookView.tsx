@@ -289,11 +289,6 @@ export const LookbookView: React.FC<LookbookViewProps> = ({
                                 <span className="font-display font-bold text-base text-neutral-900">
                                   ${product.price.toLocaleString('es-AR')}
                                 </span>
-                                {product.corporatePrice && product.corporatePrice < product.price && (
-                                  <span className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.5 rounded-xs">
-                                    Mayorista: ${product.corporatePrice.toLocaleString('es-AR')}
-                                  </span>
-                                )}
                               </div>
                             </div>
                           </div>

@@ -175,17 +175,20 @@ export const Navbar: React.FC<NavbarProps> = ({
       }}
     >
       <div 
-        className="text-white text-[11px] py-1.5 px-4 sm:px-8 border-b border-black/30 transition-colors select-none"
-        style={{ backgroundColor: theme.primaryColor || '#18231C' }}
+        className="text-[11px] py-1.5 px-4 sm:px-8 border-b border-black/30 transition-colors select-none"
+        style={{ 
+          backgroundColor: theme.announcementBgColor || theme.primaryColor || '#18231C',
+          color: theme.announcementTextColor || '#FFFFFF'
+        }}
       >
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-1">
-          <div className="flex items-center gap-4 text-neutral-300">
+          <div className="flex items-center gap-4 opacity-90">
             <span className="flex items-center gap-1.5">
-              <Phone className="w-3 h-3" style={{ color: accent }} />
+              <Phone className="w-3 h-3" style={{ color: theme.announcementAccentColor || accent }} />
               Ventas WhatsApp: <strong>+{theme.whatsappNumber || '5492615276713'}</strong>
             </span>
-            <span className="hidden md:inline text-neutral-500">|</span>
-            <span className="hidden md:inline text-neutral-300">
+            <span className="hidden md:inline opacity-50">|</span>
+            <span className="hidden md:inline">
               Distribución oficial en Gran Mendoza
             </span>
           </div>

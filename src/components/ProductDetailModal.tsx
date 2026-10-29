@@ -43,8 +43,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
 
   if (!product) return null;
 
-  const isCompany = userSession?.clientType === 'empresa';
-  const effectivePrice = isCompany && product.corporatePrice ? product.corporatePrice : product.price;
+  const effectivePrice = product.price;
   const hasDiscount = Boolean(product.discountPercentage && product.discountPercentage > 0);
   const discountedPrice = hasDiscount
     ? Math.round(effectivePrice * (1 - (product.discountPercentage || 0) / 100))
@@ -77,7 +76,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
 - *Talle:* ${currentSize}
 - *Color:* ${currentColor}
 - *Cantidad deseada:* ${quantity} unidades
-- *Precio de referencia:* $${discountedPrice.toLocaleString('es-AR')} c/u ${isCompany ? '(Tarifa Corporativa Empresa)' : ''}`;
+- *Precio de referencia:* $${discountedPrice.toLocaleString('es-AR')} c/u`;
 
     const url = `https://wa.me/${theme.whatsappNumber}?text=${encodeURIComponent(message)}`;
     window.open(url, '_blank');
@@ -241,11 +240,6 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 <div className="text-sm font-medium text-neutral-400 line-through">
                   ${effectivePrice.toLocaleString('es-AR')}
                 </div>
-              )}
-              {isCompany && (
-                <span className="ml-auto inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-50 text-blue-700 text-[11px] font-bold border border-blue-200">
-                  <Building2 className="w-3 h-3" /> Tarifa Empresa
-                </span>
               )}
             </div>
 

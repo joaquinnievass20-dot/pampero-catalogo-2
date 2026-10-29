@@ -496,10 +496,20 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
   return (
     <div className="flex flex-col min-h-[calc(100vh-80px)] bg-[#FAF8F5]">
       {/* Top Bar Navigation */}
-      <div className="bg-white border-b border-[#DCD4C9] w-full shrink-0 shadow-xs">
+      <div 
+        className="border-b w-full shrink-0 shadow-xs transition-colors"
+        style={{
+          backgroundColor: theme?.crmHeaderBgColor || '#FFFFFF',
+          borderColor: theme?.crmHeaderBorderColor || '#DCD4C9',
+          color: theme?.crmHeaderTextColor || '#18231C'
+        }}
+      >
         <div className="w-full max-w-[1700px] mx-auto px-4 sm:px-6 py-3 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3">
         <div className="flex items-center gap-4 sm:gap-6 flex-wrap">
-          <h2 className="font-display font-bold text-lg sm:text-xl uppercase tracking-wider text-[#18231C] flex items-center gap-2">
+          <h2 
+            className="font-display font-bold text-lg sm:text-xl uppercase tracking-wider flex items-center gap-2"
+            style={{ color: theme?.crmHeaderTextColor || '#18231C' }}
+          >
             <LayoutDashboard className="w-5 h-5 text-[#B9522F]" />
             Gestión Pampero
           </h2>

@@ -34,11 +34,20 @@ export const Footer: React.FC<FooterProps> = ({
   const accent = theme.accentColor || '#FDB813';
   const iconColor = theme.iconColor || accent;
 
+  const footerBg = theme.footerBgColor || theme.primaryColor || '#18231C';
+  const footerText = theme.footerTextColor || '#F5F2EC';
+  const footerBorder = theme.footerBorderColor || 'rgba(255, 255, 255, 0.1)';
+  const footerAccent = theme.footerAccentColor || accent;
+
   return (
     <footer 
       id="pampero-footer" 
-      className="text-[#F5F2EC] pt-14 pb-10 border-t border-neutral-800 transition-colors"
-      style={{ backgroundColor: theme.primaryColor || '#18231C' }}
+      className="pt-14 pb-10 border-t transition-colors"
+      style={{ 
+        backgroundColor: footerBg,
+        color: footerText,
+        borderColor: footerBorder
+      }}
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-12">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-10">

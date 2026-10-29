@@ -104,6 +104,22 @@ export function applyThemeToDocument(theme: ThemeConfig) {
   root.style.setProperty('--catalog-title', catalogTitle);
   root.style.setProperty('--catalog-text', text);
 
+  // Section variables
+  if (theme.announcementBgColor) root.style.setProperty('--announcement-bg', theme.announcementBgColor);
+  if (theme.announcementTextColor) root.style.setProperty('--announcement-text', theme.announcementTextColor);
+  if (theme.hubBorderColor) root.style.setProperty('--hub-border', theme.hubBorderColor);
+  if (theme.heroBgColor) root.style.setProperty('--hero-bg', theme.heroBgColor);
+  if (theme.heroTextColor) root.style.setProperty('--hero-text', theme.heroTextColor);
+  if (theme.quoteDrawerBgColor) root.style.setProperty('--quote-drawer-bg', theme.quoteDrawerBgColor);
+  if (theme.quoteDrawerTextColor) root.style.setProperty('--quote-drawer-text', theme.quoteDrawerTextColor);
+  if (theme.loginModalBgColor) root.style.setProperty('--login-modal-bg', theme.loginModalBgColor);
+  if (theme.loginModalTextColor) root.style.setProperty('--login-modal-text', theme.loginModalTextColor);
+  if (theme.crmHeaderBgColor) root.style.setProperty('--crm-header-bg', theme.crmHeaderBgColor);
+  if (theme.crmHeaderTextColor) root.style.setProperty('--crm-header-text', theme.crmHeaderTextColor);
+  if (theme.footerBgColor) root.style.setProperty('--footer-bg', theme.footerBgColor);
+  if (theme.footerTextColor) root.style.setProperty('--footer-text', theme.footerTextColor);
+  if (theme.footerBorderColor) root.style.setProperty('--footer-border', theme.footerBorderColor);
+
   if (theme.seasonBadgeBg) root.style.setProperty('--season-badge-bg', theme.seasonBadgeBg);
   if (theme.seasonBadgeText) root.style.setProperty('--season-badge-text', theme.seasonBadgeText);
   if (theme.discountBadgeBg) root.style.setProperty('--discount-badge-bg', theme.discountBadgeBg);
