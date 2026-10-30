@@ -175,53 +175,53 @@ export const Navbar: React.FC<NavbarProps> = ({
       }}
     >
       <div 
-        className="text-[11px] py-1.5 px-4 sm:px-8 border-b border-black/30 transition-colors select-none"
+        className="text-[11px] py-1.5 px-3 sm:px-6 lg:px-8 border-b border-black/30 transition-colors select-none w-full"
         style={{ 
           backgroundColor: theme.announcementBgColor || theme.primaryColor || '#18231C',
           color: theme.announcementTextColor || '#FFFFFF'
         }}
       >
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-1">
-          <div className="flex items-center gap-4 opacity-90">
-            <span className="flex items-center gap-1.5">
-              <Phone className="w-3 h-3" style={{ color: theme.announcementAccentColor || accent }} />
+        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2 min-w-0">
+          <div className="flex items-center gap-2 sm:gap-4 opacity-90 flex-wrap min-w-0 shrink">
+            <span className="flex items-center gap-1.5 whitespace-nowrap">
+              <Phone className="w-3 h-3 shrink-0" style={{ color: theme.announcementAccentColor || accent }} />
               Ventas WhatsApp: <strong>+{theme.whatsappNumber || '5492615276713'}</strong>
             </span>
             <span className="hidden md:inline opacity-50">|</span>
-            <span className="hidden md:inline">
+            <span className="hidden lg:inline whitespace-nowrap">
               Distribución oficial en Gran Mendoza
             </span>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 flex-wrap justify-end min-w-0 shrink">
             {userSession ? (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap justify-end min-w-0">
                 <button
                   type="button"
                   onClick={onOpenProfile}
-                  className="flex items-center gap-1 font-semibold text-white hover:text-amber-300 transition-colors p-1 rounded-xs hover:bg-white/10 cursor-pointer"
-                  title="Editar mis datos de contacto y dirección"
+                  className="flex items-center gap-1.5 font-semibold text-white hover:text-amber-300 transition-colors px-1.5 py-0.5 rounded-xs hover:bg-white/10 cursor-pointer min-w-0 max-w-[140px] sm:max-w-[200px] md:max-w-[280px]"
+                  title={`Editar datos de perfil: ${getClientName()}`}
                 >
                   {userSession.role === 'admin' ? (
-                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                   ) : userSession.role === 'employee' ? (
-                    <User className="w-3.5 h-3.5 text-blue-400" />
+                    <User className="w-3.5 h-3.5 text-blue-400 shrink-0" />
                   ) : userSession.clientType === 'empresa' ? (
-                    <Building2 className="w-3.5 h-3.5 text-amber-300" />
+                    <Building2 className="w-3.5 h-3.5 text-amber-300 shrink-0" />
                   ) : (
-                    <User className="w-3.5 h-3.5 text-emerald-400" />
+                    <User className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                   )}
-                  <span>{getClientName()}</span>
+                  <span className="truncate">{getClientName()}</span>
                 </button>
 
                 {(userSession.role === 'admin' || userSession.role === 'employee') && onOpenHub && (
                   <button
                     type="button"
                     onClick={onOpenHub}
-                    className="flex items-center gap-1 font-bold text-amber-300 hover:text-white transition-colors px-2 py-0.5 rounded-xs bg-black/30 hover:bg-black/50 text-[10px] uppercase tracking-wider cursor-pointer"
+                    className="flex items-center gap-1 font-bold text-amber-300 hover:text-white transition-colors px-2 py-0.5 rounded-xs bg-black/30 hover:bg-black/50 text-[10px] uppercase tracking-wider cursor-pointer whitespace-nowrap shrink-0"
                     title="Ir al Hub de Trabajo Interno"
                   >
-                    <Compass className="w-3 h-3 text-amber-400" />
+                    <Compass className="w-3 h-3 text-amber-400 shrink-0" />
                     <span className="hidden sm:inline">Hub de Trabajo</span>
                   </button>
                 )}
@@ -229,28 +229,28 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <button
                   type="button"
                   onClick={onLogout}
-                  className="text-neutral-400 hover:text-white p-0.5 transition-colors"
+                  className="text-neutral-400 hover:text-white p-1 transition-colors cursor-pointer shrink-0 rounded-xs hover:bg-white/10"
                   title="Cerrar sesión"
                 >
-                  <LogOut className="w-3 h-3" />
+                  <LogOut className="w-3.5 h-3.5" />
                 </button>
               </div>
             ) : (
               <button
                 type="button"
                 onClick={onOpenAuth}
-                className="hover:text-white font-bold transition-colors flex items-center gap-1 text-xs"
+                className="hover:text-white font-bold transition-colors flex items-center gap-1 text-xs whitespace-nowrap cursor-pointer px-1 py-0.5"
                 style={{ color: '#F5F2EC' }}
               >
-                <User className="w-3.5 h-3.5" style={{ color: accent }} /> Iniciar Sesión / Crear Cuenta
+                <User className="w-3.5 h-3.5 shrink-0" style={{ color: accent }} /> Iniciar Sesión / Crear Cuenta
               </button>
             )}
           </div>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-3.5">
-        <div className="flex items-center justify-between gap-4 sm:gap-6">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-2.5 sm:py-3.5 w-full">
+        <div className="flex items-center justify-between gap-2 sm:gap-4 lg:gap-6 min-w-0">
           
           {/* LOGO BLOQUEADO ESTRICTAMENTE POR CSS (IZQUIERDA) CON DETECCIÓN CLARO/OSCURO */}
           <div 

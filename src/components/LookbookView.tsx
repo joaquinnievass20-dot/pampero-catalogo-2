@@ -480,7 +480,7 @@ export const LookbookView: React.FC<LookbookViewProps> = ({
                 </h4>
               </div>
               <p className="text-[11px] text-neutral-300 leading-relaxed">
-                Podés pedir cotización mayorista o minorista de cada equipo completo agregando cada una de las prendas al cotizador de Gran Mendoza.
+                Podés pedir cotización de cada equipo completo agregando cada una de las prendas al cotizador de Gran Mendoza.
               </p>
             </div>
           </div>

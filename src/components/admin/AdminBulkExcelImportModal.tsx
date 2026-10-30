@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx';
 import { Product, MainCategory } from '../../types';
 import { CATEGORY_HIERARCHY } from '../../data/categories';
 import { writeBatch, doc } from 'firebase/firestore';
-import { db, getFirebaseDb } from '../../services/firebase';
+import { db, getFirebaseDb, recordAuditLog } from '../../services/firebase';
 import { 
   FileSpreadsheet, 
   Upload, 
@@ -552,6 +552,12 @@ export const AdminBulkExcelImportModal: React.FC<AdminBulkExcelImportModalProps>
       if (onImportProducts) {
         onImportProducts(updatedCatalog);
       }
+
+      recordAuditLog({
+        module: 'Catálogo',
+        action: 'Importar Excel',
+        details: `Importación masiva completada exitosamente: ${fullProducts.length} productos procesados y actualizados en Cloud Firestore.`,
+      }).catch(() => {});
 
       setSuccessCount(fullProducts.length);
       setTimeout(() => {

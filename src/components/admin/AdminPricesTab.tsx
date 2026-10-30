@@ -22,6 +22,7 @@ import {
   Layers,
   Power
 } from 'lucide-react';
+import { recordAuditLog } from '../../services/firebase';
 
 interface AdminPricesTabProps {
   products: Product[];
@@ -166,6 +167,11 @@ export const AdminPricesTab: React.FC<AdminPricesTabProps> = ({
     });
 
     onUpdateProducts(updated);
+    recordAuditLog({
+      module: 'Precios',
+      action: 'Actualizar Precios',
+      details: `Se actualizaron manualmente los precios de lista y descuentos de ${count} artículos del catálogo.`,
+    }).catch(() => {});
     alert(`¡Éxito! Se actualizaron los precios de ${count} artículos del catálogo.`);
     triggerSaveNotice();
   };
@@ -237,6 +243,11 @@ export const AdminPricesTab: React.FC<AdminPricesTabProps> = ({
     });
 
     onUpdateProducts(updated);
+    recordAuditLog({
+      module: 'Precios',
+      action: 'Importar Precios Planilla',
+      details: `Se actualizaron precios de lista desde planilla pegada para ${matchedPreview.length} artículos del catálogo.`,
+    }).catch(() => {});
     alert(`¡Éxito! Se actualizaron los precios de ${matchedPreview.length} artículos del catálogo.`);
     triggerSaveNotice();
     setMatchedPreview([]);

@@ -333,7 +333,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     <Building2 className={`w-5 h-5 shrink-0 mt-0.5 ${clientType === 'empresa' ? 'text-[#E52421]' : 'text-neutral-400'}`} />
                     <div>
                       <div className="font-bold text-sm">Empresa / Razón Social</div>
-                      <div className="text-xs text-neutral-500">Dotaciones y venta mayorista</div>
+                      <div className="text-xs text-neutral-500">Dotaciones y vestimenta corporativa</div>
                     </div>
                   </button>
                 </div>
@@ -669,7 +669,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
                   <div className="p-3 bg-neutral-100 rounded-lg text-xs text-neutral-600 flex items-start gap-2">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                    <span>Las cuentas de empresa habilitan precios de dotación mayorista y cotizador directo por volumen.</span>
+                    <span>Las cuentas de empresa habilitan cotizador directo por volumen y atención personalizada.</span>
                   </div>
 
                   <button

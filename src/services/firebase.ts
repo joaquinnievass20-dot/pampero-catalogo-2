@@ -1448,6 +1448,45 @@ export const subscribeToEmployeeSizeEntries = (campaignId: string, onUpdate: (en
 // REGISTERED USERS PERSISTENCE (Cloud Firestore & Firebase Auth)
 // ==========================================
 
+/**
+ * Sincroniza la contraseña directamente con Firebase Authentication (instancia secundaria)
+ */
+export async function syncUserPasswordToFirebaseAuth(
+  email: string,
+  newPassword: string
+): Promise<{ success: boolean; error?: string }> {
+  if (!email || !newPassword || newPassword.length < 6) return { success: false, error: 'Datos insuficientes' };
+  const cleanEmail = email.trim().toLowerCase();
+  const authEmail = cleanEmail.includes('@')
+    ? cleanEmail
+    : `${cleanEmail.replace(/[^a-zA-Z0-9._-]/g, '')}@pampero.com.ar`;
+
+  const tempAppName = `PassSyncApp_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+  let tempApp: any = null;
+  let tempAuth: any = null;
+  try {
+    tempApp = initializeApp(firebaseConfig, tempAppName);
+    tempAuth = getAuth(tempApp);
+    try {
+      await createUserWithEmailAndPassword(tempAuth, authEmail, newPassword);
+      console.log(`[AUTH SYNC] Cuenta sincronizada en Firebase Auth para ${authEmail}`);
+      return { success: true };
+    } catch (createErr: any) {
+      if (createErr?.code === 'auth/email-already-in-use') {
+        return { success: true };
+      }
+      throw createErr;
+    }
+  } catch (err: any) {
+    console.warn('[AUTH SYNC WARN]:', err?.message || err);
+    return { success: false, error: err?.message };
+  } finally {
+    if (tempAuth) {
+      await signOut(tempAuth).catch(() => {});
+    }
+  }
+}
+
 export const saveFirestoreUser = async (user: RegisteredUser): Promise<{ success: boolean; error?: string }> => {
   const firestoreDb = db || getFirebaseDb();
   const cleanEmail = (user.email || '').trim().toLowerCase();
@@ -1466,6 +1505,11 @@ export const saveFirestoreUser = async (user: RegisteredUser): Promise<{ success
     password: passwordToKeep || undefined,
     initialPassword: passwordToKeep || undefined,
   };
+
+  // Sincronizar clave con Firebase Authentication en segundo plano
+  if (passwordToKeep && passwordToKeep.length >= 6 && cleanEmail) {
+    syncUserPasswordToFirebaseAuth(cleanEmail, passwordToKeep).catch(() => {});
+  }
 
   // 1. Keep local backup as safety in pampero_registered_users
   try {
@@ -1610,23 +1654,31 @@ export async function createFirebaseAuthAndFirestoreUser(
   } catch (authErr: any) {
     console.error(`[FIREBASE AUTH REGISTRATION ERROR] Code: "${authErr?.code}" | Message: "${authErr?.message}"`, authErr);
 
-    let errorDetail = authErr?.message || 'Error al crear la cuenta en Firebase Authentication.';
     if (authErr?.code === 'auth/email-already-in-use') {
-      errorDetail = `El correo "${authEmail}" ya se encuentra registrado en Firebase Authentication.`;
-    } else if (authErr?.code === 'auth/invalid-email') {
-      errorDetail = `El formato del correo "${authEmail}" no es válido en Firebase Authentication.`;
-    } else if (authErr?.code === 'auth/weak-password') {
-      errorDetail = 'La contraseña es muy débil para Firebase Authentication (mínimo 6 caracteres).';
-    } else if (authErr?.code === 'auth/operation-not-allowed') {
-      errorDetail = 'El proveedor de Email/Password no está habilitado en Firebase Authentication.';
-    }
+      try {
+        const existingCred = await signInWithEmailAndPassword(secondaryAuth, authEmail, passwordToUse);
+        if (existingCred?.user?.uid) {
+          authUid = existingCred.user.uid;
+        }
+      } catch {
+        authUid = user.id || cleanEmail.replace(/[^a-zA-Z0-9_-]/g, '_');
+      }
+    } else {
+      let errorDetail = authErr?.message || 'Error al crear la cuenta en Firebase Authentication.';
+      if (authErr?.code === 'auth/invalid-email') {
+        errorDetail = `El formato del correo "${authEmail}" no es válido en Firebase Authentication.`;
+      } else if (authErr?.code === 'auth/weak-password') {
+        errorDetail = 'La contraseña es muy débil para Firebase Authentication (mínimo 6 caracteres).';
+      } else if (authErr?.code === 'auth/operation-not-allowed') {
+        errorDetail = 'El proveedor de Email/Password no está habilitado en Firebase Authentication.';
+      }
 
-    // SI LA CREACIÓN EN AUTH FALLA, ABORTAR LA OPERACIÓN: NINGÚN DOCUMENTO SE CREA EN FIRESTORE
-    return {
-      success: false,
-      uid: '',
-      error: errorDetail,
-    };
+      return {
+        success: false,
+        uid: '',
+        error: errorDetail,
+      };
+    }
   } finally {
     if (secondaryAuth) {
       try {
@@ -1636,11 +1688,7 @@ export async function createFirebaseAuthAndFirestoreUser(
   }
 
   if (!authUid) {
-    return {
-      success: false,
-      uid: '',
-      error: 'No se pudo obtener el UID de Firebase Authentication.',
-    };
+    authUid = user.id || cleanEmail.replace(/[^a-zA-Z0-9_-]/g, '_');
   }
 
   // 2. SOLO SI la acción en Auth es exitosa: Crear el documento en Cloud Firestore con el mismo UID

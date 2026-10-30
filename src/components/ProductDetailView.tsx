@@ -530,7 +530,7 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
                         TALLES ESTÁNDAR
                       </label>
                       <span className="text-[11px] text-[#6F6860]">
-                        Precio base: ${(isCompany && product.corporatePrice ? product.corporatePrice : product.price).toLocaleString('es-AR')}
+                        Precio base: ${product.price.toLocaleString('es-AR')}
                       </span>
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -560,7 +560,7 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
               {product.specialSizeRanges && product.specialSizeRanges.length > 0 && (
                 <div className="space-y-3 pt-3 border-t border-[#DCD4C9]/70">
                   {product.specialSizeRanges.map((range) => {
-                    const rangePrice = (isCompany && range.corporatePrice ? range.corporatePrice : range.price);
+                    const rangePrice = range.price;
                     const isThisRangeActive = activeSpecialRange?.id === range.id;
 
                     return (

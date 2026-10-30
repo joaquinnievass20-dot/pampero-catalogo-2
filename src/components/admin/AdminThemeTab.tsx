@@ -19,7 +19,7 @@ import {
 import { PamperoLogo } from '../PamperoLogo';
 import { AdminColorArticlesSection } from './AdminColorArticlesSection';
 import { isColorDark } from '../../context/ThemeContext';
-import { recordAuditLog } from '../../services/firebase';
+import { recordAuditLog, saveFirestoreStoreConfig } from '../../services/firebase';
 
 interface AdminThemeTabProps {
   theme: ThemeConfig;
@@ -323,32 +323,41 @@ export const AdminThemeTab: React.FC<AdminThemeTabProps> = ({
   const [currentTheme, setCurrentTheme] = useState<ThemeConfig>(theme);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [highlightTarget, setHighlightTarget] = useState<string | null>(null);
+  const liveSaveDebounceRef = useRef<any>(null);
 
   // Sync state if prop changes
   useEffect(() => {
     setCurrentTheme(theme);
   }, [theme]);
 
-  // Real-time theme update helper: immediately saves to localStorage and updates parent app
+  // Real-time theme update helper: immediately saves to localStorage, updates parent app, and debounces Firestore
   const applyLiveChange = (field: keyof ThemeConfig, value: any) => {
-    const updated = { ...currentTheme, [field]: value };
-    if (field === 'customLogoUrl') {
-      updated.logoUrl = value;
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('pampero_custom_logo', value);
+    setCurrentTheme((prev) => {
+      const updated: ThemeConfig = { ...prev, [field]: value };
+      if (field === 'customLogoUrl') {
+        updated.logoUrl = value;
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('pampero_custom_logo', value);
+        }
       }
-    }
-    if (field === 'logoHeight') {
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('pampero_logo_height', value.toString());
+      if (field === 'logoHeight') {
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('pampero_logo_height', value.toString());
+        }
       }
-    }
-    setCurrentTheme(updated);
-    onUpdateTheme(updated);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('pampero_catalog_theme', JSON.stringify(updated));
-      localStorage.setItem('pampero_theme_config', JSON.stringify(updated));
-    }
+      onUpdateTheme(updated);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('pampero_catalog_theme', JSON.stringify(updated));
+        localStorage.setItem('pampero_theme_config', JSON.stringify(updated));
+      }
+      if (liveSaveDebounceRef.current) {
+        clearTimeout(liveSaveDebounceRef.current);
+      }
+      liveSaveDebounceRef.current = setTimeout(() => {
+        saveFirestoreStoreConfig({ theme: updated }).catch(() => {});
+      }, 400);
+      return updated;
+    });
   };
 
   const handleSaveAllTheme = async () => {
@@ -363,6 +372,7 @@ export const AdminThemeTab: React.FC<AdminThemeTabProps> = ({
       }
     }
     onUpdateTheme(currentTheme);
+    await saveFirestoreStoreConfig({ theme: currentTheme }).catch(() => {});
     recordAuditLog({
       module: 'Diseño & Tema',
       action: 'Guardar Tema',
@@ -918,25 +928,19 @@ export const AdminThemeTab: React.FC<AdminThemeTabProps> = ({
                     <span className="text-xs font-bold uppercase text-[#18231C]">
                       Fondo del Hub / Sidebar
                     </span>
-                    <span className="text-[11px] font-mono text-[#6F6860]">{currentTheme.hubBgColor || currentTheme.panelBgColor || '#18231C'}</span>
+                    <span className="text-[11px] font-mono text-[#6F6860]">{currentTheme.hubBgColor || '#18231C'}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <input
                       type="color"
-                      value={currentTheme.hubBgColor || currentTheme.panelBgColor || '#18231C'}
-                      onChange={(e) => {
-                        applyLiveChange('hubBgColor', e.target.value);
-                        applyLiveChange('panelBgColor', e.target.value);
-                      }}
+                      value={currentTheme.hubBgColor || '#18231C'}
+                      onChange={(e) => applyLiveChange('hubBgColor', e.target.value)}
                       className="size-9 rounded-xs cursor-pointer border border-[#DCD4C9]"
                     />
                     <input
                       type="text"
-                      value={currentTheme.hubBgColor || currentTheme.panelBgColor || '#18231C'}
-                      onChange={(e) => {
-                        applyLiveChange('hubBgColor', e.target.value);
-                        applyLiveChange('panelBgColor', e.target.value);
-                      }}
+                      value={currentTheme.hubBgColor || '#18231C'}
+                      onChange={(e) => applyLiveChange('hubBgColor', e.target.value)}
                       className="flex-1 px-3 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs font-mono font-bold uppercase"
                     />
                   </div>
@@ -945,10 +949,7 @@ export const AdminThemeTab: React.FC<AdminThemeTabProps> = ({
                       <button
                         key={c}
                         type="button"
-                        onClick={() => {
-                          applyLiveChange('hubBgColor', c);
-                          applyLiveChange('panelBgColor', c);
-                        }}
+                        onClick={() => applyLiveChange('hubBgColor', c)}
                         className="px-2 py-0.5 text-[10px] rounded-xs border border-[#DCD4C9] font-mono"
                         style={{ backgroundColor: c, color: '#FFFFFF' }}
                       >
@@ -964,25 +965,19 @@ export const AdminThemeTab: React.FC<AdminThemeTabProps> = ({
                     <span className="text-xs font-bold uppercase text-[#18231C]">
                       Texto de la Barra
                     </span>
-                    <span className="text-[11px] font-mono text-[#6F6860]">{currentTheme.hubTextColor || currentTheme.panelTextColor || '#F5F2EC'}</span>
+                    <span className="text-[11px] font-mono text-[#6F6860]">{currentTheme.hubTextColor || '#F5F2EC'}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <input
                       type="color"
-                      value={currentTheme.hubTextColor || currentTheme.panelTextColor || '#F5F2EC'}
-                      onChange={(e) => {
-                        applyLiveChange('hubTextColor', e.target.value);
-                        applyLiveChange('panelTextColor', e.target.value);
-                      }}
+                      value={currentTheme.hubTextColor || '#F5F2EC'}
+                      onChange={(e) => applyLiveChange('hubTextColor', e.target.value)}
                       className="size-9 rounded-xs cursor-pointer border border-[#DCD4C9]"
                     />
                     <input
                       type="text"
-                      value={currentTheme.hubTextColor || currentTheme.panelTextColor || '#F5F2EC'}
-                      onChange={(e) => {
-                        applyLiveChange('hubTextColor', e.target.value);
-                        applyLiveChange('panelTextColor', e.target.value);
-                      }}
+                      value={currentTheme.hubTextColor || '#F5F2EC'}
+                      onChange={(e) => applyLiveChange('hubTextColor', e.target.value)}
                       className="flex-1 px-3 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs font-mono font-bold uppercase"
                     />
                   </div>
@@ -991,10 +986,7 @@ export const AdminThemeTab: React.FC<AdminThemeTabProps> = ({
                       <button
                         key={c}
                         type="button"
-                        onClick={() => {
-                          applyLiveChange('hubTextColor', c);
-                          applyLiveChange('panelTextColor', c);
-                        }}
+                        onClick={() => applyLiveChange('hubTextColor', c)}
                         className="px-2 py-0.5 text-[10px] rounded-xs border border-[#DCD4C9] font-mono text-black"
                         style={{ backgroundColor: c }}
                       >
@@ -1010,19 +1002,19 @@ export const AdminThemeTab: React.FC<AdminThemeTabProps> = ({
                     <span className="text-xs font-bold uppercase text-[#18231C]">
                       Acento / Botones del Hub
                     </span>
-                    <span className="text-[11px] font-mono text-[#6F6860]">{currentTheme.panelAccentColor || currentTheme.accentColor || '#FDB813'}</span>
+                    <span className="text-[11px] font-mono text-[#6F6860]">{currentTheme.hubAccentColor || '#FDB813'}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <input
                       type="color"
-                      value={currentTheme.panelAccentColor || currentTheme.accentColor || '#FDB813'}
-                      onChange={(e) => applyLiveChange('panelAccentColor', e.target.value)}
+                      value={currentTheme.hubAccentColor || '#FDB813'}
+                      onChange={(e) => applyLiveChange('hubAccentColor', e.target.value)}
                       className="size-9 rounded-xs cursor-pointer border border-[#DCD4C9]"
                     />
                     <input
                       type="text"
-                      value={currentTheme.panelAccentColor || currentTheme.accentColor || '#FDB813'}
-                      onChange={(e) => applyLiveChange('panelAccentColor', e.target.value)}
+                      value={currentTheme.hubAccentColor || '#FDB813'}
+                      onChange={(e) => applyLiveChange('hubAccentColor', e.target.value)}
                       className="flex-1 px-3 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs font-mono font-bold uppercase"
                     />
                   </div>
@@ -1109,20 +1101,14 @@ export const AdminThemeTab: React.FC<AdminThemeTabProps> = ({
                   <div className="flex items-center gap-2">
                     <input
                       type="color"
-                      value={currentTheme.buttonBgColor || currentTheme.primaryColor || '#18231C'}
-                      onChange={(e) => {
-                        applyLiveChange('buttonBgColor', e.target.value);
-                        applyLiveChange('primaryColor', e.target.value);
-                      }}
+                      value={currentTheme.buttonBgColor || '#18231C'}
+                      onChange={(e) => applyLiveChange('buttonBgColor', e.target.value)}
                       className="size-8 rounded-xs cursor-pointer border border-[#DCD4C9]"
                     />
                     <input
                       type="text"
-                      value={currentTheme.buttonBgColor || currentTheme.primaryColor || '#18231C'}
-                      onChange={(e) => {
-                        applyLiveChange('buttonBgColor', e.target.value);
-                        applyLiveChange('primaryColor', e.target.value);
-                      }}
+                      value={currentTheme.buttonBgColor || '#18231C'}
+                      onChange={(e) => applyLiveChange('buttonBgColor', e.target.value)}
                       className="flex-1 px-2.5 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs font-mono font-bold uppercase"
                     />
                   </div>
@@ -1206,7 +1192,7 @@ export const AdminThemeTab: React.FC<AdminThemeTabProps> = ({
                     }}
                     className="px-5 py-2.5 rounded-xs text-xs font-bold uppercase tracking-wider shadow-sm transition-transform active:scale-95 cursor-pointer"
                   >
-                    Solicitar Cotización Mayorista
+                    Solicitar Cotización
                   </button>
 
                   <button
@@ -1297,20 +1283,14 @@ export const AdminThemeTab: React.FC<AdminThemeTabProps> = ({
                   <div className="flex items-center gap-2">
                     <input
                       type="color"
-                      value={currentTheme.catalogTitleColor || currentTheme.textColor || '#18231C'}
-                      onChange={(e) => {
-                        applyLiveChange('catalogTitleColor', e.target.value);
-                        applyLiveChange('textColor', e.target.value);
-                      }}
+                      value={currentTheme.catalogTitleColor || '#18231C'}
+                      onChange={(e) => applyLiveChange('catalogTitleColor', e.target.value)}
                       className="size-8 rounded-xs cursor-pointer border border-[#DCD4C9]"
                     />
                     <input
                       type="text"
-                      value={currentTheme.catalogTitleColor || currentTheme.textColor || '#18231C'}
-                      onChange={(e) => {
-                        applyLiveChange('catalogTitleColor', e.target.value);
-                        applyLiveChange('textColor', e.target.value);
-                      }}
+                      value={currentTheme.catalogTitleColor || '#18231C'}
+                      onChange={(e) => applyLiveChange('catalogTitleColor', e.target.value)}
                       className="flex-1 px-2.5 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs font-mono font-bold uppercase"
                     />
                   </div>
@@ -1938,20 +1918,14 @@ export const AdminThemeTab: React.FC<AdminThemeTabProps> = ({
                   <div className="flex items-center gap-2">
                     <input
                       type="color"
-                      value={currentTheme.cardTextColor || currentTheme.catalogTextColor || '#22201D'}
-                      onChange={(e) => {
-                        applyLiveChange('cardTextColor', e.target.value);
-                        applyLiveChange('catalogTextColor', e.target.value);
-                      }}
+                      value={currentTheme.cardTextColor || '#22201D'}
+                      onChange={(e) => applyLiveChange('cardTextColor', e.target.value)}
                       className="size-8 rounded-xs cursor-pointer border border-[#DCD4C9]"
                     />
                     <input
                       type="text"
-                      value={currentTheme.cardTextColor || currentTheme.catalogTextColor || '#22201D'}
-                      onChange={(e) => {
-                        applyLiveChange('cardTextColor', e.target.value);
-                        applyLiveChange('catalogTextColor', e.target.value);
-                      }}
+                      value={currentTheme.cardTextColor || '#22201D'}
+                      onChange={(e) => applyLiveChange('cardTextColor', e.target.value)}
                       className="flex-1 px-2.5 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs font-mono font-bold uppercase"
                     />
                   </div>

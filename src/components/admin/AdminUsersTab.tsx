@@ -492,11 +492,14 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
       }
 
       const finalUserId = authResult.uid || userId;
-      // SEGURIDAD: La contraseña NO se conserva en el estado ni en Firestore
-      const { password: _p, initialPassword: _ip, ...safeUser } = newUser;
-      const finalUser: RegisteredUser = { ...safeUser, id: finalUserId };
+      const finalUser: RegisteredUser = { 
+        ...newUser, 
+        id: finalUserId,
+        password: passTrimmed,
+        initialPassword: passTrimmed,
+      };
 
-      // Actualizar estado local inmediatamente con el UID unificado de Auth
+      // Actualizar estado local inmediatamente con el UID unificado de Auth y Firestore
       setUsers((prev) => [finalUser, ...prev.filter((u) => u.id !== finalUserId && u.email?.toLowerCase() !== emailTrimmed)]);
       triggerSaveNotice();
 
