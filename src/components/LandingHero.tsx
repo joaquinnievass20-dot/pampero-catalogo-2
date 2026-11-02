@@ -321,8 +321,9 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
             }}
             className="sticky top-0 z-50 border-b px-4 sm:px-8 py-3.5 shadow-xs transition-colors"
           >
-            <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
-              <div className="cursor-pointer shrink-0" onClick={() => onOpenCatalog(null, null)} title="Inicio">
+            <div className="grid grid-cols-[auto_1fr_auto] lg:grid-cols-[1fr_auto_1fr] items-center gap-4 max-w-7xl mx-auto w-full">
+              {/* Col 1: Logo */}
+              <div className="cursor-pointer shrink-0 flex items-center justify-start" onClick={() => onOpenCatalog(null, null)} title="Inicio">
                 <PamperoLogo 
                   customLogoUrl={theme?.customLogoUrl}
                   height={theme?.logoHeight || 48}
@@ -331,8 +332,8 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
                 />
               </div>
 
-              {/* Desktop Categories links with hover mega-menu dropdown */}
-              <div className="hidden md:flex items-center gap-4">
+              {/* Col 2: Desktop Categories links centered symmetrically */}
+              <div className="hidden lg:flex items-center justify-center gap-4 mx-auto">
                 <CategoryMenuNav
                   categoriesHierarchy={categoriesHierarchy}
                   onSelectCategoryItem={(cat, sec, sub) => {
@@ -350,23 +351,25 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
                 />
               </div>
 
-              {/* User / Session State & Quote Cart (Harmonized Dropdown Menu) */}
-              <UserNavMenu
-                userSession={userSession}
-                cartCount={cartCount}
-                onOpenCart={onOpenCart}
-                onOpenAuth={() => onOpenAuth('login', 'consumidor')}
-                onLogout={onLogout}
-                onOpenAdmin={onOpenAdmin}
-                onOpenCRM={onOpenCRM}
-                onOpenHub={onOpenHub}
-                onOpenUniformSimulator={onOpenUniformSimulator}
-                onOpenSizingPortal={onOpenSizingPortal}
-                onOpenProfile={onOpenProfile}
-                onOpenCatalog={() => onOpenCatalog(null, null)}
-                theme={theme}
-                isDarkHeader={isDarkHeader}
-              />
+              {/* Col 3: User / Session State & Quote Cart */}
+              <div className="flex items-center justify-end gap-3 shrink-0 ml-auto">
+                <UserNavMenu
+                  userSession={userSession}
+                  cartCount={cartCount}
+                  onOpenCart={onOpenCart}
+                  onOpenAuth={() => onOpenAuth('login', 'consumidor')}
+                  onLogout={onLogout}
+                  onOpenAdmin={onOpenAdmin}
+                  onOpenCRM={onOpenCRM}
+                  onOpenHub={onOpenHub}
+                  onOpenUniformSimulator={onOpenUniformSimulator}
+                  onOpenSizingPortal={onOpenSizingPortal}
+                  onOpenProfile={onOpenProfile}
+                  onOpenCatalog={() => onOpenCatalog(null, null)}
+                  theme={theme}
+                  isDarkHeader={isDarkHeader}
+                />
+              </div>
             </div>
           </header>
         );

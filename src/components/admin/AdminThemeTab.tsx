@@ -806,25 +806,25 @@ export const AdminThemeTab: React.FC<AdminThemeTabProps> = ({
                   </div>
                 </div>
 
-                {/* 3. Acento / Enlace Activo */}
+                {/* 3. Acento / Enlace Activo (Aislado exclusivamente al Navbar) */}
                 <div className="p-4 bg-white border border-[#DCD4C9] rounded-xs space-y-3 shadow-2xs">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold uppercase text-[#18231C]">
                       Acento / Enlace Activo
                     </span>
-                    <span className="text-[11px] font-mono text-[#6F6860]">{currentTheme.accentColor || '#FDB813'}</span>
+                    <span className="text-[11px] font-mono text-[#6F6860]">{currentTheme.headerAccentColor || currentTheme.accentColor || '#FDB813'}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <input
                       type="color"
-                      value={currentTheme.accentColor || '#FDB813'}
-                      onChange={(e) => applyLiveChange('accentColor', e.target.value)}
+                      value={currentTheme.headerAccentColor || currentTheme.accentColor || '#FDB813'}
+                      onChange={(e) => applyLiveChange('headerAccentColor', e.target.value)}
                       className="size-9 rounded-xs cursor-pointer border border-[#DCD4C9]"
                     />
                     <input
                       type="text"
-                      value={currentTheme.accentColor || '#FDB813'}
-                      onChange={(e) => applyLiveChange('accentColor', e.target.value)}
+                      value={currentTheme.headerAccentColor || currentTheme.accentColor || '#FDB813'}
+                      onChange={(e) => applyLiveChange('headerAccentColor', e.target.value)}
                       className="flex-1 px-3 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs font-mono font-bold uppercase"
                     />
                   </div>
@@ -833,7 +833,7 @@ export const AdminThemeTab: React.FC<AdminThemeTabProps> = ({
                       <button
                         key={c}
                         type="button"
-                        onClick={() => applyLiveChange('accentColor', c)}
+                        onClick={() => applyLiveChange('headerAccentColor', c)}
                         className="px-2 py-0.5 text-[10px] rounded-xs border border-[#DCD4C9] hover:border-black font-mono transition-colors"
                         style={{ backgroundColor: c, color: isColorDark(c) ? '#FFFFFF' : '#18231C' }}
                       >
@@ -864,7 +864,7 @@ export const AdminThemeTab: React.FC<AdminThemeTabProps> = ({
                   <div className="flex items-center gap-4 text-xs font-bold uppercase tracking-wider font-display">
                     <span 
                       style={{ 
-                        color: currentTheme.accentColor || '#FDB813',
+                        color: currentTheme.headerAccentColor || currentTheme.accentColor || '#FDB813',
                         textDecoration: 'underline',
                         textUnderlineOffset: '4px'
                       }}
@@ -889,7 +889,7 @@ export const AdminThemeTab: React.FC<AdminThemeTabProps> = ({
                   <div 
                     className="px-3 py-1 rounded-xs text-[11px] font-bold uppercase flex items-center gap-1.5"
                     style={{
-                      backgroundColor: currentTheme.accentColor || '#FDB813',
+                      backgroundColor: currentTheme.headerAccentColor || currentTheme.accentColor || '#FDB813',
                       color: '#18231C'
                     }}
                   >

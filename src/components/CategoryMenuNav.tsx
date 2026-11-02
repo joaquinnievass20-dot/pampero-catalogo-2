@@ -28,8 +28,8 @@ export const CategoryMenuNav: React.FC<CategoryMenuNavProps> = ({
   const timeoutRef = useRef<number | null>(null);
   const menuContainerRef = useRef<HTMLDivElement>(null);
 
-  const accent = theme?.accentColor || '#FDB813';
-  const textColor = isDarkHeader ? '#F5F2EC' : (theme?.textColor || '#18231C');
+  const accent = theme?.headerAccentColor || theme?.accentColor || '#FDB813';
+  const textColor = theme?.headerTextColor || (isDarkHeader ? '#F5F2EC' : (theme?.textColor || '#18231C'));
   const cardBorder = theme?.cardBorderColor || '#DCD4C9';
   const panelBg = '#FFFFFF';
 

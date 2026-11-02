@@ -273,6 +273,8 @@ export interface ThemeConfig {
   textColor?: string; // e.g., #18231C
   headerBgColor?: string; // e.g., #FFFFFF (Navbar)
   headerTextColor?: string; // e.g., #18231C
+  headerAccentColor?: string; // Color de acento/enlace activo exclusivo del Navbar
+  headerBorderColor?: string; // Color de borde inferior del Navbar
   hubBgColor?: string; // Menú de Administrador/Empleados (Hub y CRM)
   hubTextColor?: string; // Color de texto en Menú Administrador
   catalogTitleColor?: string; // Textos y títulos del catálogo

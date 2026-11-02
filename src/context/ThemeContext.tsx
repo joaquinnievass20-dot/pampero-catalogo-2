@@ -71,36 +71,52 @@ export function applyThemeToDocument(theme: ThemeConfig) {
     linkEl.href = targetHref;
   }
 
-  // 2. Colores y variables de marca
-  const primary = theme.buttonBgColor || theme.primaryColor || '#18231C';
+  // 2. Colores y variables de marca quirúrgicamente aisladas por sección
+  const buttonBg = theme.buttonBgColor || theme.primaryColor || '#18231C';
+  const buttonText = theme.buttonTextColor || (isColorDark(buttonBg) ? '#FFFFFF' : '#18231C');
   const accent = theme.accentColor || '#FDB813';
   const bg = theme.backgroundColor || '#F5F2EC';
   const text = theme.catalogTextColor || theme.textColor || '#22201D';
   const catalogTitle = theme.catalogTitleColor || theme.textColor || '#18231C';
+
+  // Variables aisladas exclusivas del Navbar (NO afectan botones generales)
   const headerBg = theme.headerBgColor || '#FFFFFF';
   const darkNav = isColorDark(headerBg);
   const headerText = theme.headerTextColor || (darkNav ? '#F5F2EC' : '#18231C');
+  const headerAccent = theme.headerAccentColor || theme.accentColor || '#FDB813';
+  const headerBorder = theme.headerBorderColor || (darkNav ? 'rgba(255, 255, 255, 0.15)' : '#DCD4C9');
+
+  // Variables aisladas exclusivas del Hub de Trabajo (Admin / Empleados)
   const hubBg = theme.hubBgColor || theme.panelBgColor || theme.primaryColor || '#18231C';
   const darkHub = isColorDark(hubBg);
   const hubText = theme.hubTextColor || theme.panelTextColor || (darkHub ? '#F5F2EC' : '#18231C');
+  const hubAccent = theme.hubAccentColor || theme.panelAccentColor || accent;
+
   const cardBg = theme.cardBgColor || theme.panelBgColor || '#FAF8F5';
   const cardBorder = theme.cardBorderColor || '#DCD4C9';
-  const buttonText = theme.buttonTextColor || (isColorDark(primary) ? '#FFFFFF' : '#18231C');
 
   root.style.setProperty('--background', bg);
   root.style.setProperty('--foreground', text);
-  root.style.setProperty('--primary', primary);
-  root.style.setProperty('--primary-foreground', headerText);
+  root.style.setProperty('--primary', buttonBg);
+  root.style.setProperty('--primary-foreground', buttonText);
   root.style.setProperty('--accent', accent);
-  root.style.setProperty('--accent-foreground', buttonText);
-  root.style.setProperty('--btn-bg', primary);
+  root.style.setProperty('--accent-foreground', isColorDark(accent) ? '#FFFFFF' : '#18231C');
+  root.style.setProperty('--btn-bg', buttonBg);
   root.style.setProperty('--btn-text', buttonText);
   root.style.setProperty('--card', cardBg);
   root.style.setProperty('--border', cardBorder);
+
+  // Variables exclusivas de Navbar
   root.style.setProperty('--header-bg', headerBg);
   root.style.setProperty('--header-text', headerText);
+  root.style.setProperty('--header-accent', headerAccent);
+  root.style.setProperty('--header-border', headerBorder);
+
+  // Variables exclusivas de Hub
   root.style.setProperty('--hub-bg', hubBg);
   root.style.setProperty('--hub-text', hubText);
+  root.style.setProperty('--hub-accent', hubAccent);
+
   root.style.setProperty('--catalog-title', catalogTitle);
   root.style.setProperty('--catalog-text', text);
 

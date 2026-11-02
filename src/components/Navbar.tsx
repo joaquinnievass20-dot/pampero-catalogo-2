@@ -88,8 +88,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const dropdownTimeoutRef = useRef<number | null>(null);
 
-  // ACÁ REEMPLAZAMOS EL TERRACOTA POR EL AMARILLO OFICIAL DE PAMPERO
-  const accent = theme.accentColor || '#FDB813';
+  // ACÁ CONSUMIMOS EL ACENTO EXCLUSIVO DEL NAVBAR O FALLBACK AL OFICIAL PAMPERO
+  const accent = theme.headerAccentColor || theme.accentColor || '#FDB813';
   const hoverAccent = theme.hoverAccentColor || '#E0A310';
   const iconColor = theme.iconColor || accent;
 
@@ -214,15 +214,23 @@ export const Navbar: React.FC<NavbarProps> = ({
                   <span className="truncate">{getClientName()}</span>
                 </button>
 
-                {(userSession.role === 'admin' || userSession.role === 'employee') && onOpenHub && (
+                {(userSession.role === 'admin' || userSession.role === 'employee') && (onOpenHub || onOpenAdmin) && (
                   <button
                     type="button"
-                    onClick={onOpenHub}
-                    className="flex items-center gap-1 font-bold text-amber-300 hover:text-white transition-colors px-2 py-0.5 rounded-xs bg-black/30 hover:bg-black/50 text-[10px] uppercase tracking-wider cursor-pointer whitespace-nowrap shrink-0"
-                    title="Ir al Hub de Trabajo Interno"
+                    onClick={() => {
+                      if (onOpenHub) onOpenHub();
+                      else if (onOpenAdmin) onOpenAdmin();
+                    }}
+                    style={{
+                      backgroundColor: theme.hubAccentColor || theme.accentColor || '#FDB813',
+                      color: '#18231C',
+                      borderColor: theme.hubBorderColor || 'transparent',
+                    }}
+                    className="flex items-center gap-1 font-bold transition-all px-2.5 py-0.5 rounded-xs text-[10px] uppercase tracking-wider cursor-pointer whitespace-nowrap shrink-0 shadow-2xs hover:brightness-110"
+                    title={userSession.role === 'admin' ? 'Acceder al Panel de Control / Hub' : 'Acceder al Hub de Trabajo'}
                   >
-                    <Compass className="w-3 h-3 text-amber-400 shrink-0" />
-                    <span className="hidden sm:inline">Hub de Trabajo</span>
+                    <Compass className="w-3.5 h-3.5 text-[#18231C] shrink-0" />
+                    <span className="hidden sm:inline">{userSession.role === 'admin' ? 'Panel de Control' : 'Hub de Trabajo'}</span>
                   </button>
                 )}
 
@@ -250,11 +258,11 @@ export const Navbar: React.FC<NavbarProps> = ({
       </div>
 
       <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-2.5 sm:py-3.5 w-full">
-        <div className="flex items-center justify-between gap-2 sm:gap-4 lg:gap-6 min-w-0">
+        <div className="grid grid-cols-[auto_1fr_auto] lg:grid-cols-[1fr_auto_1fr] items-center gap-2 sm:gap-4 lg:gap-6 min-w-0 w-full">
           
-          {/* LOGO BLOQUEADO ESTRICTAMENTE POR CSS (IZQUIERDA) CON DETECCIÓN CLARO/OSCURO */}
+          {/* COL 1: LOGO (IZQUIERDA) */}
           <div 
-            className="cursor-pointer shrink-0" 
+            className="flex items-center justify-start cursor-pointer shrink-0" 
             onClick={() => {
               onSelectCategory('Hombre');
               onSelectSection('Todos');
@@ -268,8 +276,8 @@ export const Navbar: React.FC<NavbarProps> = ({
             />
           </div>
 
-          {/* Menú al centro en desktop */}
-          <div className="hidden lg:flex items-center justify-center gap-1 xl:gap-2 flex-1 mx-2">
+          {/* COL 2: MENÚ CENTRADO ABSOLUTO (CENTRO SIMÉTRICO) */}
+          <div className="hidden lg:flex items-center justify-center gap-1 xl:gap-2 mx-auto">
             {mainCategories.map((cat) => {
               const categoryDef = CATEGORY_HIERARCHY.find((c) => c.name === cat);
               const isCurrent = currentCategory === cat;
@@ -320,8 +328,8 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
           </div>
 
-          {/* DERECHA: Buscador + Carrito */}
-          <div className="flex items-center gap-3 shrink-0">
+          {/* COL 3: DERECHA (BUSCADOR + CARRITO) */}
+          <div className="flex items-center justify-end gap-3 shrink-0 ml-auto">
             <div className="hidden md:flex relative w-48 lg:w-60">
               <Search className="w-4 h-4 text-neutral-400 absolute left-3.5 top-2.5 pointer-events-none" />
               <input

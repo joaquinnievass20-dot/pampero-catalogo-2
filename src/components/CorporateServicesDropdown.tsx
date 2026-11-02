@@ -23,7 +23,7 @@ export const CorporateServicesDropdown: React.FC<CorporateServicesDropdownProps>
   const containerRef = useRef<HTMLDivElement>(null);
   const timeoutRef = useRef<number | null>(null);
 
-  const accent = theme?.accentColor || '#FDB813';
+  const accent = theme?.headerAccentColor || theme?.accentColor || '#FDB813';
   const primaryBg = theme?.primaryColor || '#18231C';
 
   // Handle outside click

@@ -900,10 +900,10 @@ export default function App() {
               <span>CATÁLOGO DIGITAL · EXHIBICIÓN DE PRODUCTO</span>
             </div>
 
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex items-center justify-between gap-4">
-              {/* Logo con auto-adaptación al color de fondo */}
+            <div className="grid grid-cols-[auto_1fr_auto] lg:grid-cols-[1fr_auto_1fr] items-center gap-4 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 w-full">
+              {/* Col 1 (Izquierda): Logo con auto-adaptación al color de fondo */}
               <div
-                className="cursor-pointer shrink-0"
+                className="cursor-pointer shrink-0 flex items-center justify-start"
                 onClick={() => setViewMode('landing')}
                 title="Volver a la portada principal"
               >
@@ -915,8 +915,8 @@ export default function App() {
                 />
               </div>
 
-              {/* Center Category Navigation with persistent mega-menu dropdown */}
-              <div className="hidden lg:flex items-center justify-center gap-4 flex-1 mx-4">
+              {/* Col 2 (Centro Simétrico): Menú de Categorías con mega-menu dropdown */}
+              <div className="hidden lg:flex items-center justify-center gap-4 mx-auto">
                 <CategoryMenuNav
                   currentCategory={currentCategory}
                   activePromoFilter={activePromoFilter}
@@ -944,8 +944,8 @@ export default function App() {
                 />
               </div>
 
-              {/* Right User & Quote Actions + Quick Search */}
-              <div className="flex items-center gap-3 shrink-0">
+              {/* Col 3 (Derecha): Buscador + Menú de Usuario y Cotización */}
+              <div className="flex items-center justify-end gap-3 shrink-0 ml-auto">
                 <div className="relative hidden md:flex items-center w-48 lg:w-60">
                   <Search 
                     className={`w-3.5 h-3.5 absolute left-3 pointer-events-none ${

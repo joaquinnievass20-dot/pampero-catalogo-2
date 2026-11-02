@@ -7,6 +7,7 @@ import {
   deleteFirestoreUser,
   seedInitialFirestoreUsersIfEmpty,
   createFirebaseAuthAndFirestoreUser,
+  sendUserPasswordResetEmail,
 } from '../../services/firebase';
 import { 
   Users, 
@@ -249,69 +250,34 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
   const [newAccountAddress, setNewAccountAddress] = useState('');
   const [newAccountCity, setNewAccountCity] = useState('Gran Mendoza');
   const [newAccountBranch, setNewAccountBranch] = useState(branches?.[0]?.name || 'Maipú');
-  const [newAccountPassword, setNewAccountPassword] = useState('');
-  const [showModalPassword, setShowModalPassword] = useState(true);
   const [createError, setCreateError] = useState<string | null>(null);
   const [createdSuccessUser, setCreatedSuccessUser] = useState<RegisteredUser | null>(null);
 
-  // Visibilidad de contraseñas por usuario y avisos
-  const [visiblePasswords, setVisiblePasswords] = useState<Record<string, boolean>>({});
-  const [tempPassNotice, setTempPassNotice] = useState<string | null>(null);
+  // Avisos de envío oficial de restablecimiento de contraseña
+  const [resetEmailNotice, setResetEmailNotice] = useState<string | null>(null);
+  const [isSendingReset, setIsSendingReset] = useState<string | null>(null);
 
-  const togglePasswordVisibility = (userId: string) => {
-    setVisiblePasswords((prev) => ({
-      ...prev,
-      [userId]: !prev[userId],
-    }));
-  };
-
-  const handleGenerateTempPassword = async (u: RegisteredUser) => {
-    const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
-    let randomPart = '';
-    for (let i = 0; i < 4; i++) {
-      randomPart += chars.charAt(Math.floor(Math.random() * chars.length));
+  const handleSendPasswordReset = async (u: RegisteredUser) => {
+    const targetEmail = (u.email || '').trim().toLowerCase();
+    if (!targetEmail || !targetEmail.includes('@')) {
+      alert('La cuenta no tiene un correo electrónico válido configurado para recibir el enlace de acceso.');
+      return;
     }
-    const tempPass = `Pampero${randomPart}!`;
-
-    const updatedUser: RegisteredUser = {
-      ...u,
-      password: tempPass,
-      mustChangePassword: true,
-      updatedAt: new Date().toISOString(),
-    };
-
-    setUsers((prev) => prev.map((item) => (item.id === u.id ? updatedUser : item)));
-
+    setIsSendingReset(u.id);
     try {
-      const stored = JSON.parse(localStorage.getItem('pampero_registered_users') || '[]');
-      const nextStored = stored.map((item: any) => (item.id === u.id ? updatedUser : item));
-      localStorage.setItem('pampero_registered_users', JSON.stringify(nextStored));
-    } catch {}
-
-    if (u.type === 'empleado' || u.role === 'employee') {
-      try {
-        const emps: any[] = JSON.parse(localStorage.getItem('pampero_employees') || '[]');
-        const nextEmps = emps.map((emp) =>
-          emp.id === u.id || emp.email?.toLowerCase().trim() === u.email?.toLowerCase().trim()
-            ? { ...emp, password: tempPass, mustChangePassword: true }
-            : emp
-        );
-        localStorage.setItem('pampero_employees', JSON.stringify(nextEmps));
-      } catch {}
+      const res = await sendUserPasswordResetEmail(targetEmail);
+      if (res.success) {
+        setResetEmailNotice(`¡Enlace oficial de Firebase Authentication enviado a ${targetEmail}! El usuario puede hacer clic en ese enlace para definir o actualizar su propia contraseña de forma directa y 100% segura.`);
+        setTimeout(() => setResetEmailNotice(null), 8000);
+        triggerSaveNotice();
+      } else {
+        alert(res.error || 'No se pudo enviar el correo de restablecimiento.');
+      }
+    } catch (err: any) {
+      alert(`Error al enviar correo de restablecimiento: ${err?.message || err}`);
+    } finally {
+      setIsSendingReset(null);
     }
-
-    try {
-      await saveFirestoreUser(updatedUser);
-    } catch (err) {
-      console.error('Error guardando contraseña temporal en Firestore:', err);
-    }
-
-    setVisiblePasswords((prev) => ({ ...prev, [u.id]: true }));
-
-    navigator.clipboard.writeText(tempPass);
-    setTempPassNotice(`¡Contraseña temporal generada para ${u.name}: "${tempPass}" (copiada)! Deberá cambiarla al iniciar sesión por primera vez.`);
-    setTimeout(() => setTempPassNotice(null), 7000);
-    triggerSaveNotice();
   };
 
   // 1. Suscripción en tiempo real a Cloud Firestore usando onSnapshot
@@ -332,22 +298,9 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
     };
   }, []);
 
-  // Generador de clave sugerida inicial para la creación en Firebase Authentication
-  const generateRandomPassword = () => {
-    const chars = 'abcdefghjkmnpqrstuvwxyz23456789';
-    let code = '';
-    for (let i = 0; i < 5; i++) {
-      code += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    const cleanPrefix = (newAccountName.split(' ')[0] || 'Pampero').replace(/[^a-zA-Z]/g, '');
-    const generated = `${cleanPrefix}2026_${code}`;
-    setNewAccountPassword(generated);
-  };
-
-  // Copiar mensaje de acceso para enviar por WhatsApp
+  // Copiar mensaje oficial de acceso para enviar por WhatsApp
   const handleCopyCredentialsMessage = (u: RegisteredUser) => {
-    const passInfo = u.password ? `\n🔑 Contraseña temporal: ${u.password}${u.mustChangePassword ? ' (deberás cambiarla al ingresar)' : ''}` : '';
-    const msg = `¡Hola ${u.name}! Ya tenés habilitado tu acceso al Catálogo Oficial Pampero Gran Mendoza.\n\n👤 Usuario / Email: ${u.email}${passInfo}\n🔗 Ingresá acá: ${window.location.origin}\n\nPodés ingresar con tu clave asignada o restablecerla desde la pantalla de ingreso.`;
+    const msg = `¡Hola ${u.name}! Ya tenés habilitada tu cuenta en el Catálogo Oficial Pampero Gran Mendoza.\n\n👤 Usuario / Email: ${u.email}\nTe enviamos un correo oficial para que configures tu contraseña de acceso directamente en Firebase Authentication de forma segura.\n🔗 Ingresá a la tienda: ${window.location.origin}`;
     navigator.clipboard.writeText(msg);
     setCopiedId(`msg-${u.id}`);
     setTimeout(() => setCopiedId(null), 2500);
@@ -430,22 +383,13 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
 
     const emailTrimmed = newAccountEmail.trim().toLowerCase();
     const nameTrimmed = newAccountName.trim();
-    const passTrimmed = newAccountPassword.trim();
 
     if (!nameTrimmed) {
       setCreateError('El nombre o razón social es obligatorio.');
       return;
     }
-    if (!emailTrimmed) {
-      setCreateError('El email o usuario de acceso es obligatorio.');
-      return;
-    }
-    if (!passTrimmed) {
-      setCreateError('La contraseña inicial asignada es obligatoria. Asígnale una clave para que el usuario pueda ingresar.');
-      return;
-    }
-    if (passTrimmed.length < 6) {
-      setCreateError('La contraseña debe tener al menos 6 caracteres para ser compatible con Firebase Authentication.');
+    if (!emailTrimmed || !emailTrimmed.includes('@')) {
+      setCreateError('El email es obligatorio y debe tener un formato válido (ej: usuario@empresa.com).');
       return;
     }
 
@@ -467,8 +411,6 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
       name: nameTrimmed,
       repName: newAccountType === 'empresa' ? newAccountRepName.trim() : undefined,
       email: emailTrimmed,
-      password: passTrimmed,
-      initialPassword: passTrimmed,
       phone: newAccountPhone.trim() || '261-0000000',
       cuitOrDni: newAccountCuit.trim() || 'Sin registrar',
       address: newAccountAddress.trim() || 'Gran Mendoza',
@@ -484,19 +426,24 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
     };
 
     try {
-      // 1. Crear en Firebase Authentication y SOLO SI es exitoso crear el perfil en Cloud Firestore con el mismo UID
+      // 1. Crear en Firebase Authentication y Cloud Firestore con UID sincronizado
       const authResult = await createFirebaseAuthAndFirestoreUser(newUser);
       if (!authResult.success) {
         setCreateError(authResult.error || 'Error al crear la cuenta en Firebase Authentication.');
         return;
       }
 
+      // 2. Enviar automáticamente el enlace oficial de Firebase Auth para que el usuario establezca su contraseña
+      try {
+        await sendUserPasswordResetEmail(emailTrimmed);
+      } catch (emailErr) {
+        console.warn('Aviso al despachar enlace de bienvenida:', emailErr);
+      }
+
       const finalUserId = authResult.uid || userId;
       const finalUser: RegisteredUser = { 
         ...newUser, 
         id: finalUserId,
-        password: passTrimmed,
-        initialPassword: passTrimmed,
       };
 
       // Actualizar estado local inmediatamente con el UID unificado de Auth y Firestore
@@ -513,7 +460,6 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
       setNewAccountPhone('');
       setNewAccountCuit('');
       setNewAccountAddress('');
-      setNewAccountPassword('');
     } catch (err: any) {
       console.error('[CREATE USER ERROR]:', err);
       setCreateError(`Error al crear la cuenta en Firebase: ${err?.message || err}`);
@@ -623,19 +569,18 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {/* Botón Principal: Crear Nueva Cuenta con Asignación de Clave */}
+            {/* Botón Principal: Crear Nueva Cuenta */}
             <button
               type="button"
               onClick={() => {
                 setShowCreateModal(true);
                 setCreatedSuccessUser(null);
                 setCreateError(null);
-                generateRandomPassword();
               }}
               className="px-3.5 py-2 bg-[#B9522F] hover:bg-[#A04526] text-white text-xs font-bold uppercase tracking-wider rounded-xs flex items-center gap-2 transition-all shadow-xs cursor-pointer"
             >
               <Plus className="w-4 h-4" />
-              <span>Nueva Cuenta / Asignar Clave</span>
+              <span>Nueva Cuenta de Usuario</span>
             </button>
 
             {/* Exportar CSV */}
@@ -787,16 +732,16 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
       </div>
 
       {/* Aviso de Contraseña Temporal Generada */}
-      {tempPassNotice && (
-        <div className="mb-4 p-3 bg-amber-50 border border-amber-300 text-amber-950 rounded-xs text-xs font-bold flex items-center justify-between shadow-xs animate-fadeIn">
+      {resetEmailNotice && (
+        <div className="mb-4 p-3 bg-emerald-50 border border-emerald-300 text-emerald-950 rounded-xs text-xs font-bold flex items-center justify-between shadow-xs animate-fadeIn">
           <div className="flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span>{tempPassNotice}</span>
+            <span>{resetEmailNotice}</span>
           </div>
           <button
             type="button"
-            onClick={() => setTempPassNotice(null)}
-            className="text-amber-800 hover:text-amber-950 text-xs font-bold p-1"
+            onClick={() => setResetEmailNotice(null)}
+            className="text-emerald-800 hover:text-emerald-950 text-xs font-bold p-1 cursor-pointer"
           >
             ✕
           </button>
@@ -813,7 +758,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
                 <th className="py-3 px-4">Rol & Perfil</th>
                 <th className="py-3 px-4">Contacto Directo</th>
                 <th className="py-3 px-4">Identificación</th>
-                <th className="py-3 px-4">Contraseña</th>
+                <th className="py-3 px-4">Acceso & Seguridad (Firebase Auth)</th>
                 <th className="py-3 px-4 text-center">Estado</th>
                 <th className="py-3 px-4 text-right">Acciones</th>
               </tr>
@@ -961,36 +906,27 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
                       </td>
 
                       {/* Contraseña Asignada + Generar Clave Temporal */}
+                      {/* Acceso & Seguridad (Firebase Authentication) */}
                       <td className="py-3 px-4">
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-mono font-bold text-[#18231C] bg-[#FAF8F5] px-2 py-0.5 rounded-xs border border-[#DCD4C9] text-[11px] select-all">
-                            {visiblePasswords[u.id] ? (u.password || u.initialPassword || 'pampero2026') : '••••••••'}
+                        <div className="flex flex-col gap-1.5">
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-xs border border-emerald-200 w-fit">
+                            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                            Firebase Auth Activo
                           </span>
-                          <button
-                            type="button"
-                            onClick={() => togglePasswordVisibility(u.id)}
-                            className="p-1 text-[#6F6860] hover:text-[#18231C] cursor-pointer"
-                            title={visiblePasswords[u.id] ? 'Ocultar contraseña' : 'Ver contraseña'}
-                          >
-                            {visiblePasswords[u.id] ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                          </button>
+
+                          {!isMasterAdmin && (
+                            <button
+                              type="button"
+                              disabled={isSendingReset === u.id}
+                              onClick={() => handleSendPasswordReset(u)}
+                              className="text-[11px] font-bold text-[#B9522F] hover:text-[#933D20] flex items-center gap-1 cursor-pointer hover:underline disabled:opacity-50 text-left transition-colors"
+                              title="Enviar enlace oficial de Firebase Auth al correo del usuario"
+                            >
+                              <Mail className="w-3 h-3 text-[#B9522F] shrink-0" />
+                              <span>{isSendingReset === u.id ? 'Enviando...' : 'Enviar enlace para crear clave'}</span>
+                            </button>
+                          )}
                         </div>
-                        {u.mustChangePassword && (
-                          <span className="inline-block mt-1 text-[9px] font-bold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded-xs border border-amber-300">
-                            Debe cambiar al ingresar
-                          </span>
-                        )}
-                        {!isMasterAdmin && (
-                          <button
-                            type="button"
-                            onClick={() => handleGenerateTempPassword(u)}
-                            className="mt-1 text-[10px] font-bold text-amber-700 hover:text-amber-900 flex items-center gap-1 cursor-pointer hover:underline"
-                            title="Generar contraseña temporal aleatoria"
-                          >
-                            <Key className="w-3 h-3 text-amber-600" />
-                            <span>Generar clave temporal</span>
-                          </button>
-                        )}
                       </td>
 
                       {/* Estado: Activo / Suspendido */}
@@ -1113,34 +1049,42 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
                 {/* Resumen de credenciales para entregar al usuario */}
                 <div className="p-4 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs space-y-2">
                   <span className="text-[10px] uppercase font-bold text-[#6F6860] tracking-wider block">
-                    Datos de Acceso para Entregar al Usuario:
+                    Datos de Acceso Oficiales:
                   </span>
                   <div className="font-mono text-xs space-y-1 bg-white p-2.5 rounded-xs border border-[#DCD4C9]">
                     <div><strong>Usuario / Email:</strong> {createdSuccessUser.email}</div>
                     <div><strong>Rol Asignado:</strong> {createdSuccessUser.type.toUpperCase()}</div>
                     {createdSuccessUser.branch && <div><strong>Sucursal:</strong> {createdSuccessUser.branch}</div>}
-                    <div className="text-[11px] text-emerald-700 font-sans mt-1">✓ Cuenta creada y activada con éxito en Firebase Authentication</div>
+                    <div className="text-[11px] text-emerald-700 font-sans mt-1">✓ Enlace oficial de Firebase Auth enviado a {createdSuccessUser.email} para establecer contraseña</div>
                   </div>
                 </div>
 
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleSendPasswordReset(createdSuccessUser)}
+                    className="flex-1 py-2 px-3 bg-[#18231C] hover:bg-black text-white text-xs font-bold uppercase tracking-wider rounded-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <Mail className="w-4 h-4 text-[#FDB813]" />
+                    <span>Reenviar Enlace de Clave</span>
+                  </button>
                   <button
                     type="button"
                     onClick={() => handleCopyCredentialsMessage(createdSuccessUser)}
                     className="flex-1 py-2 px-3 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold uppercase tracking-wider rounded-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                   >
                     <MessageCircle className="w-4 h-4" />
-                    <span>Copiar Texto para WhatsApp</span>
+                    <span>Copiar Aviso WhatsApp</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => {
                       setCreatedSuccessUser(null);
-                      generateRandomPassword();
+                      setShowCreateModal(false);
                     }}
-                    className="py-2 px-4 bg-[#18231C] hover:bg-black text-white text-xs font-bold uppercase tracking-wider rounded-xs cursor-pointer"
+                    className="py-2 px-4 border border-[#DCD4C9] hover:bg-[#FAF8F5] text-xs font-bold uppercase tracking-wider rounded-xs cursor-pointer"
                   >
-                    Crear Otra
+                    Cerrar
                   </button>
                 </div>
               </div>
@@ -1320,42 +1264,14 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
                     </div>
                   </div>
 
-                  {/* 3. CAMPO CRUCIAL: CONTRASEÑA INICIAL ASIGNADA */}
-                  <div className="p-3.5 bg-amber-50/70 border border-amber-300 rounded-xs space-y-2 mt-2">
-                    <div className="flex items-center justify-between">
-                      <label className="block text-xs font-bold uppercase tracking-wider text-[#18231C] flex items-center gap-1.5">
-                        <Key className="w-3.5 h-3.5 text-[#B9522F]" />
-                        <span>Contraseña Inicial Asignada (Obligatoria) *</span>
-                      </label>
-                      <button
-                        type="button"
-                        onClick={generateRandomPassword}
-                        className="text-[10px] text-[#B9522F] hover:underline font-bold cursor-pointer"
-                      >
-                        Generar sugerencia
-                      </button>
+                  {/* 3. CONFIGURACIÓN SEGURA DE CONTRASEÑA VÍA FIREBASE AUTH */}
+                  <div className="p-3.5 bg-emerald-50 border border-emerald-300 rounded-xs space-y-2 mt-2">
+                    <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-emerald-950">
+                      <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                      <span>Configuración Segura de Contraseña (Firebase Auth)</span>
                     </div>
-
-                    <div className="relative">
-                      <input
-                        type={showModalPassword ? 'text' : 'password'}
-                        required
-                        value={newAccountPassword}
-                        onChange={(e) => setNewAccountPassword(e.target.value)}
-                        placeholder="Ingresar contraseña inicial"
-                        className="w-full px-3 py-2 bg-white border border-amber-300 rounded-xs text-xs font-mono font-bold text-[#18231C] pr-10 outline-none focus:border-[#B9522F]"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowModalPassword(!showModalPassword)}
-                        className="absolute right-2.5 top-2.5 text-[#6F6860] hover:text-[#18231C] cursor-pointer"
-                      >
-                        {showModalPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                    </div>
-
-                    <p className="text-[10px] text-neutral-600">
-                      Esta contraseña se enviará de forma segura y cifrada únicamente a Firebase Authentication. Nunca se guarda en texto plano en la base de datos.
+                    <p className="text-[11px] text-emerald-900 leading-relaxed">
+                      El sistema registrará el perfil en Firestore y enviará automáticamente un correo oficial de Firebase Auth a <strong>{newAccountEmail || 'la dirección del usuario'}</strong> con el enlace para que el usuario configure su propia contraseña de acceso de manera directa y 100% segura.
                     </p>
                   </div>
                 </div>

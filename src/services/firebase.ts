@@ -1608,7 +1608,9 @@ export async function createFirebaseAuthAndFirestoreUser(
   user: RegisteredUser
 ): Promise<{ success: boolean; uid: string; error?: string }> {
   const cleanEmail = (user.email || '').trim().toLowerCase();
-  const passwordToUse = (user.password || user.initialPassword || '').trim();
+  // Si no se proveyó contraseña manual, se genera una segura automáticamente para aprovisionar Firebase Auth
+  const passwordToUse = (user.password || user.initialPassword || '').trim() || 
+    `Pampero_${Math.random().toString(36).substring(2, 9).toUpperCase()}_${Date.now().toString(36)}!`;
 
   // Regla Intocable: Blindaje absoluto de joaquinnievass20@gmail.com
   if (cleanEmail === 'joaquinnievass20@gmail.com' || user.id === 'admin-master' || cleanEmail.includes('joaquinnievass20')) {
@@ -1618,14 +1620,6 @@ export async function createFirebaseAuthAndFirestoreUser(
 
   if (!cleanEmail) {
     return { success: false, uid: '', error: 'El email o nombre de usuario es obligatorio.' };
-  }
-
-  if (!passwordToUse || passwordToUse.length < 6) {
-    return {
-      success: false,
-      uid: '',
-      error: 'La contraseña debe tener al menos 6 caracteres para ser compatible con Firebase Authentication.',
-    };
   }
 
   // Formato válido de email para Firebase Auth

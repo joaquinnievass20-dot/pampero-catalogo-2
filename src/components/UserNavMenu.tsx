@@ -142,6 +142,31 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
         </button>
       )}
 
+      {/* 2. Botón de acceso directo al Panel / Hub para Empleados y Admin - 100% editable vía ThemeConfig */}
+      {(userSession?.role === 'admin' || userSession?.role === 'employee') && (onOpenHub || onOpenAdmin) && (
+        <button
+          id="btn-nav-panel-hub"
+          type="button"
+          onClick={() => {
+            if (onOpenHub) onOpenHub();
+            else if (onOpenAdmin) onOpenAdmin();
+          }}
+          style={{
+            backgroundColor: theme?.hubAccentColor || theme?.accentColor || '#FDB813',
+            color: '#18231C',
+            borderColor: theme?.hubBorderColor || 'transparent',
+          }}
+          className="relative px-3 sm:px-3.5 py-2 rounded-xs border text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 shadow-2xs transition-all hover:brightness-110 shrink-0 cursor-pointer select-none"
+          title={userSession.role === 'admin' ? 'Acceder al Panel de Control (Admin)' : 'Acceder al Hub de Trabajo'}
+          aria-label={userSession.role === 'admin' ? 'Abrir Panel de Control' : 'Abrir Hub de Trabajo'}
+        >
+          <Compass className="w-4 h-4 shrink-0 text-[#18231C]" />
+          <span className="font-sans text-xs">
+            {userSession.role === 'admin' ? 'Panel de Control' : 'Hub de Trabajo'}
+          </span>
+        </button>
+      )}
+
       {/* 3. User Dropdown Menu or INGRESAR Button */}
       {userSession ? (
         <div className="relative" ref={dropdownRef}>
