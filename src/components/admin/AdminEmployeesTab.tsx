@@ -5,6 +5,7 @@ import {
   saveFirestoreEmployee,
   deleteFirestoreEmployee,
   seedInitialFirestoreEmployeesIfEmpty,
+  createFirebaseAuthAndFirestoreUser,
 } from '../../services/firebase';
 import { 
   UserCheck, 
@@ -112,6 +113,8 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
   const [search, setSearch] = useState('');
   const [isEditing, setIsEditing] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [modalError, setModalError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Form states
   const [name, setName] = useState('');
@@ -145,9 +148,10 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
 
   const handleOpenCreate = () => {
     setIsEditing(null);
+    setModalError(null);
     setName('');
     setEmail('');
-    setPassword('');
+    setPassword('Pampero2026');
     setBranch('Maipú');
     setSellerName('');
     setCrmScope('branch_only');
@@ -157,6 +161,7 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
 
   const handleOpenEdit = (emp: EmployeeAccount) => {
     setIsEditing(emp.id);
+    setModalError(null);
     setName(emp.name);
     setEmail(emp.email);
     setPassword(emp.password || '');
@@ -171,42 +176,81 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
     e.preventDefault();
     if (!name.trim() || !email.trim()) return;
 
-    if (isEditing) {
-      const existing = employees.find((emp) => emp.id === isEditing);
-      const updated: EmployeeAccount = {
-        ...existing,
-        id: isEditing,
-        name: name.trim(),
-        email: email.trim().toLowerCase(),
-        password: password.trim() || existing?.password || 'pampero123',
-        role: 'employee',
-        branch,
-        sellerName: sellerName.trim() || name.trim(),
-        crmScope,
-        allowedTabs,
-        createdAt: existing?.createdAt || new Date().toISOString().split('T')[0],
-        active: existing ? existing.active : true,
-      };
-      await saveFirestoreEmployee(updated);
-    } else {
-      const newEmp: EmployeeAccount = {
-        id: `emp-${Date.now()}`,
-        name: name.trim(),
-        email: email.trim().toLowerCase(),
-        password: password.trim() || 'pampero123',
-        role: 'employee',
-        branch,
-        sellerName: sellerName.trim() || name.trim(),
-        crmScope,
-        allowedTabs,
-        createdAt: new Date().toISOString().split('T')[0],
-        active: true,
-      };
-      await saveFirestoreEmployee(newEmp);
+    const passClean = password.trim() || (isEditing ? '' : 'Pampero2026');
+    if (!isEditing && passClean.length < 6) {
+      setModalError('La contraseña debe tener al menos 6 caracteres para Firebase Authentication.');
+      return;
     }
 
-    triggerSaveNotice();
-    setShowCreateModal(false);
+    setIsSaving(true);
+    setModalError(null);
+
+    try {
+      if (isEditing) {
+        const existing = employees.find((emp) => emp.id === isEditing);
+        const updated: EmployeeAccount = {
+          ...existing,
+          id: isEditing,
+          name: name.trim(),
+          email: email.trim().toLowerCase(),
+          password: passClean || existing?.password || 'Pampero2026',
+          role: 'employee',
+          branch,
+          sellerName: sellerName.trim() || name.trim(),
+          crmScope,
+          allowedTabs,
+          createdAt: existing?.createdAt || new Date().toISOString().split('T')[0],
+          active: existing ? existing.active : true,
+        };
+        await saveFirestoreEmployee(updated);
+      } else {
+        // 1. Ejecutar creación atómica en Firebase Authentication
+        const newUserPayload = {
+          id: `emp-${Date.now()}`,
+          name: name.trim(),
+          email: email.trim().toLowerCase(),
+          password: passClean,
+          initialPassword: passClean,
+          role: 'employee' as const,
+          type: 'empleado' as const,
+          branch,
+          sellerRole: 'vendedor' as const,
+          status: 'active' as const,
+          allowedTabs,
+          crmTabs: ['visits', 'board', 'suppliers', 'costs'],
+        };
+
+        const authResult = await createFirebaseAuthAndFirestoreUser(newUserPayload, passClean);
+        if (!authResult.success) {
+          setModalError(authResult.error || 'Error al crear la cuenta en Firebase Authentication.');
+          setIsSaving(false);
+          return;
+        }
+
+        const assignedId = authResult.uid || newUserPayload.id;
+        const newEmp: EmployeeAccount = {
+          id: assignedId,
+          name: name.trim(),
+          email: email.trim().toLowerCase(),
+          password: passClean,
+          role: 'employee',
+          branch,
+          sellerName: sellerName.trim() || name.trim(),
+          crmScope,
+          allowedTabs,
+          createdAt: new Date().toISOString().split('T')[0],
+          active: true,
+        };
+        await saveFirestoreEmployee(newEmp);
+      }
+
+      triggerSaveNotice();
+      setShowCreateModal(false);
+    } catch (err: any) {
+      setModalError(err?.message || 'Error al guardar la cuenta de empleado.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleToggleActive = async (id: string) => {
@@ -417,6 +461,16 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
             </div>
 
             <form onSubmit={handleSubmit} className="p-6 overflow-y-auto space-y-4">
+              {modalError && (
+                <div className="p-3 bg-red-50 border border-red-300 rounded-xs text-xs text-red-800 flex items-start gap-2 animate-fadeIn">
+                  <ShieldAlert className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                  <div className="space-y-0.5">
+                    <span className="font-bold block">Error en autenticación / Firestore:</span>
+                    <span>{modalError}</span>
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-[#18231C] mb-1">
                   Nombre Completo del Empleado *

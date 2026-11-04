@@ -36,7 +36,7 @@ interface AuthViewProps {
 export const AuthView: React.FC<AuthViewProps> = ({
   onLogin,
   onBackToHome,
-  initialMode = 'register',
+  initialMode = 'login',
   initialType = 'consumidor',
   theme,
 }) => {
@@ -468,57 +468,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
               className="border rounded-xs shadow-sm p-6 sm:p-8 transition-colors"
             >
               
-              {/* Top Switch Tabs (Always visible for easy switching) */}
-              <div className="grid grid-cols-3 gap-0 mb-6 bg-[#ECE5DC] p-1 rounded-xs">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setTab('login');
-                    setErrorMessage(null);
-                    setSuccessMessage(null);
-                  }}
-                  style={tab === 'login' ? { backgroundColor: primary, color: btnText } : undefined}
-                  className={`py-2.5 text-[10px] sm:text-[11px] uppercase tracking-[0.2em] font-bold transition-all text-center rounded-xs cursor-pointer ${
-                    tab === 'login'
-                      ? 'shadow-2xs'
-                      : 'text-[#6F6860] hover:text-[#18231C]'
-                  }`}
-                >
-                  INGRESAR
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setTab('register');
-                    setErrorMessage(null);
-                    setSuccessMessage(null);
-                  }}
-                  style={tab === 'register' ? { backgroundColor: primary, color: btnText } : undefined}
-                  className={`py-2.5 text-[10px] sm:text-[11px] uppercase tracking-[0.2em] font-bold transition-all text-center rounded-xs cursor-pointer ${
-                    tab === 'register'
-                      ? 'shadow-2xs'
-                      : 'text-[#6F6860] hover:text-[#18231C]'
-                  }`}
-                >
-                  REGISTRARME
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setTab('admin');
-                    setErrorMessage(null);
-                    setSuccessMessage(null);
-                  }}
-                  style={tab === 'admin' ? { backgroundColor: primary, color: btnText } : undefined}
-                  className={`py-2.5 text-[10px] sm:text-[11px] uppercase tracking-[0.2em] font-bold transition-all text-center rounded-xs cursor-pointer ${
-                    tab === 'admin'
-                      ? 'shadow-2xs'
-                      : 'text-[#6F6860] hover:text-[#18231C]'
-                  }`}
-                >
-                  EMPLEADOS / ADMIN
-                </button>
-              </div>
+
 
               {/* If Admin / Employee Mode */}
               {tab === 'admin' ? (
@@ -694,17 +644,35 @@ export const AuthView: React.FC<AuthViewProps> = ({
                       {adminLoginMethod === 'totp' ? 'INGRESAR AL PANEL CON AUTENTICADOR' : 'INGRESAR AL PANEL'}
                     </button>
 
-                    <div className="text-center pt-3">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setTab('register');
-                          setErrorMessage(null);
-                        }}
-                        className="text-xs text-[#6F6860] hover:text-[#18231C] underline"
-                      >
-                        ← Volver a crear cuenta de cliente
-                      </button>
+                    <div className="mt-5 pt-4 border-t border-[#DCD4C9]/70 space-y-2 text-center">
+                      <p className="text-xs text-[#544E47]">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setTab('login');
+                            setErrorMessage(null);
+                            setSuccessMessage(null);
+                          }}
+                          className="text-[#18231C] hover:underline font-semibold cursor-pointer"
+                        >
+                          ← Volver al inicio de sesión de clientes
+                        </button>
+                      </p>
+                      <p className="text-xs text-[#8C847B]">
+                        ¿No tienes cuenta todavía?{' '}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setTab('register');
+                            setErrorMessage(null);
+                            setSuccessMessage(null);
+                          }}
+                          style={{ color: accent }}
+                          className="hover:underline font-bold cursor-pointer"
+                        >
+                          Regístrate
+                        </button>
+                      </p>
                     </div>
                   </form>
                 </div>
@@ -924,21 +892,36 @@ export const AuthView: React.FC<AuthViewProps> = ({
                         CREAR CUENTA
                       </button>
 
-                      {/* Bottom link from Screenshot 1 */}
-                      <p className="text-center text-xs text-[#6F6860] pt-2">
-                        ¿Ya tenés cuenta?{' '}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setTab('login');
-                            setErrorMessage(null);
-                          }}
-                          style={{ color: accent }}
-                          className="hover:underline font-semibold cursor-pointer"
-                        >
-                          Ingresá
-                        </button>
-                      </p>
+                      <div className="mt-5 pt-4 border-t border-[#DCD4C9]/70 space-y-2 text-center">
+                        <p className="text-xs text-[#544E47]">
+                          ¿Ya tienes cuenta?{' '}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setTab('login');
+                              setErrorMessage(null);
+                              setSuccessMessage(null);
+                            }}
+                            style={{ color: accent }}
+                            className="hover:underline font-bold cursor-pointer"
+                          >
+                            Inicia Sesión
+                          </button>
+                        </p>
+                        <p className="text-xs text-[#8C847B]">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setTab('admin');
+                              setErrorMessage(null);
+                              setSuccessMessage(null);
+                            }}
+                            className="hover:text-[#18231C] underline font-medium cursor-pointer transition-colors"
+                          >
+                            Acceso para Empleados/Admin
+                          </button>
+                        </p>
+                      </div>
                     </form>
                     </>
                   )}
@@ -1102,20 +1085,36 @@ export const AuthView: React.FC<AuthViewProps> = ({
                         {loginMethod === 'totp' ? 'INGRESAR CON AUTENTICADOR' : 'INGRESAR'}
                       </button>
 
-                      <p className="text-center text-xs text-[#6F6860] pt-2">
-                        ¿No tenés cuenta todavía?{' '}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setTab('register');
-                            setErrorMessage(null);
-                          }}
-                          style={{ color: accent }}
-                          className="hover:underline font-semibold cursor-pointer"
-                        >
-                          Registrate
-                        </button>
-                      </p>
+                      <div className="mt-5 pt-4 border-t border-[#DCD4C9]/70 space-y-2 text-center">
+                        <p className="text-xs text-[#544E47]">
+                          ¿No tienes cuenta todavía?{' '}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setTab('register');
+                              setErrorMessage(null);
+                              setSuccessMessage(null);
+                            }}
+                            style={{ color: accent }}
+                            className="hover:underline font-bold cursor-pointer"
+                          >
+                            Regístrate
+                          </button>
+                        </p>
+                        <p className="text-xs text-[#8C847B]">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setTab('admin');
+                              setErrorMessage(null);
+                              setSuccessMessage(null);
+                            }}
+                            className="hover:text-[#18231C] underline font-medium cursor-pointer transition-colors"
+                          >
+                            Acceso para Empleados/Admin
+                          </button>
+                        </p>
+                      </div>
                     </form>
                     </>
                   )}

@@ -136,10 +136,10 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
         {
           id: 'slide-fallback',
           tag: 'TEMPORADA 2026',
-          titleLine1: 'INDUMENTARIA QUE',
-          titleLine2: 'AGUANTA EL TRABAJO',
-          description: 'Catálogo digital de exhibición. Hombre, mujer, infantil y venta corporativa, con fichas de producto, talles, colores y promociones vigentes.',
-          primaryBtnText: 'VER CATÁLOGO',
+          titleLine1: (theme?.siteTexts?.heroTitleLine1 || 'INDUMENTARIA QUE').toUpperCase(),
+          titleLine2: (theme?.siteTexts?.heroTitleLine2 || 'AGUANTA EL TRABAJO').toUpperCase(),
+          description: theme?.siteTexts?.heroSubtitle || 'Catálogo digital de exhibición. Hombre, mujer, infantil y venta corporativa, con fichas de producto, talles, colores y promociones vigentes.',
+          primaryBtnText: theme?.siteTexts?.heroPrimaryBtnText || 'VER CATÁLOGO',
           showEmpresaBtn: true,
           promoFilter: null,
           categoryFilter: null,
@@ -305,9 +305,12 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
       {/* 1. Micro Top Bar */}
       <div 
         className="text-[#F5F2EC] text-[11px] py-1.5 px-4 flex items-center justify-center gap-3 uppercase tracking-[0.25em] font-medium border-b border-black select-none"
-        style={{ backgroundColor: theme?.primaryColor || '#18231C' }}
+        style={{ 
+          backgroundColor: theme?.announcementBgColor || theme?.primaryColor || '#18231C',
+          color: theme?.announcementTextColor || '#F5F2EC'
+        }}
       >
-        <span>CATÁLOGO DIGITAL · EXHIBICIÓN DE PRODUCTO</span>
+        <span>{theme?.siteTexts?.announcementBarText || theme?.siteTexts?.landingTopNotice || 'CATÁLOGO DIGITAL · EXHIBICIÓN DE PRODUCTO'}</span>
       </div>
 
       {/* 2. Top Header Navigation */}
@@ -317,11 +320,11 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
           <header 
             style={{ 
               backgroundColor: theme?.headerBgColor || '#FFFFFF',
-              borderColor: isDarkHeader ? 'rgba(255, 255, 255, 0.15)' : '#DCD4C9',
+              borderColor: theme?.headerBorderColor || (isDarkHeader ? 'rgba(255, 255, 255, 0.15)' : '#DCD4C9'),
             }}
             className="sticky top-0 z-50 border-b px-4 sm:px-8 py-3.5 shadow-xs transition-colors"
           >
-            <div className="grid grid-cols-[auto_1fr_auto] lg:grid-cols-[1fr_auto_1fr] items-center gap-4 max-w-7xl mx-auto w-full">
+            <div className="flex justify-between items-center max-w-7xl mx-auto w-full">
               {/* Col 1: Logo */}
               <div className="cursor-pointer shrink-0 flex items-center justify-start" onClick={() => onOpenCatalog(null, null)} title="Inicio">
                 <PamperoLogo 
@@ -333,7 +336,7 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
               </div>
 
               {/* Col 2: Desktop Categories links centered symmetrically */}
-              <div className="hidden lg:flex items-center justify-center gap-4 mx-auto">
+              <div className="hidden lg:flex flex-1 items-center justify-center gap-x-4 min-w-0">
                 <CategoryMenuNav
                   categoriesHierarchy={categoriesHierarchy}
                   onSelectCategoryItem={(cat, sec, sub) => {
@@ -352,7 +355,7 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
               </div>
 
               {/* Col 3: User / Session State & Quote Cart */}
-              <div className="flex items-center justify-end gap-3 shrink-0 ml-auto">
+              <div className="flex items-center justify-end gap-3 shrink-0">
                 <UserNavMenu
                   userSession={userSession}
                   cartCount={cartCount}

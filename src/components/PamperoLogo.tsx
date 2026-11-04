@@ -61,13 +61,13 @@ export const PamperoLogo: React.FC<PamperoLogoProps> = ({
 
   return (
     <div 
-      className={`inline-flex items-center justify-center shrink-0 ${className}`}
+      className={`inline-flex items-center justify-center shrink-0 max-h-full overflow-hidden m-0 p-0 ${className}`}
     >
       <img
         src={resolvedUrl}
         alt="PAMPERO OFICIAL"
-        style={{ height: pixelHeight }}
-        className={`w-auto object-contain shrink-0 transition-all duration-200 ${isLight ? 'brightness-0 invert filter' : ''} ${imageClassName}`.trim()}
+        style={{ maxHeight: pixelHeight, height: pixelHeight }}
+        className={`w-auto max-w-[220px] max-h-full object-contain shrink-0 transition-all duration-200 ${isLight ? 'brightness-0 invert filter' : ''} ${imageClassName}`.trim()}
         onError={(e) => {
           // Guaranteed fallback strictly to static official logo
           if (e.currentTarget.src !== window.location.origin + officialLogo) {

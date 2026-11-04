@@ -1934,7 +1934,7 @@ export const AdminThemeTab: React.FC<AdminThemeTabProps> = ({
                 {/* 4. Acento / Botón Ficha */}
                 <div className="p-4 bg-white border border-[#DCD4C9] rounded-xs space-y-2">
                   <span className="text-xs font-bold uppercase text-[#18231C] block">
-                    Acento / Botón Ficha
+                    Fondo Botón Ver Ficha
                   </span>
                   <div className="flex items-center gap-2">
                     <input
@@ -1947,6 +1947,69 @@ export const AdminThemeTab: React.FC<AdminThemeTabProps> = ({
                       type="text"
                       value={currentTheme.cardButtonBg || currentTheme.primaryColor || '#18231C'}
                       onChange={(e) => applyLiveChange('cardButtonBg', e.target.value)}
+                      className="flex-1 px-2.5 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs font-mono font-bold uppercase"
+                    />
+                  </div>
+                </div>
+
+                {/* 5. Color del Precio */}
+                <div className="p-4 bg-white border border-[#DCD4C9] rounded-xs space-y-2">
+                  <span className="text-xs font-bold uppercase text-[#18231C] block">
+                    Color del Precio ($)
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={currentTheme.cardPriceColor || currentTheme.cardTextColor || '#18231C'}
+                      onChange={(e) => applyLiveChange('cardPriceColor', e.target.value)}
+                      className="size-8 rounded-xs cursor-pointer border border-[#DCD4C9]"
+                    />
+                    <input
+                      type="text"
+                      value={currentTheme.cardPriceColor || currentTheme.cardTextColor || '#18231C'}
+                      onChange={(e) => applyLiveChange('cardPriceColor', e.target.value)}
+                      className="flex-1 px-2.5 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs font-mono font-bold uppercase"
+                    />
+                  </div>
+                </div>
+
+                {/* 6. Color Textos Secundarios */}
+                <div className="p-4 bg-white border border-[#DCD4C9] rounded-xs space-y-2">
+                  <span className="text-xs font-bold uppercase text-[#18231C] block">
+                    Texto Secundario (Rubro/Cód)
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={currentTheme.secondaryTextColor || '#6F6860'}
+                      onChange={(e) => applyLiveChange('secondaryTextColor', e.target.value)}
+                      className="size-8 rounded-xs cursor-pointer border border-[#DCD4C9]"
+                    />
+                    <input
+                      type="text"
+                      value={currentTheme.secondaryTextColor || '#6F6860'}
+                      onChange={(e) => applyLiveChange('secondaryTextColor', e.target.value)}
+                      className="flex-1 px-2.5 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs font-mono font-bold uppercase"
+                    />
+                  </div>
+                </div>
+
+                {/* 7. Texto Botón Ver Ficha */}
+                <div className="p-4 bg-white border border-[#DCD4C9] rounded-xs space-y-2">
+                  <span className="text-xs font-bold uppercase text-[#18231C] block">
+                    Texto Botón Ver Ficha
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={currentTheme.cardButtonText || '#F5F2EC'}
+                      onChange={(e) => applyLiveChange('cardButtonText', e.target.value)}
+                      className="size-8 rounded-xs cursor-pointer border border-[#DCD4C9]"
+                    />
+                    <input
+                      type="text"
+                      value={currentTheme.cardButtonText || '#F5F2EC'}
+                      onChange={(e) => applyLiveChange('cardButtonText', e.target.value)}
                       className="flex-1 px-2.5 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs font-mono font-bold uppercase"
                     />
                   </div>

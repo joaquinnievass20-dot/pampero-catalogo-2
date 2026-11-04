@@ -1,10 +1,11 @@
-import { initializeApp, getApps, getApp } from 'firebase/app';
+import { initializeApp, getApps, getApp, deleteApp } from 'firebase/app';
 import {
   getAuth,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   sendPasswordResetEmail,
   signOut,
+  onAuthStateChanged,
   Auth,
 } from 'firebase/auth';
 import {
@@ -21,6 +22,8 @@ import {
   onSnapshot,
   runTransaction,
   setLogLevel,
+  query,
+  where,
   Firestore,
 } from 'firebase/firestore';
 import {
@@ -47,7 +50,9 @@ import {
   CRMSale,
   UserSession,
   AuditLogEntry,
+  SiteTextsConfig,
 } from '../types';
+import { MASTER_ADMIN_EMAIL } from '../utils/authInit';
 
 /**
  * Firebase Client Configuration
@@ -577,6 +582,7 @@ export interface FirestoreStoreConfig {
   categories?: CategoryHierarchyItem[];
   promotions?: Promotion[];
   theme?: ThemeConfig;
+  siteTexts?: SiteTextsConfig;
   branches?: BranchLocation[];
   coupons?: DiscountCoupon[];
   volumeDiscounts?: VolumeDiscountRule[];
@@ -1605,11 +1611,12 @@ export const saveFirestoreUser = async (user: RegisteredUser): Promise<{ success
  * BAJO NINGÚN CONCEPTO se almacena la contraseña en texto plano en Cloud Firestore.
  */
 export async function createFirebaseAuthAndFirestoreUser(
-  user: RegisteredUser
+  user: RegisteredUser | any,
+  explicitPassword?: string
 ): Promise<{ success: boolean; uid: string; error?: string }> {
   const cleanEmail = (user.email || '').trim().toLowerCase();
   // Si no se proveyó contraseña manual, se genera una segura automáticamente para aprovisionar Firebase Auth
-  const passwordToUse = (user.password || user.initialPassword || '').trim() || 
+  const passwordToUse = (explicitPassword || user.password || user.initialPassword || '').trim() || 
     `Pampero_${Math.random().toString(36).substring(2, 9).toUpperCase()}_${Date.now().toString(36)}!`;
 
   // Regla Intocable: Blindaje absoluto de joaquinnievass20@gmail.com
@@ -1653,9 +1660,15 @@ export async function createFirebaseAuthAndFirestoreUser(
         const existingCred = await signInWithEmailAndPassword(secondaryAuth, authEmail, passwordToUse);
         if (existingCred?.user?.uid) {
           authUid = existingCred.user.uid;
+        } else {
+          throw new Error('No se pudo verificar el usuario existente.');
         }
       } catch {
-        authUid = user.id || cleanEmail.replace(/[^a-zA-Z0-9_-]/g, '_');
+        return {
+          success: false,
+          uid: '',
+          error: `El correo "${authEmail}" ya está registrado en Firebase Authentication. La contraseña provista no coincide con las credenciales registradas.`,
+        };
       }
     } else {
       let errorDetail = authErr?.message || 'Error al crear la cuenta en Firebase Authentication.';
@@ -1679,10 +1692,19 @@ export async function createFirebaseAuthAndFirestoreUser(
         await signOut(secondaryAuth);
       } catch {}
     }
+    if (secondaryApp) {
+      try {
+        await deleteApp(secondaryApp);
+      } catch {}
+    }
   }
 
   if (!authUid) {
-    authUid = user.id || cleanEmail.replace(/[^a-zA-Z0-9_-]/g, '_');
+    return {
+      success: false,
+      uid: '',
+      error: 'No se obtuvo un UID válido desde Firebase Authentication. Se abortó la sincronización para evitar datos huérfanos.',
+    };
   }
 
   // 2. SOLO SI la acción en Auth es exitosa: Crear el documento en Cloud Firestore con el mismo UID
@@ -3888,3 +3910,205 @@ export function subscribeToAuditLogs(
     return () => {};
   }
 }
+
+/**
+ * Recupera el perfil completo de usuario desde Firestore ('users', 'usuarios', 'empleados', 'employees')
+ * o desde la configuración local maestra para garantizar la persistencia de sesión sin cierres accidentales.
+ */
+export async function fetchUserProfileByUidOrEmail(uid: string, email?: string | null): Promise<UserSession | null> {
+  const cleanEmail = (email || '').toLowerCase().trim();
+
+  // 1. Caso especial: Master Admin
+  if (cleanEmail === MASTER_ADMIN_EMAIL.toLowerCase()) {
+    return {
+      id: uid || 'admin-master',
+      role: 'admin',
+      email: MASTER_ADMIN_EMAIL,
+      clientData: {
+        fullName: 'Administrador Maestro Joaquín Nievas',
+        email: MASTER_ADMIN_EMAIL,
+        phone: '2614980000',
+        address: { street: 'Av. San Martín', number: '1234', postalCode: '5500', city: 'Gran Mendoza' },
+      },
+      loggedAt: new Date().toISOString(),
+    };
+  }
+
+  const firestoreDb = db || getFirebaseDb();
+
+  // 2. Consulta directa por ID de documento (UID) en colecciones
+  if (firestoreDb && uid) {
+    try {
+      const collections = ['users', 'usuarios', 'empleados', 'employees'];
+      for (const collName of collections) {
+        try {
+          const snap = await getDoc(doc(firestoreDb, collName, uid));
+          if (snap.exists()) {
+            const data = snap.data();
+            const role: 'admin' | 'employee' | 'client' = 
+              data.role === 'admin' ? 'admin' :
+              data.role === 'employee' || data.type === 'empleado' || data.type === 'vendedor' ? 'employee' :
+              cleanEmail === MASTER_ADMIN_EMAIL.toLowerCase() ? 'admin' : 'client';
+
+            return {
+              id: uid,
+              role,
+              clientType: data.type === 'empresa' ? 'empresa' : 'consumidor_final',
+              email: data.email || cleanEmail,
+              clientData: {
+                fullName: data.name || data.fullName || data.repName || cleanEmail.split('@')[0],
+                companyName: data.companyName,
+                cuit: data.cuitOrDni,
+                email: data.email || cleanEmail,
+                phone: data.phone || '',
+                address: typeof data.address === 'object' ? data.address : {
+                  street: data.address || '',
+                  number: '',
+                  postalCode: '',
+                  city: 'Gran Mendoza',
+                },
+              },
+              loggedAt: new Date().toISOString(),
+            };
+          }
+        } catch {}
+      }
+    } catch (e) {
+      console.warn('[AUTH RESTORE] Error verificando por UID en Firestore:', e);
+    }
+  }
+
+  // 3. Consulta por campo 'email' en Firestore si no coincidió por UID
+  if (firestoreDb && cleanEmail) {
+    try {
+      const collections = ['users', 'usuarios', 'empleados', 'employees'];
+      for (const collName of collections) {
+        try {
+          const q = query(collection(firestoreDb, collName), where('email', '==', cleanEmail));
+          const querySnap = await getDocs(q);
+          if (!querySnap.empty) {
+            const docSnap = querySnap.docs[0];
+            const data = docSnap.data();
+            const role: 'admin' | 'employee' | 'client' = 
+              data.role === 'admin' ? 'admin' :
+              data.role === 'employee' || data.type === 'empleado' || data.type === 'vendedor' ? 'employee' :
+              'client';
+
+            return {
+              id: docSnap.id || uid,
+              role,
+              clientType: data.type === 'empresa' ? 'empresa' : 'consumidor_final',
+              email: data.email || cleanEmail,
+              clientData: {
+                fullName: data.name || data.fullName || data.repName || cleanEmail.split('@')[0],
+                companyName: data.companyName,
+                cuit: data.cuitOrDni,
+                email: data.email || cleanEmail,
+                phone: data.phone || '',
+                address: typeof data.address === 'object' ? data.address : {
+                  street: data.address || '',
+                  number: '',
+                  postalCode: '',
+                  city: 'Gran Mendoza',
+                },
+              },
+              loggedAt: new Date().toISOString(),
+            };
+          }
+        } catch {}
+      }
+    } catch (e) {
+      console.warn('[AUTH RESTORE] Error consultando email en Firestore:', e);
+    }
+  }
+
+  // 4. Fallback en memoria local de usuarios registrados
+  if (typeof window !== 'undefined' && cleanEmail) {
+    try {
+      const localUsers: any[] = JSON.parse(localStorage.getItem('pampero_registered_users') || '[]');
+      const localEmployees: any[] = JSON.parse(localStorage.getItem('pampero_employees') || '[]');
+      const pool = [...localEmployees, ...localUsers];
+      const match = pool.find((u) => (u.email || '').toLowerCase().trim() === cleanEmail);
+      if (match) {
+        const role = match.role === 'admin' ? 'admin' : (match.role === 'employee' || match.type === 'empleado' ? 'employee' : 'client');
+        return {
+          id: match.id || uid,
+          role,
+          clientType: match.type === 'empresa' ? 'empresa' : 'consumidor_final',
+          email: match.email || cleanEmail,
+          clientData: {
+            fullName: match.name || match.fullName || match.repName || cleanEmail.split('@')[0],
+            companyName: match.companyName,
+            cuit: match.cuitOrDni,
+            email: match.email || cleanEmail,
+            phone: match.phone || '',
+            address: typeof match.address === 'object' ? match.address : {
+              street: match.address || '',
+              number: '',
+              postalCode: '',
+              city: 'Gran Mendoza',
+            },
+          },
+          loggedAt: new Date().toISOString(),
+        };
+      }
+    } catch {}
+  }
+
+  // 5. Sesión mínima garantizada si está autenticado en Firebase Auth
+  if (cleanEmail) {
+    return {
+      id: uid,
+      role: 'client',
+      clientType: 'consumidor_final',
+      email: cleanEmail,
+      clientData: {
+        fullName: cleanEmail.split('@')[0],
+        email: cleanEmail,
+        phone: '',
+        address: { street: '', number: '', postalCode: '', city: 'Gran Mendoza' },
+      },
+      loggedAt: new Date().toISOString(),
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Listener global de persistencia de sesión:
+ * Escucha el estado de Firebase Authentication y sincroniza el perfil desde Firestore.
+ * Si el usuario recarga la página (F5), restaura inmediatamente la sesión sin cerrar ni expulsar al usuario.
+ */
+export function subscribeToAuthSession(onSessionResolved: (session: UserSession | null) => void): () => void {
+  const fbAuth = auth || getFirebaseAuth();
+  return onAuthStateChanged(fbAuth, async (firebaseUser) => {
+    if (firebaseUser) {
+      console.log(`[AUTH LISTENER] Firebase Auth detectó sesión activa: ${firebaseUser.email} (UID: ${firebaseUser.uid})`);
+      const session = await fetchUserProfileByUidOrEmail(firebaseUser.uid, firebaseUser.email);
+      if (session) {
+        try {
+          localStorage.setItem('pampero_user_session', JSON.stringify(session));
+        } catch {}
+        onSessionResolved(session);
+        return;
+      }
+    }
+
+    // Si Firebase Auth aún no tiene credenciales en memoria, verificar si existe sesión guardada válida
+    try {
+      const saved = localStorage.getItem('pampero_user_session');
+      if (saved) {
+        const parsed: UserSession = JSON.parse(saved);
+        if (parsed && (parsed.email?.toLowerCase().trim() === MASTER_ADMIN_EMAIL.toLowerCase() || parsed.id)) {
+          console.log(`[AUTH LISTENER] Restaurando sesión activa desde almacenamiento persistente: ${parsed.email}`);
+          onSessionResolved(parsed);
+          return;
+        }
+      }
+    } catch {}
+
+    onSessionResolved(null);
+  });
+}
+

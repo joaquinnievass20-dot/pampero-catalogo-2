@@ -146,8 +146,11 @@ export const ProductCard: React.FC<ProductCardProps> = ({
         onClick={handleImageClick}
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
-        style={{ borderColor: cardBorder }}
-        className="relative overflow-hidden rounded-xs bg-[#ECE5DC] border cursor-pointer transition-colors"
+        style={{ 
+          backgroundColor: theme.cardBgColor || '#ECE5DC',
+          borderColor: cardBorder 
+        }}
+        className="relative overflow-hidden rounded-xs border cursor-pointer transition-colors"
       >
         <img
           src={activeImageUrl}
@@ -243,10 +246,13 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             e.stopPropagation();
             handleDetailClick();
           }}
-          style={{ backgroundColor: theme.primaryColor || '#18231C' }}
-          className="absolute inset-x-0 bottom-0 translate-y-full py-2.5 text-center text-[10px] font-bold uppercase tracking-[0.25em] text-[#F5F2EC] transition-transform duration-300 group-hover:translate-y-0 z-10 cursor-pointer hover:bg-black"
+          style={{ 
+            backgroundColor: theme.cardButtonBg || theme.buttonBgColor || theme.primaryColor || '#18231C',
+            color: theme.cardButtonText || theme.buttonTextColor || '#F5F2EC'
+          }}
+          className="absolute inset-x-0 bottom-0 translate-y-full py-2.5 text-center text-[10px] font-bold uppercase tracking-[0.25em] transition-transform duration-300 group-hover:translate-y-0 z-10 cursor-pointer"
         >
-          Ver ficha
+          {theme.siteTexts?.viewProductCardText || 'Ver ficha'}
         </span>
       </div>
 
@@ -272,7 +278,10 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             );
           })}
           {selectedColor && (
-            <span className="text-[10px] text-neutral-500 capitalize ml-1 font-mono">
+            <span 
+              style={{ color: theme.secondaryTextColor || '#6F6860' }}
+              className="text-[10px] capitalize ml-1 font-mono"
+            >
               {selectedColor}
             </span>
           )}
@@ -282,7 +291,10 @@ export const ProductCard: React.FC<ProductCardProps> = ({
       {/* Product metadata */}
       <div className="mt-2 min-w-0" onClick={handleDetailClick}>
         <div className="flex items-center gap-1 flex-wrap">
-          <p className="text-[10px] uppercase tracking-[0.2em] text-[#6F6860] truncate font-medium">
+          <p 
+            style={{ color: theme.secondaryTextColor || '#6F6860' }}
+            className="text-[10px] uppercase tracking-[0.2em] truncate font-medium"
+          >
             {product.section} · {product.subCategory}
           </p>
           {product.isUnisex && (
@@ -298,18 +310,25 @@ export const ProductCard: React.FC<ProductCardProps> = ({
         </div>
 
         <h3 
-          className="mt-0.5 truncate text-sm font-medium text-[#22201D] transition-colors cursor-pointer group-hover:text-[#FDB813]"
+          style={{ color: theme.cardTextColor || theme.catalogTextColor || theme.textColor || '#22201D' }}
+          className="mt-0.5 truncate text-sm font-medium transition-colors cursor-pointer"
         >
           {product.name}
         </h3>
 
         <div className="mt-1 flex items-baseline justify-between">
           <div className="flex items-baseline gap-2 text-sm">
-            <span className="font-semibold text-[#22201D]">
+            <span 
+              style={{ color: theme.cardPriceColor || theme.cardTextColor || theme.textColor || '#22201D' }}
+              className="font-semibold"
+            >
               $ {discountedPrice.toLocaleString('es-AR')}
             </span>
             {hasDiscount && (
-              <span className="text-xs text-[#6F6860] line-through">
+              <span 
+                style={{ color: theme.secondaryTextColor || '#6F6860' }}
+                className="text-xs line-through"
+              >
                 $ {basePrice.toLocaleString('es-AR')}
               </span>
             )}

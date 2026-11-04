@@ -41,6 +41,19 @@ export const INITIAL_THEME: ThemeConfig = {
   textColor: '#18231C',        // Primary text
   headerBgColor: '#FFFFFF',    // Navbar fondo oficial blanco limpio
   headerTextColor: '#18231C',  // Header text oficial oscuro
+  headerAccentColor: '#FDB813',// Acento exclusivo del navbar
+  headerBorderColor: '#DCD4C9',// Borde inferior del navbar
+  buttonBgColor: '#18231C',    // Fondo botones
+  buttonTextColor: '#FFFFFF',  // Texto botones
+  cardTextColor: '#22201D',    // Texto títulos tarjetas
+  cardPriceColor: '#18231C',   // Texto precio tarjetas
+  secondaryTextColor: '#6F6860', // Textos secundarios y descriptivos
+  cardButtonBg: '#18231C',     // Fondo botón ver ficha
+  cardButtonText: '#F5F2EC',   // Texto botón ver ficha
+  quoteDrawerBgColor: '#FFFFFF',
+  quoteDrawerTextColor: '#18231C',
+  quoteDrawerButtonBg: '#18231C',
+  quoteDrawerButtonText: '#FFFFFF',
   seasonBadgeBg: '#18231C',    // Cuadrito de temporada fondo
   seasonBadgeText: '#F5F2EC',  // Cuadrito de temporada texto
   discountBadgeBg: '#FDB813',  // Cuadrito de descuento fondo (Amarillo oficial)
@@ -54,6 +67,35 @@ export const INITIAL_THEME: ThemeConfig = {
   whatsappNumber: '5492615276713',
   instagramHandle: 'pamperogranmendoza',
   emailContact: 'pamperogranmendoza@gmail.com',
+  siteTexts: {
+    announcementBarText: 'CATÁLOGO DIGITAL · EXHIBICIÓN DE PRODUCTO',
+    searchPlaceholder: 'Buscar en el catálogo...',
+    quoteButtonText: 'Mi Pedido',
+    loginButtonText: 'Iniciar Sesión / Crear Cuenta',
+    heroTitleLine1: 'INDUMENTARIA QUE',
+    heroTitleLine2: 'AGUANTA EL TRABAJO',
+    heroSubtitle: 'Confeccionada bajo estrictas normas de resistencia. Ropa de trabajo, campo y aventura con garantía de nobleza.',
+    heroPrimaryBtnText: 'VER CATÁLOGO',
+    heroCorporateBtnText: 'VENTA CORPORATIVA',
+    heroWhatsAppBtnText: 'CONSULTAR POR WHATSAPP',
+    landingTopNotice: 'CATÁLOGO DIGITAL · EXHIBICIÓN DE PRODUCTO',
+    catalogTitle: 'CATÁLOGO OFICIAL',
+    catalogSubtitle: 'Artículos de máxima resistencia para campo, industria y ciudad.',
+    catalogSearchPlaceholder: 'Buscar por nombre, código PAM, sección o color...',
+    viewProductCardText: 'Ver ficha',
+    addToQuoteBtnText: 'AGREGAR A MI PEDIDO',
+    whatsappConsultBtnText: 'CONSULTAR POR WHATSAPP',
+    quoteDrawerTitle: 'Mi Pedido',
+    quoteDrawerSendBtnText: 'Enviar Pedido por WhatsApp',
+    quoteDrawerObservationsPlaceholder: 'Observaciones para el asesor: talles específicos, colores alternativos o sucursal de retiro preferida...',
+    emptyCartTitle: 'Tu pedido está vacío',
+    emptyCartSubtitle: 'Explorá el catálogo Pampero y agregá los artículos que necesites cotizar.',
+    footerTagline: 'Catálogo digital de exhibición oficial · Gran Mendoza',
+    footerAbout: 'Indumentaria y calzado oficial Pampero para trabajo, campo y tiempo libre en la provincia de Mendoza.',
+    footerPhone: '261 527-6713',
+    footerEmail: 'pamperogranmendoza@gmail.com',
+    footerAddress: 'Pescara 250 (Maipú) · San Martín 477 (Ciudad) · Patricios 384 (Luján)',
+  },
 };
 
 export const INITIAL_COUPONS: DiscountCoupon[] = [

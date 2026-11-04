@@ -250,6 +250,8 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
   const [newAccountAddress, setNewAccountAddress] = useState('');
   const [newAccountCity, setNewAccountCity] = useState('Gran Mendoza');
   const [newAccountBranch, setNewAccountBranch] = useState(branches?.[0]?.name || 'Maipú');
+  const [newAccountPassword, setNewAccountPassword] = useState('Pampero2026');
+  const [showPassword, setShowPassword] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [createdSuccessUser, setCreatedSuccessUser] = useState<RegisteredUser | null>(null);
 
@@ -393,6 +395,12 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
       return;
     }
 
+    const passTrimmed = newAccountPassword.trim();
+    if (!passTrimmed || passTrimmed.length < 6) {
+      setCreateError('La contraseña inicial debe tener al menos 6 caracteres para Firebase Authentication.');
+      return;
+    }
+
     // Verificar si ya existe el email
     const exists = users.some((u) => u.email.toLowerCase().trim() === emailTrimmed);
     if (exists) {
@@ -411,6 +419,8 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
       name: nameTrimmed,
       repName: newAccountType === 'empresa' ? newAccountRepName.trim() : undefined,
       email: emailTrimmed,
+      password: passTrimmed,
+      initialPassword: passTrimmed,
       phone: newAccountPhone.trim() || '261-0000000',
       cuitOrDni: newAccountCuit.trim() || 'Sin registrar',
       address: newAccountAddress.trim() || 'Gran Mendoza',
@@ -426,8 +436,8 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
     };
 
     try {
-      // 1. Crear en Firebase Authentication y Cloud Firestore con UID sincronizado
-      const authResult = await createFirebaseAuthAndFirestoreUser(newUser);
+      // 1. Crear en Firebase Authentication y Cloud Firestore con UID sincronizado y contraseña exacta
+      const authResult = await createFirebaseAuthAndFirestoreUser(newUser, passTrimmed);
       if (!authResult.success) {
         setCreateError(authResult.error || 'Error al crear la cuenta en Firebase Authentication.');
         return;
@@ -1265,13 +1275,39 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
                   </div>
 
                   {/* 3. CONFIGURACIÓN SEGURA DE CONTRASEÑA VÍA FIREBASE AUTH */}
-                  <div className="p-3.5 bg-emerald-50 border border-emerald-300 rounded-xs space-y-2 mt-2">
-                    <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-emerald-950">
-                      <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                      <span>Configuración Segura de Contraseña (Firebase Auth)</span>
+                  <div className="p-3.5 bg-emerald-50 border border-emerald-300 rounded-xs space-y-2.5 mt-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-emerald-950">
+                        <Key className="w-4 h-4 text-emerald-700" />
+                        <span>Contraseña Inicial de Acceso (Firebase Auth) *</span>
+                      </div>
+                      <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-xs">
+                        Mínimo 6 caracteres
+                      </span>
                     </div>
+
+                    <div className="relative">
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        required
+                        minLength={6}
+                        value={newAccountPassword}
+                        onChange={(e) => setNewAccountPassword(e.target.value)}
+                        placeholder="Ingresar contraseña inicial (ej: Pampero2026)"
+                        className="w-full px-3 py-2 pr-10 bg-white border border-emerald-300 rounded-xs text-xs font-mono text-[#18231C] outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-2.5 top-2 text-neutral-400 hover:text-neutral-700 p-0.5 cursor-pointer"
+                        title={showPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
+                      >
+                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+
                     <p className="text-[11px] text-emerald-900 leading-relaxed">
-                      El sistema registrará el perfil en Firestore y enviará automáticamente un correo oficial de Firebase Auth a <strong>{newAccountEmail || 'la dirección del usuario'}</strong> con el enlace para que el usuario configure su propia contraseña de acceso de manera directa y 100% segura.
+                      Esta contraseña se creará directamente en <strong>Firebase Authentication</strong> vinculada al correo <strong>{newAccountEmail || 'indicado'}</strong>. El usuario podrá iniciar sesión inmediatamente con esta clave.
                     </p>
                   </div>
                 </div>

@@ -119,6 +119,11 @@ export function applyThemeToDocument(theme: ThemeConfig) {
 
   root.style.setProperty('--catalog-title', catalogTitle);
   root.style.setProperty('--catalog-text', text);
+  root.style.setProperty('--card-text', theme.cardTextColor || text);
+  root.style.setProperty('--card-price', theme.cardPriceColor || catalogTitle);
+  root.style.setProperty('--secondary-text', theme.secondaryTextColor || '#6F6860');
+  if (theme.cardButtonBg) root.style.setProperty('--card-btn-bg', theme.cardButtonBg);
+  if (theme.cardButtonText) root.style.setProperty('--card-btn-text', theme.cardButtonText);
 
   // Section variables
   if (theme.announcementBgColor) root.style.setProperty('--announcement-bg', theme.announcementBgColor);

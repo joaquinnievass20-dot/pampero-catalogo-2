@@ -643,18 +643,25 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
                 href={`https://wa.me/${theme.whatsappNumber || '5492615276713'}?text=${whatsappMessage}`}
                 target="_blank"
                 rel="noreferrer"
-                style={{ backgroundColor: accent }}
-                className="w-full flex items-center justify-center gap-2 rounded-xs px-6 py-3.5 text-xs font-bold uppercase tracking-[0.25em] text-white transition-all shadow-sm hover:brightness-110 cursor-pointer"
+                style={{ 
+                  backgroundColor: theme.buttonBgColor || accent,
+                  color: theme.buttonTextColor || '#FFFFFF'
+                }}
+                className="w-full flex items-center justify-center gap-2 rounded-xs px-6 py-3.5 text-xs font-bold uppercase tracking-[0.25em] transition-all shadow-sm hover:brightness-110 cursor-pointer"
               >
                 <MessageCircle className="w-4 h-4" />
-                <span>CONSULTAR POR WHATSAPP</span>
+                <span>{theme.siteTexts?.whatsappConsultBtnText || 'CONSULTAR POR WHATSAPP'}</span>
               </a>
 
               {/* Add to quote bag button */}
               <button
                 type="button"
                 onClick={handleAddToCart}
-                className="w-full flex items-center justify-center gap-2 rounded-xs border border-[#18231C] bg-transparent hover:bg-[#18231C] text-[#18231C] hover:text-[#F5F2EC] px-6 py-3.5 text-xs font-bold uppercase tracking-[0.25em] transition-all cursor-pointer"
+                style={{
+                  borderColor: theme.buttonBgColor || theme.primaryColor || '#18231C',
+                  color: theme.buttonBgColor || theme.primaryColor || '#18231C',
+                }}
+                className="w-full flex items-center justify-center gap-2 rounded-xs border-2 bg-transparent hover:bg-neutral-100 px-6 py-3.5 text-xs font-bold uppercase tracking-[0.25em] transition-all cursor-pointer"
               >
                 {addedAnimation ? (
                   <>
@@ -664,7 +671,7 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
                 ) : (
                   <>
                     <ShoppingBag className="w-4 h-4" />
-                    <span>AGREGAR A MI PEDIDO</span>
+                    <span>{theme.siteTexts?.addToQuoteBtnText || 'AGREGAR A MI PEDIDO'}</span>
                   </>
                 )}
               </button>

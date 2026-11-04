@@ -265,6 +265,56 @@ export interface LookbookItem {
   order?: number;
 }
 
+export interface SiteTextsConfig {
+  // 1. Barra de Anuncios y Navbar
+  announcementBarText?: string;
+  searchPlaceholder?: string;
+  quoteButtonText?: string;
+  loginButtonText?: string;
+  
+  // 2. Portada & Hero
+  heroTitleLine1?: string;
+  heroTitleLine2?: string;
+  heroSubtitle?: string;
+  heroPrimaryBtnText?: string;
+  heroCorporateBtnText?: string;
+  heroWhatsAppBtnText?: string;
+  landingTopNotice?: string;
+  
+  // 3. Catálogo y Productos
+  catalogTitle?: string;
+  catalogSubtitle?: string;
+  catalogSearchPlaceholder?: string;
+  viewProductCardText?: string;
+  addToQuoteBtnText?: string;
+  whatsappConsultBtnText?: string;
+  
+  // 4. Ventana Emergente de Mi Pedido (QuoteDrawer)
+  quoteDrawerTitle?: string;
+  quoteDrawerSendBtnText?: string;
+  quoteDrawerObservationsPlaceholder?: string;
+  emptyCartTitle?: string;
+  emptyCartSubtitle?: string;
+
+  // 5. Pie de Página y Contacto
+  footerTagline?: string;
+  footerAbout?: string;
+  footerPhone?: string;
+  footerEmail?: string;
+  footerAddress?: string;
+
+  // Compatibilidad con campos previos de screenTexts
+  landingTitle1?: string;
+  landingTitle2?: string;
+  landingSubtitle?: string;
+  landingButtonText?: string;
+  quoteEmail?: string;
+  quotePhone?: string;
+  quoteObservationsPlaceholder?: string;
+  authTitle?: string;
+  authSubtitle?: string;
+}
+
 export interface ThemeConfig {
   primaryColor: string; // e.g., #18231C
   accentColor: string;  // e.g., #FDB813
@@ -279,6 +329,8 @@ export interface ThemeConfig {
   hubTextColor?: string; // Color de texto en Menú Administrador
   catalogTitleColor?: string; // Textos y títulos del catálogo
   catalogTextColor?: string; // Textos descriptivos del catálogo
+  secondaryTextColor?: string; // Color para textos secundarios/descriptivos
+  cardPriceColor?: string; // Color específico de precio en tarjetas
   buttonBgColor?: string; // Color de fondo de botones generales
   seasonBadgeBg?: string; // e.g., #18231C
   seasonBadgeText?: string; // e.g., #F5F2EC
@@ -320,6 +372,7 @@ export interface ThemeConfig {
   heroAccentColor?: string;
   cardTextColor?: string; // Ficha de Producto
   cardButtonBg?: string;
+  cardButtonText?: string;
   quoteDrawerBgColor?: string; // Ventana Emergente de Mi Pedido
   quoteDrawerTextColor?: string;
   quoteDrawerBorderColor?: string;
@@ -337,25 +390,8 @@ export interface ThemeConfig {
   footerTextColor?: string;
   footerBorderColor?: string;
   footerAccentColor?: string;
-  screenTexts?: {
-    landingTitle1?: string;
-    landingTitle2?: string;
-    landingSubtitle?: string;
-    landingButtonText?: string;
-    landingTopNotice?: string;
-    catalogTitle?: string;
-    catalogSubtitle?: string;
-    quoteEmail?: string;
-    quotePhone?: string;
-    quoteButtonText?: string;
-    quoteObservationsPlaceholder?: string;
-    authTitle?: string;
-    authSubtitle?: string;
-    footerAbout?: string;
-    footerPhone?: string;
-    footerEmail?: string;
-    footerAddress?: string;
-  };
+  siteTexts?: SiteTextsConfig;
+  screenTexts?: SiteTextsConfig;
 }
 
 export interface CartItem {

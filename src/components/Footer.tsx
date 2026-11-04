@@ -66,19 +66,19 @@ export const Footer: React.FC<FooterProps> = ({
             </div>
 
             <p className="text-xs text-neutral-400 leading-relaxed max-w-sm">
-              Catálogo digital de exhibición. Precios e imágenes sujetos a actualización. Distribución oficial en Gran Mendoza.
+              {theme.siteTexts?.footerAbout || 'Catálogo digital de exhibición. Precios e imágenes sujetos a actualización. Distribución oficial en Gran Mendoza.'}
             </p>
 
             <div className="pt-2 flex flex-wrap gap-2">
               <a
-                href={`https://wa.me/5492615276713?text=Hola%20Pampero%20Gran%20Mendoza,%20quisiera%20consultar%20su%20cat%C3%A1logo.`}
+                href={`https://wa.me/${(theme.whatsappNumber || '5492615276713').replace(/\D/g, '')}?text=Hola%20Pampero%20Gran%20Mendoza,%20quisiera%20consultar%20su%20cat%C3%A1logo.`}
                 target="_blank"
                 rel="noreferrer"
                 style={{ backgroundColor: accent }}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xs text-white text-[11px] font-bold uppercase tracking-wider transition-all hover:brightness-110 shadow-xs"
               >
                 <MessageCircle className="w-3.5 h-3.5" />
-                WhatsApp 261 527-6713
+                WhatsApp {theme.siteTexts?.footerPhone || theme.whatsappNumber || '261 527-6713'}
               </a>
 
               <a
@@ -88,7 +88,7 @@ export const Footer: React.FC<FooterProps> = ({
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xs bg-white/10 hover:bg-white/20 text-white text-[11px] font-bold uppercase tracking-wider transition-colors"
               >
                 <Instagram className="w-3.5 h-3.5" style={{ color: iconColor }} />
-                @pamperogranmendoza
+                @{theme.instagramHandle || 'pamperogranmendoza'}
               </a>
             </div>
           </div>
@@ -101,14 +101,14 @@ export const Footer: React.FC<FooterProps> = ({
             <div className="space-y-2.5 text-xs text-neutral-300">
               <p className="flex items-center gap-2">
                 <Phone className="w-3.5 h-3.5 shrink-0" style={{ color: iconColor }} />
-                <span>Teléfono / Celular: <strong className="text-white">261 527-6713</strong></span>
+                <span>Teléfono / Celular: <strong className="text-white">{theme.siteTexts?.footerPhone || '261 527-6713'}</strong></span>
               </p>
               <p className="flex items-center gap-2">
                 <Instagram className="w-3.5 h-3.5 shrink-0" style={{ color: iconColor }} />
-                <span>Instagram: <strong className="text-white">@pamperogranmendoza</strong></span>
+                <span>Instagram: <strong className="text-white">@{theme.instagramHandle || 'pamperogranmendoza'}</strong></span>
               </p>
               <p className="text-neutral-300 leading-relaxed text-[11px] pt-1">
-                Atención personalizada a particulares y ventas corporativas para cualquier tipo de empresa.
+                {theme.siteTexts?.footerTagline || 'Atención personalizada a particulares y ventas corporativas para cualquier tipo de empresa.'}
               </p>
             </div>
           </div>

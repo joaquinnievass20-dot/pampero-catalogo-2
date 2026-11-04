@@ -433,14 +433,19 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
         >
           {/* Header */}
           <div 
-            style={{ backgroundColor: primaryBg }}
-            className="p-4 sm:p-5 flex items-center justify-between text-white border-b border-black/40 shrink-0"
+            style={{ 
+              backgroundColor: theme?.quoteDrawerBgColor || primaryBg,
+              color: theme?.quoteDrawerTextColor || '#FFFFFF'
+            }}
+            className="p-4 sm:p-5 flex items-center justify-between border-b border-black/40 shrink-0"
           >
             <div className="flex items-center gap-2.5">
               <ShoppingBag className="w-5 h-5" style={{ color: accent }} />
               <div>
-                <h3 className="font-display font-bold text-lg uppercase tracking-wider leading-tight">Mi Pedido</h3>
-                <p className="text-[11px] text-neutral-300 font-sans">
+                <h3 className="font-display font-bold text-lg uppercase tracking-wider leading-tight">
+                  {theme?.siteTexts?.quoteDrawerTitle || 'Mi Pedido'}
+                </h3>
+                <p className="text-[11px] opacity-80 font-sans">
                   {totalUnits} {totalUnits === 1 ? 'artículo en la lista' : 'artículos en la lista'}
                 </p>
               </div>
@@ -482,9 +487,11 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
             {safeItems.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-center p-6 text-[#6F6860]">
                 <ShoppingBag className="w-12 h-12 mb-3 stroke-[1.5] opacity-40 text-[#18231C]" />
-                <p className="font-bold text-[#18231C] text-sm uppercase tracking-wider">Tu pedido está vacío</p>
+                <p className="font-bold text-[#18231C] text-sm uppercase tracking-wider">
+                  {theme?.siteTexts?.emptyCartTitle || 'Tu pedido está vacío'}
+                </p>
                 <p className="text-xs text-[#6F6860] mt-1 max-w-[240px]">
-                  Explorá el catálogo Pampero y agregá los artículos que necesites cotizar.
+                  {theme?.siteTexts?.emptyCartSubtitle || 'Explorá el catálogo Pampero y agregá los artículos que necesites cotizar.'}
                 </p>
               </div>
             ) : (
@@ -620,7 +627,7 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
                 <textarea
                   value={observations}
                   onChange={(e) => setObservations(e.target.value)}
-                  placeholder="Ej: Bordado de logo Pampero en pecho izquierdo, solicitud de muestra física, plazos de entrega..."
+                  placeholder={theme?.siteTexts?.quoteDrawerObservationsPlaceholder || "Ej: Bordado de logo Pampero en pecho izquierdo, solicitud de muestra física, plazos de entrega..."}
                   rows={2}
                   className="w-full p-2.5 bg-white border border-[#DCD4C9] rounded-xs text-xs text-[#18231C] placeholder-[#A89F91] focus:border-[#FDB813] outline-none resize-none leading-relaxed"
                 />
@@ -700,7 +707,7 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
                   title="Enviar pedido con formato completo a WhatsApp"
                 >
                   <MessageCircle className="w-4 h-4 fill-white shrink-0" />
-                  <span>Pasar a WhatsApp</span>
+                  <span>{theme?.siteTexts?.quoteDrawerSendBtnText || 'Pasar a WhatsApp'}</span>
                 </button>
               </div>
 

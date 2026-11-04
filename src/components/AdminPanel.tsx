@@ -14,6 +14,7 @@ import {
 } from '../types';
 import { CATEGORY_HIERARCHY } from '../data/categories';
 import { AdminThemeTab } from './admin/AdminThemeTab';
+import { AdminSiteTextsTab } from './admin/AdminSiteTextsTab';
 import { AdminLookbookTab } from './admin/AdminLookbookTab';
 import { AdminPromosTab } from './admin/AdminPromosTab';
 import { AdminMassImagesTab } from './admin/AdminMassImagesTab';
@@ -95,7 +96,8 @@ import {
   DollarSign,
   ChevronRight,
   Menu,
-  FileText
+  FileText,
+  Type
 } from 'lucide-react';
 
 export type AdminTabKey = 
@@ -105,6 +107,7 @@ export type AdminTabKey =
   | 'categories'
   | 'coupons' 
   | 'theme' 
+  | 'site_texts'
   | 'lookbook'
   | 'products' 
   | 'variants' 
@@ -726,7 +729,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     {
       title: 'Configuración del Sitio',
       tabs: [
-        { key: 'theme', label: 'Identidad & Ficha CRM', icon: Palette },
+        { key: 'theme', label: 'Logo & Estilos Visuales', icon: Palette },
+        { key: 'site_texts', label: 'Textos de la Interfaz', icon: Type },
         { key: 'sizing_portal', label: 'Portal Curva de Talles', icon: Sliders },
         { key: 'notifications', label: 'Notificaciones', icon: Bell },
       ],
@@ -1007,6 +1011,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           {/* TAB 5: LOGO, COLORES & FUENTES */}
           {activeTab === 'theme' && (
             <AdminThemeTab
+              theme={theme}
+              onUpdateTheme={onUpdateTheme}
+              triggerSaveNotice={triggerSaveNotice}
+            />
+          )}
+
+          {/* TAB: TEXTOS DE LA INTERFAZ */}
+          {activeTab === 'site_texts' && (
+            <AdminSiteTextsTab
               theme={theme}
               onUpdateTheme={onUpdateTheme}
               triggerSaveNotice={triggerSaveNotice}

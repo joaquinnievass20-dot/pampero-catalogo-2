@@ -438,18 +438,24 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
             style={{ color: accent }}
             className="text-[11px] uppercase tracking-[0.25em] font-bold"
           >
-            {activePromoFilter ? 'PROMOCIÓN VIGENTE' : 'CATÁLOGO OFICIAL'}
+            {activePromoFilter ? 'PROMOCIÓN VIGENTE' : (theme.siteTexts?.catalogTitle || 'CATÁLOGO OFICIAL')}
           </p>
 
           <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-4 mt-1">
             <div>
-              <h1 className="font-display text-4xl sm:text-5xl lg:text-6xl tracking-[0.04em] text-[#18231C] uppercase font-bold">
+              <h1 
+                style={{ color: theme.catalogTitleColor || theme.textColor || '#18231C' }}
+                className="font-display text-4xl sm:text-5xl lg:text-6xl tracking-[0.04em] uppercase font-bold"
+              >
                 {activePromoFilter ? activePromoFilter : currentCategory}
               </h1>
-              <p className="mt-1 text-xs sm:text-sm text-[#6F6860] font-sans">
+              <p 
+                style={{ color: theme.secondaryTextColor || '#6F6860' }}
+                className="mt-1 text-xs sm:text-sm font-sans"
+              >
                 {activePromoFilter
                   ? 'Artículos seleccionados con descuento exclusivo en Pampero Gran Mendoza.'
-                  : categoryTaglines[currentCategory]}
+                  : (theme.siteTexts?.catalogSubtitle || categoryTaglines[currentCategory])}
               </p>
             </div>
 
@@ -484,7 +490,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                   type="text"
                   value={activeSearch}
                   onChange={(e) => handleSearchChange(e.target.value)}
-                  placeholder="Buscar por nombre, código PAM (ej. PAM-101), sección o color..."
+                  placeholder={theme.siteTexts?.catalogSearchPlaceholder || "Buscar por nombre, código PAM (ej. PAM-101), sección o color..."}
                   className="w-full pl-10 pr-9 py-2.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs sm:text-sm text-[#18231C] placeholder-[#8C827A] focus:outline-none focus:border-[#18231C] focus:bg-white transition-all font-medium"
                 />
                 {activeSearch && (

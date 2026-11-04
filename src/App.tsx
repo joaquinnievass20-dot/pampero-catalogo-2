@@ -40,14 +40,15 @@ import {
   subscribeToFirestorePromotions,
   subscribeToFirestoreLookbook,
   saveFirestorePromotionsBatch,
-  seedInitialPromotionsIfEmpty,
   recordAuditLog,
+  subscribeToAuthSession,
   db,
   getFirebaseDb,
 } from './services/firebase';
 import { doc, deleteDoc } from 'firebase/firestore';
 import { ensureMasterAdminInitialized } from './utils/authInit';
 import { trackAddToCart } from './utils/analytics';
+import { Navbar } from './components/Navbar';
 import { LandingHero } from './components/LandingHero';
 import { CatalogView } from './components/CatalogView';
 import { ProductDetailView } from './components/ProductDetailView';
@@ -297,6 +298,27 @@ export default function App() {
       }
     });
 
+    // Listener de autenticación y persistencia de sesión:
+    // Mantiene la sesión viva al recargar (F5) recuperando perfil desde Firestore sin cierres inesperados
+    const unsubscribeAuth = subscribeToAuthSession((session) => {
+      if (session) {
+        setUserSession(session);
+        try {
+          localStorage.setItem('pampero_user_session', JSON.stringify(session));
+        } catch {}
+        setCart(loadCartFromStorage(session));
+      } else {
+        setUserSession((prev) => {
+          if (prev?.email?.toLowerCase().trim() === 'joaquinnievass20@gmail.com') return prev;
+          try {
+            localStorage.removeItem('pampero_user_session');
+          } catch {}
+          return null;
+        });
+      }
+      setIsAuthResolving(false);
+    });
+
     // Revalidate on window focus throttled (prevents flood in preview iframes)
     let lastFocusSync = Date.now();
     const handleFocus = () => {
@@ -323,6 +345,7 @@ export default function App() {
       unsubscribePromotions();
       unsubscribeLookbook();
       unsubscribeProducts();
+      unsubscribeAuth();
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
@@ -352,8 +375,18 @@ export default function App() {
     }
   });
 
-  // 6. User Session - strictly null at initial start as requested
-  const [userSession, setUserSession] = useState<UserSession | null>(null);
+  // 6. User Session - Restored synchronously from localStorage to prevent flash of guest state
+  const [userSession, setUserSession] = useState<UserSession | null>(() => {
+    try {
+      const saved = localStorage.getItem('pampero_user_session');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  // Flag to wait for Firebase Auth resolution before executing any redirect / session expulsion
+  const [isAuthResolving, setIsAuthResolving] = useState<boolean>(true);
 
   // Helper functions for isolated cart persistence per active user ID
   const getCartStorageKey = (session: UserSession | null): string => {
@@ -379,7 +412,13 @@ export default function App() {
 
   // 7. Quotation Cart (isolated per user ID, guest fallback)
   const [cart, setCart] = useState<CartItem[]>(() => {
-    return loadCartFromStorage(null);
+    try {
+      const savedSession = localStorage.getItem('pampero_user_session');
+      const session = savedSession ? JSON.parse(savedSession) : null;
+      return loadCartFromStorage(session);
+    } catch {
+      return loadCartFromStorage(null);
+    }
   });
 
   const [isProfileOpen, setIsProfileOpen] = useState(false);
@@ -452,9 +491,23 @@ export default function App() {
   // 'sizing_portal'     -> Client digital employee sizing portal
   // 'order_tracking'    -> Client live order status view (Kanban phase tracking)
   // 'hub'               -> Internal staff & admin hub with large action cards
-  const [viewMode, setViewMode] = useState<'landing' | 'auth' | 'catalog' | 'product_detail' | 'admin' | 'lookbook' | 'crm' | 'uniform_simulator' | 'sizing_portal' | 'order_tracking' | 'hub'>('landing');
-  const [authInitialTab, setAuthInitialTab] = useState<'login' | 'register' | 'admin'>('register');
+  const [viewMode, setViewMode] = useState<'landing' | 'auth' | 'catalog' | 'product_detail' | 'admin' | 'lookbook' | 'crm' | 'uniform_simulator' | 'sizing_portal' | 'order_tracking' | 'hub'>(() => {
+    try {
+      const saved = sessionStorage.getItem('pampero_active_view');
+      if (saved && ['landing', 'auth', 'catalog', 'product_detail', 'admin', 'lookbook', 'crm', 'uniform_simulator', 'sizing_portal', 'order_tracking', 'hub'].includes(saved)) {
+        return saved as any;
+      }
+    } catch {}
+    return 'landing';
+  });
+  const [authInitialTab, setAuthInitialTab] = useState<'login' | 'register' | 'admin'>('login');
   const [authInitialType, setAuthInitialType] = useState<'consumidor' | 'empresa'>('consumidor');
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('pampero_active_view', viewMode);
+    } catch {}
+  }, [viewMode]);
 
   // Filtering & Selected Product
   const [currentCategory, setCurrentCategory] = useState<MainCategory>('Hombre');
@@ -634,6 +687,9 @@ export default function App() {
   //   Si ya tienen sesión activa iniciada, se previene la vista de login ('auth') redirigiéndolos al Hub.
   // - Usuarios no-staff / no autenticados: no pueden acceder a las vistas internas ('hub', 'admin', 'crm').
   useEffect(() => {
+    // ¡CRÍTICO: No expulsar ni alterar la ruta del usuario mientras Firebase Auth resuelve la sesión!
+    if (isAuthResolving) return;
+
     const isStaff = Boolean(
       userSession &&
       (userSession.role === 'admin' ||
@@ -668,7 +724,7 @@ export default function App() {
         setViewMode(userSession ? 'catalog' : 'landing');
       }
     }
-  }, [userSession, viewMode]);
+  }, [userSession, viewMode, isAuthResolving]);
 
   const handleLogin = (session: UserSession) => {
     setUserSession(session);
@@ -879,131 +935,54 @@ export default function App() {
     <div className="min-h-screen flex flex-col bg-[#F5F2EC] text-[#22201D] font-sans antialiased selection:bg-[#FDB813] selection:text-black">
       
       {/* Top Header shown on Catalog and Product Detail (Screenshot 3 & 4) */}
-      {(viewMode === 'catalog' || viewMode === 'product_detail') && (() => {
-        const isDarkHeader = isColorDark(theme.headerBgColor || '#FFFFFF');
-        return (
-          <header 
-            style={{ 
-              backgroundColor: theme.headerBgColor || '#FFFFFF',
-              borderColor: isDarkHeader ? 'rgba(255, 255, 255, 0.15)' : '#DCD4C9',
-            }}
-            className="sticky top-0 z-50 w-full border-b shadow-xs transition-colors"
-          >
-            {/* Top Micro Announcement */}
-            <div 
-              style={{ 
-                backgroundColor: theme.primaryColor || '#18231C',
-                color: theme.primaryTextColor || '#F5F2EC'
-              }}
-              className="text-[10px] sm:text-[11px] py-1.5 px-4 flex items-center justify-center gap-3 uppercase tracking-[0.25em] font-medium select-none"
-            >
-              <span>CATÁLOGO DIGITAL · EXHIBICIÓN DE PRODUCTO</span>
-            </div>
-
-            <div className="grid grid-cols-[auto_1fr_auto] lg:grid-cols-[1fr_auto_1fr] items-center gap-4 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 w-full">
-              {/* Col 1 (Izquierda): Logo con auto-adaptación al color de fondo */}
-              <div
-                className="cursor-pointer shrink-0 flex items-center justify-start"
-                onClick={() => setViewMode('landing')}
-                title="Volver a la portada principal"
-              >
-                <PamperoLogo 
-                  customLogoUrl={theme.customLogoUrl}
-                  height={theme.logoHeight || 48}
-                  onDarkBackground={isDarkHeader}
-                  navBgColor={theme.headerBgColor}
-                />
-              </div>
-
-              {/* Col 2 (Centro Simétrico): Menú de Categorías con mega-menu dropdown */}
-              <div className="hidden lg:flex items-center justify-center gap-4 mx-auto">
-                <CategoryMenuNav
-                  currentCategory={currentCategory}
-                  activePromoFilter={activePromoFilter}
-                  categoriesHierarchy={categories}
-                  onSelectCategoryItem={(cat, sec, sub) => {
-                    setCurrentCategory(cat);
-                    setCurrentSection(sec || 'Todos');
-                    setCurrentSubCategory(sub || 'Todos');
-                    setActivePromoFilter(null);
-                    setViewMode('catalog');
-                  }}
-                  onSelectPromo={(tag) => {
-                    setActivePromoFilter(tag);
-                    setViewMode('catalog');
-                  }}
-                  theme={theme}
-                  isDarkHeader={isDarkHeader}
-                />
-                <CorporateServicesDropdown
-                  onOpenLookbook={() => setViewMode('lookbook')}
-                  onOpenSizingPortal={() => setViewMode('sizing_portal')}
-                  onOpenUniformSimulator={() => setViewMode('uniform_simulator')}
-                  theme={theme}
-                  isDarkHeader={isDarkHeader}
-                />
-              </div>
-
-              {/* Col 3 (Derecha): Buscador + Menú de Usuario y Cotización */}
-              <div className="flex items-center justify-end gap-3 shrink-0 ml-auto">
-                <div className="relative hidden md:flex items-center w-48 lg:w-60">
-                  <Search 
-                    className={`w-3.5 h-3.5 absolute left-3 pointer-events-none ${
-                      isDarkHeader ? 'text-gray-400' : 'text-[#8C827A]'
-                    }`} 
-                  />
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => {
-                      setSearchQuery(e.target.value);
-                      if (viewMode !== 'catalog') setViewMode('catalog');
-                    }}
-                    placeholder="Buscar artículos..."
-                    style={{
-                      backgroundColor: isDarkHeader ? 'rgba(255, 255, 255, 0.1)' : '#FFFFFF',
-                      borderColor: isDarkHeader ? 'rgba(255, 255, 255, 0.2)' : '#DCD4C9',
-                      color: isDarkHeader ? '#FFFFFF' : '#18231C',
-                    }}
-                    className={`w-full pl-8.5 pr-7 py-1.5 rounded-xs text-xs focus:outline-none focus:border-[#FDB813] transition-all font-medium ${
-                      isDarkHeader ? 'placeholder-white/60' : 'placeholder-[#8C827A]'
-                    }`}
-                  />
-                  {searchQuery && (
-                    <button
-                      type="button"
-                      onClick={() => setSearchQuery('')}
-                      className={`absolute right-2 text-xs font-bold p-0.5 cursor-pointer ${
-                        isDarkHeader ? 'text-gray-300 hover:text-white' : 'text-[#8C827A] hover:text-[#18231C]'
-                      }`}
-                      title="Borrar búsqueda"
-                    >
-                      ✕
-                    </button>
-                  )}
-                </div>
-
-                <UserNavMenu
-                  userSession={userSession}
-                  cartCount={totalCartCount}
-                  onOpenCart={() => setIsCartOpen(true)}
-                  onOpenAuth={() => openAuthScreen('login', 'consumidor')}
-                  onLogout={handleLogout}
-                  onOpenAdmin={() => setViewMode('admin')}
-                  onOpenCRM={() => setViewMode('crm')}
-                  onOpenHub={() => setViewMode('hub')}
-                  onOpenUniformSimulator={() => setViewMode('uniform_simulator')}
-                  onOpenSizingPortal={() => setViewMode('sizing_portal')}
-                  onOpenProfile={() => setIsProfileOpen(true)}
-                  onOpenOrderTracking={() => setViewMode('order_tracking')}
-                  theme={theme}
-                  isDarkHeader={isDarkHeader}
-                />
-              </div>
-            </div>
-          </header>
-        );
-      })()}
+      {/* Top Header shown on Catalog and Product Detail: Real Navbar with shrink on scroll & bounded logo */}
+      {(viewMode === 'catalog' || viewMode === 'product_detail') && (
+        <Navbar
+          currentCategory={currentCategory}
+          currentSection={currentSection}
+          currentSubCategory={currentSubCategory}
+          onSelectCategory={(cat) => {
+            setCurrentCategory(cat);
+            setCurrentSection('Todos');
+            setCurrentSubCategory('Todos');
+            setActivePromoFilter(null);
+            setViewMode('catalog');
+          }}
+          onSelectSection={(sec) => {
+            setCurrentSection(sec);
+            setCurrentSubCategory('Todos');
+            setViewMode('catalog');
+          }}
+          onSelectSubCategory={(sub) => {
+            setCurrentSubCategory(sub);
+            setViewMode('catalog');
+          }}
+          searchQuery={searchQuery}
+          onSearchChange={(q) => {
+            setSearchQuery(q);
+            if (viewMode !== 'catalog') setViewMode('catalog');
+          }}
+          cartCount={totalCartCount}
+          onOpenCart={() => setIsCartOpen(true)}
+          userSession={userSession}
+          onOpenAuth={() => openAuthScreen('login', 'consumidor')}
+          onLogout={handleLogout}
+          onOpenAdmin={() => setViewMode('admin')}
+          onOpenCRM={() => setViewMode('crm')}
+          onOpenHub={() => setViewMode('hub')}
+          onOpenProfile={() => setIsProfileOpen(true)}
+          onOpenLookbook={() => setViewMode('lookbook')}
+          onOpenUniformSimulator={() => setViewMode('uniform_simulator')}
+          onOpenSizingPortal={() => setViewMode('sizing_portal')}
+          promotions={promotions}
+          activePromoFilter={activePromoFilter}
+          onSelectPromo={(promo) => {
+            setActivePromoFilter(promo.tagFilter);
+            setViewMode('catalog');
+          }}
+          theme={theme}
+        />
+      )}
 
       {/* Main View Router */}
       <main className="flex-1 w-full flex flex-col items-center">
