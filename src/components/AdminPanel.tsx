@@ -790,6 +790,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               customUrl={theme.customLogoUrl || theme.logoUrl}
               height={theme.logoHeight ? Math.min(theme.logoHeight, 36) : 32}
               size="sm"
+              onDarkBackground={true}
+              variant="light"
+              navBgColor={theme.primaryColor || '#18231C'}
             />
             <div className="min-w-0">
               <h2 className="font-display font-bold text-sm uppercase tracking-wider text-[#FDB813] truncate">

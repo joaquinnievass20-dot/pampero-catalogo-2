@@ -8,6 +8,7 @@ import {
   seedInitialFirestoreUsersIfEmpty,
   createFirebaseAuthAndFirestoreUser,
   sendUserPasswordResetEmail,
+  syncAllRegisteredUsersToFirebase,
 } from '../../services/firebase';
 import { 
   Users, 
@@ -43,6 +44,8 @@ interface AdminUsersTabProps {
 export const INITIAL_REGISTERED_USERS: RegisteredUser[] = [
   {
     ...MASTER_ADMIN_USER,
+    password: 'Pampero2026',
+    initialPassword: 'Pampero2026',
   },
   // Vendedores & Equipo Comercial
   {
@@ -54,6 +57,8 @@ export const INITIAL_REGISTERED_USERS: RegisteredUser[] = [
     branch: 'Maipú',
     phone: '261 527-6713',
     email: 'itati@pamperomaipu.com.ar',
+    password: 'Pampero2026',
+    initialPassword: 'Pampero2026',
     status: 'active',
     createdAt: '2026-02-01',
     notes: 'Encargada de sucursal Maipú.',
@@ -67,6 +72,8 @@ export const INITIAL_REGISTERED_USERS: RegisteredUser[] = [
     branch: 'Ciudad',
     phone: '261 423-1122',
     email: 'guada@pampero.com.ar',
+    password: 'Pampero2026',
+    initialPassword: 'Pampero2026',
     status: 'active',
     createdAt: '2026-02-01',
     notes: 'Encargada de sucursal Ciudad.',
@@ -80,6 +87,8 @@ export const INITIAL_REGISTERED_USERS: RegisteredUser[] = [
     branch: 'Luján',
     phone: '261 498-5544',
     email: 'carolina@pampero.com.ar',
+    password: 'Pampero2026',
+    initialPassword: 'Pampero2026',
     status: 'active',
     createdAt: '2026-02-01',
     notes: 'Encargada de sucursal Luján de Cuyo.',
@@ -93,6 +102,8 @@ export const INITIAL_REGISTERED_USERS: RegisteredUser[] = [
     branch: 'Maipú',
     phone: '261 527-6713',
     email: 'gustavo@pampero.com.ar',
+    password: 'Pampero2026',
+    initialPassword: 'Pampero2026',
     status: 'active',
     createdAt: '2026-02-05',
     notes: 'Vendedor corporativo en calle y visitas técnicas.',
@@ -106,6 +117,8 @@ export const INITIAL_REGISTERED_USERS: RegisteredUser[] = [
     branch: 'Ciudad',
     phone: '261 423-1122',
     email: 'martin@pampero.com.ar',
+    password: 'Pampero2026',
+    initialPassword: 'Pampero2026',
     status: 'active',
     createdAt: '2026-02-05',
     notes: 'Vendedor comercial mostrador y convenios.',
@@ -118,6 +131,8 @@ export const INITIAL_REGISTERED_USERS: RegisteredUser[] = [
     branch: 'Maipú',
     phone: '261 527-6713',
     email: 'ventas@pamperomaipu.com.ar',
+    password: 'Pampero2026',
+    initialPassword: 'Pampero2026',
     status: 'active',
     createdAt: '2026-02-10',
     notes: 'Acceso general ventas salón y pedidos.',
@@ -130,6 +145,8 @@ export const INITIAL_REGISTERED_USERS: RegisteredUser[] = [
     name: 'EDEMSA S.A. (Empresa Distribuidora de Electricidad de Mendoza)',
     repName: 'Ing. Martín Carrizo',
     email: 'compras.operativas@edemsa.com.ar',
+    password: 'Pampero2026',
+    initialPassword: 'Pampero2026',
     phone: '2614298100',
     cuitOrDni: '30-69278912-4',
     address: 'Av. Belgrano 847',
@@ -146,6 +163,8 @@ export const INITIAL_REGISTERED_USERS: RegisteredUser[] = [
     name: 'YPF Refinería Luján de Cuyo',
     repName: 'Lic. Pablo Godoy',
     email: 'licitaciones.pampero@ypf.com',
+    password: 'Pampero2026',
+    initialPassword: 'Pampero2026',
     phone: '2614980111',
     cuitOrDni: '30-54668997-9',
     address: 'Ruta Provincial 82 Km 27',
@@ -162,6 +181,8 @@ export const INITIAL_REGISTERED_USERS: RegisteredUser[] = [
     name: 'Bodegas & Viñedos Catena Zapata',
     repName: 'Arq. Florencia Morán',
     email: 'abastecimiento.cosecha@catenazapata.com',
+    password: 'Pampero2026',
+    initialPassword: 'Pampero2026',
     phone: '2614900210',
     cuitOrDni: '30-70891234-1',
     address: 'Cobos s/n, Agrelo',
@@ -178,6 +199,8 @@ export const INITIAL_REGISTERED_USERS: RegisteredUser[] = [
     name: 'Construcciones Cuyo S.R.L.',
     repName: 'Carlos Benítez',
     email: 'administracion@construccionescuyo.com.ar',
+    password: 'Pampero2026',
+    initialPassword: 'Pampero2026',
     phone: '2615112233',
     cuitOrDni: '30-71234567-8',
     address: 'Rodríguez Peña 1420',
@@ -194,6 +217,8 @@ export const INITIAL_REGISTERED_USERS: RegisteredUser[] = [
     role: 'client',
     name: 'Juan Manuel Rossi',
     email: 'jmrossi.mza@gmail.com',
+    password: 'Pampero2026',
+    initialPassword: 'Pampero2026',
     phone: '2616890123',
     cuitOrDni: '34.891.220',
     address: 'San Martín 520, 2do B',
@@ -208,6 +233,8 @@ export const INITIAL_REGISTERED_USERS: RegisteredUser[] = [
     role: 'client',
     name: 'María Laura Morales',
     email: 'laura.morales@hotmail.com',
+    password: 'Pampero2026',
+    initialPassword: 'Pampero2026',
     phone: '2615438899',
     cuitOrDni: '36.452.190',
     address: 'Bandera de los Andes 1840',
@@ -279,6 +306,43 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
       alert(`Error al enviar correo de restablecimiento: ${err?.message || err}`);
     } finally {
       setIsSendingReset(null);
+    }
+  };
+
+  // Sincronización masiva con Firebase Authentication y Firestore
+  const [isSyncingAll, setIsSyncingAll] = useState(false);
+  const [syncProgress, setSyncProgress] = useState<{ current: number; total: number } | null>(null);
+  const [syncFeedback, setSyncFeedback] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+  const handleSyncAllUsers = async () => {
+    if (isSyncingAll) return;
+    setIsSyncingAll(true);
+    setSyncFeedback(null);
+    setSyncProgress({ current: 0, total: users.length });
+    try {
+      const res = await syncAllRegisteredUsersToFirebase(users, (current, total) => {
+        setSyncProgress({ current, total });
+      });
+      if (res.success) {
+        setSyncFeedback({
+          type: 'success',
+          message: `¡Padrón 100% Sincronizado! Se procesaron ${res.syncedFirestore} cuentas en Firebase Authentication y Cloud Firestore. Ahora todos los clientes, empresas y vendedores pueden iniciar sesión sin trabas.`,
+        });
+        triggerSaveNotice();
+      } else {
+        setSyncFeedback({
+          type: 'error',
+          message: `Se sincronizaron ${res.syncedFirestore} cuentas con advertencias en ${res.errors.length} usuarios.`,
+        });
+      }
+    } catch (err: any) {
+      setSyncFeedback({
+        type: 'error',
+        message: err?.message || 'Error al ejecutar sincronización masiva.',
+      });
+    } finally {
+      setIsSyncingAll(false);
+      setTimeout(() => setSyncFeedback(null), 10000);
     }
   };
 
@@ -579,6 +643,26 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {/* Botón Sincronizar Padrón con Firebase (Auth & Firestore) */}
+            <button
+              type="button"
+              onClick={handleSyncAllUsers}
+              disabled={isSyncingAll}
+              className={`px-3.5 py-2 ${
+                isSyncingAll
+                  ? 'bg-emerald-700 cursor-wait'
+                  : 'bg-emerald-600 hover:bg-emerald-700 cursor-pointer'
+              } text-white text-xs font-bold uppercase tracking-wider rounded-xs flex items-center gap-2 transition-all shadow-xs`}
+              title="Sincroniza y da de alta a todos los usuarios del padrón en Firebase Authentication y Cloud Firestore con su contraseña"
+            >
+              <RefreshCw className={`w-4 h-4 ${isSyncingAll ? 'animate-spin' : ''}`} />
+              <span>
+                {isSyncingAll
+                  ? `Sincronizando (${syncProgress?.current || 0}/${syncProgress?.total || users.length})...`
+                  : 'Sincronizar Padrón con Firebase'}
+              </span>
+            </button>
+
             {/* Botón Principal: Crear Nueva Cuenta */}
             <button
               type="button"
@@ -590,7 +674,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
               className="px-3.5 py-2 bg-[#B9522F] hover:bg-[#A04526] text-white text-xs font-bold uppercase tracking-wider rounded-xs flex items-center gap-2 transition-all shadow-xs cursor-pointer"
             >
               <Plus className="w-4 h-4" />
-              <span>Nueva Cuenta de Usuario</span>
+              <span>Nueva Cuenta</span>
             </button>
 
             {/* Exportar CSV */}
@@ -605,6 +689,33 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
             </button>
           </div>
         </div>
+
+        {/* Feedback Banner de Sincronización Masiva */}
+        {syncFeedback && (
+          <div
+            className={`mt-3 p-3.5 rounded-xs border text-xs font-medium flex items-center justify-between gap-3 ${
+              syncFeedback.type === 'success'
+                ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
+                : 'bg-amber-50 border-amber-300 text-amber-900'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              {syncFeedback.type === 'success' ? (
+                <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+              ) : (
+                <AlertCircle className="w-5 h-5 text-amber-600 shrink-0" />
+              )}
+              <span>{syncFeedback.message}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSyncFeedback(null)}
+              className="text-stone-500 hover:text-stone-800 p-1 cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
 
         {/* Quick Stats: Tarjetas de Resumen de Cuentas */}
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mt-4">
