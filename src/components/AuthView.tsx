@@ -15,14 +15,16 @@ import {
   Eye,
   EyeOff,
   QrCode,
-  MessageCircle
+  MessageCircle,
+  RefreshCw
 } from 'lucide-react';
 import { MASTER_ADMIN_EMAIL, MASTER_ADMIN_PASSWORD } from '../utils/authInit';
 import { 
   saveFirestoreUser, 
   authenticateDualUser, 
   sendUserPasswordResetEmail,
-  createFirebaseAuthAndFirestoreUser 
+  createFirebaseAuthAndFirestoreUser,
+  recordAuditLog
 } from '../services/firebase';
 
 interface AuthViewProps {
@@ -42,6 +44,13 @@ export const AuthView: React.FC<AuthViewProps> = ({
 }) => {
   const [tab, setTab] = useState<'login' | 'register' | 'admin'>(initialMode);
   const [accountType, setAccountType] = useState<'consumidor' | 'empresa'>(initialType);
+
+  const switchTab = (newTab: 'login' | 'register' | 'admin') => {
+    setTab(newTab);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    setRedirectSuggestion(null);
+  };
 
   const primary = theme?.primaryColor || '#18231C';
   const accent = theme?.accentColor || '#FDB813';
@@ -80,11 +89,15 @@ export const AuthView: React.FC<AuthViewProps> = ({
   // Errors & Alerts
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [redirectSuggestion, setRedirectSuggestion] = useState<'admin' | 'client' | null>(null);
 
   // Forgot Password States (Recuperación Segura por Correo)
   const [showForgotModal, setShowForgotModal] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
   const [isSendingReset, setIsSendingReset] = useState(false);
+  const [isResending, setIsResending] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const [resendNotice, setResendNotice] = useState<string | null>(null);
   const [forgotSuccess, setForgotSuccess] = useState<string | null>(null);
   const [forgotError, setForgotError] = useState<string | null>(null);
 
@@ -92,6 +105,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
     e.preventDefault();
     setForgotError(null);
     setForgotSuccess(null);
+    setResendNotice(null);
     if (!forgotEmail.trim()) {
       setForgotError('Ingresá tu correo electrónico registrado.');
       return;
@@ -106,6 +120,31 @@ export const AuthView: React.FC<AuthViewProps> = ({
     setForgotSuccess(
       `Hemos registrado tu solicitud para ${forgotEmail.trim()}. Se envió el enlace de recuperación a tu casilla (revisá también spam o no deseados). Podés utilizar las siguientes opciones de restauración:`
     );
+  };
+
+  const handleResendResetEmail = async () => {
+    const cleanMail = forgotEmail.trim();
+    if (!cleanMail || isResending || resendCooldown > 0) return;
+    setIsResending(true);
+    setResendNotice(null);
+    try {
+      await sendUserPasswordResetEmail(cleanMail);
+      setResendNotice(`¡Enlace reenviado con éxito a ${cleanMail}! Revisá tu bandeja de entrada o carpeta de spam.`);
+      setResendCooldown(30);
+      const timer = setInterval(() => {
+        setResendCooldown((prev) => {
+          if (prev <= 1) {
+            clearInterval(timer);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    } catch (err: any) {
+      setResendNotice(`Se envió la solicitud a ${cleanMail}. Revisá tu casilla de correo.`);
+    } finally {
+      setIsResending(false);
+    }
   };
 
   // Submit Registration
@@ -202,10 +241,12 @@ export const AuthView: React.FC<AuthViewProps> = ({
   };
 
   // Submit Login (Dual Email o Nombre de Usuario con Contraseña o Código de Autenticador)
+  // EXCLUSIVO PARA CLIENTES (Consumidor Final y Empresas)
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
     setSuccessMessage(null);
+    setRedirectSuggestion(null);
 
     const idClean = email.trim();
 
@@ -233,16 +274,24 @@ export const AuthView: React.FC<AuthViewProps> = ({
       const authResult = await authenticateDualUser(idClean, credentialToValidate, loginMethod);
 
       if (authResult.success && authResult.session) {
-        const userDisplayName = authResult.session.clientData?.fullName || authResult.session.email || 'Usuario';
-        
-        // Control de Rutas Estricto: Administrador y Empleado redirigen a vista interna
-        if (authResult.session.role === 'admin') {
-          setSuccessMessage(`Acceso Administrador autorizado para ${userDisplayName}. Redirigiendo a Panel de Control...`);
-        } else if (authResult.session.role === 'employee') {
-          setSuccessMessage(`Acceso Personal autorizado para ${userDisplayName}. Redirigiendo a Gestión / CRM...`);
-        } else {
-          setSuccessMessage(`¡Bienvenido/a, ${userDisplayName}! Ingresando al catálogo...`);
+        // SEGREGACIÓN ESTRICTA: Bloqueo de personal/admin en portal de clientes
+        if (authResult.session.role === 'admin' || authResult.session.role === 'employee') {
+          setErrorMessage(
+            'Esta cuenta corresponde al personal de Administración / Empleados. Para ingresar a tu área de trabajo, por favor utilizá el acceso exclusivo para Empleados/Admin al pie de la página.'
+          );
+          setRedirectSuggestion('admin');
+          recordAuditLog({
+            module: 'Autenticación',
+            action: 'Intento de Acceso Staff por Portal Cliente',
+            details: `El usuario de staff "${idClean}" (${authResult.session.role}) intentó ingresar por el formulario público de clientes. Acceso rechazado preventivamente.`,
+            userEmail: authResult.session.email || idClean,
+            userRole: authResult.session.role,
+          }).catch(() => {});
+          return;
         }
+
+        const userDisplayName = authResult.session.clientData?.fullName || authResult.session.email || 'Usuario';
+        setSuccessMessage(`¡Bienvenido/a, ${userDisplayName}! Ingresando al catálogo...`);
 
         setTimeout(() => {
           onLogin(authResult.session!);
@@ -261,10 +310,12 @@ export const AuthView: React.FC<AuthViewProps> = ({
   };
 
   // Submit Admin or Employee Login (Dual Email o Nombre de Usuario con Contraseña o Autenticador)
+  // EXCLUSIVO PARA ADMINISTRADORES Y EMPLEADOS
   const handleAdminLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
     setSuccessMessage(null);
+    setRedirectSuggestion(null);
 
     const userClean = adminUser.trim();
 
@@ -292,16 +343,23 @@ export const AuthView: React.FC<AuthViewProps> = ({
       const authResult = await authenticateDualUser(userClean, credentialToValidate, adminLoginMethod);
 
       if (authResult.success && authResult.session) {
-        const userDisplayName = authResult.session.clientData?.fullName || authResult.session.email || 'Usuario';
-        
-        // Si el usuario es un cliente autenticado, permitirle acceso directo al catálogo
+        // SEGREGACIÓN ESTRICTA: Bloqueo de clientes en portal de administración
         if (authResult.session.role === 'client') {
-          setSuccessMessage(`¡Bienvenido/a, ${userDisplayName}! Ingresando al catálogo...`);
-          setTimeout(() => {
-            onLogin(authResult.session!);
-          }, 350);
+          setErrorMessage(
+            'Acceso denegado: Esta cuenta pertenece a un Cliente (Consumidor Final o Empresa). Debes ingresar desde el formulario principal de clientes de arriba.'
+          );
+          setRedirectSuggestion('client');
+          recordAuditLog({
+            module: 'Autenticación',
+            action: 'Intento de Acceso Cliente por Portal Admin',
+            details: `La cuenta de cliente "${userClean}" intentó ingresar por el portal exclusivo de Administración/Empleados. Acceso bloqueado.`,
+            userEmail: authResult.session.email || userClean,
+            userRole: 'client',
+          }).catch(() => {});
           return;
         }
+
+        const userDisplayName = authResult.session.clientData?.fullName || authResult.session.email || 'Usuario';
 
         if (authResult.session.role === 'admin') {
           setSuccessMessage(`Acceso Administrador autorizado para ${userDisplayName}. Redirigiendo a Panel de Control...`);
@@ -365,10 +423,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
             </button>
             <button
               type="button"
-              onClick={() => {
-                setTab('login');
-                setErrorMessage(null);
-              }}
+              onClick={() => switchTab('login')}
               style={{
                 backgroundColor: primary,
                 color: btnText
@@ -428,14 +483,11 @@ export const AuthView: React.FC<AuthViewProps> = ({
             <div className="mt-12 pt-6 border-t border-[#DCD4C9]/60">
               {tab !== 'admin' ? (
                 <p className="text-xs text-[#6F6860]">
-                  ¿Sos administrador?{' '}
+                  ¿Sos administrador o empleado?{' '}
                   <button
                     type="button"
-                    onClick={() => {
-                      setTab('admin');
-                      setErrorMessage(null);
-                    }}
-                    className="text-[#18231C] hover:underline font-bold transition-colors"
+                    onClick={() => switchTab('admin')}
+                    className="text-[#18231C] hover:underline font-bold transition-colors cursor-pointer"
                   >
                     Ingresá por el acceso privado.
                   </button>
@@ -445,13 +497,10 @@ export const AuthView: React.FC<AuthViewProps> = ({
                   ¿Sos cliente o empresa?{' '}
                   <button
                     type="button"
-                    onClick={() => {
-                      setTab('register');
-                      setErrorMessage(null);
-                    }}
-                    className="text-[#18231C] hover:underline font-bold transition-colors"
+                    onClick={() => switchTab('login')}
+                    className="text-[#18231C] hover:underline font-bold transition-colors cursor-pointer"
                   >
-                    Volver al registro de usuario.
+                    Ir al inicio de sesión de clientes.
                   </button>
                 </p>
               )}
@@ -490,9 +539,25 @@ export const AuthView: React.FC<AuthViewProps> = ({
                   </p>
 
                   {errorMessage && (
-                    <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xs flex items-start gap-2">
-                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                      <span>{errorMessage}</span>
+                    <div className="mb-4 p-3.5 bg-amber-50 border-2 border-amber-300 text-[#18231C] text-xs rounded-xs flex items-start gap-2.5 shadow-xs">
+                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
+                      <div className="flex-1">
+                        <span className="font-medium leading-relaxed block">{errorMessage}</span>
+                        {redirectSuggestion === 'client' && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setTab('login');
+                              setEmail(adminUser);
+                              setErrorMessage(null);
+                              setRedirectSuggestion(null);
+                            }}
+                            className="mt-2.5 px-3 py-1.5 bg-[#18231C] hover:bg-black text-[#FDB813] text-[11px] font-bold uppercase tracking-wider rounded-xs flex items-center gap-1.5 cursor-pointer transition-all shadow-xs"
+                          >
+                            <span>Ir al inicio de sesión de clientes →</span>
+                          </button>
+                        )}
+                      </div>
                     </div>
                   )}
 
@@ -648,11 +713,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
                       <p className="text-xs text-[#544E47]">
                         <button
                           type="button"
-                          onClick={() => {
-                            setTab('login');
-                            setErrorMessage(null);
-                            setSuccessMessage(null);
-                          }}
+                          onClick={() => switchTab('login')}
                           className="text-[#18231C] hover:underline font-semibold cursor-pointer"
                         >
                           ← Volver al inicio de sesión de clientes
@@ -662,11 +723,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
                         ¿No tienes cuenta todavía?{' '}
                         <button
                           type="button"
-                          onClick={() => {
-                            setTab('register');
-                            setErrorMessage(null);
-                            setSuccessMessage(null);
-                          }}
+                          onClick={() => switchTab('register')}
                           style={{ color: accent }}
                           className="hover:underline font-bold cursor-pointer"
                         >
@@ -681,9 +738,25 @@ export const AuthView: React.FC<AuthViewProps> = ({
                 <div>
 
                   {errorMessage && (
-                    <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xs flex items-start gap-2">
-                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                      <span>{errorMessage}</span>
+                    <div className="mb-4 p-3.5 bg-amber-50 border-2 border-amber-300 text-[#18231C] text-xs rounded-xs flex items-start gap-2.5 shadow-xs">
+                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
+                      <div className="flex-1">
+                        <span className="font-medium leading-relaxed block">{errorMessage}</span>
+                        {redirectSuggestion === 'admin' && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setTab('admin');
+                              setAdminUser(email);
+                              setErrorMessage(null);
+                              setRedirectSuggestion(null);
+                            }}
+                            className="mt-2.5 px-3 py-1.5 bg-[#18231C] hover:bg-black text-[#FDB813] text-[11px] font-bold uppercase tracking-wider rounded-xs flex items-center gap-1.5 cursor-pointer transition-all shadow-xs"
+                          >
+                            <span>Ir al acceso de Empleados / Admin →</span>
+                          </button>
+                        )}
+                      </div>
                     </div>
                   )}
 
@@ -897,11 +970,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
                           ¿Ya tienes cuenta?{' '}
                           <button
                             type="button"
-                            onClick={() => {
-                              setTab('login');
-                              setErrorMessage(null);
-                              setSuccessMessage(null);
-                            }}
+                            onClick={() => switchTab('login')}
                             style={{ color: accent }}
                             className="hover:underline font-bold cursor-pointer"
                           >
@@ -911,11 +980,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
                         <p className="text-xs text-[#8C847B]">
                           <button
                             type="button"
-                            onClick={() => {
-                              setTab('admin');
-                              setErrorMessage(null);
-                              setSuccessMessage(null);
-                            }}
+                            onClick={() => switchTab('admin')}
                             className="hover:text-[#18231C] underline font-medium cursor-pointer transition-colors"
                           >
                             Acceso para Empleados/Admin
@@ -1090,11 +1155,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
                           ¿No tienes cuenta todavía?{' '}
                           <button
                             type="button"
-                            onClick={() => {
-                              setTab('register');
-                              setErrorMessage(null);
-                              setSuccessMessage(null);
-                            }}
+                            onClick={() => switchTab('register')}
                             style={{ color: accent }}
                             className="hover:underline font-bold cursor-pointer"
                           >
@@ -1104,11 +1165,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
                         <p className="text-xs text-[#8C847B]">
                           <button
                             type="button"
-                            onClick={() => {
-                              setTab('admin');
-                              setErrorMessage(null);
-                              setSuccessMessage(null);
-                            }}
+                            onClick={() => switchTab('admin')}
                             className="hover:text-[#18231C] underline font-medium cursor-pointer transition-colors"
                           >
                             Acceso para Empleados/Admin
@@ -1176,28 +1233,28 @@ export const AuthView: React.FC<AuthViewProps> = ({
                 </div>
 
                 <div className="space-y-2 pt-1">
-                  {/* Opción 1: Reenviar código al correo (Próximamente) */}
-                  <div className="flex items-center justify-between p-2.5 bg-neutral-100 border border-neutral-300 rounded-xs text-neutral-600 text-xs font-semibold">
-                    <span>Reenviar código al correo</span>
-                    <span className="text-[10px] bg-neutral-200 text-neutral-700 px-2 py-0.5 rounded-full font-bold">
-                      (Próximamente)
-                    </span>
-                  </div>
-
-                  {/* Opción 2: Contactar al administrador por WhatsApp (2613868944) */}
-                  <a
-                    href={`https://wa.me/5492613868944?text=${encodeURIComponent(
-                      `Hola Administrador, necesito restaurar el acceso a mi cuenta en el Catálogo Pampero para el correo: ${forgotEmail.trim()}`
-                    )}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="w-full py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold uppercase tracking-wider rounded-xs flex items-center justify-center gap-2 transition-colors shadow-xs"
+                  {/* Opción Activa: Reenviar código / enlace al correo */}
+                  <button
+                    type="button"
+                    onClick={handleResendResetEmail}
+                    disabled={isResending || resendCooldown > 0}
+                    className="w-full py-2.5 px-3 bg-[#18231C] hover:bg-black text-white text-xs font-bold uppercase tracking-wider rounded-xs flex items-center justify-center gap-2 transition-all shadow-xs cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                   >
-                    <MessageCircle className="w-4 h-4 shrink-0" />
-                    <span className="text-center leading-tight">
-                      Contactar al administrador por WhatsApp (2613868944) para restaurar el acceso
+                    <RefreshCw className={`w-4 h-4 ${isResending ? 'animate-spin' : ''}`} />
+                    <span>
+                      {isResending
+                        ? 'Reenviando al correo...'
+                        : resendCooldown > 0
+                        ? `Reenviar correo en ${resendCooldown}s`
+                        : 'Reenviar código / enlace al correo'}
                     </span>
-                  </a>
+                  </button>
+
+                  {resendNotice && (
+                    <div className="p-2.5 bg-emerald-50 border border-emerald-300 rounded-xs text-[11px] text-emerald-800 font-medium text-center animate-fadeIn">
+                      {resendNotice}
+                    </div>
+                  )}
                 </div>
 
                 <button

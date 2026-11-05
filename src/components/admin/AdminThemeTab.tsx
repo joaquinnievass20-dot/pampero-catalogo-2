@@ -18,7 +18,6 @@ import {
 } from 'lucide-react';
 import { PamperoLogo } from '../PamperoLogo';
 import { AdminColorArticlesSection } from './AdminColorArticlesSection';
-import { AdminVisualCatalogEditor } from './AdminVisualCatalogEditor';
 import { isColorDark } from '../../context/ThemeContext';
 import { recordAuditLog, saveFirestoreStoreConfig } from '../../services/firebase';
 
@@ -306,7 +305,6 @@ export const AdminThemeTab: React.FC<AdminThemeTabProps> = ({
 }) => {
   // Mode selection: 'sections' | 'palettes' | 'manual'
   const [editorMode, setEditorMode] = useState<'sections' | 'palettes' | 'manual'>('sections');
-  const [sectionViewMode, setSectionViewMode] = useState<'visual_studio' | 'detailed_form'>('visual_studio');
   const [selectedSection, setSelectedSection] = useState<
     | 'navbar'
     | 'announcement_bar'
@@ -667,73 +665,18 @@ export const AdminThemeTab: React.FC<AdminThemeTabProps> = ({
       {/* SECCIÓN 1: EDITOR VISUAL AVANZADO POR SECCIONES (NUEVO & RECOMENDADO) */}
       {/* ========================================================================= */}
       {editorMode === 'sections' && (
-        <div className="space-y-6 animate-fadeIn">
-          {/* Sub-Selector de Modo de Edición por Secciones */}
-          <div className="bg-white p-4 rounded-xs border border-[#DCD4C9] flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+        <div className="bg-white p-5 sm:p-6 rounded-xs border border-[#DCD4C9] space-y-6 shadow-2xs animate-fadeIn">
+          {/* Header & Section Dropdown Selector */}
+          <div className="border-b border-[#DCD4C9] pb-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
-              <h4 className="font-bold text-sm uppercase tracking-wider text-[#18231C] flex items-center gap-2">
-                <Layout className="w-5 h-5 text-emerald-600" />
-                Editor Visual de Secciones
+              <h4 className="font-bold text-sm uppercase tracking-widest text-[#18231C] flex items-center gap-2">
+                <SlidersHorizontal className="w-4 h-4 text-emerald-600" />
+                Editor de Estilos por Sección
               </h4>
-              <p className="text-xs text-[#6F6860] mt-0.5">
-                Elegí cómo querés trabajar: navegá directamente dentro del catálogo interactivo en vivo o utilizá el formulario detallado por sección.
+              <p className="text-xs text-[#6F6860] mt-1">
+                Elegí la parte exacta de la plataforma que deseás personalizar campo por campo.
               </p>
             </div>
-
-            <div className="inline-flex rounded-xs border border-[#DCD4C9] p-1 bg-[#F5F2EC] shrink-0 gap-1">
-              <button
-                type="button"
-                onClick={() => setSectionViewMode('visual_studio')}
-                className={`px-3.5 py-1.5 text-xs font-bold uppercase tracking-wider rounded-xs flex items-center gap-2 transition-all cursor-pointer ${
-                  sectionViewMode === 'visual_studio'
-                    ? 'bg-[#18231C] text-white shadow-xs'
-                    : 'text-[#6F6860] hover:text-[#18231C]'
-                }`}
-              >
-                <Layout className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Estudio Visual en Vivo (Catálogo)</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setSectionViewMode('detailed_form')}
-                className={`px-3.5 py-1.5 text-xs font-bold uppercase tracking-wider rounded-xs flex items-center gap-2 transition-all cursor-pointer ${
-                  sectionViewMode === 'detailed_form'
-                    ? 'bg-[#18231C] text-white shadow-xs'
-                    : 'text-[#6F6860] hover:text-[#18231C]'
-                }`}
-              >
-                <SlidersHorizontal className="w-3.5 h-3.5 text-amber-500" />
-                <span>Formulario por Secciones</span>
-              </button>
-            </div>
-          </div>
-
-          {/* 1. MODO ESTUDIO VISUAL EN VIVO (CATÁLOGO REAL INTERACTIVO) */}
-          {sectionViewMode === 'visual_studio' && (
-            <AdminVisualCatalogEditor
-              theme={currentTheme}
-              onUpdateTheme={(newTheme) => {
-                setCurrentTheme(newTheme);
-                onUpdateTheme(newTheme);
-              }}
-              triggerSaveNotice={triggerSaveNotice}
-            />
-          )}
-
-          {/* 2. MODO FORMULARIO DETALLADO */}
-          {sectionViewMode === 'detailed_form' && (
-            <div className="bg-white p-5 sm:p-6 rounded-xs border border-[#DCD4C9] space-y-6 shadow-2xs">
-              {/* Header & Section Dropdown Selector */}
-              <div className="border-b border-[#DCD4C9] pb-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div>
-                  <h4 className="font-bold text-sm uppercase tracking-widest text-[#18231C] flex items-center gap-2">
-                    <SlidersHorizontal className="w-4 h-4 text-emerald-600" />
-                    Parámetros Detallados por Sección
-                  </h4>
-                  <p className="text-xs text-[#6F6860] mt-1">
-                    Elegí la parte exacta de la plataforma que querés personalizar campo por campo.
-                  </p>
-                </div>
 
                 {/* Dropdown exigido: Selector de sección específica */}
                 <div className="flex items-center gap-2 shrink-0">
@@ -2491,8 +2434,6 @@ export const AdminThemeTab: React.FC<AdminThemeTabProps> = ({
           )}
         </div>
       )}
-    </div>
-  )}
 
       {/* ========================================================================= */}
       {/* OPCIÓN 2: PALETAS DE COLORES COMPLETAS (1 CLIC) */}

@@ -25,9 +25,12 @@ export const HubView: React.FC<HubViewProps> = ({
   onOpenProfile,
 }) => {
   const accent = theme?.accentColor || '#FDB813';
-  const hubBg = theme?.hubBgColor || theme?.panelBgColor || theme?.primaryColor || '#18231C';
+  // Hub Pampero oficial: Verde profundo #18231C con acentos dorados
+  const hubBg = (theme?.hubBgColor && theme.hubBgColor !== '#FAF8F5' && theme.hubBgColor !== '#FFFFFF' && theme.hubBgColor !== '#F5F2EC')
+    ? theme.hubBgColor
+    : '#18231C';
   const isHubDark = isColorDark(hubBg);
-  const hubText = theme?.hubTextColor || theme?.panelTextColor || (isHubDark ? '#F5F2EC' : '#18231C');
+  const hubText = theme?.hubTextColor || (isHubDark ? '#F5F2EC' : '#18231C');
 
   const [newQuotesCount, setNewQuotesCount] = useState<number>(0);
 
@@ -41,7 +44,7 @@ export const HubView: React.FC<HubViewProps> = ({
 
   const operatorName =
     userSession.clientData?.fullName ||
-    (userSession.role === 'admin' ? 'Administrador General' : userSession.email?.split('@')[0] || 'Operador');
+    (userSession.role === 'admin' ? 'Administrador Maestro Joaquín Nievas' : userSession.email?.split('@')[0] || 'Operador');
 
   const operatorBranch = (userSession as any).branch || 'Gran Mendoza';
 
@@ -50,7 +53,7 @@ export const HubView: React.FC<HubViewProps> = ({
       {/* Top Header */}
       <header
         style={{ backgroundColor: hubBg, color: hubText }}
-        className="border-b border-black/40 px-4 sm:px-8 py-3.5 shadow-md sticky top-0 z-40 transition-colors"
+        className="border-b border-black/30 px-4 sm:px-8 py-3.5 shadow-md sticky top-0 z-40 transition-colors"
       >
         <div className="max-w-6xl mx-auto flex items-center justify-between gap-4">
           <div className="flex items-center gap-3.5">
@@ -58,12 +61,13 @@ export const HubView: React.FC<HubViewProps> = ({
               customUrl={theme?.customLogoUrl || theme?.logoUrl}
               height={36}
               navBgColor={hubBg}
+              onDarkBackground={isHubDark}
             />
-            <div className="border-l border-white/20 pl-3.5 hidden sm:block">
-              <span className="text-[10px] tracking-[0.25em] font-extrabold uppercase text-amber-400 block leading-tight">
+            <div className={`border-l pl-3.5 hidden sm:block ${isHubDark ? 'border-white/20' : 'border-neutral-300'}`}>
+              <span className={`text-[10px] tracking-[0.25em] font-extrabold uppercase block leading-tight ${isHubDark ? 'text-amber-400' : 'text-[#B9522F]'}`}>
                 HUB DE TRABAJO INTERNO
               </span>
-              <span className="text-xs text-[#DCD4C9]/80 font-medium">
+              <span className={`text-xs font-medium ${isHubDark ? 'text-[#DCD4C9]/80' : 'text-[#6F6860]'}`}>
                 Pampero Gran Mendoza · Sistema Operativo
               </span>
             </div>
@@ -72,8 +76,10 @@ export const HubView: React.FC<HubViewProps> = ({
           <div className="flex items-center gap-3 sm:gap-4">
             <div className="flex items-center gap-2 text-right">
               <div className="hidden md:block">
-                <p className="text-xs font-bold text-white leading-tight">{operatorName}</p>
-                <p className="text-[10px] text-neutral-400">
+                <p className={`text-xs font-bold leading-tight ${isHubDark ? 'text-white' : 'text-[#18231C]'}`}>
+                  {operatorName}
+                </p>
+                <p className={`text-[10px] ${isHubDark ? 'text-neutral-300' : 'text-[#6F6860]'}`}>
                   {userSession.role === 'admin' ? 'Super Administrador' : `Sucursal: ${operatorBranch}`}
                 </p>
               </div>
@@ -204,11 +210,10 @@ export const HubView: React.FC<HubViewProps> = ({
               type="button"
               id="btn-hub-admin"
               onClick={onOpenAdmin}
-              style={{ backgroundColor: hubBg }}
-              className="w-full py-3.5 px-4 rounded-xs hover:bg-black text-[#F5F2EC] text-xs font-black uppercase tracking-[0.15em] transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
+              className="w-full py-3.5 px-4 rounded-xs bg-[#18231C] hover:bg-black text-[#F5F2EC] text-xs font-black uppercase tracking-[0.15em] transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer border border-[#18231C]"
             >
               <span>Panel de Control</span>
-              <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+              <ArrowRight className="w-4 h-4 text-[#FDB813] group-hover:translate-x-1 transition-transform" />
             </button>
           </div>
 

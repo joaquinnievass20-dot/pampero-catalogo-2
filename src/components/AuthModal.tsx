@@ -139,6 +139,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     try {
       const authResult = await authenticateDualUser(userClean, passClean);
       if (authResult.success && authResult.session) {
+        if (authResult.session.role === 'client') {
+          setAdminError('Acceso denegado: Esta cuenta pertenece a un Cliente. Por favor, ingresá desde la opción de Clientes.');
+          return;
+        }
         onLogin(authResult.session);
         return;
       } else {

@@ -8,25 +8,21 @@ import {
 import { CATEGORY_HIERARCHY } from '../data/categories';
 import { CorporateServicesDropdown } from './CorporateServicesDropdown';
 import { PamperoLogo } from './PamperoLogo';
+import { UserNavMenu } from './UserNavMenu';
 import { isColorDark } from '../context/ThemeContext';
 import { 
-  Search, 
   ShoppingBag, 
   User, 
   Menu, 
   X, 
   Tag, 
   ChevronDown, 
-  Building2, 
   ShieldCheck, 
   LogOut, 
-  Phone,
-  Settings,
-  History,
-  TrendingUp,
-  ArrowRight,
-  Compass,
-  Briefcase
+  Settings, 
+  ArrowRight, 
+  Compass, 
+  Briefcase 
 } from 'lucide-react';
 
 interface NavbarProps {
@@ -84,8 +80,6 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
-  const [isSearchFocused, setIsSearchFocused] = useState(false);
-  const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const dropdownTimeoutRef = useRef<number | null>(null);
 
   // Shrink on scroll effect states (> 50px)
@@ -110,52 +104,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   const accent = theme.headerAccentColor || theme.accentColor || '#FDB813';
   const hoverAccent = theme.hoverAccentColor || '#E0A310';
   const iconColor = theme.iconColor || accent;
-
-  const userKey = userSession?.email ? userSession.email.toLowerCase().trim() : 'guest';
-  const userSearchHistoryKey = `pampero_search_history_${userKey}`;
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(userSearchHistoryKey);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          setRecentSearches(parsed.slice(0, 5));
-          return;
-        }
-      }
-      setRecentSearches([]);
-    } catch {
-      setRecentSearches([]);
-    }
-  }, [userSearchHistoryKey]);
-
-  const recordSearch = (term: string) => {
-    const trimmed = term.trim();
-    if (!trimmed || trimmed.length < 2) return;
-
-    try {
-      const existingHistory: string[] = JSON.parse(localStorage.getItem(userSearchHistoryKey) || '[]');
-      const filtered = [trimmed, ...existingHistory.filter((s) => s.toLowerCase() !== trimmed.toLowerCase())].slice(0, 8);
-      localStorage.setItem(userSearchHistoryKey, JSON.stringify(filtered));
-      setRecentSearches(filtered.slice(0, 5));
-
-      const metricsRaw = localStorage.getItem('pampero_search_analytics') || '{}';
-      const metrics: Record<string, { count: number; lastSearched: string }> = JSON.parse(metricsRaw);
-      const key = trimmed.toLowerCase();
-      metrics[key] = {
-        count: (metrics[key]?.count || 0) + 1,
-        lastSearched: new Date().toISOString(),
-      };
-      localStorage.setItem('pampero_search_analytics', JSON.stringify(metrics));
-    } catch {}
-  };
-
-  const handleSearchSubmit = (term: string) => {
-    onSearchChange(term);
-    recordSearch(term);
-    setIsSearchFocused(false);
-  };
 
   const mainCategories: MainCategory[] = ['Hombre', 'Mujer', 'Infantil', 'Venta Corporativa'];
 
@@ -199,114 +147,56 @@ export const Navbar: React.FC<NavbarProps> = ({
         WebkitBackdropFilter: isScrolled ? 'blur(12px)' : undefined,
       }}
     >
-      {/* 1. Micro Announcement Bar (Ocultamiento suave al scrollear > 50px) */}
-      <div 
-        className={`transition-all duration-300 select-none w-full overflow-hidden ${
-          isScrolled 
-            ? 'max-h-0 py-0 opacity-0 border-none pointer-events-none' 
-            : 'text-[11px] py-1.5 px-3 sm:px-6 lg:px-8 border-b border-black/30 max-h-16 opacity-100'
-        }`}
-        style={{ 
-          backgroundColor: theme.announcementBgColor || theme.primaryColor || '#18231C',
-          color: theme.announcementTextColor || '#FFFFFF'
-        }}
-      >
-        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2 min-w-0">
-          <div className="flex items-center gap-2 sm:gap-4 opacity-90 flex-wrap min-w-0 shrink">
-            <span className="flex items-center gap-1.5 whitespace-nowrap">
-              <Phone className="w-3 h-3 shrink-0" style={{ color: theme.announcementAccentColor || accent }} />
-              Ventas WhatsApp: <strong>+{theme.whatsappNumber || '5492615276713'}</strong>
-            </span>
-            <span className="hidden md:inline opacity-50">|</span>
-            <span className="hidden lg:inline whitespace-nowrap">
-              {theme.siteTexts?.announcementBarText || 'Distribución oficial en Gran Mendoza'}
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2 sm:gap-3 flex-wrap justify-end min-w-0 shrink">
-            {userSession ? (
-              <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap justify-end min-w-0">
-                <button
-                  type="button"
-                  onClick={onOpenProfile}
-                  className="flex items-center gap-1.5 font-semibold text-white hover:text-amber-300 transition-colors px-1.5 py-0.5 rounded-xs hover:bg-white/10 cursor-pointer min-w-0 max-w-[140px] sm:max-w-[200px] md:max-w-[280px]"
-                  title={`Editar datos de perfil: ${getClientName()}`}
-                >
-                  {userSession.role === 'admin' ? (
-                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                  ) : userSession.role === 'employee' ? (
-                    <User className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                  ) : userSession.clientType === 'empresa' ? (
-                    <Building2 className="w-3.5 h-3.5 text-amber-300 shrink-0" />
-                  ) : (
-                    <User className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                  )}
-                  <span className="truncate">{getClientName()}</span>
-                </button>
-
-                {(userSession.role === 'admin' || userSession.role === 'employee') && (onOpenHub || onOpenAdmin) && (
-                  <button
-                    id="btn-access-hub-staff"
-                    type="button"
-                    onClick={() => {
-                      if (onOpenHub) onOpenHub();
-                      else if (onOpenAdmin) onOpenAdmin();
-                    }}
-                    style={{
-                      backgroundColor: theme.hubAccentColor || theme.accentColor || '#FDB813',
-                      color: '#18231C',
-                      borderColor: theme.hubBorderColor || 'transparent',
-                    }}
-                    className="flex items-center gap-1 font-bold transition-all px-2.5 py-0.5 rounded-xs text-[10px] uppercase tracking-wider cursor-pointer whitespace-nowrap shrink-0 shadow-2xs hover:brightness-110"
-                    title={userSession.role === 'admin' ? 'Acceder al Panel de Control / Hub' : 'Acceder al Hub de Trabajo'}
-                  >
-                    <Compass className="w-3.5 h-3.5 text-[#18231C] shrink-0" />
-                    <span className="hidden sm:inline">{userSession.role === 'admin' ? 'Panel de Control' : 'Hub de Trabajo'}</span>
-                  </button>
-                )}
-
-                <button
-                  type="button"
-                  onClick={onLogout}
-                  className="text-neutral-400 hover:text-white p-1 transition-colors cursor-pointer shrink-0 rounded-xs hover:bg-white/10"
-                  title="Cerrar sesión"
-                >
-                  <LogOut className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={onOpenAuth}
-                className="hover:text-white font-bold transition-colors flex items-center gap-1 text-xs whitespace-nowrap cursor-pointer px-1 py-0.5"
-                style={{ color: '#F5F2EC' }}
-              >
-                <User className="w-3.5 h-3.5 shrink-0" style={{ color: accent }} /> {theme.siteTexts?.loginButtonText || 'Iniciar Sesión / Crear Cuenta'}
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* 2. Barra Principal: Logo Centrado Absolutamente + Categorías a la Izquierda + Utilidades a la Derecha */}
+      {/* Barra Principal: Logo Dinámico (Izquierda al inicio, Centrado al scrollear) + Categorías + UserNavMenu */}
       <div 
         className={`relative flex items-center justify-between max-w-7xl mx-auto w-full px-3 sm:px-6 lg:px-8 transition-all duration-300 min-h-[58px] sm:min-h-[66px] ${
           isScrolled ? 'py-1 sm:py-2' : 'py-2.5 sm:py-3.5'
         }`}
       >
-        {/* LADO IZQUIERDO: Menú Móvil (< lg) y Categorías Principales (>= lg) */}
-        <div className="flex items-center gap-1 sm:gap-2 z-20">
+        {/* LADO IZQUIERDO: Logo (cuando estamos arriba) + Categorías (se ocultan al scrollear) */}
+        <div className="flex items-center gap-2 lg:gap-4 z-20 min-w-0 shrink">
+          {/* Botón Menú Móvil (< lg) o Botón Categorías compacto cuando está scrolleado */}
           <button
             type="button"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="lg:hidden p-2 rounded-xs hover:bg-black/5 text-neutral-800 transition-colors cursor-pointer"
+            className={`p-2 rounded-xs hover:bg-black/5 text-neutral-800 transition-colors cursor-pointer flex items-center gap-1.5 ${
+              isScrolled ? 'flex' : 'lg:hidden'
+            }`}
             aria-label={mobileMenuOpen ? 'Cerrar menú' : 'Abrir menú de categorías'}
+            title="Categorías y Secciones"
           >
             {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            {isScrolled && (
+              <span className="hidden sm:inline text-xs font-bold uppercase tracking-wider">
+                Categorías
+              </span>
+            )}
           </button>
 
-          {/* Categorías Principales directas: Hombre, Mujer, Infantil, Venta Corporativa */}
-          <nav className="hidden lg:flex items-center gap-x-1 xl:gap-x-2" aria-label="Categorías principales">
+          {/* Logo a la izquierda cuando estamos arriba (!isScrolled) */}
+          <div 
+            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+            className={`cursor-pointer shrink-0 flex items-center pr-2 transition-all duration-300 ${
+              isScrolled ? 'opacity-0 w-0 overflow-hidden pointer-events-none' : 'opacity-100 hover:opacity-95'
+            }`}
+            title="Pampero Gran Mendoza · Volver arriba"
+          >
+            <PamperoLogo 
+              customUrl={theme.customLogoUrl || theme.logoUrl} 
+              height={Math.min(theme.logoHeight || 44, 46)} 
+              navBgColor={navBg} 
+            />
+          </div>
+
+          {/* Categorías Principales directas: Hombre, Mujer, Infantil, Venta Corporativa (se ocultan al scrollear) */}
+          <nav 
+            className={`transition-all duration-300 items-center gap-x-1 xl:gap-x-2 ${
+              isScrolled 
+                ? 'opacity-0 max-w-0 overflow-hidden pointer-events-none hidden' 
+                : 'hidden lg:flex'
+            }`} 
+            aria-label="Categorías principales"
+          >
             {mainCategories.map((cat) => {
               const categoryDef = CATEGORY_HIERARCHY.find((c) => c.name === cat);
               const isCurrent = currentCategory === cat;
@@ -331,7 +221,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                       color: (isCurrent || isDropdownOpen) ? accent : navTextColor,
                       borderBottomColor: isCurrent ? accent : 'transparent',
                     }}
-                    className="py-2 px-2.5 xl:px-3.5 font-bold text-xs uppercase tracking-wider flex items-center gap-1 transition-all cursor-pointer font-display border-b-2 hover:text-amber-500 hover:border-amber-500 whitespace-nowrap"
+                    className="py-2 px-2 xl:px-3 font-bold text-xs uppercase tracking-wider flex items-center gap-1 transition-all cursor-pointer font-display border-b-2 hover:text-amber-500 hover:border-amber-500 whitespace-nowrap"
                   >
                     <span>{cat}</span>
                     {categoryDef?.sections && categoryDef.sections.length > 0 && (
@@ -436,115 +326,43 @@ export const Navbar: React.FC<NavbarProps> = ({
           </nav>
         </div>
 
-        {/* CENTRO ABSOLUTO: LOGO DE PAMPERO */}
-        <div 
-          className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 flex items-center justify-center cursor-pointer select-none max-h-12 overflow-hidden px-2 hover:opacity-95 transition-opacity" 
-          onClick={() => {
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-          }}
-          title="Pampero Gran Mendoza · Volver arriba"
-        >
-          <PamperoLogo 
-            customUrl={theme.customLogoUrl || theme.logoUrl} 
-            height={isScrolled ? Math.min(theme.logoHeight || 38, 38) : Math.min(theme.logoHeight || 46, 48)} 
-            navBgColor={navBg} 
-          />
-        </div>
-
-        {/* LADO DERECHO: BUSCADOR + COTIZADOR/CARRITO */}
-        <div className="flex items-center justify-end gap-2 sm:gap-3 z-20 shrink-0">
-          {/* Input Buscador con Historial */}
-          <div className="hidden md:flex relative w-44 lg:w-56 xl:w-64">
-            <Search className="w-4 h-4 text-neutral-400 absolute left-3.5 top-2.5 pointer-events-none" />
-            <input
-              id="main-search-input"
-              type="text"
-              value={searchQuery}
-              onFocus={() => setIsSearchFocused(true)}
-              onBlur={() => {
-                setTimeout(() => setIsSearchFocused(false), 250);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  handleSearchSubmit(searchQuery);
-                }
-              }}
-              onChange={(e) => onSearchChange(e.target.value)}
-              placeholder={theme.siteTexts?.searchPlaceholder || "Buscar en el catálogo..."}
-              className="w-full pl-9 pr-7 py-1.5 text-xs rounded-full border border-neutral-300 outline-none bg-neutral-50/80 transition-all focus:border-amber-400 focus:bg-white"
-              style={{
-                borderColor: isSearchFocused ? accent : undefined,
-                boxShadow: isSearchFocused ? `0 0 0 2px ${accent}22` : undefined,
-              }}
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => onSearchChange('')}
-                className="absolute right-2.5 top-2 text-neutral-400 hover:text-neutral-600 text-xs font-bold cursor-pointer"
-              >
-                ✕
-              </button>
-            )}
-
-            {isSearchFocused && recentSearches.length > 0 && (
-              <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-neutral-200 rounded-xl shadow-lg p-3 z-50 animate-fadeIn">
-                <div className="flex items-center justify-between pb-2 mb-2 border-b border-neutral-100 text-[10px] uppercase font-bold text-neutral-500 tracking-wider">
-                  <span className="flex items-center gap-1">
-                    <History className="w-3 h-3" style={{ color: accent }} /> Recientes
-                  </span>
-                  <button
-                    type="button"
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      localStorage.removeItem(userSearchHistoryKey);
-                      setRecentSearches([]);
-                    }}
-                    className="text-neutral-400 hover:text-neutral-700 normal-case tracking-normal cursor-pointer"
-                  >
-                    Borrar
-                  </button>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {recentSearches.map((term) => (
-                    <button
-                      key={term}
-                      type="button"
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        handleSearchSubmit(term);
-                      }}
-                      className="px-2 py-0.5 rounded-full text-[11px] bg-neutral-100 hover:bg-neutral-200 text-neutral-800 flex items-center gap-1 transition-colors cursor-pointer"
-                    >
-                      <span>{term}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Botón Cotizador / Carrito */}
-          <button
-            id="btn-open-quote-drawer"
-            type="button"
-            onClick={onOpenCart}
-            className="relative p-2 sm:px-3 sm:py-2 rounded-xs bg-[#18231C] text-white hover:bg-black transition-all flex items-center gap-1.5 cursor-pointer shrink-0 shadow-2xs"
-            title="Ver lista de cotización"
+        {/* LOGO CENTRADO AL SCROLLEAR (isScrolled) */}
+        {isScrolled && (
+          <div 
+            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 flex items-center justify-center cursor-pointer select-none max-h-12 overflow-hidden px-2 hover:opacity-95 transition-all duration-300" 
+            onClick={() => {
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            title="Pampero Gran Mendoza · Volver arriba"
           >
-            <ShoppingBag className="w-4 h-4" style={{ color: accent }} />
-            <span className="hidden sm:inline font-bold text-xs uppercase tracking-wider">
-              {theme.siteTexts?.quoteButtonText || 'Mi Pedido'}
-            </span>
-            {cartCount > 0 && (
-              <span 
-                style={{ backgroundColor: accent, color: '#18231C' }}
-                className="absolute -top-1.5 -right-1.5 min-w-4 h-4 px-1 rounded-full text-[10px] font-black flex items-center justify-center shadow-xs"
-              >
-                {cartCount}
-              </span>
-            )}
-          </button>
+            <PamperoLogo 
+              customUrl={theme.customLogoUrl || theme.logoUrl} 
+              height={Math.min(theme.logoHeight || 36, 36)} 
+              navBgColor={navBg} 
+            />
+          </div>
+        )}
+
+        {/* LADO DERECHO: USER NAV MENU (Mi Pedido + Usuario Cuadrado) */}
+        <div className="flex items-center justify-end gap-2 sm:gap-3 z-20 shrink-0">
+
+          {/* Menú de Usuario Unificado & Mi Pedido (Permanente, no desaparece al scrollear) */}
+          <UserNavMenu
+            userSession={userSession}
+            cartCount={cartCount}
+            onOpenCart={onOpenCart}
+            onOpenAuth={onOpenAuth}
+            onLogout={onLogout}
+            onOpenAdmin={onOpenAdmin}
+            onOpenCRM={onOpenCRM}
+            onOpenHub={onOpenHub}
+            onOpenProfile={onOpenProfile}
+            onOpenUniformSimulator={onOpenUniformSimulator}
+            onOpenSizingPortal={onOpenSizingPortal}
+            theme={theme}
+            isDarkHeader={isNavDark}
+            squareTrigger={true}
+          />
         </div>
       </div>
 
@@ -694,29 +512,6 @@ export const Navbar: React.FC<NavbarProps> = ({
                 Iniciar Sesión / Crear Cuenta
               </button>
             )}
-          </div>
-
-          {/* Buscador en la parte inferior del menú móvil */}
-          <div className="pt-3 border-t border-neutral-200">
-            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block mb-1.5">
-              Buscador de Productos
-            </span>
-            <div className="relative">
-              <Search className="w-4 h-4 text-neutral-400 absolute left-3 top-2.5" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => onSearchChange(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    recordSearch(searchQuery);
-                    setMobileMenuOpen(false);
-                  }
-                }}
-                placeholder="Buscar en el catálogo..."
-                className="w-full pl-9 pr-3 py-2 text-xs rounded-lg border border-neutral-300 outline-none bg-neutral-50/70"
-              />
-            </div>
           </div>
         </div>
       )}

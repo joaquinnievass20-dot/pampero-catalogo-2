@@ -934,9 +934,8 @@ export default function App() {
   return (
     <div className="min-h-screen flex flex-col bg-[#F5F2EC] text-[#22201D] font-sans antialiased selection:bg-[#FDB813] selection:text-black">
       
-      {/* Top Header shown on Catalog and Product Detail (Screenshot 3 & 4) */}
-      {/* Top Header shown on Catalog and Product Detail: Real Navbar with shrink on scroll & bounded logo */}
-      {(viewMode === 'catalog' || viewMode === 'product_detail') && (
+      {/* Top Header shown on Landing, Catalog and Product Detail */}
+      {(viewMode === 'landing' || viewMode === 'catalog' || viewMode === 'product_detail' || viewMode === 'lookbook') && (
         <Navbar
           currentCategory={currentCategory}
           currentSection={currentSection}

@@ -34,6 +34,7 @@ interface UserNavMenuProps {
   onOpenCatalog?: () => void;
   theme?: ThemeConfig;
   isDarkHeader?: boolean;
+  squareTrigger?: boolean;
 }
 
 export const UserNavMenu: React.FC<UserNavMenuProps> = ({
@@ -52,10 +53,12 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
   onOpenCatalog,
   theme,
   isDarkHeader = false,
+  squareTrigger = false,
 }) => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [pendingQuotesCount, setPendingQuotesCount] = useState(0);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const hoverTimeoutRef = useRef<any>(null);
 
   const accent = theme?.accentColor || '#FDB813';
   const primaryBg = theme?.primaryColor || '#18231C';
@@ -169,25 +172,42 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
 
       {/* 3. User Dropdown Menu or INGRESAR Button */}
       {userSession ? (
-        <div className="relative" ref={dropdownRef}>
+        <div 
+          className="relative" 
+          ref={dropdownRef}
+          onMouseEnter={() => {
+            if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+            setDropdownOpen(true);
+          }}
+          onMouseLeave={() => {
+            hoverTimeoutRef.current = setTimeout(() => {
+              setDropdownOpen(false);
+            }, 300);
+          }}
+        >
           <button
             type="button"
             id="btn-user-dropdown-toggle"
-            onClick={() => setDropdownOpen((prev) => !prev)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setDropdownOpen((prev) => !prev);
+            }}
             style={{
               backgroundColor: isDarkHeader ? 'rgba(255, 255, 255, 0.1)' : '#FFFFFF',
               borderColor: isDarkHeader ? 'rgba(255, 255, 255, 0.25)' : '#DCD4C9',
             }}
-            className={`flex items-center gap-2 p-1.5 sm:px-2.5 sm:py-1.5 rounded-xs border transition-all cursor-pointer select-none shadow-2xs ${
-              isDarkHeader ? 'hover:bg-white/20' : 'hover:bg-[#FAF8F5]'
-            }`}
-            title="Opciones de cuenta y administración"
+            className={`flex items-center justify-center rounded-xs border transition-all cursor-pointer select-none shadow-2xs ${
+              squareTrigger
+                ? 'w-9 h-9 sm:w-9 sm:h-9 p-0 aspect-square'
+                : 'gap-2 p-1.5 sm:px-2.5 sm:py-1.5'
+            } ${isDarkHeader ? 'hover:bg-white/20' : 'hover:bg-[#FAF8F5]'}`}
+            title={`Cuenta: ${getDisplayName()} (${getRoleLabel()}) - Clic para ver opciones`}
             aria-expanded={dropdownOpen}
           >
             {/* Avatar Circle */}
             <div 
               style={{ backgroundColor: `${accent}22`, borderColor: `${accent}66` }}
-              className="w-7 h-7 rounded-full border flex items-center justify-center text-xs font-black shrink-0 overflow-hidden"
+              className="w-7 h-7 rounded-full border flex items-center justify-center text-xs font-black shrink-0 overflow-hidden relative"
             >
               {Boolean(userSession.avatarUrl && userSession.avatarUrl.trim()) ? (
                 <img 
@@ -201,47 +221,53 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
               )}
             </div>
 
-            {/* Name + Chevron (visible on sm+) */}
-            <div className="hidden sm:flex items-center gap-1.5 text-left max-w-[130px]">
-              <span 
-                style={{ color: isDarkHeader ? '#F5F2EC' : '#18231C' }}
-                className="text-xs font-bold truncate leading-tight"
-              >
-                {getDisplayName()}
-              </span>
-              <ChevronDown 
-                style={{ color: isDarkHeader ? '#DCD4C9' : '#6F6860' }}
-                className={`w-3.5 h-3.5 transition-transform duration-200 shrink-0 ${
-                  dropdownOpen ? 'rotate-180' : ''
-                }`} 
-              />
-            </div>
+            {/* Name + Chevron (visible on sm+ if not square) */}
+            {!squareTrigger && (
+              <div className="hidden sm:flex items-center gap-1.5 text-left max-w-[130px]">
+                <span 
+                  style={{ color: isDarkHeader ? '#F5F2EC' : '#18231C' }}
+                  className="text-xs font-bold truncate leading-tight"
+                >
+                  {getDisplayName()}
+                </span>
+                <ChevronDown 
+                  style={{ color: isDarkHeader ? '#DCD4C9' : '#6F6860' }}
+                  className={`w-3.5 h-3.5 transition-transform duration-200 shrink-0 ${
+                    dropdownOpen ? 'rotate-180' : ''
+                  }`} 
+                />
+              </div>
+            )}
           </button>
 
-          {/* Clean Corporate Dropdown Menu */}
+          {/* Clean Corporate Dropdown Menu (Con puente continuo sin separación) */}
           {dropdownOpen && (
             <div 
-              className="absolute right-0 top-full mt-2 w-72 bg-white border border-[#DCD4C9] shadow-2xl rounded-xs z-50 animate-fadeIn divide-y divide-[#DCD4C9]/60"
-              style={{ borderTopColor: accent, borderTopWidth: '3px' }}
+              className="absolute right-0 top-full pt-1.5 w-72 z-50 animate-fadeIn"
+              onClick={(e) => e.stopPropagation()}
             >
-              {/* Header with User Info */}
-              <div className="p-3.5 bg-[#FAF8F5]">
-                <div className="flex items-center gap-2.5">
-                  <div 
-                    style={{ backgroundColor: primaryBg, color: accent }}
-                    className="w-9 h-9 rounded-full flex items-center justify-center font-black text-sm shrink-0 shadow-2xs overflow-hidden"
-                  >
-                    {Boolean(userSession.avatarUrl && userSession.avatarUrl.trim()) ? (
-                      <img 
-                        src={userSession.avatarUrl} 
-                        alt={getDisplayName()} 
-                        className="w-full h-full object-cover rounded-full" 
-                        onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                      />
-                    ) : (
-                      getInitial()
-                    )}
-                  </div>
+              <div 
+                className="bg-white border border-[#DCD4C9] shadow-2xl rounded-xs divide-y divide-[#DCD4C9]/60 overflow-hidden"
+                style={{ borderTopColor: accent, borderTopWidth: '3px' }}
+              >
+                {/* Header with User Info */}
+                <div className="p-3.5 bg-[#FAF8F5]">
+                  <div className="flex items-center gap-2.5">
+                    <div 
+                      style={{ backgroundColor: primaryBg, color: accent }}
+                      className="w-9 h-9 rounded-full flex items-center justify-center font-black text-sm shrink-0 shadow-2xs overflow-hidden"
+                    >
+                      {Boolean(userSession.avatarUrl && userSession.avatarUrl.trim()) ? (
+                        <img 
+                          src={userSession.avatarUrl} 
+                          alt={getDisplayName()} 
+                          className="w-full h-full object-cover rounded-full" 
+                          onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                        />
+                      ) : (
+                        getInitial()
+                      )}
+                    </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-xs font-bold text-[#18231C] truncate">
                       {getDisplayName()}
@@ -452,8 +478,9 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
                 </button>
               </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
+      </div>
       ) : (
         <button
           id="btn-nav-ingresar"

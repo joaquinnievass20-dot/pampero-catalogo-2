@@ -33,7 +33,18 @@ import {
   ShieldCheck,
   CheckCircle2,
   Lock,
-  ArrowRight
+  ArrowRight,
+  Shirt,
+  Layers,
+  Compass,
+  Briefcase,
+  SlidersHorizontal,
+  Package,
+  Kanban,
+  FileText,
+  User,
+  Building2,
+  Image as ImageIcon
 } from 'lucide-react';
 
 interface AdminVisualCatalogEditorProps {
@@ -46,11 +57,31 @@ export type VisualSectionKey =
   | 'navbar'
   | 'announcement'
   | 'hero'
+  | 'category_nav'
   | 'catalog_cards'
+  | 'product_detail'
   | 'quote_drawer'
-  | 'footer'
+  | 'corporate_services'
+  | 'uniform_simulator'
+  | 'sizing_portal'
+  | 'lookbook'
+  | 'order_tracking'
   | 'auth_modal'
-  | 'hub_admin';
+  | 'hub_admin'
+  | 'crm_board'
+  | 'crm_card'
+  | 'footer'
+  | 'global_buttons';
+
+export type CanvasViewMode = 
+  | 'catalog'
+  | 'product_detail'
+  | 'quote'
+  | 'login'
+  | 'lookbook'
+  | 'simulator'
+  | 'hub'
+  | 'crm';
 
 interface ColorPickerRowProps {
   label: string;
@@ -130,21 +161,18 @@ export const AdminVisualCatalogEditor: React.FC<AdminVisualCatalogEditorProps> =
   onUpdateTheme,
   triggerSaveNotice,
 }) => {
-  // Estado local para edición visual en vivo
   const [localTheme, setLocalTheme] = useState<ThemeConfig>(theme);
   const [activeSection, setActiveSection] = useState<VisualSectionKey>('navbar');
   const [deviceView, setDeviceView] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
-  const [canvasView, setCanvasView] = useState<'catalog' | 'quote' | 'login'>('catalog');
+  const [canvasView, setCanvasView] = useState<CanvasViewMode>('catalog');
   const [isInspectorActive, setIsInspectorActive] = useState(true);
   const [isSavedNotice, setIsSavedNotice] = useState(false);
   const saveTimeoutRef = useRef<any>(null);
 
-  // Sincronizar si cambia desde afuera
   useEffect(() => {
     setLocalTheme(theme);
   }, [theme]);
 
-  // Actualizador universal con persistencia inmediata
   const updateField = (field: keyof ThemeConfig, val: any) => {
     setLocalTheme((prev) => {
       const updated = { ...prev, [field]: val };
@@ -218,12 +246,12 @@ export const AdminVisualCatalogEditor: React.FC<AdminVisualCatalogEditorProps> =
     setTimeout(() => setIsSavedNotice(false), 4000);
   };
 
-  // Muestra de productos reales para el catálogo
   const previewProducts = useMemo(() => {
     return INITIAL_PRODUCTS.slice(0, 4);
   }, []);
 
-  // Textos resueltos
+  const selectedSampleProduct = previewProducts[0];
+
   const resolvedTexts: SiteTextsConfig = localTheme.siteTexts || localTheme.screenTexts || {
     announcementBarText: 'CATÁLOGO DIGITAL · EXHIBICIÓN DE PRODUCTO',
     searchPlaceholder: 'Buscar en el catálogo...',
@@ -247,9 +275,29 @@ export const AdminVisualCatalogEditor: React.FC<AdminVisualCatalogEditorProps> =
     footerAddress: 'Pescara 250 (Maipú) · San Martín 477 (Ciudad) · Patricios 384 (Luján)',
   };
 
-  // Ancho del contenedor según dispositivo seleccionado
   const canvasContainerWidth = 
     deviceView === 'mobile' ? 'max-w-[400px]' : (deviceView === 'tablet' ? 'max-w-[768px]' : 'w-full');
+
+  const ALL_SECTIONS: Array<{ key: VisualSectionKey; label: string; icon: any; targetView: CanvasViewMode }> = [
+    { key: 'navbar', label: '1. Navbar Principal & Logo', icon: Layout, targetView: 'catalog' },
+    { key: 'announcement', label: '2. Micro-Anuncios & WhatsApp', icon: MessageCircle, targetView: 'catalog' },
+    { key: 'hero', label: '3. Portada / Landing Hero', icon: Sparkles, targetView: 'catalog' },
+    { key: 'category_nav', label: '4. Menú de Categorías & Filtros', icon: Layers, targetView: 'catalog' },
+    { key: 'catalog_cards', label: '5. Tarjetas de Producto (Cards)', icon: Tag, targetView: 'catalog' },
+    { key: 'product_detail', label: '6. Ficha Detalle / Modal', icon: Eye, targetView: 'product_detail' },
+    { key: 'quote_drawer', label: '7. Ventana Mi Pedido', icon: ShoppingBag, targetView: 'quote' },
+    { key: 'corporate_services', label: '8. Servicios Corporativos', icon: Building2, targetView: 'catalog' },
+    { key: 'uniform_simulator', label: '9. Armador de Uniformes', icon: Shirt, targetView: 'simulator' },
+    { key: 'sizing_portal', label: '10. Curva de Talles', icon: SlidersHorizontal, targetView: 'simulator' },
+    { key: 'lookbook', label: '11. Lookbook Campaña', icon: ImageIcon, targetView: 'lookbook' },
+    { key: 'order_tracking', label: '12. Estado de Pedido', icon: Package, targetView: 'quote' },
+    { key: 'auth_modal', label: '13. Modal Login / Acceso', icon: Lock, targetView: 'login' },
+    { key: 'hub_admin', label: '14. Hub Empleados / Admin', icon: Compass, targetView: 'hub' },
+    { key: 'crm_board', label: '15. Tablero & Cabecera CRM', icon: Kanban, targetView: 'crm' },
+    { key: 'crm_card', label: '16. Ficha de Pedido en CRM', icon: FileText, targetView: 'crm' },
+    { key: 'footer', label: '17. Pie de Página (Footer)', icon: MapPin, targetView: 'catalog' },
+    { key: 'global_buttons', label: '18. Botones & Tipografía Global', icon: Palette, targetView: 'catalog' },
+  ];
 
   return (
     <div className="bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs shadow-sm overflow-hidden flex flex-col">
@@ -265,11 +313,11 @@ export const AdminVisualCatalogEditor: React.FC<AdminVisualCatalogEditorProps> =
                 Estudio Visual en Vivo del Catálogo
               </span>
               <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[9px] font-black uppercase px-2 py-0.5 rounded-xs">
-                Sincronización en Vivo
+                18 Secciones Reales
               </span>
             </div>
             <p className="text-[10px] text-[#DCD4C9]/80 hidden sm:block">
-              Navegá por las secciones o hacé clic sobre cualquier elemento del catálogo para editar colores, textos y posiciones.
+              Navegá entre las 18 secciones reales del sistema o hacé clic sobre cualquier elemento del lienzo para editarlo en directo.
             </p>
           </div>
         </div>
@@ -332,7 +380,7 @@ export const AdminVisualCatalogEditor: React.FC<AdminVisualCatalogEditorProps> =
           <button
             type="button"
             onClick={handleManualSave}
-            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold uppercase tracking-wider rounded-xs flex items-center gap-1.5 shadow-xs cursor-pointer transition-all"
+            className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold uppercase tracking-wider rounded-xs flex items-center gap-1.5 shadow-xs cursor-pointer transition-all"
           >
             <Save className="w-3.5 h-3.5 text-white" />
             <span>Guardar en Vivo</span>
@@ -348,21 +396,12 @@ export const AdminVisualCatalogEditor: React.FC<AdminVisualCatalogEditorProps> =
         </div>
       )}
 
-      {/* 2. PESTAÑAS DE SECCIONES (ACCESO DIRECTO) */}
-      <div className="bg-white border-b border-[#DCD4C9] px-4 py-2 flex items-center gap-2 overflow-x-auto scrollbar-none">
+      {/* 2. PESTAÑAS DE SECCIONES (18 SECCIONES COMPLETAS Y REALES) */}
+      <div className="bg-white border-b border-[#DCD4C9] px-4 py-2 flex items-center gap-1.5 overflow-x-auto scrollbar-thin">
         <span className="text-[10px] font-black uppercase tracking-wider text-[#6F6860] shrink-0 mr-1">
           Secciones:
         </span>
-        {[
-          { key: 'navbar', label: '1. Navbar & Logo', icon: Layout },
-          { key: 'announcement', label: '2. Micro-anuncios', icon: MessageCircle },
-          { key: 'hero', label: '3. Portada / Hero', icon: Sparkles },
-          { key: 'catalog_cards', label: '4. Fichas de Producto', icon: Tag },
-          { key: 'quote_drawer', label: '5. Ventana Mi Pedido', icon: ShoppingBag },
-          { key: 'footer', label: '6. Pie de Página', icon: MapPin },
-          { key: 'auth_modal', label: '7. Modal Login/Acceso', icon: Lock },
-          { key: 'hub_admin', label: '8. Menú Admin / Hub', icon: ShieldCheck },
-        ].map((sec) => {
+        {ALL_SECTIONS.map((sec) => {
           const Icon = sec.icon;
           const isActive = activeSection === sec.key;
           return (
@@ -370,10 +409,8 @@ export const AdminVisualCatalogEditor: React.FC<AdminVisualCatalogEditorProps> =
               key={sec.key}
               type="button"
               onClick={() => {
-                setActiveSection(sec.key as VisualSectionKey);
-                if (sec.key === 'quote_drawer') setCanvasView('quote');
-                else if (sec.key === 'auth_modal') setCanvasView('login');
-                else setCanvasView('catalog');
+                setActiveSection(sec.key);
+                setCanvasView(sec.targetView);
               }}
               className={`px-3 py-1.5 rounded-xs text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5 shrink-0 transition-all cursor-pointer ${
                 isActive
@@ -389,7 +426,7 @@ export const AdminVisualCatalogEditor: React.FC<AdminVisualCatalogEditorProps> =
       </div>
 
       {/* 3. SPLIT STUDIO: PANEL DE CONTROLES (IZQUIERDA) + LIENZO INTERACTIVO (DERECHA) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 min-h-[680px]">
+      <div className="grid grid-cols-1 lg:grid-cols-12 min-h-[700px]">
         {/* PANEL LATERAL DE EDICIÓN QUIRÚRGICA */}
         <div className="lg:col-span-4 bg-white border-r border-[#DCD4C9] p-4 space-y-5 overflow-y-auto max-h-[820px]">
           {/* Header de la sección activa */}
@@ -399,14 +436,7 @@ export const AdminVisualCatalogEditor: React.FC<AdminVisualCatalogEditorProps> =
                 Editor Específico
               </span>
               <h4 className="font-bold text-sm uppercase tracking-wider text-[#18231C]">
-                {activeSection === 'navbar' && 'Barra Superior & Logo'}
-                {activeSection === 'announcement' && 'Barra de Micro-anuncios'}
-                {activeSection === 'hero' && 'Portada / Landing Hero'}
-                {activeSection === 'catalog_cards' && 'Tarjetas & Fichas de Producto'}
-                {activeSection === 'quote_drawer' && 'Ventana Emergente "Mi Pedido"'}
-                {activeSection === 'footer' && 'Pie de Página (Footer)'}
-                {activeSection === 'auth_modal' && 'Modal de Login / Registro'}
-                {activeSection === 'hub_admin' && 'Menú Admin & Hub de Empleados'}
+                {ALL_SECTIONS.find((s) => s.key === activeSection)?.label}
               </h4>
             </div>
             <span className="px-2 py-0.5 rounded-xs bg-[#FAF8F5] border border-[#DCD4C9] text-[10px] font-mono text-[#6F6860]">
@@ -421,7 +451,7 @@ export const AdminVisualCatalogEditor: React.FC<AdminVisualCatalogEditorProps> =
             <div className="space-y-4 animate-fadeIn">
               <ColorPickerRow
                 label="Color de Fondo del Navbar"
-                sublabel="Fondo de la barra blanca superior"
+                sublabel="Fondo de la barra principal"
                 value={localTheme.headerBgColor}
                 defaultValue="#FFFFFF"
                 onChange={(c) => updateField('headerBgColor', c)}
@@ -476,9 +506,6 @@ export const AdminVisualCatalogEditor: React.FC<AdminVisualCatalogEditorProps> =
                     className="w-16 px-1.5 py-1 text-center font-mono text-xs border border-[#DCD4C9] rounded-xs bg-white"
                   />
                 </div>
-                <p className="text-[10px] text-[#6F6860]">
-                  El logo Pampero se centra en la barra y se auto-invierte a blanco si el fondo es oscuro.
-                </p>
               </div>
 
               {/* Textos del Navbar */}
@@ -617,23 +644,35 @@ export const AdminVisualCatalogEditor: React.FC<AdminVisualCatalogEditorProps> =
                     placeholder="Confeccionada bajo estrictas normas de resistencia..."
                   />
                 </div>
-                <div>
-                  <label className="text-[10px] font-bold text-[#6F6860] uppercase block mb-0.5">
-                    Texto Botón "Ver Catálogo"
-                  </label>
-                  <input
-                    type="text"
-                    value={resolvedTexts.heroPrimaryBtnText || ''}
-                    onChange={(e) => updateSiteText('heroPrimaryBtnText', e.target.value)}
-                    className="w-full px-2.5 py-1.5 text-xs bg-white border border-[#DCD4C9] rounded-xs"
-                    placeholder="VER CATÁLOGO"
-                  />
-                </div>
               </div>
             </div>
           )}
 
-          {/* ===================== 4. TARJETAS DE PRODUCTO ===================== */}
+          {/* ===================== 4. CATEGORÍAS & FILTROS ===================== */}
+          {activeSection === 'category_nav' && (
+            <div className="space-y-4 animate-fadeIn">
+              <ColorPickerRow
+                label="Color de Acento en Menús y Filtros"
+                value={localTheme.headerAccentColor}
+                defaultValue="#FDB813"
+                onChange={(c) => updateField('headerAccentColor', c)}
+              />
+              <ColorPickerRow
+                label="Color de Texto en Pestañas"
+                value={localTheme.headerTextColor}
+                defaultValue="#18231C"
+                onChange={(c) => updateField('headerTextColor', c)}
+              />
+              <ColorPickerRow
+                label="Fondo de la Barra de Filtros"
+                value={localTheme.secondaryColor}
+                defaultValue="#DCD4C9"
+                onChange={(c) => updateField('secondaryColor', c)}
+              />
+            </div>
+          )}
+
+          {/* ===================== 5. TARJETAS DE PRODUCTO ===================== */}
           {activeSection === 'catalog_cards' && (
             <div className="space-y-4 animate-fadeIn">
               <ColorPickerRow
@@ -684,22 +723,40 @@ export const AdminVisualCatalogEditor: React.FC<AdminVisualCatalogEditorProps> =
                 defaultValue="#FDB813"
                 onChange={(c) => updateField('discountBadgeBg', c)}
               />
-              <div className="p-3 bg-[#FAF8F5] rounded-xs border border-[#DCD4C9] space-y-2">
-                <label className="text-[11px] font-bold uppercase tracking-wider text-[#18231C] block">
-                  Texto Botón de Tarjeta
-                </label>
-                <input
-                  type="text"
-                  value={resolvedTexts.addToQuoteBtnText || ''}
-                  onChange={(e) => updateSiteText('addToQuoteBtnText', e.target.value)}
-                  className="w-full px-2.5 py-1.5 text-xs bg-white border border-[#DCD4C9] rounded-xs font-bold"
-                  placeholder="AGREGAR A MI PEDIDO"
-                />
-              </div>
             </div>
           )}
 
-          {/* ===================== 5. VENTANA MI PEDIDO ===================== */}
+          {/* ===================== 6. FICHA DETALLE / MODAL ===================== */}
+          {activeSection === 'product_detail' && (
+            <div className="space-y-4 animate-fadeIn">
+              <ColorPickerRow
+                label="Fondo del Modal de Detalle"
+                value={localTheme.cardBgColor}
+                defaultValue="#FAF8F5"
+                onChange={(c) => updateField('cardBgColor', c)}
+              />
+              <ColorPickerRow
+                label="Color de Títulos Técnicos"
+                value={localTheme.catalogTitleColor}
+                defaultValue="#18231C"
+                onChange={(c) => updateField('catalogTitleColor', c)}
+              />
+              <ColorPickerRow
+                label="Botón Cotizar / Agregar"
+                value={localTheme.buttonBgColor}
+                defaultValue="#18231C"
+                onChange={(c) => updateField('buttonBgColor', c)}
+              />
+              <ColorPickerRow
+                label="Color de Acento en Talles & Colores"
+                value={localTheme.accentColor}
+                defaultValue="#FDB813"
+                onChange={(c) => updateField('accentColor', c)}
+              />
+            </div>
+          )}
+
+          {/* ===================== 7. VENTANA MI PEDIDO ===================== */}
           {activeSection === 'quote_drawer' && (
             <div className="space-y-4 animate-fadeIn">
               <ColorPickerRow
@@ -732,22 +789,220 @@ export const AdminVisualCatalogEditor: React.FC<AdminVisualCatalogEditorProps> =
                 defaultValue="#FFFFFF"
                 onChange={(c) => updateField('quoteDrawerButtonText', c)}
               />
-              <div className="p-3 bg-[#FAF8F5] rounded-xs border border-[#DCD4C9] space-y-2">
-                <label className="text-[11px] font-bold uppercase tracking-wider text-[#18231C] block">
-                  Título de la Ventana
-                </label>
-                <input
-                  type="text"
-                  value={resolvedTexts.quoteDrawerTitle || ''}
-                  onChange={(e) => updateSiteText('quoteDrawerTitle', e.target.value)}
-                  className="w-full px-2.5 py-1.5 text-xs bg-white border border-[#DCD4C9] rounded-xs font-bold"
-                  placeholder="Mi Pedido"
-                />
-              </div>
             </div>
           )}
 
-          {/* ===================== 6. FOOTER ===================== */}
+          {/* ===================== 8. SERVICIOS CORPORATIVOS ===================== */}
+          {activeSection === 'corporate_services' && (
+            <div className="space-y-4 animate-fadeIn">
+              <ColorPickerRow
+                label="Color de Acento Servicios"
+                value={localTheme.accentColor}
+                defaultValue="#FDB813"
+                onChange={(c) => updateField('accentColor', c)}
+              />
+              <ColorPickerRow
+                label="Fondo de Tarjetas de Servicios"
+                value={localTheme.cardBgColor}
+                defaultValue="#FAF8F5"
+                onChange={(c) => updateField('cardBgColor', c)}
+              />
+            </div>
+          )}
+
+          {/* ===================== 9. ARMADOR DE UNIFORMES ===================== */}
+          {activeSection === 'uniform_simulator' && (
+            <div className="space-y-4 animate-fadeIn">
+              <ColorPickerRow
+                label="Fondo del Simulador"
+                value={localTheme.panelBgColor}
+                defaultValue="#FAF8F5"
+                onChange={(c) => updateField('panelBgColor', c)}
+              />
+              <ColorPickerRow
+                label="Color Botón de Cotización"
+                value={localTheme.buttonBgColor}
+                defaultValue="#18231C"
+                onChange={(c) => updateField('buttonBgColor', c)}
+              />
+              <ColorPickerRow
+                label="Color Acento de Bordado"
+                value={localTheme.accentColor}
+                defaultValue="#FDB813"
+                onChange={(c) => updateField('accentColor', c)}
+              />
+            </div>
+          )}
+
+          {/* ===================== 10. CURVA DE TALLES ===================== */}
+          {activeSection === 'sizing_portal' && (
+            <div className="space-y-4 animate-fadeIn">
+              <ColorPickerRow
+                label="Fondo del Portal de Talles"
+                value={localTheme.panelBgColor}
+                defaultValue="#FAF8F5"
+                onChange={(c) => updateField('panelBgColor', c)}
+              />
+              <ColorPickerRow
+                label="Borde de Tablas de Talles"
+                value={localTheme.cardBorderColor}
+                defaultValue="#DCD4C9"
+                onChange={(c) => updateField('cardBorderColor', c)}
+              />
+            </div>
+          )}
+
+          {/* ===================== 11. LOOKBOOK CAMPAÑA ===================== */}
+          {activeSection === 'lookbook' && (
+            <div className="space-y-4 animate-fadeIn">
+              <ColorPickerRow
+                label="Color de Puntos Hotspot"
+                value={localTheme.accentColor}
+                defaultValue="#FDB813"
+                onChange={(c) => updateField('accentColor', c)}
+              />
+              <ColorPickerRow
+                label="Fondo de Etiqueta Flotante"
+                value={localTheme.primaryColor}
+                defaultValue="#18231C"
+                onChange={(c) => updateField('primaryColor', c)}
+              />
+            </div>
+          )}
+
+          {/* ===================== 12. ESTADO DE PEDIDO ===================== */}
+          {activeSection === 'order_tracking' && (
+            <div className="space-y-4 animate-fadeIn">
+              <ColorPickerRow
+                label="Color de Barra de Progreso"
+                value={localTheme.accentColor}
+                defaultValue="#FDB813"
+                onChange={(c) => updateField('accentColor', c)}
+              />
+              <ColorPickerRow
+                label="Fondo de Tarjeta de Tracking"
+                value={localTheme.panelBgColor}
+                defaultValue="#FAF8F5"
+                onChange={(c) => updateField('panelBgColor', c)}
+              />
+            </div>
+          )}
+
+          {/* ===================== 13. AUTH MODAL ===================== */}
+          {activeSection === 'auth_modal' && (
+            <div className="space-y-4 animate-fadeIn">
+              <ColorPickerRow
+                label="Fondo del Modal de Login"
+                value={localTheme.loginModalBgColor}
+                defaultValue="#FAF8F5"
+                onChange={(c) => updateField('loginModalBgColor', c)}
+              />
+              <ColorPickerRow
+                label="Color de Textos y Títulos"
+                value={localTheme.loginModalTextColor}
+                defaultValue="#18231C"
+                onChange={(c) => updateField('loginModalTextColor', c)}
+              />
+              <ColorPickerRow
+                label="Borde del Modal"
+                value={localTheme.loginModalBorderColor}
+                defaultValue="#DCD4C9"
+                onChange={(c) => updateField('loginModalBorderColor', c)}
+              />
+              <ColorPickerRow
+                label="Fondo Botón Ingresar"
+                value={localTheme.loginModalButtonBg}
+                defaultValue="#18231C"
+                onChange={(c) => updateField('loginModalButtonBg', c)}
+              />
+              <ColorPickerRow
+                label="Texto Botón Ingresar"
+                value={localTheme.loginModalButtonText}
+                defaultValue="#FFFFFF"
+                onChange={(c) => updateField('loginModalButtonText', c)}
+              />
+            </div>
+          )}
+
+          {/* ===================== 14. HUB ADMIN ===================== */}
+          {activeSection === 'hub_admin' && (
+            <div className="space-y-4 animate-fadeIn">
+              <ColorPickerRow
+                label="Fondo del Menú de Administrador"
+                value={localTheme.hubBgColor}
+                defaultValue="#18231C"
+                onChange={(c) => updateField('hubBgColor', c)}
+              />
+              <ColorPickerRow
+                label="Color de Textos y Menús del Hub"
+                value={localTheme.hubTextColor}
+                defaultValue="#F5F2EC"
+                onChange={(c) => updateField('hubTextColor', c)}
+              />
+              <ColorPickerRow
+                label="Color de Acento en el Hub"
+                value={localTheme.hubAccentColor}
+                defaultValue="#FDB813"
+                onChange={(c) => updateField('hubAccentColor', c)}
+              />
+              <ColorPickerRow
+                label="Borde de Tarjetas en el Hub"
+                value={localTheme.hubBorderColor}
+                defaultValue="#DCD4C9"
+                onChange={(c) => updateField('hubBorderColor', c)}
+              />
+            </div>
+          )}
+
+          {/* ===================== 15. CRM BOARD ===================== */}
+          {activeSection === 'crm_board' && (
+            <div className="space-y-4 animate-fadeIn">
+              <ColorPickerRow
+                label="Fondo de la Cabecera CRM"
+                value={localTheme.crmHeaderBgColor}
+                defaultValue="#18231C"
+                onChange={(c) => updateField('crmHeaderBgColor', c)}
+              />
+              <ColorPickerRow
+                label="Texto de la Cabecera CRM"
+                value={localTheme.crmHeaderTextColor}
+                defaultValue="#F5F2EC"
+                onChange={(c) => updateField('crmHeaderTextColor', c)}
+              />
+              <ColorPickerRow
+                label="Borde de Columnas Kanban"
+                value={localTheme.cardBorderColor}
+                defaultValue="#DCD4C9"
+                onChange={(c) => updateField('cardBorderColor', c)}
+              />
+            </div>
+          )}
+
+          {/* ===================== 16. CRM CARD ===================== */}
+          {activeSection === 'crm_card' && (
+            <div className="space-y-4 animate-fadeIn">
+              <ColorPickerRow
+                label="Fondo de la Tarjeta de Pedido en CRM"
+                value={localTheme.crmCardBgColor}
+                defaultValue="#FFFFFF"
+                onChange={(c) => updateField('crmCardBgColor', c)}
+              />
+              <ColorPickerRow
+                label="Texto de la Tarjeta en CRM"
+                value={localTheme.crmCardTextColor}
+                defaultValue="#18231C"
+                onChange={(c) => updateField('crmCardTextColor', c)}
+              />
+              <ColorPickerRow
+                label="Borde de la Tarjeta en CRM"
+                value={localTheme.crmCardBorderColor}
+                defaultValue="#DCD4C9"
+                onChange={(c) => updateField('crmCardBorderColor', c)}
+              />
+            </div>
+          )}
+
+          {/* ===================== 17. FOOTER ===================== */}
           {activeSection === 'footer' && (
             <div className="space-y-4 animate-fadeIn">
               <ColorPickerRow
@@ -812,68 +1067,38 @@ export const AdminVisualCatalogEditor: React.FC<AdminVisualCatalogEditorProps> =
             </div>
           )}
 
-          {/* ===================== 7. AUTH MODAL ===================== */}
-          {activeSection === 'auth_modal' && (
+          {/* ===================== 18. BOTONES & TIPOGRAFÍA GLOBAL ===================== */}
+          {activeSection === 'global_buttons' && (
             <div className="space-y-4 animate-fadeIn">
               <ColorPickerRow
-                label="Fondo del Modal de Login"
-                value={localTheme.loginModalBgColor}
-                defaultValue="#FAF8F5"
-                onChange={(c) => updateField('loginModalBgColor', c)}
-              />
-              <ColorPickerRow
-                label="Color de Textos y Títulos"
-                value={localTheme.loginModalTextColor}
+                label="Color Primario de la Marca"
+                value={localTheme.primaryColor}
                 defaultValue="#18231C"
-                onChange={(c) => updateField('loginModalTextColor', c)}
+                onChange={(c) => updateField('primaryColor', c)}
               />
               <ColorPickerRow
-                label="Borde del Modal"
-                value={localTheme.loginModalBorderColor}
-                defaultValue="#DCD4C9"
-                onChange={(c) => updateField('loginModalBorderColor', c)}
-              />
-              <ColorPickerRow
-                label="Fondo Botón Ingresar"
-                value={localTheme.loginModalButtonBg}
-                defaultValue="#18231C"
-                onChange={(c) => updateField('loginModalButtonBg', c)}
-              />
-              <ColorPickerRow
-                label="Texto Botón Ingresar"
-                value={localTheme.loginModalButtonText}
-                defaultValue="#FFFFFF"
-                onChange={(c) => updateField('loginModalButtonText', c)}
-              />
-            </div>
-          )}
-
-          {/* ===================== 8. HUB ADMIN ===================== */}
-          {activeSection === 'hub_admin' && (
-            <div className="space-y-4 animate-fadeIn">
-              <ColorPickerRow
-                label="Fondo del Menú de Administrador"
-                value={localTheme.hubBgColor}
-                defaultValue="#18231C"
-                onChange={(c) => updateField('hubBgColor', c)}
-              />
-              <ColorPickerRow
-                label="Color de Textos y Menús del Hub"
-                value={localTheme.hubTextColor}
-                defaultValue="#F5F2EC"
-                onChange={(c) => updateField('hubTextColor', c)}
-              />
-              <ColorPickerRow
-                label="Color de Acento en el Hub"
-                value={localTheme.hubAccentColor}
+                label="Color de Acento Principal"
+                value={localTheme.accentColor}
                 defaultValue="#FDB813"
-                onChange={(c) => updateField('hubAccentColor', c)}
+                onChange={(c) => updateField('accentColor', c)}
               />
               <ColorPickerRow
-                label="Borde de Tarjetas en el Hub"
-                value={localTheme.hubBorderColor}
-                defaultValue="#DCD4C9"
-                onChange={(c) => updateField('hubBorderColor', c)}
+                label="Fondo General del Sitio (Lienzo)"
+                value={localTheme.backgroundColor}
+                defaultValue="#F5F2EC"
+                onChange={(c) => updateField('backgroundColor', c)}
+              />
+              <ColorPickerRow
+                label="Color de Botones Globales"
+                value={localTheme.buttonBgColor}
+                defaultValue="#18231C"
+                onChange={(c) => updateField('buttonBgColor', c)}
+              />
+              <ColorPickerRow
+                label="Texto de Botones Globales"
+                value={localTheme.buttonTextColor}
+                defaultValue="#FFFFFF"
+                onChange={(c) => updateField('buttonTextColor', c)}
               />
             </div>
           )}
@@ -884,40 +1109,34 @@ export const AdminVisualCatalogEditor: React.FC<AdminVisualCatalogEditorProps> =
           {/* Header del marco de dispositivo */}
           <div className={`${canvasContainerWidth} transition-all duration-300 flex items-center justify-between text-[10px] text-[#6F6860] uppercase tracking-wider mb-2 px-1`}>
             <span>
-              Vista en Vivo: <strong>{deviceView.toUpperCase()}</strong> ({canvasView === 'catalog' ? 'Catálogo' : canvasView === 'quote' ? 'Mi Pedido' : 'Login'})
+              Vista en Vivo: <strong>{deviceView.toUpperCase()}</strong> ({canvasView})
             </span>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setCanvasView('catalog')}
-                className={`px-2 py-0.5 rounded-xs font-bold cursor-pointer transition-colors ${
-                  canvasView === 'catalog' ? 'bg-[#18231C] text-white' : 'bg-white text-[#4A453F] hover:bg-[#DCD4C9]'
-                }`}
-              >
-                Catálogo
-              </button>
-              <button
-                type="button"
-                onClick={() => { setCanvasView('quote'); setActiveSection('quote_drawer'); }}
-                className={`px-2 py-0.5 rounded-xs font-bold cursor-pointer transition-colors ${
-                  canvasView === 'quote' ? 'bg-[#18231C] text-white' : 'bg-white text-[#4A453F] hover:bg-[#DCD4C9]'
-                }`}
-              >
-                Mi Pedido
-              </button>
-              <button
-                type="button"
-                onClick={() => { setCanvasView('login'); setActiveSection('auth_modal'); }}
-                className={`px-2 py-0.5 rounded-xs font-bold cursor-pointer transition-colors ${
-                  canvasView === 'login' ? 'bg-[#18231C] text-white' : 'bg-white text-[#4A453F] hover:bg-[#DCD4C9]'
-                }`}
-              >
-                Login
-              </button>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {[
+                { id: 'catalog', label: 'Catálogo' },
+                { id: 'product_detail', label: 'Ficha Detalle' },
+                { id: 'quote', label: 'Mi Pedido' },
+                { id: 'simulator', label: 'Uniformes' },
+                { id: 'lookbook', label: 'Lookbook' },
+                { id: 'login', label: 'Login' },
+                { id: 'hub', label: 'Hub' },
+                { id: 'crm', label: 'CRM' },
+              ].map((v) => (
+                <button
+                  key={v.id}
+                  type="button"
+                  onClick={() => setCanvasView(v.id as CanvasViewMode)}
+                  className={`px-2 py-0.5 rounded-xs font-bold cursor-pointer transition-colors text-[10px] ${
+                    canvasView === v.id ? 'bg-[#18231C] text-white shadow-2xs' : 'bg-white text-[#4A453F] hover:bg-[#DCD4C9]'
+                  }`}
+                >
+                  {v.label}
+                </button>
+              ))}
             </div>
           </div>
 
-          {/* LIENZO PRINCIPAL RENDERIZADO */}
+          {/* LIENZO PRINCIPAL RENDERIZADO CON COMPONENTES FIELES */}
           <div 
             className={`${canvasContainerWidth} bg-[#F5F2EC] rounded-xs shadow-md border border-[#DCD4C9] overflow-hidden transition-all duration-300`}
             style={{
@@ -928,7 +1147,7 @@ export const AdminVisualCatalogEditor: React.FC<AdminVisualCatalogEditorProps> =
             {/* MICRO-ANUNCIO INTERACTIVO */}
             <div
               onClick={() => { if (isInspectorActive) setActiveSection('announcement'); }}
-              className={`py-1 px-3 text-center text-[10px] tracking-wider uppercase font-bold transition-all relative group cursor-pointer ${
+              className={`py-1.5 px-3 text-center text-[10px] tracking-wider uppercase font-bold transition-all relative group cursor-pointer ${
                 activeSection === 'announcement' ? 'ring-2 ring-emerald-500 ring-inset' : ''
               }`}
               style={{
@@ -944,7 +1163,7 @@ export const AdminVisualCatalogEditor: React.FC<AdminVisualCatalogEditorProps> =
               )}
             </div>
 
-            {/* NAVBAR INTERACTIVO */}
+            {/* NAVBAR INTERACTIVO (Fiel a la nueva especificación con Logo a la izquierda) */}
             <header
               onClick={() => { if (isInspectorActive) setActiveSection('navbar'); }}
               className={`px-4 py-2.5 transition-all relative group cursor-pointer border-b ${
@@ -957,18 +1176,8 @@ export const AdminVisualCatalogEditor: React.FC<AdminVisualCatalogEditorProps> =
               }}
             >
               <div className="flex items-center justify-between gap-3">
-                {/* Categorías a la izquierda */}
-                <div className="flex items-center gap-3 text-xs font-bold uppercase tracking-wider">
-                  <span className="border-b-2 pb-0.5" style={{ borderColor: localTheme.headerAccentColor || localTheme.accentColor || '#FDB813' }}>
-                    Hombre
-                  </span>
-                  <span className="opacity-75 hover:opacity-100">Mujer</span>
-                  <span className="opacity-75 hover:opacity-100 hidden sm:inline">Infantil</span>
-                  <span className="opacity-75 hover:opacity-100 hidden md:inline">Corporativa</span>
-                </div>
-
-                {/* Logo centrado */}
-                <div className="shrink-0 flex items-center justify-center">
+                {/* Logo a la izquierda */}
+                <div className="shrink-0 flex items-center pr-3">
                   <PamperoLogo
                     customUrl={localTheme.customLogoUrl || localTheme.logoUrl}
                     height={localTheme.logoHeight || 38}
@@ -976,7 +1185,21 @@ export const AdminVisualCatalogEditor: React.FC<AdminVisualCatalogEditorProps> =
                   />
                 </div>
 
-                {/* Buscador & Mi Pedido a la derecha */}
+                {/* Categorías a la izquierda-centro */}
+                <div 
+                  onClick={(e) => { if (isInspectorActive) { e.stopPropagation(); setActiveSection('category_nav'); } }}
+                  className="hidden md:flex items-center gap-3 text-xs font-bold uppercase tracking-wider flex-1"
+                >
+                  <span className="border-b-2 pb-0.5" style={{ borderColor: localTheme.headerAccentColor || localTheme.accentColor || '#FDB813' }}>
+                    Hombre
+                  </span>
+                  <span className="opacity-75 hover:opacity-100">Mujer</span>
+                  <span className="opacity-75 hover:opacity-100 hidden sm:inline">Infantil</span>
+                  <span className="opacity-75 hover:opacity-100 hidden lg:inline">Venta Corporativa</span>
+                  <span className="opacity-75 hover:opacity-100 hidden xl:inline text-[#B9522F]">Servicios Corporativos</span>
+                </div>
+
+                {/* Buscador & Acciones a la derecha */}
                 <div className="flex items-center gap-2">
                   <div className="hidden sm:flex items-center gap-1.5 px-2 py-1 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-[11px] text-[#6F6860]">
                     <Search className="w-3 h-3" />
@@ -997,6 +1220,11 @@ export const AdminVisualCatalogEditor: React.FC<AdminVisualCatalogEditorProps> =
                       2
                     </span>
                   </button>
+
+                  {/* Cuadrado de usuario */}
+                  <div className="w-8 h-8 rounded-xs border border-[#DCD4C9] bg-white flex items-center justify-center font-bold text-xs text-[#18231C] shadow-2xs">
+                    J
+                  </div>
                 </div>
               </div>
 
@@ -1007,7 +1235,7 @@ export const AdminVisualCatalogEditor: React.FC<AdminVisualCatalogEditorProps> =
               )}
             </header>
 
-            {/* VISTA 1: CATÁLOGO REGULAR */}
+            {/* VISTA 1: CATÁLOGO REGULAR COMPLETO */}
             {canvasView === 'catalog' && (
               <div>
                 {/* HERO / PORTADA */}
@@ -1090,13 +1318,19 @@ export const AdminVisualCatalogEditor: React.FC<AdminVisualCatalogEditorProps> =
                     {previewProducts.map((prod, idx) => (
                       <div
                         key={prod.id}
-                        className="rounded-xs border overflow-hidden flex flex-col justify-between transition-transform hover:-translate-y-0.5 shadow-2xs"
+                        onClick={(e) => {
+                          if (isInspectorActive) {
+                            e.stopPropagation();
+                            setCanvasView('product_detail');
+                            setActiveSection('product_detail');
+                          }
+                        }}
+                        className="rounded-xs border overflow-hidden flex flex-col justify-between transition-transform hover:-translate-y-0.5 shadow-2xs cursor-pointer"
                         style={{
                           backgroundColor: localTheme.cardBgColor || '#ECE5DC',
                           borderColor: localTheme.cardBorderColor || '#DCD4C9',
                         }}
                       >
-                        {/* Imagen con Badges */}
                         <div className="relative aspect-4/3 bg-[#FAF8F5] overflow-hidden flex items-center justify-center p-2">
                           <img
                             src={prod.image}
@@ -1127,7 +1361,6 @@ export const AdminVisualCatalogEditor: React.FC<AdminVisualCatalogEditorProps> =
                           )}
                         </div>
 
-                        {/* Info del Producto */}
                         <div className="p-2.5 flex flex-col gap-1">
                           <span className="text-[9px] font-mono font-bold text-[#6F6860]">
                             {prod.code}
@@ -1173,7 +1406,62 @@ export const AdminVisualCatalogEditor: React.FC<AdminVisualCatalogEditorProps> =
               </div>
             )}
 
-            {/* VISTA 2: VENTANA MI PEDIDO (DRAWER) */}
+            {/* VISTA 2: FICHA DETALLADA / MODAL DE PRODUCTO */}
+            {canvasView === 'product_detail' && (
+              <div 
+                onClick={() => { if (isInspectorActive) setActiveSection('product_detail'); }}
+                className={`p-6 transition-all relative group cursor-pointer ${
+                  activeSection === 'product_detail' ? 'ring-2 ring-emerald-500 ring-inset' : ''
+                }`}
+                style={{
+                  backgroundColor: localTheme.cardBgColor || '#FAF8F5',
+                  color: localTheme.cardTextColor || '#18231C',
+                }}
+              >
+                <div className="bg-white rounded-xs border p-5 shadow-md grid grid-cols-1 md:grid-cols-2 gap-5" style={{ borderColor: localTheme.cardBorderColor || '#DCD4C9' }}>
+                  <div className="bg-[#FAF8F5] rounded-xs p-4 flex items-center justify-center min-h-[220px]">
+                    <img 
+                      src={selectedSampleProduct?.image || '/placeholder.png'} 
+                      alt="Detalle" 
+                      className="max-h-52 object-contain"
+                    />
+                  </div>
+                  <div className="space-y-3">
+                    <span className="text-[10px] font-mono font-bold text-[#6F6860]">
+                      CÓDIGO: {selectedSampleProduct?.code || 'PAM-001'}
+                    </span>
+                    <h3 className="font-black text-lg uppercase">
+                      {selectedSampleProduct?.name || 'Camisa de Trabajo Reforzada'}
+                    </h3>
+                    <div className="text-xl font-black font-mono" style={{ color: localTheme.cardPriceColor || '#18231C' }}>
+                      ${(selectedSampleProduct?.price || 48000).toLocaleString('es-AR')}
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-bold uppercase text-[#6F6860] block">Talle:</span>
+                      <div className="flex gap-1.5">
+                        {['38', '40', '42', '44', '46'].map((sz, i) => (
+                          <span 
+                            key={sz} 
+                            className={`px-2 py-1 border text-xs font-bold rounded-2xs ${i === 2 ? 'bg-[#18231C] text-white' : 'bg-white'}`}
+                          >
+                            {sz}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="w-full py-2.5 rounded-xs font-bold text-xs uppercase tracking-wider text-white shadow-xs"
+                      style={{ backgroundColor: localTheme.buttonBgColor || '#18231C' }}
+                    >
+                      AGREGAR A MI PEDIDO
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* VISTA 3: VENTANA MI PEDIDO (DRAWER) */}
             {canvasView === 'quote' && (
               <div 
                 onClick={() => { if (isInspectorActive) setActiveSection('quote_drawer'); }}
@@ -1230,16 +1518,10 @@ export const AdminVisualCatalogEditor: React.FC<AdminVisualCatalogEditorProps> =
                     <span>{resolvedTexts.quoteDrawerSendBtnText || 'Enviar Pedido por WhatsApp'}</span>
                   </button>
                 </div>
-
-                {isInspectorActive && (
-                  <span className="hidden group-hover:inline-block absolute top-2 right-2 bg-emerald-500 text-white text-[8px] font-mono px-1 rounded-xs">
-                    [Ventana Mi Pedido] Clic para editar
-                  </span>
-                )}
               </div>
             )}
 
-            {/* VISTA 3: LOGIN / ACCESO */}
+            {/* VISTA 4: LOGIN / ACCESO */}
             {canvasView === 'login' && (
               <div
                 onClick={() => { if (isInspectorActive) setActiveSection('auth_modal'); }}
@@ -1298,12 +1580,107 @@ export const AdminVisualCatalogEditor: React.FC<AdminVisualCatalogEditorProps> =
                     INICIAR SESIÓN
                   </button>
                 </div>
+              </div>
+            )}
 
-                {isInspectorActive && (
-                  <span className="hidden group-hover:inline-block absolute top-2 right-2 bg-emerald-500 text-white text-[8px] font-mono px-1 rounded-xs">
-                    [Modal Login] Clic para editar
+            {/* VISTA 5: ARMADOR DE UNIFORMES */}
+            {canvasView === 'simulator' && (
+              <div 
+                onClick={() => { if (isInspectorActive) setActiveSection('uniform_simulator'); }}
+                className="p-6 bg-[#FAF8F5] space-y-4"
+              >
+                <div className="flex items-center justify-between border-b pb-3">
+                  <div>
+                    <h3 className="font-black text-sm uppercase">Armador de Uniformes Virtual</h3>
+                    <p className="text-xs text-[#6F6860]">Simulador de bordado y estampas corporativas para empresas.</p>
+                  </div>
+                  <span className="px-2 py-0.5 bg-amber-100 text-amber-800 text-[10px] font-bold uppercase rounded-xs">
+                    Empresas
                   </span>
-                )}
+                </div>
+                <div className="bg-white p-4 border rounded-xs flex items-center justify-center min-h-[180px]">
+                  <Shirt className="w-16 h-16 text-[#18231C]" />
+                </div>
+              </div>
+            )}
+
+            {/* VISTA 6: LOOKBOOK */}
+            {canvasView === 'lookbook' && (
+              <div 
+                onClick={() => { if (isInspectorActive) setActiveSection('lookbook'); }}
+                className="p-6 bg-[#FAF8F5] space-y-4"
+              >
+                <div className="flex items-center justify-between border-b pb-3">
+                  <div>
+                    <h3 className="font-black text-sm uppercase">Lookbook Campaña Cuyo 2026</h3>
+                    <p className="text-xs text-[#6F6860]">Fotografías de campo con puntos interactivos.</p>
+                  </div>
+                </div>
+                <div className="bg-neutral-800 rounded-xs p-8 text-center text-white relative min-h-[180px] flex items-center justify-center">
+                  <span className="text-xs uppercase font-bold tracking-widest text-amber-300">
+                    Campaña Visual Pampero
+                  </span>
+                  <div className="absolute top-1/3 left-1/3 w-6 h-6 rounded-full bg-amber-400 text-black font-bold flex items-center justify-center text-xs animate-ping" />
+                  <div className="absolute top-1/3 left-1/3 w-6 h-6 rounded-full bg-amber-400 text-black font-bold flex items-center justify-center text-xs">
+                    +
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* VISTA 7: HUB DE EMPLEADOS / ADMIN */}
+            {canvasView === 'hub' && (
+              <div 
+                onClick={() => { if (isInspectorActive) setActiveSection('hub_admin'); }}
+                className="p-6 space-y-4"
+                style={{ backgroundColor: localTheme.hubBgColor || '#18231C', color: localTheme.hubTextColor || '#F5F2EC' }}
+              >
+                <div className="flex items-center justify-between border-b pb-3 border-white/20">
+                  <h3 className="font-black text-sm uppercase">Menú Principal de Trabajo</h3>
+                  <span className="text-xs font-bold text-[#FDB813]">Acceso Staff</span>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-4 bg-white/10 rounded-xs border border-white/20">
+                    <Kanban className="w-6 h-6 text-[#FDB813] mb-2" />
+                    <h4 className="font-bold text-xs uppercase">CRM Pedidos</h4>
+                  </div>
+                  <div className="p-4 bg-white/10 rounded-xs border border-white/20">
+                    <Tag className="w-6 h-6 text-[#FDB813] mb-2" />
+                    <h4 className="font-bold text-xs uppercase">Gestión Catálogo</h4>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* VISTA 8: CRM KANBAN */}
+            {canvasView === 'crm' && (
+              <div 
+                onClick={() => { if (isInspectorActive) setActiveSection('crm_board'); }}
+                className="p-5 bg-[#FAF8F5] space-y-4"
+              >
+                <div className="flex items-center justify-between border-b pb-3" style={{ borderColor: localTheme.cardBorderColor || '#DCD4C9' }}>
+                  <h3 className="font-black text-sm uppercase">CRM Gestión Comercial</h3>
+                  <span className="text-xs font-bold text-emerald-700 font-mono">12 Órdenes Activas</span>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  {['1. Cotización', '2. Seña 50%', '3. Listo'].map((col) => (
+                    <div key={col} className="bg-neutral-100 p-2 rounded-xs border border-neutral-300 space-y-2">
+                      <span className="text-[10px] font-bold uppercase text-neutral-600">{col}</span>
+                      <div 
+                        onClick={(e) => { e.stopPropagation(); setActiveSection('crm_card'); }}
+                        className="p-2.5 rounded-xs border text-xs shadow-2xs cursor-pointer"
+                        style={{
+                          backgroundColor: localTheme.crmCardBgColor || '#FFFFFF',
+                          borderColor: localTheme.crmCardBorderColor || '#DCD4C9',
+                          color: localTheme.crmCardTextColor || '#18231C',
+                        }}
+                      >
+                        <span className="font-bold block">Bodega Los Andes S.A.</span>
+                        <span className="text-[10px] text-[#6F6860]">$240.000 · 40 prendas</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 
