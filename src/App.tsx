@@ -42,6 +42,7 @@ import {
   saveFirestorePromotionsBatch,
   recordAuditLog,
   subscribeToAuthSession,
+  logoutFirebaseAuth,
   db,
   getFirebaseDb,
 } from './services/firebase';
@@ -309,7 +310,8 @@ export default function App() {
         setCart(loadCartFromStorage(session));
       } else {
         setUserSession((prev) => {
-          if (prev?.email?.toLowerCase().trim() === 'joaquinnievass20@gmail.com') return prev;
+          const isExplicit = typeof window !== 'undefined' && localStorage.getItem('pampero_explicit_logout') === 'true';
+          if (!isExplicit && prev?.email?.toLowerCase().trim() === 'joaquinnievass20@gmail.com') return prev;
           try {
             localStorage.removeItem('pampero_user_session');
           } catch {}
@@ -378,6 +380,10 @@ export default function App() {
   // 6. User Session - Restored synchronously from localStorage to prevent flash of guest state
   const [userSession, setUserSession] = useState<UserSession | null>(() => {
     try {
+      if (typeof window !== 'undefined' && localStorage.getItem('pampero_explicit_logout') === 'true') {
+        localStorage.removeItem('pampero_user_session');
+        return null;
+      }
       const saved = localStorage.getItem('pampero_user_session');
       return saved ? JSON.parse(saved) : null;
     } catch {
@@ -727,6 +733,9 @@ export default function App() {
   }, [userSession, viewMode, isAuthResolving]);
 
   const handleLogin = (session: UserSession) => {
+    try {
+      localStorage.removeItem('pampero_explicit_logout');
+    } catch {}
     setUserSession(session);
     localStorage.setItem('pampero_user_session', JSON.stringify(session));
 
@@ -751,18 +760,20 @@ export default function App() {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     // Aislamiento del Carrito: Vaciar y limpiar caché del carrito del usuario activo y temporal
     const currentKey = getCartStorageKey(userSession);
     try {
       localStorage.removeItem(currentKey);
       localStorage.removeItem('pampero_cart_guest');
       localStorage.removeItem('pampero_quote_cart');
+      localStorage.removeItem('pampero_user_session');
+      localStorage.setItem('pampero_explicit_logout', 'true');
     } catch {}
 
     setCart([]);
     setUserSession(null);
-    localStorage.removeItem('pampero_user_session');
+    await logoutFirebaseAuth();
     setViewMode('landing');
   };
 

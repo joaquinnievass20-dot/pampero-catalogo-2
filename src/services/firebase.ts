@@ -4172,13 +4172,53 @@ export async function fetchUserProfileByUidOrEmail(uid: string, email?: string |
 }
 
 /**
+ * Cierre definitivo de sesión en Firebase Authentication y almacenamiento local.
+ * Desvincula las credenciales persistentes de IndexedDB y remueve el estado de sesión.
+ */
+export async function logoutFirebaseAuth(): Promise<void> {
+  const fbAuth = auth || getFirebaseAuth();
+  try {
+    if (fbAuth) {
+      await signOut(fbAuth);
+      console.log('[AUTH] signOut exitoso en Firebase Authentication');
+    }
+  } catch (err) {
+    console.warn('[AUTH] Error en signOut de Firebase Auth:', err);
+  }
+
+  try {
+    localStorage.removeItem('pampero_user_session');
+    localStorage.removeItem('pampero_session');
+    localStorage.setItem('pampero_explicit_logout', 'true');
+    sessionStorage.clear();
+  } catch {}
+}
+
+/**
  * Listener global de persistencia de sesión:
  * Escucha el estado de Firebase Authentication y sincroniza el perfil desde Firestore.
- * Si el usuario recarga la página (F5), restaura inmediatamente la sesión sin cerrar ni expulsar al usuario.
+ * Si el usuario recarga la página (F5), restaura la sesión activa.
+ * Si el usuario cerró sesión explícitamente, garantiza el deslogueo total e impide revivir cuentas fantasmas.
  */
 export function subscribeToAuthSession(onSessionResolved: (session: UserSession | null) => void): () => void {
   const fbAuth = auth || getFirebaseAuth();
   return onAuthStateChanged(fbAuth, async (firebaseUser) => {
+    const isExplicitLogout = typeof window !== 'undefined' && localStorage.getItem('pampero_explicit_logout') === 'true';
+
+    // Si el usuario realizó un cierre de sesión explícito, forzar signOut de Firebase Auth y no revivir la cuenta
+    if (isExplicitLogout) {
+      if (firebaseUser && fbAuth) {
+        try {
+          await signOut(fbAuth);
+        } catch {}
+      }
+      try {
+        localStorage.removeItem('pampero_user_session');
+      } catch {}
+      onSessionResolved(null);
+      return;
+    }
+
     if (firebaseUser) {
       console.log(`[AUTH LISTENER] Firebase Auth detectó sesión activa: ${firebaseUser.email} (UID: ${firebaseUser.uid})`);
       const session = await fetchUserProfileByUidOrEmail(firebaseUser.uid, firebaseUser.email);
@@ -4191,13 +4231,13 @@ export function subscribeToAuthSession(onSessionResolved: (session: UserSession 
       }
     }
 
-    // Si Firebase Auth aún no tiene credenciales en memoria, verificar si existe sesión guardada válida
+    // Si Firebase Auth aún no tiene credenciales en memoria, verificar si existe sesión guardada válida del master admin
     try {
       const saved = localStorage.getItem('pampero_user_session');
       if (saved) {
         const parsed: UserSession = JSON.parse(saved);
-        if (parsed && (parsed.email?.toLowerCase().trim() === MASTER_ADMIN_EMAIL.toLowerCase() || parsed.id)) {
-          console.log(`[AUTH LISTENER] Restaurando sesión activa desde almacenamiento persistente: ${parsed.email}`);
+        if (parsed && parsed.email?.toLowerCase().trim() === MASTER_ADMIN_EMAIL.toLowerCase()) {
+          console.log(`[AUTH LISTENER] Restaurando sesión activa de master admin: ${parsed.email}`);
           onSessionResolved(parsed);
           return;
         }
@@ -4207,4 +4247,5 @@ export function subscribeToAuthSession(onSessionResolved: (session: UserSession 
     onSessionResolved(null);
   });
 }
+
 
