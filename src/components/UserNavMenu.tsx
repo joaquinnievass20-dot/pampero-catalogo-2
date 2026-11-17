@@ -132,7 +132,9 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
             className="w-4 h-4 shrink-0" 
             style={{ color: cartCount > 0 ? accent : (isDarkHeader ? '#F5F2EC' : '#18231C') }} 
           />
-          <span className="hidden sm:inline font-sans text-xs">Mi Pedido</span>
+          <span className="hidden sm:inline font-sans text-xs">
+            {theme?.siteTexts?.quoteButtonText || 'Mi Pedido'}
+          </span>
           <span 
             style={{
               backgroundColor: cartCount > 0 ? accent : (isDarkHeader ? 'rgba(255, 255, 255, 0.2)' : '#EAE6DF'),
@@ -487,12 +489,12 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
           type="button"
           onClick={onOpenAuth}
           style={{
-            backgroundColor: isDarkHeader ? accent : primaryBg,
-            color: isDarkHeader ? '#18231C' : '#F5F2EC'
+            backgroundColor: theme?.navbarButtonBg || (isDarkHeader ? accent : primaryBg),
+            color: theme?.navbarButtonTextColor || (isDarkHeader ? '#18231C' : '#F5F2EC')
           }}
           className="px-4 sm:px-5 py-2 rounded-xs text-[11px] uppercase tracking-[0.25em] font-bold transition-all shadow-2xs hover:brightness-110 cursor-pointer shrink-0"
         >
-          INGRESAR
+          {theme?.siteTexts?.loginButtonText || 'INGRESAR'}
         </button>
       )}
 

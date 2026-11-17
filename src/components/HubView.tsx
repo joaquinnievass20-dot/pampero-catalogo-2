@@ -129,10 +129,12 @@ export const HubView: React.FC<HubViewProps> = ({
             <span>Sesión Autorizada · {userSession.role === 'admin' ? 'Modo Administración' : 'Modo Operador'}</span>
           </div>
           <h1 className="text-2xl sm:text-4xl font-extrabold text-[#18231C] uppercase tracking-wide">
-            Hub de Trabajo Interno
+            {theme?.siteTexts?.hubTitle || 'Hub de Trabajo Interno'}
           </h1>
           <p className="text-sm sm:text-base text-[#6F6860] max-w-xl mx-auto mt-2">
-            Bienvenido/a, <strong className="text-[#18231C]">{operatorName}</strong>. Seleccioná el área a la que deseás ingresar:
+            {theme?.siteTexts?.hubSubtitle || (
+              <>Bienvenido/a, <strong className="text-[#18231C]">{operatorName}</strong>. Seleccioná el área a la que deseás ingresar:</>
+            )}
           </p>
         </div>
 

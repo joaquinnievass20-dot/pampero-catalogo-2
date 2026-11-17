@@ -100,12 +100,41 @@ export const Navbar: React.FC<NavbarProps> = ({
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // ACÁ CONSUMIMOS EL ACENTO EXCLUSIVO DEL NAVBAR O FALLBACK AL OFICIAL PAMPERO
-  const accent = theme.headerAccentColor || theme.accentColor || '#FDB813';
-  const hoverAccent = theme.hoverAccentColor || '#E0A310';
+  // ACÁ CONSUMIMOS LAS VARIABLES ESPECÍFICAS Y AISLADAS DEL NAVBAR
+  const navBg = theme.navbarBgColor || theme.headerBgColor || '#FFFFFF';
+  const isNavDark = isColorDark(navBg);
+  const navTextColor = theme.navbarTextColor || theme.headerTextColor || (isNavDark ? '#F5F2EC' : '#22201D');
+  const accent = theme.navbarSecondaryTextColor || theme.headerAccentColor || theme.accentColor || '#FDB813';
+  const hoverAccent = theme.navbarButtonHoverBg || theme.hoverAccentColor || '#E0A310';
+  const navBorder = theme.navbarBorderColor || theme.headerBorderColor || (isNavDark ? 'rgba(255, 255, 255, 0.15)' : '#E5E5E5');
   const iconColor = theme.iconColor || accent;
 
+  const hexToRgba = (hexColor: string, alpha: number, fallbackRgba: string): string => {
+    const clean = (hexColor || '').trim();
+    if (!clean.startsWith('#')) return fallbackRgba;
+    const raw = clean.slice(1);
+    const full = raw.length === 3 ? raw.split('').map((c) => c + c).join('') : raw;
+    if (full.length !== 6) return fallbackRgba;
+    const num = parseInt(full, 16);
+    if (isNaN(num)) return fallbackRgba;
+    return `rgba(${(num >> 16) & 255}, ${(num >> 8) & 255}, ${num & 255}, ${alpha})`;
+  };
+
+  const scrolledBg = hexToRgba(
+    navBg,
+    0.46,
+    isNavDark ? 'rgba(24, 35, 28, 0.46)' : 'rgba(255, 255, 255, 0.46)'
+  );
+
   const mainCategories: MainCategory[] = ['Hombre', 'Mujer', 'Infantil', 'Venta Corporativa'];
+
+  const getCategoryLabel = (cat: MainCategory) => {
+    if (cat === 'Hombre') return theme.siteTexts?.navHombreText || 'Hombre';
+    if (cat === 'Mujer') return theme.siteTexts?.navMujerText || 'Mujer';
+    if (cat === 'Infantil') return theme.siteTexts?.navInfantilText || 'Infantil';
+    if (cat === 'Venta Corporativa') return theme.siteTexts?.navCorporativaText || 'Venta Corporativa';
+    return cat;
+  };
 
   const getClientName = () => {
     if (!userSession) return '';
@@ -128,29 +157,26 @@ export const Navbar: React.FC<NavbarProps> = ({
     }, 200);
   };
 
-  const navBg = theme.headerBgColor || '#FFFFFF';
-  const isNavDark = isColorDark(navBg);
-  const navTextColor = theme.headerTextColor || (isNavDark ? '#F5F2EC' : '#22201D');
   const isCompressActive = isScrolled;
 
   return (
     <header 
       className={`sticky top-0 z-50 border-b transition-all duration-300 ${
-        isScrolled ? 'shadow-md backdrop-blur-md' : 'shadow-xs'
+        isScrolled ? 'shadow-xs backdrop-blur-lg' : 'shadow-xs'
       }`}
       style={{
-        backgroundColor: isScrolled
-          ? (isNavDark ? 'rgba(24, 35, 28, 0.95)' : 'rgba(255, 255, 255, 0.96)')
-          : navBg,
-        borderColor: isNavDark ? 'rgba(255, 255, 255, 0.15)' : '#E5E5E5',
-        backdropFilter: isScrolled ? 'blur(12px)' : undefined,
-        WebkitBackdropFilter: isScrolled ? 'blur(12px)' : undefined,
+        backgroundColor: isScrolled ? scrolledBg : navBg,
+        borderColor: isScrolled
+          ? (isNavDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.08)')
+          : navBorder,
+        backdropFilter: isScrolled ? 'blur(14px) saturate(140%)' : undefined,
+        WebkitBackdropFilter: isScrolled ? 'blur(14px) saturate(140%)' : undefined,
       }}
     >
       {/* Barra Principal: Logo Dinámico (Izquierda al inicio, Centrado al scrollear) + Categorías + UserNavMenu */}
       <div 
-        className={`relative flex items-center justify-between max-w-7xl mx-auto w-full px-3 sm:px-6 lg:px-8 transition-all duration-300 min-h-[58px] sm:min-h-[66px] ${
-          isScrolled ? 'py-1 sm:py-2' : 'py-2.5 sm:py-3.5'
+        className={`relative flex items-center justify-between max-w-7xl mx-auto w-full px-3 sm:px-6 lg:px-8 transition-all duration-300 ${
+          isScrolled ? 'min-h-[44px] sm:min-h-[48px] py-1' : 'min-h-[58px] sm:min-h-[66px] py-2.5 sm:py-3.5'
         }`}
       >
         {/* LADO IZQUIERDO: Logo (cuando estamos arriba) + Categorías (se ocultan al scrollear) */}
@@ -223,7 +249,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     }}
                     className="py-2 px-2 xl:px-3 font-bold text-xs uppercase tracking-wider flex items-center gap-1 transition-all cursor-pointer font-display border-b-2 hover:text-amber-500 hover:border-amber-500 whitespace-nowrap"
                   >
-                    <span>{cat}</span>
+                    <span>{getCategoryLabel(cat)}</span>
                     {categoryDef?.sections && categoryDef.sections.length > 0 && (
                       <ChevronDown 
                         className={`w-3 h-3 transition-transform duration-200 ${isDropdownOpen ? 'rotate-180' : 'opacity-60'}`} 
@@ -329,7 +355,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         {/* LOGO CENTRADO AL SCROLLEAR (isScrolled) */}
         {isScrolled && (
           <div 
-            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 flex items-center justify-center cursor-pointer select-none max-h-12 overflow-hidden px-2 hover:opacity-95 transition-all duration-300" 
+            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 flex items-center justify-center cursor-pointer select-none max-h-10 overflow-hidden px-2 hover:opacity-95 transition-all duration-300" 
             onClick={() => {
               window.scrollTo({ top: 0, behavior: 'smooth' });
             }}
@@ -337,7 +363,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             <PamperoLogo 
               customUrl={theme.customLogoUrl || theme.logoUrl} 
-              height={Math.min(theme.logoHeight || 36, 36)} 
+              height={Math.min(theme.logoHeight || 30, 30)} 
               navBgColor={navBg} 
             />
           </div>

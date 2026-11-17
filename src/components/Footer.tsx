@@ -36,8 +36,11 @@ export const Footer: React.FC<FooterProps> = ({
 
   const footerBg = theme.footerBgColor || theme.primaryColor || '#18231C';
   const footerText = theme.footerTextColor || '#F5F2EC';
+  const footerSecondaryText = theme.footerSecondaryTextColor || '#A3998F';
   const footerBorder = theme.footerBorderColor || 'rgba(255, 255, 255, 0.1)';
   const footerAccent = theme.footerAccentColor || accent;
+  const footerBtnBg = theme.footerButtonBg || footerAccent;
+  const footerBtnTextColor = theme.footerButtonTextColor || '#FFFFFF';
 
   return (
     <footer 
@@ -74,8 +77,8 @@ export const Footer: React.FC<FooterProps> = ({
                 href={`https://wa.me/${(theme.whatsappNumber || '5492615276713').replace(/\D/g, '')}?text=Hola%20Pampero%20Gran%20Mendoza,%20quisiera%20consultar%20su%20cat%C3%A1logo.`}
                 target="_blank"
                 rel="noreferrer"
-                style={{ backgroundColor: accent }}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xs text-white text-[11px] font-bold uppercase tracking-wider transition-all hover:brightness-110 shadow-xs"
+                style={{ backgroundColor: footerBtnBg, color: footerBtnTextColor }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xs text-[11px] font-bold uppercase tracking-wider transition-all hover:brightness-110 shadow-xs"
               >
                 <MessageCircle className="w-3.5 h-3.5" />
                 WhatsApp {theme.siteTexts?.footerPhone || theme.whatsappNumber || '261 527-6713'}

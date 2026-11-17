@@ -18,6 +18,7 @@ import {
   Image as ImageIcon
 } from 'lucide-react';
 import { Product } from '../../types';
+import { getColorHex } from '../../utils/colorUtils';
 import { saveFirestoreStoreConfig, fetchFirestoreStoreConfig, uploadImageToStorage, saveFirestoreSimulatorConfig } from '../../services/firebase';
 
 export interface CustomSimulatorGarment {
@@ -25,6 +26,7 @@ export interface CustomSimulatorGarment {
   name: string;
   category: string;
   baseImage: string;
+  backImage?: string;
   availableColors: { name: string; hex: string }[];
 }
 
@@ -91,6 +93,8 @@ export const AdminUniformSimulatorConfigTab: React.FC<AdminUniformSimulatorConfi
   const [customColors, setCustomColors] = useState('Azul Marino, Negro, Blanco, Verde Oliva');
   const [customImageFile, setCustomImageFile] = useState<File | null>(null);
   const [customImagePreview, setCustomImagePreview] = useState<string | null>(null);
+  const [customBackImageFile, setCustomBackImageFile] = useState<File | null>(null);
+  const [customBackImagePreview, setCustomBackImagePreview] = useState<string | null>(null);
   const [isUploadingCustom, setIsUploadingCustom] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
@@ -170,6 +174,18 @@ export const AdminUniformSimulatorConfigTab: React.FC<AdminUniformSimulatorConfi
     }
   };
 
+  const handleBackImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setCustomBackImageFile(file);
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        setCustomBackImagePreview(ev.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const handleCreateCustomGarment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!customName.trim()) {
@@ -177,7 +193,7 @@ export const AdminUniformSimulatorConfigTab: React.FC<AdminUniformSimulatorConfi
       return;
     }
     if (!customImageFile && !customImagePreview) {
-      setUploadError('Seleccioná una imagen o mockup de la prenda.');
+      setUploadError('Seleccioná una imagen o mockup frontal de la prenda.');
       return;
     }
 
@@ -190,28 +206,26 @@ export const AdminUniformSimulatorConfigTab: React.FC<AdminUniformSimulatorConfi
         finalImageUrl = await uploadImageToStorage(customImageFile, 'simulator-mockups');
       }
 
+      let finalBackUrl: string | undefined = customBackImagePreview || undefined;
+      if (customBackImageFile) {
+        finalBackUrl = await uploadImageToStorage(customBackImageFile, 'simulator-mockups');
+      }
+
       const parsedColors = customColors
         .split(',')
         .map((c) => c.trim())
         .filter(Boolean)
-        .map((name) => {
-          let hex = '#1C1C1C';
-          const n = name.toLowerCase();
-          if (n.includes('azul')) hex = '#1B263B';
-          else if (n.includes('blanco')) hex = '#F8F9FA';
-          else if (n.includes('verde')) hex = '#3E4A35';
-          else if (n.includes('rojo')) hex = '#8B0000';
-          else if (n.includes('gris')) hex = '#585E64';
-          else if (n.includes('beige') || n.includes('arena')) hex = '#D7C4A5';
-          else if (n.includes('naranja')) hex = '#FF6700';
-          return { name, hex };
-        });
+        .map((name) => ({
+          name,
+          hex: getColorHex(name),
+        }));
 
       const newGarment: CustomSimulatorGarment = {
         id: `garment-${Date.now()}`,
         name: customName.trim(),
         category: customCategory.trim() || 'Indumentaria',
         baseImage: finalImageUrl,
+        ...(finalBackUrl ? { backImage: finalBackUrl } : {}),
         availableColors: parsedColors.length > 0 ? parsedColors : [{ name: 'Estándar', hex: '#1C1C1C' }],
       };
 
@@ -220,6 +234,8 @@ export const AdminUniformSimulatorConfigTab: React.FC<AdminUniformSimulatorConfi
       setCustomName('');
       setCustomImageFile(null);
       setCustomImagePreview(null);
+      setCustomBackImageFile(null);
+      setCustomBackImagePreview(null);
       setShowAddCustom(false);
     } catch (err: any) {
       console.error('[SIMULATOR] Error subiendo prenda personalizada:', err);
@@ -472,19 +488,38 @@ export const AdminUniformSimulatorConfigTab: React.FC<AdminUniformSimulatorConfi
                   />
                 </div>
 
-                <div className="sm:col-span-2">
-                  <label className="block font-bold text-neutral-700 mb-1">Foto / Mockup de la Prenda *</label>
+                <div>
+                  <label className="block font-bold text-neutral-700 mb-1">Foto / Mockup Frente *</label>
                   <div className="flex items-center gap-4">
                     <label className="border-2 border-dashed border-[#DCD4C9] hover:border-[#B9522F] bg-white p-3 rounded-xs flex items-center justify-center gap-2 cursor-pointer transition-colors text-xs font-bold text-neutral-700">
                       <Upload className="w-4 h-4 text-neutral-500" />
-                      <span>{customImageFile ? customImageFile.name : 'Seleccionar Archivo (PNG / JPG)'}</span>
+                      <span>{customImageFile ? customImageFile.name : 'Seleccionar Frente (PNG / JPG)'}</span>
                       <input type="file" accept="image/*" onChange={handleImageFileChange} className="hidden" />
                     </label>
 
                     {customImagePreview && (
                       <img
                         src={customImagePreview}
-                        alt="Preview"
+                        alt="Preview Frente"
+                        className="w-12 h-12 object-contain border border-[#DCD4C9] rounded-xs bg-white"
+                      />
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-neutral-700 mb-1">Foto / Mockup Espalda (Opcional)</label>
+                  <div className="flex items-center gap-4">
+                    <label className="border-2 border-dashed border-[#DCD4C9] hover:border-[#B9522F] bg-white p-3 rounded-xs flex items-center justify-center gap-2 cursor-pointer transition-colors text-xs font-bold text-neutral-700">
+                      <Upload className="w-4 h-4 text-neutral-500" />
+                      <span>{customBackImageFile ? customBackImageFile.name : 'Seleccionar Espalda (PNG / JPG)'}</span>
+                      <input type="file" accept="image/*" onChange={handleBackImageFileChange} className="hidden" />
+                    </label>
+
+                    {customBackImagePreview && (
+                      <img
+                        src={customBackImagePreview}
+                        alt="Preview Espalda"
                         className="w-12 h-12 object-contain border border-[#DCD4C9] rounded-xs bg-white"
                       />
                     )}
@@ -520,7 +555,10 @@ export const AdminUniformSimulatorConfigTab: React.FC<AdminUniformSimulatorConfi
                     />
                     <div className="min-w-0">
                       <p className="text-xs font-bold text-neutral-800 truncate">{cg.name}</p>
-                      <p className="text-[10px] text-neutral-500">{cg.category} · {cg.availableColors?.length || 0} colores</p>
+                      <p className="text-[10px] text-neutral-500">
+                        {cg.category} · {cg.availableColors?.length || 0} colores
+                        {cg.backImage ? ' · +Espalda' : ''}
+                      </p>
                     </div>
                   </div>
                   <button

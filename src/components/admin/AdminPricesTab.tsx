@@ -22,7 +22,12 @@ import {
   Layers,
   Power
 } from 'lucide-react';
-import { recordAuditLog } from '../../services/firebase';
+import { recordAuditLog, saveFirestoreProducts } from '../../services/firebase';
+import {
+  inferDefaultRangeForSuffix,
+  normalizeSpecialSuffix,
+  resolveSpecialRangeSizes,
+} from '../../utils/sizeUtils';
 
 interface AdminPricesTabProps {
   products: Product[];
@@ -74,7 +79,15 @@ export const AdminPricesTab: React.FC<AdminPricesTabProps> = ({
   const [activeSubTab, setActiveSubTab] = useState<'instructions' | 'paste_sheet' | 'manual_table' | 'volume_discounts'>(initialSubTab || 'instructions');
   const [searchQuery, setSearchQuery] = useState('');
   const [pasteData, setPasteData] = useState('');
-  const [matchedPreview, setMatchedPreview] = useState<Array<{ product: Product; oldPrice: number; newPrice: number; oldCorp: number; newCorp: number }>>([]);
+  const [matchedPreview, setMatchedPreview] = useState<Array<{
+    product: Product;
+    oldPrice: number;
+    newPrice: number;
+    oldCorp: number;
+    newCorp: number;
+    specialSuffix?: string;
+    rangeLabel?: string;
+  }>>([]);
   
   // Volume Discount Rule Form State
   const [isCreatingRule, setIsCreatingRule] = useState(false);
@@ -140,6 +153,33 @@ export const AdminPricesTab: React.FC<AdminPricesTabProps> = ({
     return init;
   });
 
+  // Local edit state for specialSizeRanges in manual table: key = `${productId}__${suffix}`
+  const [editableSpecialPrices, setEditableSpecialPrices] = useState<Record<string, { price: number; corporatePrice: number }>>(() => {
+    const init: Record<string, { price: number; corporatePrice: number }> = {};
+    products.forEach((p) => {
+      (p.specialSizeRanges || []).forEach((r) => {
+        const suf = normalizeSpecialSuffix(r.suffix);
+        init[`${p.id}__${suf}`] = {
+          price: r.price,
+          corporatePrice: r.corporatePrice || Math.round(r.price * 0.85),
+        };
+      });
+    });
+    return init;
+  });
+
+  const handleManualSpecialPriceChange = (productId: string, suffix: string, field: 'price' | 'corporatePrice', value: number) => {
+    const suf = normalizeSpecialSuffix(suffix);
+    const key = `${productId}__${suf}`;
+    setEditableSpecialPrices((prev) => ({
+      ...prev,
+      [key]: {
+        ...(prev[key] || { price: 0, corporatePrice: 0 }),
+        [field]: value,
+      },
+    }));
+  };
+
   const handleManualPriceChange = (productId: string, field: 'price' | 'corporatePrice' | 'discount', value: number) => {
     setEditablePrices((prev) => ({
       ...prev,
@@ -154,6 +194,21 @@ export const AdminPricesTab: React.FC<AdminPricesTabProps> = ({
     let count = 0;
     const updated = products.map((p) => {
       const edit = editablePrices[p.id];
+      const nextSpecialRanges = Array.isArray(p.specialSizeRanges)
+        ? p.specialSizeRanges.map((r) => {
+            const suf = normalizeSpecialSuffix(r.suffix);
+            const spEdit = editableSpecialPrices[`${p.id}__${suf}`];
+            if (!spEdit) return r;
+            return {
+              ...r,
+              suffix: suf,
+              sizes: resolveSpecialRangeSizes(r),
+              price: spEdit.price,
+              corporatePrice: spEdit.corporatePrice,
+            };
+          })
+        : p.specialSizeRanges;
+
       if (edit) {
         count++;
         return {
@@ -161,22 +216,24 @@ export const AdminPricesTab: React.FC<AdminPricesTabProps> = ({
           price: edit.price,
           corporatePrice: edit.corporatePrice,
           discountPercentage: edit.discount,
+          specialSizeRanges: nextSpecialRanges,
         };
       }
       return p;
     });
 
     onUpdateProducts(updated);
+    saveFirestoreProducts(updated).catch(() => {});
     recordAuditLog({
       module: 'Precios',
       action: 'Actualizar Precios',
-      details: `Se actualizaron manualmente los precios de lista y descuentos de ${count} artículos del catálogo.`,
+      details: `Se actualizaron manualmente los precios de lista y talles especiales de ${count} artículos del catálogo.`,
     }).catch(() => {});
     alert(`¡Éxito! Se actualizaron los precios de ${count} artículos del catálogo.`);
     triggerSaveNotice();
   };
 
-  // Process text pasted from spreadsheet (Columns: ARTICULO, LISTA, EMP, etc.)
+  // Process text pasted from spreadsheet (Columns: ARTICULO, LISTA, EMP, etc.) — con sincronización automática de sufijos -1 / -2
   const handlePreviewPastedSheet = (customData?: string) => {
     const textToProcess = customData !== undefined ? customData : pasteData;
     const lines = textToProcess.split('\n').map((l) => l.trim()).filter(Boolean);
@@ -185,12 +242,21 @@ export const AdminPricesTab: React.FC<AdminPricesTabProps> = ({
       return;
     }
 
-    const matches: Array<{ product: Product; oldPrice: number; newPrice: number; oldCorp: number; newCorp: number }> = [];
+    const matches: Array<{
+      product: Product;
+      oldPrice: number;
+      newPrice: number;
+      oldCorp: number;
+      newCorp: number;
+      specialSuffix?: string;
+      rangeLabel?: string;
+    }> = [];
 
     lines.forEach((line) => {
       const parts = line.split(/[\t,;]+/).map((p) => p.trim());
       if (parts.length >= 2) {
-        const itemText = parts[0].toLowerCase();
+        const rawCodeCol = parts[0].trim();
+        const itemText = rawCodeCol.toLowerCase();
         if (itemText.includes('articulo') || itemText.includes('codigo') || itemText.includes('costo') || itemText === 'k') return;
 
         const rawLista = parts[1];
@@ -198,15 +264,50 @@ export const AdminPricesTab: React.FC<AdminPricesTabProps> = ({
 
         const newPrice = parseArgentinePrice(rawLista);
         const newCorp = rawCorp ? parseArgentinePrice(rawCorp) : Math.round(newPrice * 0.85);
+        if (newPrice <= 0) return;
 
-        // Match product in catalog
-        const found = products.find((p) => {
-          const pName = p.name.toLowerCase();
-          const pCode = p.code.toLowerCase();
-          return pName.includes(itemText) || itemText.includes(pName) || pCode.includes(itemText) || itemText.includes(pCode);
-        });
+        // 1. Intentar coincidencia exacta primero (por si existe un producto standalone con ese código exacto)
+        let exactProduct = products.find((p) => p.code.trim().toLowerCase() === itemText);
 
-        if (found && newPrice > 0) {
+        // 2. Detectar sufijo de talle especial (-1, -2, -3, _1, _2...)
+        const suffixMatch = rawCodeCol.match(/^(.*?)[-_](\d+)$/);
+        if (!exactProduct && suffixMatch) {
+          const baseCandidate = suffixMatch[1].trim().toLowerCase();
+          const normSuffix = normalizeSpecialSuffix(`-${suffixMatch[2]}`);
+          const parentProduct = products.find(
+            (p) =>
+              p.code.trim().toLowerCase() === baseCandidate ||
+              p.name.trim().toLowerCase() === baseCandidate
+          );
+
+          if (parentProduct) {
+            const existingRange = parentProduct.specialSizeRanges?.find(
+              (r) => normalizeSpecialSuffix(r.suffix) === normSuffix
+            );
+            const defaults = inferDefaultRangeForSuffix(normSuffix);
+            matches.push({
+              product: parentProduct,
+              oldPrice: existingRange?.price ?? parentProduct.price,
+              newPrice,
+              oldCorp: existingRange?.corporatePrice ?? (parentProduct.corporatePrice || 0),
+              newCorp,
+              specialSuffix: normSuffix,
+              rangeLabel: existingRange?.rangeLabel || existingRange?.sizeRangeLabel || defaults.rangeLabel,
+            });
+            return;
+          }
+        }
+
+        // 3. Coincidencia normal por código o nombre (evitando que un código con -1/-2 pise al padre)
+        const found =
+          exactProduct ||
+          products.find((p) => {
+            const pName = p.name.toLowerCase();
+            const pCode = p.code.toLowerCase();
+            return pName === itemText || pName.includes(itemText) || itemText.includes(pName) || pCode === itemText;
+          });
+
+        if (found) {
           matches.push({
             product: found,
             oldPrice: found.price,
@@ -220,35 +321,82 @@ export const AdminPricesTab: React.FC<AdminPricesTabProps> = ({
 
     setMatchedPreview(matches);
     if (matches.length === 0) {
-      alert('No se encontraron coincidencias. Verificá que la primera columna tenga el Código (ej: BOM-01) o el Nombre del producto.');
+      alert('No se encontraron coincidencias. Verificá que la primera columna tenga el Código (ej: BOM-01, BOM-01-1, BOM-01-2) o el Nombre del producto.');
     }
   };
 
   const handleApplyMatchedPrices = () => {
     if (matchedPreview.length === 0) return;
 
-    const matchMap = new Map<string, { product: Product; oldPrice: number; newPrice: number; oldCorp: number; newCorp: number }>(
-      matchedPreview.map((m) => [m.product.id, m])
-    );
+    // Agrupar actualizaciones por ID de producto (puede venir fila base + fila -1 + fila -2 para el mismo producto)
+    const updatesByProductId = new Map<string, typeof matchedPreview>();
+    matchedPreview.forEach((m) => {
+      const list = updatesByProductId.get(m.product.id) || [];
+      list.push(m);
+      updatesByProductId.set(m.product.id, list);
+    });
+
     const updated = products.map((p) => {
-      const match = matchMap.get(p.id);
-      if (match) {
-        return {
-          ...p,
-          price: match.newPrice,
-          corporatePrice: match.newCorp,
-        };
-      }
-      return p;
+      const prodMatches = updatesByProductId.get(p.id);
+      if (!prodMatches || prodMatches.length === 0) return p;
+
+      let nextPrice = p.price;
+      let nextCorp = p.corporatePrice;
+      let nextSpecialRanges = Array.isArray(p.specialSizeRanges)
+        ? p.specialSizeRanges.map((r) => ({ ...r, suffix: normalizeSpecialSuffix(r.suffix), sizes: resolveSpecialRangeSizes(r) }))
+        : [];
+
+      prodMatches.forEach((m) => {
+        if (m.specialSuffix) {
+          const normSuf = normalizeSpecialSuffix(m.specialSuffix);
+          const defaults = inferDefaultRangeForSuffix(normSuf);
+          const idx = nextSpecialRanges.findIndex((r) => normalizeSpecialSuffix(r.suffix) === normSuf);
+          if (idx >= 0) {
+            nextSpecialRanges[idx] = {
+              ...nextSpecialRanges[idx],
+              suffix: normSuf,
+              sizes: resolveSpecialRangeSizes(nextSpecialRanges[idx]).length > 0
+                ? resolveSpecialRangeSizes(nextSpecialRanges[idx])
+                : defaults.sizes,
+              price: m.newPrice,
+              corporatePrice: m.newCorp,
+            };
+          } else {
+            nextSpecialRanges.push({
+              id: `range-${Date.now()}-${normSuf.replace(/\D/g, '')}`,
+              suffix: normSuf,
+              rangeLabel: m.rangeLabel || defaults.rangeLabel,
+              sizeRangeLabel: m.rangeLabel || defaults.rangeLabel,
+              label: m.rangeLabel || defaults.rangeLabel,
+              fromSize: defaults.fromSize,
+              toSize: defaults.toSize,
+              sizes: defaults.sizes,
+              price: m.newPrice,
+              corporatePrice: m.newCorp,
+            });
+          }
+        } else {
+          nextPrice = m.newPrice;
+          nextCorp = m.newCorp;
+        }
+      });
+
+      return {
+        ...p,
+        price: nextPrice,
+        corporatePrice: nextCorp,
+        specialSizeRanges: nextSpecialRanges,
+      };
     });
 
     onUpdateProducts(updated);
+    saveFirestoreProducts(updated).catch(() => {});
     recordAuditLog({
       module: 'Precios',
       action: 'Importar Precios Planilla',
-      details: `Se actualizaron precios de lista desde planilla pegada para ${matchedPreview.length} artículos del catálogo.`,
+      details: `Se actualizaron precios desde planilla pegada (${matchedPreview.length} filas sincronizadas, incluyendo variantes -1/-2).`,
     }).catch(() => {});
-    alert(`¡Éxito! Se actualizaron los precios de ${matchedPreview.length} artículos del catálogo.`);
+    alert(`¡Éxito! Se sincronizaron ${matchedPreview.length} precios (incluyendo talles especiales -1 / -2).`);
     triggerSaveNotice();
     setMatchedPreview([]);
     setPasteData('');
@@ -553,8 +701,18 @@ export const AdminPricesTab: React.FC<AdminPricesTabProps> = ({
                   <tbody className="divide-y divide-[#DCD4C9]">
                     {matchedPreview.map((m, idx) => (
                       <tr key={idx} className="hover:bg-[#FAF8F5]">
-                        <td className="p-2.5 font-mono font-bold text-[#B9522F]">{m.product.code}</td>
-                        <td className="p-2.5 font-bold text-[#18231C]">{m.product.name}</td>
+                        <td className="p-2.5 font-mono font-bold text-[#B9522F]">
+                          {m.product.code}
+                          {m.specialSuffix ? m.specialSuffix : ''}
+                        </td>
+                        <td className="p-2.5 font-bold text-[#18231C]">
+                          <div>{m.product.name}</div>
+                          {m.specialSuffix && (
+                            <span className="inline-block mt-0.5 text-[10px] font-mono bg-amber-100 text-amber-900 border border-amber-300 px-1.5 py-0.5 rounded-xs">
+                              Talle Especial ({m.specialSuffix}) · {m.rangeLabel}
+                            </span>
+                          )}
+                        </td>
                         <td className="p-2.5 font-mono text-[#6F6860] line-through">
                           ${m.oldPrice.toLocaleString('es-AR')}
                         </td>
@@ -619,34 +777,75 @@ export const AdminPricesTab: React.FC<AdminPricesTabProps> = ({
                   .map((p) => {
                     const current = editablePrices[p.id] || { price: p.price, corporatePrice: p.corporatePrice || 0, discount: p.discountPercentage || 0 };
                     return (
-                      <tr key={p.id} className="hover:bg-[#FAF8F5]">
-                        <td className="p-2.5 font-mono font-bold text-[#B9522F]">{p.code}</td>
-                        <td className="p-2.5 font-semibold text-[#18231C]">{p.name}</td>
-                        <td className="p-2.5">
-                          <input
-                            type="number"
-                            value={current.price}
-                            onChange={(e) => handleManualPriceChange(p.id, 'price', Number(e.target.value))}
-                            className="w-28 px-2 py-1 bg-white border border-[#DCD4C9] rounded-xs font-mono font-bold text-xs text-[#18231C]"
-                          />
-                        </td>
-                        <td className="p-2.5">
-                          <input
-                            type="number"
-                            value={current.corporatePrice}
-                            onChange={(e) => handleManualPriceChange(p.id, 'corporatePrice', Number(e.target.value))}
-                            className="w-28 px-2 py-1 bg-white border border-[#DCD4C9] rounded-xs font-mono font-bold text-xs text-blue-700"
-                          />
-                        </td>
-                        <td className="p-2.5">
-                          <input
-                            type="number"
-                            value={current.discount}
-                            onChange={(e) => handleManualPriceChange(p.id, 'discount', Number(e.target.value))}
-                            className="w-20 px-2 py-1 bg-white border border-[#DCD4C9] rounded-xs font-mono font-bold text-xs text-emerald-700"
-                          />
-                        </td>
-                      </tr>
+                      <React.Fragment key={p.id}>
+                        <tr className="hover:bg-[#FAF8F5]">
+                          <td className="p-2.5 font-mono font-bold text-[#B9522F]">{p.code}</td>
+                          <td className="p-2.5 font-semibold text-[#18231C]">{p.name}</td>
+                          <td className="p-2.5">
+                            <input
+                              type="number"
+                              value={current.price}
+                              onChange={(e) => handleManualPriceChange(p.id, 'price', Number(e.target.value))}
+                              className="w-28 px-2 py-1 bg-white border border-[#DCD4C9] rounded-xs font-mono font-bold text-xs text-[#18231C]"
+                            />
+                          </td>
+                          <td className="p-2.5">
+                            <input
+                              type="number"
+                              value={current.corporatePrice}
+                              onChange={(e) => handleManualPriceChange(p.id, 'corporatePrice', Number(e.target.value))}
+                              className="w-28 px-2 py-1 bg-white border border-[#DCD4C9] rounded-xs font-mono font-bold text-xs text-blue-700"
+                            />
+                          </td>
+                          <td className="p-2.5">
+                            <input
+                              type="number"
+                              value={current.discount}
+                              onChange={(e) => handleManualPriceChange(p.id, 'discount', Number(e.target.value))}
+                              className="w-20 px-2 py-1 bg-white border border-[#DCD4C9] rounded-xs font-mono font-bold text-xs text-emerald-700"
+                            />
+                          </td>
+                        </tr>
+                        {(p.specialSizeRanges || []).map((range) => {
+                          const suf = normalizeSpecialSuffix(range.suffix);
+                          const spVal = editableSpecialPrices[`${p.id}__${suf}`] || {
+                            price: range.price,
+                            corporatePrice: range.corporatePrice || Math.round(range.price * 0.85),
+                          };
+                          return (
+                            <tr key={`${p.id}-${suf}`} className="bg-amber-50/40">
+                              <td className="p-2 pl-5 font-mono font-bold text-amber-800">
+                                ↳ {p.code}{suf}
+                              </td>
+                              <td className="p-2 text-[11px] text-amber-900 font-semibold">
+                                {range.rangeLabel || range.sizeRangeLabel || `Talle Especial ${suf}`}{' '}
+                                <span className="font-mono text-[10px] text-amber-700">
+                                  ({resolveSpecialRangeSizes(range).join(', ')})
+                                </span>
+                              </td>
+                              <td className="p-2">
+                                <input
+                                  type="number"
+                                  value={spVal.price}
+                                  onChange={(e) => handleManualSpecialPriceChange(p.id, suf, 'price', Number(e.target.value))}
+                                  className="w-28 px-2 py-1 bg-white border border-amber-300 rounded-xs font-mono font-bold text-xs text-[#18231C]"
+                                />
+                              </td>
+                              <td className="p-2">
+                                <input
+                                  type="number"
+                                  value={spVal.corporatePrice}
+                                  onChange={(e) => handleManualSpecialPriceChange(p.id, suf, 'corporatePrice', Number(e.target.value))}
+                                  className="w-28 px-2 py-1 bg-white border border-amber-300 rounded-xs font-mono font-bold text-xs text-blue-700"
+                                />
+                              </td>
+                              <td className="p-2 text-[10px] text-amber-700 font-mono">
+                                Mismo % desc.
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </React.Fragment>
                     );
                   })}
               </tbody>

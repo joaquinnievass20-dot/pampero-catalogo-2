@@ -4,6 +4,13 @@ import { Product, MainCategory } from '../../types';
 import { CATEGORY_HIERARCHY } from '../../data/categories';
 import { writeBatch, doc } from 'firebase/firestore';
 import { db, getFirebaseDb, recordAuditLog } from '../../services/firebase';
+import { getSavedColorCodes, normalizeColorToken, resolveColorDef } from '../../utils/colorUtils';
+import {
+  inferDefaultRangeForSuffix,
+  normalizeSpecialSuffix,
+  parseSpecialSizesString,
+  resolveSpecialRangeSizes,
+} from '../../utils/sizeUtils';
 import { 
   FileSpreadsheet, 
   Upload, 
@@ -57,7 +64,7 @@ export const AdminBulkExcelImportModal: React.FC<AdminBulkExcelImportModalProps>
       'Unisex (SI/NO)': 'SI o NO',
       'Venta Corporativa Exclusiva (SI/NO)': 'SI o NO',
       'Talles Especiales (de-hasta:precio:sufijo)': 'Ej: 50-58:56000:-1',
-      'Colores': 'Separados por comas',
+      'Colores': 'Códigos separados por comas (Ej: C1, C3, C4, C8)',
       'Talles': 'Separados por comas',
       'Imagen URL': 'URL pública',
       'Descripción': 'Texto descriptivo',
@@ -73,7 +80,7 @@ export const AdminBulkExcelImportModal: React.FC<AdminBulkExcelImportModalProps>
       'Unisex (SI/NO)': 'NO',
       'Venta Corporativa Exclusiva (SI/NO)': 'SI',
       'Talles Especiales (de-hasta:precio:sufijo)': '50-58:56000:-1',
-      'Colores': 'Azul Francia, Beige, Verde Oliva',
+      'Colores': 'C4, C1, C2',
       'Talles': 'S, M, L, XL, XXL',
       'Imagen URL': 'https://images.unsplash.com/photo-1544923246-77307dd654cb?auto=format&fit=crop&w=800&q=80',
       'Descripción': 'Confección en gabardina 100% algodón pesada con doble costura reforzada.',
@@ -90,7 +97,7 @@ export const AdminBulkExcelImportModal: React.FC<AdminBulkExcelImportModalProps>
       'Unisex (SI/NO)': 'SI',
       'Venta Corporativa Exclusiva (SI/NO)': 'NO',
       'Talles Especiales (de-hasta:precio:sufijo)': '52-60:64000:-1;62-68:72000:-2',
-      'Colores': 'Negro, Arena, Verde Oliva',
+      'Colores': 'C3, C1, C2',
       'Talles': '38, 40, 42, 44, 46, 48',
       'Imagen URL': 'https://images.unsplash.com/photo-1473966968600-fa801b869a1a?auto=format&fit=crop&w=800&q=80',
       'Descripción': 'Tejido antidesgarro con seis bolsillos funcionales y refuerzo en rodillas.',
@@ -106,7 +113,7 @@ export const AdminBulkExcelImportModal: React.FC<AdminBulkExcelImportModalProps>
 
   const handleCopyTemplateHeader = () => {
     const header = 'Código\tNombre\tCategoría\tSección\tSubcategoría\tPrecio\tPrecio Mayorista\tDescuento %\tUnisex (SI/NO)\tCorporativo Exclusivo (SI/NO)\tTalles Especiales\tColores\tTalles\tImagen URL\tDescripción';
-    const sample = 'PAM-901\tCamisa Pampero Oficial\tHombre\tUrbano\tCamisas y remeras\t45000\t39000\t0\tSI\tNO\t50-58:52000:-1\tNegro, Azul\tS, M, L\thttps://images.unsplash.com/photo-1544923246-77307dd654cb\tPrenda original';
+    const sample = 'PAM-901\tCamisa Pampero Oficial\tHombre\tUrbano\tCamisas y remeras\t45000\t39000\t0\tSI\tNO\t50-58:52000:-1\tC8, C3, C1\tS, M, L\thttps://images.unsplash.com/photo-1544923246-77307dd654cb\tPrenda original';
     navigator.clipboard.writeText(`${header}\n${sample}`);
     setCopiedTemplate(true);
     setTimeout(() => setCopiedTemplate(false), 2500);
@@ -245,9 +252,12 @@ export const AdminBulkExcelImportModal: React.FC<AdminBulkExcelImportModalProps>
         }
       })();
 
-      const rawColors = getVal(['colores', 'color', 'variantes']);
-      const availableColors = rawColors 
-        ? String(rawColors).split(/[,;/]/).map((c) => c.trim()).filter(Boolean)
+      const rawColors = getVal(['codigocolor', 'codigoscolor', 'colores', 'color', 'variantes']);
+      const availableColors = rawColors
+        ? String(rawColors)
+            .split(/[,;/]+/)
+            .map((c) => normalizeColorToken(c))
+            .filter(Boolean)
         : [];
 
       // Talles como texto literal
@@ -379,18 +389,21 @@ export const AdminBulkExcelImportModal: React.FC<AdminBulkExcelImportModalProps>
       });
 
       const parentProductsMap = new Map<string, Partial<Product>>();
-      const specialVariantRows: { parentSku: string; price: number; corporatePrice?: number; rawRow: Partial<Product> }[] = [];
+      const specialVariantRows: { parentSku: string; suffix: string; price: number; corporatePrice?: number; rawRow: Partial<Product> }[] = [];
 
       parsedRows.forEach((r) => {
         const rawSku = String(r.code || r.id || '').trim();
         if (!rawSku) return;
 
-        const matchSuffix = rawSku.match(/^(.*?)(?:-1|_1)$/i);
+        // Detectar CUALQUIER sufijo numérico (-1, -2, -3, _1, _2, etc.)
+        const matchSuffix = rawSku.match(/^(.*?)[-_](\d+)$/i);
         const parentCandidate = matchSuffix ? matchSuffix[1].trim() : null;
+        const matchedSuffix = matchSuffix ? `-${matchSuffix[2]}` : '-1';
 
-        const isSpecialSuffix = parentCandidate && (
-          existingMap.has(parentCandidate.toUpperCase()) || 
-          parsedRows.some((pr) => String(pr.code || pr.id || '').trim().toUpperCase() === parentCandidate.toUpperCase())
+        const isSpecialSuffix = Boolean(
+          parentCandidate &&
+          (existingMap.has(parentCandidate.toUpperCase()) ||
+            parsedRows.some((pr) => String(pr.code || pr.id || '').trim().toUpperCase() === parentCandidate.toUpperCase()))
         );
 
         if (isSpecialSuffix && parentCandidate) {
@@ -401,6 +414,7 @@ export const AdminBulkExcelImportModal: React.FC<AdminBulkExcelImportModalProps>
 
           specialVariantRows.push({
             parentSku: parentCandidate,
+            suffix: normalizeSpecialSuffix(matchedSuffix),
             price: priceCleaned,
             corporatePrice: corpCleaned,
             rawRow: r,
@@ -439,6 +453,7 @@ export const AdminBulkExcelImportModal: React.FC<AdminBulkExcelImportModalProps>
           images: Array.isArray(p.images) && p.images.length > 0 ? p.images : (p.image ? [p.image] : (existing?.images || [])),
           imagesMen: Array.isArray(p.imagesMen) ? p.imagesMen : (existing?.imagesMen || []),
           imagesWomen: Array.isArray(p.imagesWomen) ? p.imagesWomen : (existing?.imagesWomen || []),
+          imagesByColor: existing?.imagesByColor || {},
           availableColors: Array.isArray(p.availableColors) ? p.availableColors : (existing?.availableColors || []),
           availableSizes: Array.isArray(p.availableSizes) ? p.availableSizes : (existing?.availableSizes || []),
           standardSizes: p.standardSizes || existing?.standardSizes || '',
@@ -449,8 +464,8 @@ export const AdminBulkExcelImportModal: React.FC<AdminBulkExcelImportModalProps>
         });
       });
 
-      // 3. Aplicar terminaciones -1 al talle especial del producto padre correspondiente
-      specialVariantRows.forEach(({ parentSku, price, corporatePrice }) => {
+      // 3. Aplicar terminaciones -1, -2, -3... al talle especial del producto padre correspondiente
+      specialVariantRows.forEach(({ parentSku, suffix, price, corporatePrice, rawRow }) => {
         let parentProd = fullProductsMap.get(parentSku.toUpperCase());
         if (!parentProd) {
           const ex = existingMap.get(parentSku.toUpperCase());
@@ -462,23 +477,35 @@ export const AdminBulkExcelImportModal: React.FC<AdminBulkExcelImportModalProps>
 
         if (parentProd) {
           const existingRanges = parentProd.specialSizeRanges ? [...parentProd.specialSizeRanges] : [];
-          const idx = existingRanges.findIndex((r) => r.suffix === '-1' || r.suffix === '_1');
+          const normSuffix = normalizeSpecialSuffix(suffix);
+          const defaults = inferDefaultRangeForSuffix(normSuffix);
+
+          // Determinar talles desde la columna Talles de la fila -1/-2 si existen
+          const rowSizesRaw = rawRow.standardSizes || (Array.isArray(rawRow.availableSizes) ? rawRow.availableSizes.join(',') : '');
+          const parsedRowSizes = rowSizesRaw ? parseSpecialSizesString(rowSizesRaw) : [];
+
+          const idx = existingRanges.findIndex((r) => normalizeSpecialSuffix(r.suffix) === normSuffix);
           if (idx >= 0) {
+            const existingSizes = resolveSpecialRangeSizes(existingRanges[idx]);
+            const finalSizes = parsedRowSizes.length > 0 ? parsedRowSizes : (existingSizes.length > 0 ? existingSizes : defaults.sizes);
             existingRanges[idx] = {
               ...existingRanges[idx],
+              suffix: normSuffix,
+              sizes: finalSizes,
               price,
               corporatePrice: corporatePrice || Math.round(price * 0.85),
             };
           } else {
+            const finalSizes = parsedRowSizes.length > 0 ? parsedRowSizes : defaults.sizes;
             existingRanges.push({
-              id: `range-${Date.now()}-special-1`,
-              suffix: '-1',
-              rangeLabel: 'Talles Especiales 50 al 58',
-              label: 'Talles Especiales 50 al 58',
-              sizeRangeLabel: 'Talles Especiales 50 al 58',
-              fromSize: '50',
-              toSize: '58',
-              sizes: ['50', '52', '54', '56', '58'],
+              id: `range-${Date.now()}-${normSuffix.replace(/\D/g, '')}`,
+              suffix: normSuffix,
+              rangeLabel: defaults.rangeLabel,
+              label: defaults.rangeLabel,
+              sizeRangeLabel: defaults.rangeLabel,
+              fromSize: finalSizes[0] || defaults.fromSize,
+              toSize: finalSizes[finalSizes.length - 1] || defaults.toSize,
+              sizes: finalSizes,
               price,
               corporatePrice: corporatePrice || Math.round(price * 0.85),
             });
@@ -605,43 +632,66 @@ export const AdminBulkExcelImportModal: React.FC<AdminBulkExcelImportModalProps>
         <div className="p-4 sm:p-6 overflow-y-auto space-y-4 flex-1">
           
           {/* Top Assistant Bar */}
-          <div className="bg-[#FAF8F5] p-3.5 rounded-xs border border-[#DCD4C9] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-            <div className="text-xs text-[#6F6860]">
-              <span className="font-bold text-[#18231C] block sm:inline">Columnas soportadas:</span>{' '}
-              <span className="font-mono text-[11px] text-[#4A453F]">
-                Código, Nombre, Categoría, Sección, Subcategoría, Precio, Precio Mayorista, Descuento %, Colores, Talles, Imagen URL, Descripción
-              </span>
+          <div className="bg-[#FAF8F5] p-3.5 rounded-xs border border-[#DCD4C9] space-y-2.5">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div className="text-xs text-[#6F6860]">
+                <span className="font-bold text-[#18231C] block sm:inline">Columnas soportadas:</span>{' '}
+                <span className="font-mono text-[11px] text-[#4A453F]">
+                  Código, Nombre, Categoría, Sección, Subcategoría, Precio, Precio Mayorista, Descuento %, Colores (Códigos Ej: C1, C3), Talles, Imagen URL, Descripción
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleDownloadTemplate}
+                  className="px-3 py-1.5 bg-white hover:bg-[#ECE5DC] text-[#18231C] border border-[#DCD4C9] text-xs font-bold uppercase tracking-wider rounded-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                  title="Descargar archivo Excel .xlsx de muestra"
+                >
+                  <Download className="w-3.5 h-3.5 text-[#B9522F]" />
+                  Descargar Plantilla Excel
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleCopyTemplateHeader}
+                  className="px-3 py-1.5 bg-white hover:bg-[#ECE5DC] text-[#18231C] border border-[#DCD4C9] text-xs font-bold uppercase tracking-wider rounded-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                  title="Copiar encabezados para pegar en Google Sheets"
+                >
+                  {copiedTemplate ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-600" />
+                      ¡Copiado!
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5 text-[#6F6860]" />
+                      Copiar Encabezados
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
 
-            <div className="flex items-center gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={handleDownloadTemplate}
-                className="px-3 py-1.5 bg-white hover:bg-[#ECE5DC] text-[#18231C] border border-[#DCD4C9] text-xs font-bold uppercase tracking-wider rounded-xs flex items-center gap-1.5 transition-colors cursor-pointer"
-                title="Descargar archivo Excel .xlsx de muestra"
-              >
-                <Download className="w-3.5 h-3.5 text-[#B9522F]" />
-                Descargar Plantilla Excel
-              </button>
-
-              <button
-                type="button"
-                onClick={handleCopyTemplateHeader}
-                className="px-3 py-1.5 bg-white hover:bg-[#ECE5DC] text-[#18231C] border border-[#DCD4C9] text-xs font-bold uppercase tracking-wider rounded-xs flex items-center gap-1.5 transition-colors cursor-pointer"
-                title="Copiar encabezados para pegar en Google Sheets"
-              >
-                {copiedTemplate ? (
-                  <>
-                    <Check className="w-3.5 h-3.5 text-emerald-600" />
-                    ¡Copiado!
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-3.5 h-3.5 text-[#6F6860]" />
-                    Copiar Encabezados
-                  </>
-                )}
-              </button>
+            {/* Guía rápida de Códigos de Color */}
+            <div className="pt-2 border-t border-[#ECE5DC] flex flex-wrap items-center gap-1.5">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[#18231C] mr-1">
+                Códigos de Color:
+              </span>
+              {getSavedColorCodes().map((cc) => (
+                <span
+                  key={cc.code}
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-white border border-[#DCD4C9] rounded-xs text-[10px] font-mono text-[#18231C]"
+                  title={cc.description || cc.name}
+                >
+                  <span
+                    className="w-2.5 h-2.5 rounded-full border border-black/20 shrink-0"
+                    style={{ backgroundColor: cc.hex }}
+                  />
+                  <strong>{cc.code}</strong>
+                  <span className="text-[#6F6860] font-sans">{cc.name}</span>
+                </span>
+              ))}
             </div>
           </div>
 
@@ -708,7 +758,7 @@ export const AdminBulkExcelImportModal: React.FC<AdminBulkExcelImportModalProps>
                 rows={5}
                 value={pasteText}
                 onChange={(e) => setPasteText(e.target.value)}
-                placeholder="Código&#9;Nombre&#9;Categoría&#9;Sección&#9;Precio&#9;Colores&#10;PAM-101&#9;Camisa Pampero&#9;Hombre&#9;Urbano&#9;45000&#9;Azul, Negro"
+                placeholder="Código&#9;Nombre&#9;Categoría&#9;Sección&#9;Precio&#9;Colores&#10;PAM-101&#9;Camisa Pampero&#9;Hombre&#9;Urbano&#9;45000&#9;C8, C3, C1"
                 className="w-full p-3 font-mono text-xs border border-[#DCD4C9] rounded-xs bg-white text-[#18231C] focus:border-[#B9522F] outline-none"
               />
               <button
@@ -806,7 +856,28 @@ export const AdminBulkExcelImportModal: React.FC<AdminBulkExcelImportModalProps>
                           ${(r.price || 0).toLocaleString('es-AR')}
                         </td>
                         <td className="p-2 text-[#6F6860] text-[11px]">
-                          {r.availableColors?.join(', ') || '-'}
+                          {r.availableColors && r.availableColors.length > 0 ? (
+                            <div className="flex flex-wrap gap-1">
+                              {r.availableColors.map((col, cIdx) => {
+                                const resolved = resolveColorDef(col);
+                                return (
+                                  <span
+                                    key={`${col}-${cIdx}`}
+                                    title={resolved.name}
+                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-[10px] font-mono text-[#18231C]"
+                                  >
+                                    <span
+                                      className="w-2 h-2 rounded-full border border-black/20 shrink-0"
+                                      style={{ backgroundColor: resolved.hex }}
+                                    />
+                                    <span>{resolved.code || col}</span>
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            '-'
+                          )}
                         </td>
                         <td className="p-2 text-[#6F6860] text-[11px]">
                           {r.standardSizes || r.availableSizes?.join(', ') || '-'}

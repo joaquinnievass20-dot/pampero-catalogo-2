@@ -34,8 +34,17 @@ import { AdminPermissionsTab } from './admin/AdminPermissionsTab';
 import { AdminKanbanConfigTab } from './admin/AdminKanbanConfigTab';
 import { AdminCostCategoriesTab } from './admin/AdminCostCategoriesTab';
 import { AdminAuditLogsTab } from './admin/AdminAuditLogsTab';
+import { ProductImageBgModal } from './admin/ProductImageBgModal';
 import { compressImage } from '../utils/imageCompressor';
 import { parseImageFileName } from '../utils/imageNamingParser';
+import { fetchImageUrlAsFile } from '../utils/productBackgroundRemover';
+import { getSavedColorCodes, colorMatchesToken, resolveColorDef } from '../utils/colorUtils';
+import {
+  parseSpecialSizesString,
+  resolveSpecialRangeSizes,
+  inferDefaultRangeForSuffix,
+  normalizeSpecialSuffix,
+} from '../utils/sizeUtils';
 import { PamperoLogo } from './PamperoLogo';
 import { saveCatalogBackup } from '../utils/backupManager';
 import { doc, deleteDoc } from 'firebase/firestore';
@@ -97,7 +106,8 @@ import {
   ChevronRight,
   Menu,
   FileText,
-  Type
+  Type,
+  Loader2
 } from 'lucide-react';
 
 export type AdminTabKey = 
@@ -266,6 +276,127 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [activePhotoGalleryTab, setActivePhotoGalleryTab] = useState<'general' | 'men' | 'women'>('general');
   const [isUploadingPhotos, setIsUploadingPhotos] = useState(false);
   const [photoUploadError, setPhotoUploadError] = useState<string | null>(null);
+  const [isPreparingExistingBg, setIsPreparingExistingBg] = useState<string | null>(null);
+  const [pendingBgRemoval, setPendingBgRemoval] = useState<{
+    files: File[];
+    scope: 'general' | 'men' | 'women' | 'auto';
+    replaceUrl?: string;
+  } | null>(null);
+
+  // Obtener el color asignado actualmente a una URL en productForm.imagesByColor
+  const getAssignedColorForUrl = (url: string): string => {
+    const map = productForm.imagesByColor || {};
+    for (const [colKey, colUrl] of Object.entries(map)) {
+      if (colUrl === url) return colKey;
+    }
+    return '';
+  };
+
+  // Asignar o desasignar un color específico a una foto de la galería
+  const handleAssignColorToPhotoUrl = (url: string, colorKey: string) => {
+    setProductForm((prev) => {
+      const nextByColor: Record<string, string> = { ...(prev.imagesByColor || {}) };
+      for (const [k, v] of Object.entries(nextByColor)) {
+        if (v === url) delete nextByColor[k];
+      }
+      if (colorKey) {
+        nextByColor[colorKey] = url;
+      }
+      const prevColors = Array.isArray(prev.availableColors) ? [...prev.availableColors] : [];
+      if (colorKey && !prevColors.some((c) => colorMatchesToken(c, colorKey))) {
+        prevColors.push(colorKey);
+      }
+      return {
+        ...prev,
+        imagesByColor: nextByColor,
+        availableColors: prevColors,
+      };
+    });
+  };
+
+  // Preparar una foto YA CARGADA para quitarle el fondo con vista previa en blanco
+  const handleRemoveBgFromExistingPhoto = async (imgUrl: string) => {
+    if (!imgUrl || isPreparingExistingBg) return;
+    setIsPreparingExistingBg(imgUrl);
+    setPhotoUploadError(null);
+    try {
+      const skuName = (productForm.code || editingProduct?.code || 'producto').trim();
+      const file = await fetchImageUrlAsFile(imgUrl, `${skuName}.jpg`);
+      setPendingBgRemoval({
+        files: [file],
+        scope: activePhotoGalleryTab,
+        replaceUrl: imgUrl,
+      });
+    } catch (err: any) {
+      setPhotoUploadError(
+        `No se pudo cargar la foto existente para quitar el fondo: ${err?.message || 'Error de red'}`
+      );
+    } finally {
+      setIsPreparingExistingBg(null);
+    }
+  };
+
+  // Reemplazar la URL de una foto ya cargada por su nueva versión sin fondo (fondo blanco)
+  const handleReplaceExistingPhotoWithFile = async (oldUrl: string, newFile: File) => {
+    setIsUploadingPhotos(true);
+    setPhotoUploadError(null);
+    const targetSku = (productForm.code || (editingProduct ? editingProduct.code : '') || 'producto').trim();
+    const skuPrefix = targetSku.replace(/[^a-zA-Z0-9_-]/g, '_');
+
+    try {
+      const newPublicUrl = await uploadImageToStorage(newFile, `products/${skuPrefix}`);
+      const swap = (arr?: string[]) => (Array.isArray(arr) ? arr.map((u) => (u === oldUrl ? newPublicUrl : u)) : []);
+      const updatedGeneral = swap(productForm.images);
+      const updatedMen = swap(productForm.imagesMen);
+      const updatedWomen = swap(productForm.imagesWomen);
+      const updatedByColor: Record<string, string> = { ...(productForm.imagesByColor || {}) };
+      for (const [k, v] of Object.entries(updatedByColor)) {
+        if (v === oldUrl) updatedByColor[k] = newPublicUrl;
+      }
+      const nextPrimary =
+        productForm.image === oldUrl
+          ? newPublicUrl
+          : productForm.image || updatedGeneral[0] || updatedMen[0] || updatedWomen[0] || '';
+
+      setProductForm((prev) => ({
+        ...prev,
+        image: nextPrimary,
+        images: updatedGeneral,
+        imagesMen: updatedMen,
+        imagesWomen: updatedWomen,
+        imagesByColor: updatedByColor,
+      }));
+
+      if (editingProduct || (productForm.code && productForm.name)) {
+        const productSku = (editingProduct?.code || productForm.code || editingProduct?.id || targetSku).trim();
+        const updatedProduct: Product = {
+          ...(editingProduct || (productForm as Product)),
+          ...productForm,
+          id: productSku,
+          code: productSku,
+          image: nextPrimary,
+          images: updatedGeneral,
+          imagesMen: updatedMen,
+          imagesWomen: updatedWomen,
+          imagesByColor: updatedByColor,
+        };
+        const saveRes = await saveSingleFirestoreProduct(updatedProduct);
+        if (!saveRes.success) {
+          setPhotoUploadError(`Foto reemplazada en Storage, pero Firestore notificó: ${saveRes.error}`);
+        } else {
+          const updatedCatalog = products.map((p) =>
+            p.code === productSku || p.id === productSku ? updatedProduct : p
+          );
+          onUpdateProducts(updatedCatalog);
+          triggerSaveNotice();
+        }
+      }
+    } catch (err: any) {
+      setPhotoUploadError(err?.message || formatStorageErrorMessage(err) || 'Error reemplazando la foto.');
+    } finally {
+      setIsUploadingPhotos(false);
+    }
+  };
 
   // Multi-photo upload processor: Subida directa a Firebase Storage (uploadBytes/getDownloadURL)
   // Actualización automática del documento en Cloud Firestore con try/catch robusto
@@ -281,6 +412,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     const newGeneral: string[] = [];
     const newMen: string[] = [];
     const newWomen: string[] = [];
+    const nextImagesByColor: Record<string, string> = { ...(productForm.imagesByColor || {}) };
+    const nextAvailableColors: string[] = Array.isArray(productForm.availableColors) ? [...productForm.availableColors] : [];
     const targetSku = (productForm.code || (editingProduct ? editingProduct.code : '') || 'producto').trim();
     const skuPrefix = targetSku.replace(/[^a-zA-Z0-9_-]/g, '_');
 
@@ -291,6 +424,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           const publicUrl = await uploadImageToStorage(file, `products/${skuPrefix}`);
 
           const parsed = parseImageFileName(file.name);
+          if (parsed.colorCode) {
+            if (!nextImagesByColor[parsed.colorCode]) {
+              nextImagesByColor[parsed.colorCode] = publicUrl;
+            }
+            const resolved = resolveColorDef(parsed.colorCode);
+            if (!nextAvailableColors.some((c) => colorMatchesToken(c, parsed.colorCode!))) {
+              nextAvailableColors.push(resolved.name || parsed.colorCode);
+            }
+            // También sincronizar con el nombre del color existente en availableColors si ya estaba cargado
+            const matchingExistingColor = nextAvailableColors.find((c) => colorMatchesToken(c, parsed.colorCode!));
+            if (matchingExistingColor && !nextImagesByColor[matchingExistingColor]) {
+              nextImagesByColor[matchingExistingColor] = publicUrl;
+            }
+          }
+
           let determined = targetScope;
 
           if (determined === 'auto') {
@@ -330,6 +478,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         images: updatedGeneral,
         imagesMen: updatedMen,
         imagesWomen: updatedWomen,
+        imagesByColor: nextImagesByColor,
+        availableColors: nextAvailableColors,
       }));
 
       // 2. Si es un producto existente o con SKU, actualizar automáticamente el documento en Cloud Firestore
@@ -344,6 +494,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           images: updatedGeneral,
           imagesMen: updatedMen,
           imagesWomen: updatedWomen,
+          imagesByColor: nextImagesByColor,
+          availableColors: nextAvailableColors,
         };
 
         const saveRes = await saveSingleFirestoreProduct(updatedProduct);
@@ -468,6 +620,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             image: primaryImage,
             imagesMen,
             imagesWomen,
+            imagesByColor: productForm.imagesByColor || {},
             inStock: productForm.inStock !== false,
           }
         : {
@@ -490,6 +643,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             images: rawImages,
             imagesMen,
             imagesWomen,
+            imagesByColor: productForm.imagesByColor || {},
             availableColors: productForm.availableColors || [],
             availableSizes: cleanSizes,
             standardSizes: standardSizesInput.trim(),
@@ -1404,42 +1558,76 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     {/* Active Special Size Ranges List */}
                     {(productForm.specialSizeRanges && productForm.specialSizeRanges.length > 0) && (
                       <div className="space-y-1.5">
-                        {productForm.specialSizeRanges.map((range, rIdx) => (
-                          <div
-                            key={rIdx}
-                            className="flex flex-wrap items-center justify-between gap-2 p-2 bg-white border border-[#DCD4C9] rounded-xs text-xs"
-                          >
-                            <div className="flex items-center gap-2">
-                              <span className="font-mono font-bold bg-[#18231C] text-white px-2 py-0.5 rounded-xs">
-                                {range.suffix}
-                              </span>
-                              <span className="font-semibold text-[#18231C]">
-                                {range.sizeRangeLabel}
-                              </span>
+                        {productForm.specialSizeRanges.map((range, rIdx) => {
+                          const resolvedSizes = resolveSpecialRangeSizes(range);
+                          return (
+                            <div
+                              key={rIdx}
+                              className="flex flex-wrap items-center justify-between gap-2 p-2.5 bg-white border border-[#DCD4C9] rounded-xs text-xs"
+                            >
+                              <div className="space-y-0.5">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-mono font-bold bg-[#18231C] text-white px-2 py-0.5 rounded-xs">
+                                    {normalizeSpecialSuffix(range.suffix)}
+                                  </span>
+                                  <span className="font-semibold text-[#18231C]">
+                                    {range.sizeRangeLabel || range.rangeLabel || range.label}
+                                  </span>
+                                </div>
+                                <div className="text-[11px] text-[#6F6860] font-mono">
+                                  Talles incluidos:{' '}
+                                  <strong className="text-[#18231C]">
+                                    {resolvedSizes.length > 0 ? resolvedSizes.join(', ') : 'Sin talles asignados'}
+                                  </strong>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2.5 flex-wrap">
+                                <div className="flex items-center gap-1">
+                                  <span className="text-[10px] text-neutral-600">Min ($):</span>
+                                  <input
+                                    type="number"
+                                    value={range.price}
+                                    onChange={(e) => {
+                                      const val = Number(e.target.value) || 0;
+                                      const updated = (productForm.specialSizeRanges || []).map((r, idx) =>
+                                        idx === rIdx ? { ...r, price: val } : r
+                                      );
+                                      setProductForm({ ...productForm, specialSizeRanges: updated });
+                                    }}
+                                    className="w-24 px-1.5 py-0.5 border border-[#DCD4C9] rounded-xs font-mono font-bold text-[#18231C]"
+                                  />
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <span className="text-[10px] text-blue-800">May ($):</span>
+                                  <input
+                                    type="number"
+                                    value={range.corporatePrice || ''}
+                                    placeholder={String(Math.round(range.price * 0.85))}
+                                    onChange={(e) => {
+                                      const val = e.target.value ? Number(e.target.value) : undefined;
+                                      const updated = (productForm.specialSizeRanges || []).map((r, idx) =>
+                                        idx === rIdx ? { ...r, corporatePrice: val } : r
+                                      );
+                                      setProductForm({ ...productForm, specialSizeRanges: updated });
+                                    }}
+                                    className="w-24 px-1.5 py-0.5 border border-[#DCD4C9] rounded-xs font-mono font-bold text-blue-900"
+                                  />
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const updated = (productForm.specialSizeRanges || []).filter((_, idx) => idx !== rIdx);
+                                    setProductForm({ ...productForm, specialSizeRanges: updated });
+                                  }}
+                                  className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-xs cursor-pointer"
+                                  title="Eliminar este rango especial"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
                             </div>
-                            <div className="flex items-center gap-3">
-                              <span className="text-neutral-700">
-                                Minorista: <strong className="text-[#18231C]">${range.price.toLocaleString('es-AR')}</strong>
-                              </span>
-                              {range.corporatePrice ? (
-                                <span className="text-blue-800">
-                                  Mayorista: <strong>${range.corporatePrice.toLocaleString('es-AR')}</strong>
-                                </span>
-                              ) : null}
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const updated = (productForm.specialSizeRanges || []).filter((_, idx) => idx !== rIdx);
-                                  setProductForm({ ...productForm, specialSizeRanges: updated });
-                                }}
-                                className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-xs cursor-pointer"
-                                title="Eliminar este rango especial"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
 
@@ -1448,18 +1636,27 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       <span className="text-[11px] font-bold text-[#4A453F] uppercase tracking-wider block">
                         + Añadir Rango de Talles Especiales
                       </span>
-                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                      <div className="grid grid-cols-2 sm:grid-cols-6 gap-2">
                         <div>
                           <label className="block text-[10px] font-bold text-[#6F6860] mb-0.5">Sufijo Código</label>
                           <input
                             type="text"
-                            placeholder="-1"
+                            placeholder="-1 o -2"
                             value={newRangeForm.suffix}
-                            onChange={(e) => setNewRangeForm({ ...newRangeForm, suffix: e.target.value })}
+                            onChange={(e) => {
+                              const nextSuf = e.target.value;
+                              const defaults = inferDefaultRangeForSuffix(nextSuf);
+                              setNewRangeForm({
+                                ...newRangeForm,
+                                suffix: nextSuf,
+                                sizeRangeLabel: defaults.sizes.length > 0 ? defaults.rangeLabel.replace('Especiales ', '') : newRangeForm.sizeRangeLabel,
+                                sizes: defaults.sizes.length > 0 ? defaults.sizes.join(', ') : newRangeForm.sizes,
+                              });
+                            }}
                             className="w-full px-2 py-1 border border-[#DCD4C9] rounded-xs text-xs font-mono font-bold"
                           />
                         </div>
-                        <div className="col-span-2 sm:col-span-2">
+                        <div className="col-span-1 sm:col-span-2">
                           <label className="block text-[10px] font-bold text-[#6F6860] mb-0.5">Rango / Descripción</label>
                           <input
                             type="text"
@@ -1467,6 +1664,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                             value={newRangeForm.sizeRangeLabel}
                             onChange={(e) => setNewRangeForm({ ...newRangeForm, sizeRangeLabel: e.target.value })}
                             className="w-full px-2 py-1 border border-[#DCD4C9] rounded-xs text-xs font-semibold"
+                          />
+                        </div>
+                        <div className="col-span-2 sm:col-span-1">
+                          <label className="block text-[10px] font-bold text-[#6F6860] mb-0.5">Talles (ej: 50, 52, 54)</label>
+                          <input
+                            type="text"
+                            placeholder="50, 52, 54, 56, 58"
+                            value={newRangeForm.sizes}
+                            onChange={(e) => setNewRangeForm({ ...newRangeForm, sizes: e.target.value })}
+                            className="w-full px-2 py-1 border border-[#DCD4C9] rounded-xs text-xs font-mono"
                           />
                         </div>
                         <div>
@@ -1498,14 +1705,24 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                               alert('Por favor completá el sufijo, la descripción del rango y el precio.');
                               return;
                             }
+                            const normSuf = normalizeSpecialSuffix(newRangeForm.suffix);
+                            const parsedSizes = parseSpecialSizesString(
+                              newRangeForm.sizes.trim() || newRangeForm.sizeRangeLabel.trim()
+                            );
+                            const finalSizes = parsedSizes.length > 0
+                              ? parsedSizes
+                              : inferDefaultRangeForSuffix(normSuf).sizes;
+
                             const newRange: SpecialSizeRange = {
                               id: `range-${Date.now()}`,
-                              suffix: newRangeForm.suffix.trim(),
+                              suffix: normSuf,
                               rangeLabel: newRangeForm.sizeRangeLabel.trim(),
                               sizeRangeLabel: newRangeForm.sizeRangeLabel.trim(),
-                              minSize: newRangeForm.minSize || undefined,
-                              maxSize: newRangeForm.maxSize || undefined,
-                              sizes: [],
+                              fromSize: finalSizes[0] || undefined,
+                              toSize: finalSizes[finalSizes.length - 1] || undefined,
+                              minSize: finalSizes[0] || undefined,
+                              maxSize: finalSizes[finalSizes.length - 1] || undefined,
+                              sizes: finalSizes,
                               price: Number(newRangeForm.price),
                               corporatePrice: newRangeForm.corporatePrice ? Number(newRangeForm.corporatePrice) : undefined,
                             };
@@ -1515,11 +1732,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                             });
                             // Reset form to next suffix
                             const nextSuffixNum = parseInt(newRangeForm.suffix.replace(/\D/g, ''), 10) || 1;
+                            const nextSuf = `-${nextSuffixNum + 1}`;
+                            const nextDefaults = inferDefaultRangeForSuffix(nextSuf);
                             setNewRangeForm({
-                              suffix: `-${nextSuffixNum + 1}`,
-                              sizeRangeLabel: 'Talles 60 al 66',
-                              minSize: '60',
-                              maxSize: '66',
+                              suffix: nextSuf,
+                              sizeRangeLabel: nextDefaults.rangeLabel.replace('Especiales ', ''),
+                              sizes: nextDefaults.sizes.join(', '),
                               price: '',
                               corporatePrice: '',
                             });
@@ -1795,7 +2013,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           className="hidden"
                           onChange={(e) => {
                             if (e.target.files && e.target.files.length > 0) {
-                              handleUploadPhotos(e.target.files, 'auto');
+                              setPendingBgRemoval({
+                                files: Array.from(e.target.files),
+                                scope: 'auto',
+                              });
                             }
                             e.target.value = '';
                           }}
@@ -1882,7 +2103,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           </div>
 
                           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                            {activeList.filter(url => Boolean(url && url.trim())).map((imgUrl, idx) => (
+                            {activeList.filter(url => Boolean(url && url.trim())).map((imgUrl, idx) => {
+                              const assignedColor = getAssignedColorForUrl(imgUrl);
+                              const colorChoices = Array.from(
+                                new Set([
+                                  ...(productForm.availableColors || []),
+                                  ...getSavedColorCodes().map((c) => `${c.code} - ${c.name}`),
+                                ])
+                              );
+                              const isBgLoading = isPreparingExistingBg === imgUrl;
+
+                              return (
                               <div
                                 key={idx}
                                 className={`bg-white border rounded-xs p-2 flex flex-col justify-between space-y-2 relative transition-all ${
@@ -1906,6 +2137,58 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                   >
                                     {idx === 0 ? '★ Portada' : `#${idx + 1}`}
                                   </span>
+                                  {assignedColor && (
+                                    <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded-xs text-[9px] font-bold bg-[#18231C]/85 text-white truncate max-w-[90%]">
+                                      {assignedColor}
+                                    </span>
+                                  )}
+                                </div>
+
+                                {/* Selector de Color asociado + Botón Quitar Fondo */}
+                                <div className="space-y-1.5">
+                                  <select
+                                    value={assignedColor}
+                                    onChange={(e) => handleAssignColorToPhotoUrl(imgUrl, e.target.value)}
+                                    className="w-full px-1.5 py-1 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-[10px] font-semibold text-[#18231C] outline-none"
+                                    title="Asociar esta foto a un color específico"
+                                  >
+                                    <option value="">Color: General (todos)</option>
+                                    {(productForm.availableColors || []).map((col) => (
+                                      <option key={`prod-${col}`} value={col}>
+                                        Color: {col}
+                                      </option>
+                                    ))}
+                                    {getSavedColorCodes().map((c) => {
+                                      const already = (productForm.availableColors || []).some((ac) => colorMatchesToken(ac, c.code));
+                                      if (already) return null;
+                                      return (
+                                        <option key={`std-${c.code}`} value={c.code}>
+                                          {c.code} · {c.name}
+                                        </option>
+                                      );
+                                    })}
+                                    {colorChoices.length === 0 && null}
+                                  </select>
+
+                                  <button
+                                    type="button"
+                                    disabled={isBgLoading || isUploadingPhotos}
+                                    onClick={() => handleRemoveBgFromExistingPhoto(imgUrl)}
+                                    className="w-full py-1 px-2 rounded-xs bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1 transition-colors cursor-pointer disabled:opacity-50"
+                                    title="Eliminar fondo y dejar en blanco puro (#FFFFFF)"
+                                  >
+                                    {isBgLoading ? (
+                                      <>
+                                        <Loader2 className="w-3 h-3 animate-spin" />
+                                        <span>Cargando...</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Sparkles className="w-3 h-3 text-amber-700" />
+                                        <span>Fondo Blanco</span>
+                                      </>
+                                    )}
+                                  </button>
                                 </div>
 
                                 <div className="flex items-center justify-between gap-1 pt-1 border-t border-[#ECE5DC]">
@@ -2012,7 +2295,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                   </button>
                                 </div>
                               </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         </div>
                       );
@@ -2145,10 +2429,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                   promotionTag: p.promotionTag || '',
                                   isUnisex: Boolean(p.isUnisex),
                                   isCorporateOnly: Boolean(p.isCorporateOnly),
-                                  specialSizeRanges: p.specialSizeRanges ? JSON.parse(JSON.stringify(p.specialSizeRanges)) : [],
+                                  specialSizeRanges: p.specialSizeRanges
+                                    ? p.specialSizeRanges.map((r) => ({
+                                        ...r,
+                                        suffix: normalizeSpecialSuffix(r.suffix),
+                                        sizes: resolveSpecialRangeSizes(r),
+                                      }))
+                                    : [],
                                   images: Array.isArray(p.images) && p.images.length > 0 ? [...p.images] : (p.image ? [p.image] : []),
                                   imagesMen: Array.isArray(p.imagesMen) ? [...p.imagesMen] : [],
                                   imagesWomen: Array.isArray(p.imagesWomen) ? [...p.imagesWomen] : [],
+                                  imagesByColor: p.imagesByColor ? { ...p.imagesByColor } : {},
                                   inStock: p.inStock !== false,
                                 });
                                 setIsCreatingProduct(false);
@@ -2585,6 +2876,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         onImportSuccess={(newCatalog) => {
           onUpdateProducts(newCatalog);
           triggerSaveNotice();
+        }}
+      />
+
+      {/* Previsualización y Eliminación de Fondo (Exclusivo Productos) */}
+      <ProductImageBgModal
+        isOpen={Boolean(pendingBgRemoval && pendingBgRemoval.files.length > 0)}
+        files={pendingBgRemoval?.files || []}
+        onCancel={() => setPendingBgRemoval(null)}
+        onConfirm={(approvedFiles) => {
+          const current = pendingBgRemoval;
+          setPendingBgRemoval(null);
+          if (current?.replaceUrl && approvedFiles.length > 0) {
+            handleReplaceExistingPhotoWithFile(current.replaceUrl, approvedFiles[0]);
+          } else {
+            handleUploadPhotos(approvedFiles, current?.scope || 'auto');
+          }
         }}
       />
     </div>

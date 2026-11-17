@@ -266,11 +266,16 @@ export interface LookbookItem {
 }
 
 export interface SiteTextsConfig {
-  // 1. Barra de Anuncios y Navbar
+  // 1. Menú Principal Superior (Navbar)
   announcementBarText?: string;
   searchPlaceholder?: string;
   quoteButtonText?: string;
   loginButtonText?: string;
+  navHombreText?: string;
+  navMujerText?: string;
+  navInfantilText?: string;
+  navCorporativaText?: string;
+  navPromosText?: string;
   
   // 2. Portada & Hero
   heroTitleLine1?: string;
@@ -281,22 +286,61 @@ export interface SiteTextsConfig {
   heroWhatsAppBtnText?: string;
   landingTopNotice?: string;
   
-  // 3. Catálogo y Productos
+  // 3. Catálogo Público (Filtros, Grilla, Tarjetas de Producto)
   catalogTitle?: string;
   catalogSubtitle?: string;
   catalogSearchPlaceholder?: string;
   viewProductCardText?: string;
   addToQuoteBtnText?: string;
   whatsappConsultBtnText?: string;
+
+  // 4. Ficha de Producto (Detalle y Modal)
+  productDetailSizeLabel?: string;
+  productDetailColorLabel?: string;
+  productDetailAddBtnText?: string;
+  productDetailWhatsappBtnText?: string;
+  productDetailGuaranteeText?: string;
   
-  // 4. Ventana Emergente de Mi Pedido (QuoteDrawer)
+  // 5. Ventana Emergente de Mi Pedido (QuoteDrawer)
   quoteDrawerTitle?: string;
   quoteDrawerSendBtnText?: string;
   quoteDrawerObservationsPlaceholder?: string;
   emptyCartTitle?: string;
   emptyCartSubtitle?: string;
 
-  // 5. Pie de Página y Contacto
+  // 6. Pantalla/Modal de Login y Registro
+  authLoginTitle?: string;
+  authLoginSubtitle?: string;
+  authLoginBtnText?: string;
+  authRegisterTitle?: string;
+  authRegisterSubtitle?: string;
+  authToRegisterLinkText?: string;
+  authToStaffLinkText?: string;
+
+  // 7. Hub de Trabajo / Menú Principal Interno
+  hubTitle?: string;
+  hubSubtitle?: string;
+  hubCrmCardText?: string;
+  hubAdminCardText?: string;
+  hubCatalogCardText?: string;
+  hubLogoutBtnText?: string;
+
+  // 8. Módulo CRM y Tableros Kanban
+  crmTitle?: string;
+  crmSubtitle?: string;
+  crmColCotizacionText?: string;
+  crmColProduccionText?: string;
+  crmColListoText?: string;
+  crmNewOrderBtnText?: string;
+
+  // 9. Servicios Corporativos (Portal de Talles, Simulador)
+  sizingPortalTitle?: string;
+  sizingPortalSubtitle?: string;
+  uniformSimulatorTitle?: string;
+  uniformSimulatorSubtitle?: string;
+  corporateQuoteBtnText?: string;
+
+  // 10. Pie de Página y Contacto (Footer)
   footerTagline?: string;
   footerAbout?: string;
   footerPhone?: string;
@@ -355,41 +399,110 @@ export interface ThemeConfig {
   whatsappNumber: string;
   instagramHandle: string;
   emailContact: string;
-  crmCardBgColor?: string; // Color de fondo de la ficha de pedido en CRM
-  crmCardTextColor?: string; // Color de texto de la ficha de pedido en CRM
-  crmCardBorderColor?: string; // Color de borde de la ficha de pedido en CRM
-  crmCardHeaderBg?: string; // Color de cabecera de la ficha de pedido en CRM
-  // 9-Section Deep Theme Customization
-  announcementBgColor?: string; // Barra de micro-anuncios
+
+  // --- VARIABLES AISLADAS POR VENTANA (AISLAMIENTO ABSOLUTO) ---
+  // 1. Menú Principal Superior (Navbar)
+  navbarBgColor?: string;
+  navbarTextColor?: string;
+  navbarSecondaryTextColor?: string;
+  navbarButtonBg?: string;
+  navbarButtonTextColor?: string;
+  navbarButtonHoverBg?: string;
+  navbarBorderColor?: string;
+
+  // 2. Catálogo Público (Filtros, Grilla, Tarjetas de Producto)
+  catalogBgColor?: string;
+  catalogSecondaryTextColor?: string;
+  catalogCardBgColor?: string;
+  catalogCardBorderColor?: string;
+  catalogCardPriceColor?: string;
+  catalogButtonBg?: string;
+  catalogButtonTextColor?: string;
+  catalogButtonHoverBg?: string;
+
+  // 3. Ficha de Producto (Detalle y Modal)
+  productDetailBgColor?: string;
+  productDetailTextColor?: string;
+  productDetailSecondaryTextColor?: string;
+  productDetailBorderColor?: string;
+  productDetailButtonBg?: string;
+  productDetailButtonTextColor?: string;
+  productDetailButtonHoverBg?: string;
+
+  // 4. Ventana Emergente de "Mi Pedido" (QuoteDrawer)
+  quoteDrawerBgColor?: string;
+  quoteDrawerTextColor?: string;
+  quoteDrawerSecondaryTextColor?: string;
+  quoteDrawerBorderColor?: string;
+  quoteDrawerButtonBg?: string;
+  quoteDrawerButtonTextColor?: string;
+  quoteDrawerButtonHoverBg?: string;
+  quoteDrawerButtonText?: string;
+
+  // 5. Pantalla/Modal de Login y Registro (Auth)
+  loginModalBgColor?: string;
+  loginModalTextColor?: string;
+  loginModalSecondaryTextColor?: string;
+  loginModalBorderColor?: string;
+  loginModalButtonBg?: string;
+  loginModalButtonTextColor?: string;
+  loginModalButtonHoverBg?: string;
+  loginModalButtonText?: string;
+
+  // 6. Hub de Trabajo / Menú Principal Interno
+  hubSecondaryTextColor?: string;
+  hubCardBgColor?: string;
+  hubBorderColor?: string;
+  hubAccentColor?: string;
+  hubButtonBg?: string;
+  hubButtonTextColor?: string;
+  hubButtonHoverBg?: string;
+
+  // 7. Módulo CRM y Tableros Kanban
+  crmHeaderBgColor?: string;
+  crmHeaderTextColor?: string;
+  crmSecondaryTextColor?: string;
+  crmHeaderBorderColor?: string;
+  crmCardBgColor?: string;
+  crmCardTextColor?: string;
+  crmCardBorderColor?: string;
+  crmCardHeaderBg?: string;
+  crmButtonBg?: string;
+  crmButtonTextColor?: string;
+  crmButtonHoverBg?: string;
+
+  // 8. Servicios Corporativos (Portal de Talles, Simulador)
+  corporateServicesBgColor?: string;
+  corporateServicesTextColor?: string;
+  corporateServicesSecondaryTextColor?: string;
+  corporateServicesBorderColor?: string;
+  corporateServicesButtonBg?: string;
+  corporateServicesButtonTextColor?: string;
+  corporateServicesButtonHoverBg?: string;
+
+  // 9. Footer (Pie de página)
+  footerBgColor?: string;
+  footerTextColor?: string;
+  footerSecondaryTextColor?: string;
+  footerBorderColor?: string;
+  footerAccentColor?: string;
+  footerButtonBg?: string;
+  footerButtonTextColor?: string;
+  footerButtonHoverBg?: string;
+
+  // Secciones adicionales existentes
+  announcementBgColor?: string;
   announcementTextColor?: string;
   announcementAccentColor?: string;
-  hubBorderColor?: string; // Menú Interno Admin/Empleados
-  hubAccentColor?: string;
-  heroBgColor?: string; // Hero / Portada
+  heroBgColor?: string;
   heroTextColor?: string;
   heroButtonBg?: string;
   heroButtonText?: string;
   heroAccentColor?: string;
-  cardTextColor?: string; // Ficha de Producto
+  cardTextColor?: string;
   cardButtonBg?: string;
   cardButtonText?: string;
-  quoteDrawerBgColor?: string; // Ventana Emergente de Mi Pedido
-  quoteDrawerTextColor?: string;
-  quoteDrawerBorderColor?: string;
-  quoteDrawerButtonBg?: string;
-  quoteDrawerButtonText?: string;
-  loginModalBgColor?: string; // Modal de Login / Registro
-  loginModalTextColor?: string;
-  loginModalBorderColor?: string;
-  loginModalButtonBg?: string;
-  loginModalButtonText?: string;
-  crmHeaderBgColor?: string; // CRM Header
-  crmHeaderTextColor?: string;
-  crmHeaderBorderColor?: string;
-  footerBgColor?: string; // Footer
-  footerTextColor?: string;
-  footerBorderColor?: string;
-  footerAccentColor?: string;
+
   siteTexts?: SiteTextsConfig;
   screenTexts?: SiteTextsConfig;
 }

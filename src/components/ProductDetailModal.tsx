@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Product, UserSession, ThemeConfig, Promotion } from '../types';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Product, UserSession, ThemeConfig, Promotion, SpecialSizeRange } from '../types';
 import { 
   X, 
   Check, 
@@ -15,7 +15,8 @@ import {
   ChevronLeft,
   ChevronRight
 } from 'lucide-react';
-import { getProductImageForColor, getColorHex, getColorCode } from '../utils/colorUtils';
+import { getProductImageForColor, getAllImagesForColor, getColorHex, getColorCode } from '../utils/colorUtils';
+import { findSpecialRangeForSize, resolveSpecialRangeSizes, normalizeSpecialSuffix } from '../utils/sizeUtils';
 import { getProductActivePromotion } from '../utils/promoUtils';
 
 interface ProductDetailModalProps {
@@ -24,7 +25,15 @@ interface ProductDetailModalProps {
   userSession: UserSession | null;
   theme: ThemeConfig;
   promotions?: Promotion[];
-  onAddToCart: (product: Product, quantity: number, color?: string, size?: string) => void;
+  onAddToCart: (
+    product: Product,
+    quantity: number,
+    color?: string,
+    size?: string,
+    specialRange?: SpecialSizeRange,
+    adjustedPrice?: number,
+    codeWithSuffix?: string
+  ) => void;
 }
 
 export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
@@ -41,22 +50,90 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   const [quantity, setQuantity] = useState(1);
   const [addedSuccess, setAddedSuccess] = useState(false);
 
+  useEffect(() => {
+    if (!product) return;
+    setSelectedColor(product.availableColors?.[0] || '');
+    setSelectedSize(product.availableSizes?.[0] || '');
+    setSelectedImageIndex(0);
+    setQuantity(1);
+  }, [product?.id]);
+
+  const resolvedSpecialRanges = useMemo(() => {
+    if (!product) return [];
+    return (product.specialSizeRanges || []).map((r) => ({
+      ...r,
+      suffix: normalizeSpecialSuffix(r.suffix),
+      rangeLabel: r.rangeLabel || r.sizeRangeLabel || r.label || `Talles Especiales ${r.suffix || '-1'}`,
+      sizes: resolveSpecialRangeSizes(r),
+    }));
+  }, [product]);
+
+  const allImages: string[] = useMemo(() => {
+    if (!product) return [];
+    const list: string[] = [];
+    if (Array.isArray(product.images)) list.push(...product.images.filter(Boolean));
+    if (Array.isArray(product.imagesMen)) list.push(...product.imagesMen.filter(Boolean));
+    if (Array.isArray(product.imagesWomen)) list.push(...product.imagesWomen.filter(Boolean));
+    if (product.imagesByColor && typeof product.imagesByColor === 'object') {
+      for (const u of Object.values(product.imagesByColor)) {
+        if (u && typeof u === 'string' && !list.includes(u)) list.push(u);
+      }
+    }
+    if (product.image && !list.includes(product.image)) list.unshift(product.image);
+    const activeCol = selectedColor || product.availableColors?.[0] || '';
+    for (const cImg of getAllImagesForColor(product, activeCol).slice().reverse()) {
+      if (cImg && !list.includes(cImg)) list.unshift(cImg);
+    }
+    const unique = list.filter((u, idx, self) => Boolean(u && u.trim()) && self.indexOf(u) === idx);
+    return unique.length > 0 ? unique : ['/logo.png'];
+  }, [product, selectedColor]);
+
   if (!product) return null;
 
-  const effectivePrice = product.price;
+  const isCompany = userSession?.clientType === 'empresa';
+  const currentSize =
+    selectedSize ||
+    (product.availableSizes && product.availableSizes.length > 0
+      ? product.availableSizes[0]
+      : resolvedSpecialRanges[0]?.sizes[0] || '');
+  const currentColor = selectedColor || (product.availableColors && product.availableColors.length > 0 ? product.availableColors[0] : '');
+
+  const activeSpecialRange = findSpecialRangeForSize(product, currentSize);
+  const activeProductCode = activeSpecialRange
+    ? `${product.code}${normalizeSpecialSuffix(activeSpecialRange.suffix)}`
+    : product.code;
+
+  const effectivePrice = activeSpecialRange
+    ? (isCompany && activeSpecialRange.corporatePrice ? activeSpecialRange.corporatePrice : activeSpecialRange.price)
+    : (isCompany && product.corporatePrice ? product.corporatePrice : product.price);
   const hasDiscount = Boolean(product.discountPercentage && product.discountPercentage > 0);
   const discountedPrice = hasDiscount
     ? Math.round(effectivePrice * (1 - (product.discountPercentage || 0) / 100))
     : effectivePrice;
 
-  const currentSize = selectedSize || (product.availableSizes && product.availableSizes.length > 0 ? product.availableSizes[0] : '');
-  const currentColor = selectedColor || (product.availableColors && product.availableColors.length > 0 ? product.availableColors[0] : '');
-
   const activePromo = getProductActivePromotion(product, promotions);
   const promoBadgeLabel = activePromo ? (activePromo.badge || product.promotionTag || activePromo.tagFilter) : null;
 
+  const handleSelectColor = (col: string) => {
+    setSelectedColor(col);
+    const colorMatches = getAllImagesForColor(product, col);
+    const targetImg = colorMatches[0];
+    if (targetImg) {
+      const idx = allImages.findIndex((u) => u === targetImg);
+      setSelectedImageIndex(idx !== -1 ? idx : 0);
+    }
+  };
+
   const handleAdd = () => {
-    onAddToCart(product, quantity, currentColor, currentSize);
+    onAddToCart(
+      product,
+      quantity,
+      currentColor,
+      currentSize,
+      activeSpecialRange || undefined,
+      discountedPrice,
+      activeProductCode
+    );
     setAddedSuccess(true);
     setTimeout(() => {
       setAddedSuccess(false);
@@ -71,9 +148,9 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
         : (userSession?.clientData as any)?.fullName || 'Cliente';
 
     const message = `Hola Pampero Gran Mendoza! Soy ${clientName}. Quisiera consultar disponibilidad y cotización del siguiente artículo de su catálogo digital:
-- *Producto:* ${product.name} (Código: ${product.code})
+- *Producto:* ${product.name} (Código: ${activeProductCode})
 - *Categoría:* ${product.category} > ${product.section} (${product.subCategory})
-- *Talle:* ${currentSize}
+- *Talle:* ${currentSize}${activeSpecialRange ? ` (${activeSpecialRange.rangeLabel})` : ''}
 - *Color:* ${currentColor}
 - *Cantidad deseada:* ${quantity} unidades
 - *Precio de referencia:* $${discountedPrice.toLocaleString('es-AR')} c/u`;
@@ -85,18 +162,19 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   const accent = theme.accentColor || '#FDB813';
   const displayedImage = getProductImageForColor(product, currentColor);
   const fallbackImg = (displayedImage && displayedImage.trim()) || (product.image && product.image.trim()) || '/logo.png';
-  
-  const rawList = Array.isArray(product.images) && product.images.length > 0
-    ? product.images
-    : [fallbackImg];
-  const allImages: string[] = rawList.filter(url => Boolean(url && url.trim()));
-  const activeImageUrl = (allImages[selectedImageIndex] && allImages[selectedImageIndex].trim()) || fallbackImg;
+  const safeIdx = selectedImageIndex >= allImages.length ? 0 : selectedImageIndex;
+  const activeImageUrl = (allImages[safeIdx] && allImages[safeIdx].trim()) || fallbackImg;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/75 backdrop-blur-sm animate-fadeIn">
       <div 
         id="product-detail-card"
-        className="w-full max-w-3xl bg-white rounded-2xl shadow-2xl overflow-hidden border border-neutral-200 flex flex-col md:flex-row max-h-[92vh] overflow-y-auto"
+        style={{
+          backgroundColor: theme.productDetailBgColor || '#FFFFFF',
+          borderColor: theme.productDetailBorderColor || '#E5E5E5',
+          color: theme.productDetailTextColor || '#18231C',
+        }}
+        className="w-full max-w-3xl rounded-2xl shadow-2xl overflow-hidden border flex flex-col md:flex-row max-h-[92vh] overflow-y-auto"
       >
         {/* Left: Product Image Gallery & Badges */}
         <div className="md:w-1/2 relative bg-neutral-100 flex flex-col justify-between min-h-[300px] md:min-h-[440px]">
@@ -215,9 +293,16 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
         <div className="md:w-1/2 p-6 flex flex-col justify-between">
           <div>
             <div className="hidden md:flex justify-between items-center mb-2">
-              <span className="text-xs font-mono font-bold text-neutral-500 bg-neutral-100 px-2 py-0.5 rounded">
-                Art. {product.code}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-mono font-bold text-neutral-500 bg-neutral-100 px-2 py-0.5 rounded">
+                  Art. {activeProductCode}
+                </span>
+                {activeSpecialRange && (
+                  <span className="text-[10px] font-bold text-amber-900 bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded">
+                    {activeSpecialRange.rangeLabel}
+                  </span>
+                )}
+              </div>
               <button
                 onClick={onClose}
                 className="text-neutral-400 hover:text-neutral-900 p-1"
@@ -232,7 +317,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
             </h2>
 
             {/* Price section */}
-            <div className="flex items-baseline gap-3 mb-4 pb-3 border-b border-neutral-100">
+            <div className="flex items-baseline gap-3 mb-4 pb-3 border-b border-neutral-100 flex-wrap">
               <div className="text-2xl font-black text-[#111111]">
                 ${discountedPrice.toLocaleString('es-AR')}
               </div>
@@ -240,6 +325,11 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 <div className="text-sm font-medium text-neutral-400 line-through">
                   ${effectivePrice.toLocaleString('es-AR')}
                 </div>
+              )}
+              {activeSpecialRange && (
+                <span className="text-[11px] font-bold text-amber-900 bg-amber-50 border border-amber-300 px-2 py-0.5 rounded">
+                  Precio Talle Especial ({activeSpecialRange.suffix})
+                </span>
               )}
             </div>
 
@@ -262,34 +352,82 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               </div>
             )}
 
-            {/* Sizes selector */}
-            {product.availableSizes && product.availableSizes.length > 0 && (
-              <div className="mb-3">
-                <span className="block text-xs font-bold text-neutral-700 uppercase tracking-wider mb-1.5 flex items-center gap-1">
-                  <Ruler className="w-3.5 h-3.5 text-neutral-400" />
-                  Talle: <strong className="text-neutral-900">{currentSize}</strong>
-                </span>
-                <div className="flex flex-wrap gap-1.5">
-                  {product.availableSizes.map((size) => (
-                    <button
-                      key={size}
-                      type="button"
-                      onClick={() => setSelectedSize(size)}
-                      style={{
-                        borderColor: currentSize === size ? accent : undefined,
-                        backgroundColor: currentSize === size ? `${accent}15` : undefined,
-                        color: currentSize === size ? accent : undefined,
-                      }}
-                      className={`px-3 py-1 text-xs font-bold rounded-lg border transition-all ${
-                        currentSize === size
-                          ? 'shadow-xs'
-                          : 'border-neutral-200 hover:border-neutral-300 text-neutral-700'
-                      }`}
-                    >
-                      {size}
-                    </button>
-                  ))}
-                </div>
+            {/* Sizes selector (Standard + Special Ranges) */}
+            {((product.availableSizes && product.availableSizes.length > 0) || resolvedSpecialRanges.length > 0) && (
+              <div className="mb-3 space-y-2.5">
+                {product.availableSizes && product.availableSizes.length > 0 && (
+                  <div>
+                    <span className="block text-xs font-bold text-neutral-700 uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                      <Ruler className="w-3.5 h-3.5 text-neutral-400" />
+                      Talle: <strong className="text-neutral-900">{currentSize}</strong>
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {product.availableSizes
+                        .filter(
+                          (sz) =>
+                            !resolvedSpecialRanges.some((r) =>
+                              r.sizes.some((rs) => rs.toUpperCase() === sz.trim().toUpperCase())
+                            )
+                        )
+                        .map((size) => (
+                          <button
+                            key={size}
+                            type="button"
+                            onClick={() => setSelectedSize(size)}
+                            style={{
+                              borderColor: currentSize === size ? accent : undefined,
+                              backgroundColor: currentSize === size ? `${accent}15` : undefined,
+                              color: currentSize === size ? accent : undefined,
+                            }}
+                            className={`px-3 py-1 text-xs font-bold rounded-lg border transition-all ${
+                              currentSize === size
+                                ? 'shadow-xs'
+                                : 'border-neutral-200 hover:border-neutral-300 text-neutral-700'
+                            }`}
+                          >
+                            {size}
+                          </button>
+                        ))}
+                    </div>
+                  </div>
+                )}
+
+                {resolvedSpecialRanges.length > 0 && (
+                  <div className="space-y-2 pt-2 border-t border-neutral-200">
+                    {resolvedSpecialRanges.map((range) => {
+                      const rPrice = isCompany && range.corporatePrice ? range.corporatePrice : range.price;
+                      return (
+                        <div key={range.id || range.suffix} className="p-2 bg-amber-50/60 border border-amber-200 rounded-lg space-y-1.5">
+                          <div className="flex items-center justify-between text-[11px]">
+                            <span className="font-bold text-amber-950">
+                              <span className="font-mono bg-[#18231C] text-white px-1 py-0.5 rounded-xs mr-1.5">
+                                {range.suffix}
+                              </span>
+                              {range.rangeLabel}
+                            </span>
+                            <span className="font-bold text-amber-900">${rPrice.toLocaleString('es-AR')}</span>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {range.sizes.map((size) => (
+                              <button
+                                key={`${range.suffix}-${size}`}
+                                type="button"
+                                onClick={() => setSelectedSize(size)}
+                                className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition-all ${
+                                  currentSize === size
+                                    ? 'bg-amber-700 text-white border-amber-700 shadow-xs'
+                                    : 'bg-white border-amber-300 text-amber-900 hover:border-amber-500'
+                                }`}
+                              >
+                                {size}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
 
@@ -315,7 +453,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                       <button
                         key={col}
                         type="button"
-                        onClick={() => setSelectedColor(col)}
+                        onClick={() => handleSelectColor(col)}
                         style={{
                           borderColor: isSelected ? (theme.primaryColor || '#18231C') : undefined,
                         }}
@@ -374,8 +512,8 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               type="button"
               onClick={handleAdd}
               style={{
-                backgroundColor: addedSuccess ? '#059669' : (theme.primaryColor || '#18231C'),
-                color: theme.buttonTextColor || '#FFFFFF'
+                backgroundColor: addedSuccess ? '#059669' : (theme.productDetailButtonBg || theme.primaryColor || '#18231C'),
+                color: theme.productDetailButtonTextColor || theme.buttonTextColor || '#FFFFFF'
               }}
               className="w-full py-2.5 px-4 rounded-xl font-bold text-xs shadow-md transition-all flex items-center justify-center gap-2 hover:brightness-110 cursor-pointer"
             >
@@ -387,7 +525,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               ) : (
                 <>
                   <Plus className="w-4 h-4" />
-                  Agregar a Mi Pedido
+                  {theme.siteTexts?.productDetailAddBtnText || 'Agregar a Mi Pedido'}
                 </>
               )}
             </button>
@@ -399,7 +537,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               className="w-full py-2.5 px-4 rounded-xl font-bold text-xs border border-emerald-600 text-emerald-700 hover:bg-emerald-50 transition-all flex items-center justify-center gap-2"
             >
               <MessageCircle className="w-4 h-4 text-emerald-600" />
-              Consultar Disponibilidad por WhatsApp
+              {theme.siteTexts?.productDetailWhatsappBtnText || 'Consultar Disponibilidad por WhatsApp'}
             </button>
           </div>
         </div>

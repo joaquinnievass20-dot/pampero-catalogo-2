@@ -511,7 +511,7 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
             style={{ color: theme?.crmHeaderTextColor || '#18231C' }}
           >
             <LayoutDashboard className="w-5 h-5 text-[#B9522F]" />
-            Gestión Pampero
+            {theme?.siteTexts?.crmTitle || 'Gestión Pampero'}
           </h2>
 
           <div className="flex bg-[#ECE5DC] rounded-xs p-1 flex-wrap gap-0.5">
@@ -597,10 +597,14 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
           {(activeTab === 'visits' || activeTab === 'board') && (
             <button
               onClick={() => setShowNewOrderModal(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#18231C] text-white rounded-xs text-xs font-bold hover:bg-black transition-colors cursor-pointer shadow-xs"
+              style={{
+                backgroundColor: theme?.crmButtonBg || theme?.primaryColor || '#18231C',
+                color: theme?.crmButtonTextColor || '#FFFFFF',
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xs text-xs font-bold hover:brightness-110 transition-colors cursor-pointer shadow-xs"
             >
               <Plus className="w-3.5 h-3.5" />
-              <span>Nuevo Pedido</span>
+              <span>{theme?.siteTexts?.crmNewOrderBtnText || 'Nuevo Pedido'}</span>
             </button>
           )}
 

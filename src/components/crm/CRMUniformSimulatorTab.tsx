@@ -1,31 +1,35 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { 
-  Shirt, 
-  Upload, 
-  Download, 
-  Sparkles, 
-  Layers, 
-  Sliders, 
-  RotateCcw, 
-  Check, 
+import {
+  Shirt,
+  Upload,
+  Sparkles,
+  RotateCcw,
   MessageCircle,
-  Building2,
-  Eye
+  Eye,
+  Move,
+  Maximize2,
+  FlipHorizontal,
+  Loader2,
+  Sliders,
 } from 'lucide-react';
-import { 
-  fetchFirestoreStoreConfig, 
-  fetchFirestoreProducts, 
-  subscribeToFirestoreSimulatorConfig, 
-  uploadImageToStorage 
+import {
+  fetchFirestoreStoreConfig,
+  fetchFirestoreProducts,
+  subscribeToFirestoreSimulatorConfig,
+  uploadImageToStorage,
 } from '../../services/firebase';
 import { Product } from '../../types';
+import { getColorHex, getProductImageForColor, getColorCode } from '../../utils/colorUtils';
+import { recolorGarmentOnly, stripLogoWhiteBackground } from '../../utils/garmentRecolor';
 
 interface GarmentPreset {
   id: string;
   name: string;
   category: string;
   baseImage: string;
-  availableColors: { name: string; hex: string; filterClass?: string }[];
+  backImage?: string;
+  imagesByColor?: Record<string, string>;
+  availableColors: { name: string; hex: string }[];
 }
 
 const DEFAULT_GARMENTS: GarmentPreset[] = [
@@ -78,18 +82,95 @@ const DEFAULT_GARMENTS: GarmentPreset[] = [
   },
 ];
 
-type LogoPosition = 'pecho_izq' | 'pecho_centro' | 'espalda' | 'manga';
+type LogoPosition = 'pecho_izq' | 'pecho_centro' | 'espalda' | 'manga' | 'manual';
 type LogoTechnique = 'bordado' | 'estampado';
+type GarmentViewSide = 'frente' | 'espalda';
+
+const PRESET_COORDS: Record<Exclude<LogoPosition, 'manual'>, { x: number; y: number; defaultCm: number }> = {
+  pecho_izq: { x: 61, y: 34, defaultCm: 9 },
+  pecho_centro: { x: 50, y: 36, defaultCm: 14 },
+  espalda: { x: 50, y: 31, defaultCm: 24 },
+  manga: { x: 24, y: 40, defaultCm: 7 },
+};
+
+function isHexLight(hex: string): boolean {
+  const clean = hex.replace('#', '').trim();
+  const full =
+    clean.length === 3
+      ? clean
+          .split('')
+          .map((c) => c + c)
+          .join('')
+      : clean.padEnd(6, '0').slice(0, 6);
+  const num = parseInt(full, 16);
+  if (isNaN(num)) return false;
+  const r = (num >> 16) & 255;
+  const g = (num >> 8) & 255;
+  const b = num & 255;
+  return 0.299 * r + 0.587 * g + 0.114 * b > 175;
+}
+
+function detectBackImage(prod: Product, primaryImage: string): string | undefined {
+  const explicit = (prod as any).backImage;
+  if (explicit && typeof explicit === 'string' && explicit.trim()) {
+    return explicit.trim();
+  }
+
+  const allUrls = [
+    ...(Array.isArray(prod.images) ? prod.images : []),
+    ...(Array.isArray(prod.imagesMen) ? prod.imagesMen : []),
+    ...(Array.isArray(prod.imagesWomen) ? prod.imagesWomen : []),
+  ].filter((u): u is string => Boolean(u && u.trim() && u.trim() !== primaryImage));
+
+  // 1. Buscar etiqueta explícita de espalda o posición #2 Pampero
+  const namedBack = allUrls.find((u) => {
+    const lower = u.toLowerCase();
+    return (
+      lower.includes('espalda') ||
+      lower.includes('back') ||
+      lower.includes('dorso') ||
+      lower.includes('atras') ||
+      lower.includes('reverso') ||
+      /[#%_]2\.(jpg|jpeg|png|webp)/i.test(u) ||
+      /%232\./i.test(u)
+    );
+  });
+  if (namedBack) return namedBack;
+
+  // 2. Fallback: segunda imagen de galería si existe
+  if (allUrls.length > 0) {
+    return allUrls[0];
+  }
+  return undefined;
+}
 
 export const CRMUniformSimulatorTab: React.FC = () => {
   const [garmentsList, setGarmentsList] = useState<GarmentPreset[]>(DEFAULT_GARMENTS);
   const [selectedGarment, setSelectedGarment] = useState<GarmentPreset>(DEFAULT_GARMENTS[0]);
-  const [selectedColor, setSelectedColor] = useState(DEFAULT_GARMENTS[0].availableColors[0]);
-  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [selectedColor, setSelectedColor] = useState<{ name: string; hex: string } | null>(null); // null = Color original de la foto
+  const [viewSide, setViewSide] = useState<GarmentViewSide>('frente');
+
+  // Logo estado & ajustes
+  const [rawLogoUrl, setRawLogoUrl] = useState<string | null>(null);
+  const [cleanLogoUrl, setCleanLogoUrl] = useState<string | null>(null);
+  const [stripWhiteBg, setStripWhiteBg] = useState(true);
+  const [logoAspectRatio, setLogoAspectRatio] = useState(1.6);
   const [logoName, setLogoName] = useState<string>('');
   const [technique, setTechnique] = useState<LogoTechnique>('bordado');
   const [position, setPosition] = useState<LogoPosition>('pecho_izq');
-  const [logoScale, setLogoScale] = useState(70);
+
+  // Tamaño real en cm y posicionamiento libre X/Y (%) + rotación
+  const [logoWidthCm, setLogoWidthCm] = useState<number>(9);
+  const [logoCoords, setLogoCoords] = useState<{ x: number; y: number }>({ x: 61, y: 34 });
+  const [logoRotation, setLogoRotation] = useState<number>(0);
+  const [logoOpacity, setLogoOpacity] = useState<number>(95);
+  const [isDraggingLogo, setIsDraggingLogo] = useState(false);
+
+  // Recolor canvas cache
+  const [recoloredImageUrl, setRecoloredImageUrl] = useState<string | null>(null);
+  const [isRecoloring, setIsRecoloring] = useState(false);
+  const recolorCacheRef = useRef<Map<string, string>>(new Map());
+
   const [companyName, setCompanyName] = useState('');
   const [estimatedQuantity, setEstimatedQuantity] = useState('30');
   const previewRef = useRef<HTMLDivElement>(null);
@@ -132,32 +213,34 @@ export const CRMUniformSimulatorTab: React.FC = () => {
             if (prod) {
               const image = prod.image || (prod.images && prod.images[0]);
               if (image) {
-                const rawColors = (prod as any).colors || ((prod as any).variants ? ((prod as any).variants as any[]).map((v) => v.color).filter(Boolean) : []);
-                const colors = (Array.isArray(rawColors) && rawColors.length > 0)
-                  ? rawColors.map((c: string) => {
-                      const lower = String(c).toLowerCase();
-                      let hex = '#1C1C1C';
-                      if (lower.includes('azul')) hex = '#1B263B';
-                      else if (lower.includes('blanco')) hex = '#F8F9FA';
-                      else if (lower.includes('verde')) hex = '#3E4A35';
-                      else if (lower.includes('rojo')) hex = '#8B0000';
-                      else if (lower.includes('gris')) hex = '#585E64';
-                      else if (lower.includes('beige') || lower.includes('arena')) hex = '#D7C4A5';
-                      else if (lower.includes('naranja')) hex = '#FF6700';
-                      return { name: String(c), hex };
-                    })
-                  : [
-                      { name: 'Azul Marino', hex: '#1B263B' },
-                      { name: 'Negro', hex: '#1C1C1C' },
-                      { name: 'Verde Oliva', hex: '#3E4A35' },
-                      { name: 'Blanco', hex: '#F8F9FA' }
-                    ];
+                const rawColors =
+                  prod.availableColors && prod.availableColors.length > 0
+                    ? prod.availableColors
+                    : (prod as any).colors ||
+                      ((prod as any).variants
+                        ? ((prod as any).variants as any[]).map((v) => v.color).filter(Boolean)
+                        : []);
+
+                const colors =
+                  Array.isArray(rawColors) && rawColors.length > 0
+                    ? rawColors.map((c: string) => ({
+                        name: String(c),
+                        hex: getColorHex(String(c)),
+                      }))
+                    : [
+                        { name: 'Azul Marino', hex: '#1B263B' },
+                        { name: 'Negro', hex: '#1C1C1C' },
+                        { name: 'Verde Oliva', hex: '#3E4A35' },
+                        { name: 'Blanco', hex: '#F8F9FA' },
+                      ];
 
                 dynamicItems.push({
                   id: prod.id || prod.code,
                   name: prod.name,
                   category: prod.category || 'Indumentaria Oficial',
                   baseImage: image,
+                  backImage: detectBackImage(prod, image),
+                  imagesByColor: prod.imagesByColor,
                   availableColors: colors,
                 });
               }
@@ -173,6 +256,7 @@ export const CRMUniformSimulatorTab: React.FC = () => {
               name: cg.name,
               category: cg.category,
               baseImage: cg.baseImage,
+              backImage: cg.backImage,
               availableColors: cg.availableColors || [{ name: 'Estándar', hex: '#1C1C1C' }],
             });
           });
@@ -181,9 +265,7 @@ export const CRMUniformSimulatorTab: React.FC = () => {
         if (dynamicItems.length > 0) {
           setGarmentsList(dynamicItems);
           setSelectedGarment(dynamicItems[0]);
-          if (dynamicItems[0].availableColors?.length > 0) {
-            setSelectedColor(dynamicItems[0].availableColors[0]);
-          }
+          setSelectedColor(null);
         }
       } catch (err) {
         console.warn('[SIMULATOR] Error cargando prendas configuradas:', err);
@@ -192,7 +274,6 @@ export const CRMUniformSimulatorTab: React.FC = () => {
 
     loadDynamicGarments();
 
-    // Suscripción onSnapshot en tiempo real a la configuración del Simulador desde Firestore
     const unsub = subscribeToFirestoreSimulatorConfig((remoteCfg) => {
       if (remoteCfg) {
         try {
@@ -205,75 +286,219 @@ export const CRMUniformSimulatorTab: React.FC = () => {
     return () => unsub();
   }, []);
 
-  // File upload handler - Sube a Firebase Storage con fallback
+  // Determinar qué imagen fuente mostrar según vista (frente/espalda) y color real si existe en imagesByColor
+  const colorSpecificImage = (() => {
+    if (!selectedColor || !selectedGarment.imagesByColor || viewSide === 'espalda') return null;
+    const fakeProd = {
+      image: '',
+      imagesByColor: selectedGarment.imagesByColor,
+    } as Product;
+    const matched = getProductImageForColor(fakeProd, selectedColor.name);
+    if (matched) return matched;
+    const code = getColorCode(selectedColor.name);
+    if (code && selectedGarment.imagesByColor[code]) return selectedGarment.imagesByColor[code];
+    return null;
+  })();
+
+  const activeRawImage =
+    viewSide === 'espalda'
+      ? selectedGarment.backImage || selectedGarment.baseImage
+      : colorSpecificImage || selectedGarment.baseImage;
+
+  const isUsingFallbackForBack = viewSide === 'espalda' && !selectedGarment.backImage;
+
+  // Ejecutar teñido exclusivo de la prenda en Canvas cuando se elige un color sin foto propia
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!selectedColor || colorSpecificImage || !activeRawImage) {
+      setRecoloredImageUrl(null);
+      setIsRecoloring(false);
+      return;
+    }
+
+    const cacheKey = `${activeRawImage}__${selectedColor.hex}`;
+    const cached = recolorCacheRef.current.get(cacheKey);
+    if (cached) {
+      setRecoloredImageUrl(cached);
+      setIsRecoloring(false);
+      return;
+    }
+
+    setIsRecoloring(true);
+    recolorGarmentOnly(activeRawImage, selectedColor.hex, {
+      preserveSkin: true,
+      bgTolerance: 30,
+    })
+      .then((res) => {
+        if (cancelled) return;
+        if (res) {
+          recolorCacheRef.current.set(cacheKey, res);
+          setRecoloredImageUrl(res);
+        } else {
+          setRecoloredImageUrl(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIsRecoloring(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeRawImage, selectedColor, colorSpecificImage]);
+
+  // Procesar logo cargado: detectar proporciones reales y limpiar fondo blanco si se habilitó
+  useEffect(() => {
+    let cancelled = false;
+    if (!rawLogoUrl) {
+      setCleanLogoUrl(null);
+      return;
+    }
+
+    const measureNatural = () => {
+      const img = new Image();
+      if (!rawLogoUrl.startsWith('data:')) img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        if (!cancelled && img.naturalWidth && img.naturalHeight) {
+          setLogoAspectRatio(img.naturalWidth / img.naturalHeight);
+        }
+      };
+      img.src = rawLogoUrl;
+    };
+
+    if (!stripWhiteBg) {
+      setCleanLogoUrl(rawLogoUrl);
+      measureNatural();
+      return;
+    }
+
+    stripLogoWhiteBackground(rawLogoUrl).then((res) => {
+      if (cancelled) return;
+      if (res) {
+        setCleanLogoUrl(res.cleanDataUrl);
+        setLogoAspectRatio(res.aspectRatio);
+      } else {
+        setCleanLogoUrl(rawLogoUrl);
+        measureNatural();
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [rawLogoUrl, stripWhiteBg]);
+
+  // File upload handler para el logo del cliente (soporta dataURL inmediato para edición fluida + Storage)
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      setLogoName(file.name);
-      try {
-        const publicUrl = await uploadImageToStorage(file, 'simulator-logos');
-        setLogoUrl(publicUrl);
-      } catch (err) {
-        console.warn('[SIMULATOR] Storage offline/fallback local:', err);
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          setLogoUrl(event.target?.result as string);
-        };
-        reader.readAsDataURL(file);
-      }
+    if (!file) return;
+    setLogoName(file.name);
+
+    // Leer primero como DataURL local para preservar dimensiones y quitar fondo blanco sin bloqueo CORS
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result as string;
+      if (dataUrl) setRawLogoUrl(dataUrl);
+    };
+    reader.readAsDataURL(file);
+
+    // También respaldar en Storage en segundo plano si aplica
+    try {
+      await uploadImageToStorage(file, 'simulator-logos');
+    } catch (err) {
+      console.warn('[SIMULATOR] Respaldo local activo para logo:', err);
     }
   };
 
   const handleUseSampleLogo = () => {
-    setLogoUrl('/logo-oficial.png.png');
+    setRawLogoUrl('/logo-oficial.png.png');
     setLogoName('Logo Pampero Oficial');
   };
 
-  const getPlacementStyles = () => {
-    switch (position) {
-      case 'pecho_izq':
-        return {
-          top: '32%',
-          left: '32%',
-          transform: 'translate(-50%, -50%)',
-        };
-      case 'pecho_centro':
-        return {
-          top: '34%',
-          left: '50%',
-          transform: 'translate(-50%, -50%)',
-        };
-      case 'espalda':
-        return {
-          top: '28%',
-          left: '50%',
-          transform: 'translate(-50%, -50%)',
-        };
-      case 'manga':
-        return {
-          top: '38%',
-          left: '18%',
-          transform: 'translate(-50%, -50%)',
-        };
-      default:
-        return {
-          top: '32%',
-          left: '32%',
-          transform: 'translate(-50%, -50%)',
-        };
+  // Cambiar ubicación preestablecida + cambiar automáticamente a frente/espalda si hay foto
+  const handleSelectPosition = (nextPos: LogoPosition) => {
+    setPosition(nextPos);
+    if (nextPos === 'espalda') {
+      setViewSide('espalda');
+    } else if (nextPos !== 'manual') {
+      setViewSide('frente');
+    }
+
+    if (nextPos !== 'manual') {
+      const preset = PRESET_COORDS[nextPos];
+      setLogoCoords({ x: preset.x, y: preset.y });
+      setLogoWidthCm(preset.defaultCm);
     }
   };
+
+  // Arrastre manual directo sobre la prenda (Pointer Events)
+  const updateCoordsFromPointer = (clientX: number, clientY: number) => {
+    const rect = previewRef.current?.getBoundingClientRect();
+    if (!rect || rect.width === 0 || rect.height === 0) return;
+    const xPct = Math.min(92, Math.max(8, ((clientX - rect.left) / rect.width) * 100));
+    const yPct = Math.min(92, Math.max(8, ((clientY - rect.top) / rect.height) * 100));
+    setLogoCoords({
+      x: Math.round(xPct * 10) / 10,
+      y: Math.round(yPct * 10) / 10,
+    });
+    setPosition('manual');
+  };
+
+  const handleViewportPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!activeLogoUrl) return;
+    setIsDraggingLogo(true);
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {}
+    updateCoordsFromPointer(e.clientX, e.clientY);
+  };
+
+  const handleViewportPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDraggingLogo) return;
+    updateCoordsFromPointer(e.clientX, e.clientY);
+  };
+
+  const handleViewportPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDraggingLogo) return;
+    setIsDraggingLogo(false);
+    try {
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {}
+  };
+
+  const activeLogoUrl = cleanLogoUrl || rawLogoUrl;
+  const displayedGarmentImage = recoloredImageUrl || activeRawImage || '/logo.png';
+
+  // Escala proporcional realista: torso promedio ~50 cm equivale al 100% del marco de prenda
+  const widthPercent = Math.min(68, Math.max(7, (logoWidthCm / 48) * 100));
+  const calculatedHeightCm = Math.round((logoWidthCm / Math.max(0.2, logoAspectRatio)) * 10) / 10;
+
+  // Modo de integración del logo según claridad de la tela elegida
+  const isLightGarment = selectedColor ? isHexLight(selectedColor.hex) : false;
+
+  const positionLabel =
+    position === 'pecho_izq'
+      ? 'Pecho Izquierdo'
+      : position === 'pecho_centro'
+      ? 'Pecho Centro'
+      : position === 'espalda'
+      ? 'Espalda'
+      : position === 'manga'
+      ? 'Manga'
+      : `Posición Manual (${viewSide === 'espalda' ? 'Espalda' : 'Frente'} · X:${Math.round(logoCoords.x)}% Y:${Math.round(logoCoords.y)}%)`;
 
   const handleRequestQuote = () => {
     const text = encodeURIComponent(
       `Hola Pampero Gran Mendoza! Vengo del Armador de Uniformes Virtual con un diseño corporativo.\n\n` +
-      `• Empresa: ${companyName.trim() || 'Mi Empresa'}\n` +
-      `• Prenda: ${selectedGarment.name}\n` +
-      `• Color: ${selectedColor.name}\n` +
-      `• Aplicación: ${technique === 'bordado' ? 'Bordado Computarizado' : 'Estampado Transfer HD'}\n` +
-      `• Ubicación: ${position === 'pecho_izq' ? 'Pecho Izquierdo' : position === 'pecho_centro' ? 'Pecho Centro' : position === 'espalda' ? 'Espalda Grande' : 'Manga'}\n` +
-      `• Cantidad estimada: ${estimatedQuantity} prendas\n\n` +
-      `¿Podrían cotizarme con matriz de bordado incluida?`
+        `• Empresa: ${companyName.trim() || 'Mi Empresa'}\n` +
+        `• Prenda: ${selectedGarment.name}\n` +
+        `• Color: ${selectedColor ? selectedColor.name : 'Color Original de Muestra'}\n` +
+        `• Aplicación: ${technique === 'bordado' ? 'Bordado Computarizado' : 'Estampado Transfer HD'}\n` +
+        `• Ubicación: ${positionLabel}\n` +
+        `• Medida del Logo: ${logoWidthCm} cm ancho × ${calculatedHeightCm} cm alto\n` +
+        `• Cantidad estimada: ${estimatedQuantity} prendas\n\n` +
+        `¿Podrían cotizarme con matriz de bordado incluida?`
     );
     window.open(`https://wa.me/5492615276713?text=${text}`, '_blank');
   };
@@ -288,7 +513,7 @@ export const CRMUniformSimulatorTab: React.FC = () => {
             Armador de Uniformes Virtual (Simulador de Bordado)
           </h3>
           <p className="text-xs text-[#6F6860] mt-0.5">
-            Subí el logo de la empresa y previsualizá de inmediato cómo quedaría bordado o estampado en prendas oficiales Pampero.
+            Subí el logo de tu empresa, elegí color real de tela, medilo en centímetros y arrastralo directo sobre la prenda (frente o espalda).
           </p>
         </div>
 
@@ -303,88 +528,175 @@ export const CRMUniformSimulatorTab: React.FC = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Left Column: Visual Mockup Canvas (7 cols) */}
-        <div className="lg:col-span-7 bg-white p-6 rounded-xs border border-[#DCD4C9] shadow-2xs flex flex-col items-center justify-center">
-          <div className="w-full flex items-center justify-between pb-3 mb-3 border-b border-[#ECE5DC] text-xs">
+        <div className="lg:col-span-7 bg-white p-5 sm:p-6 rounded-xs border border-[#DCD4C9] shadow-2xs flex flex-col items-center justify-center">
+          <div className="w-full flex flex-wrap items-center justify-between gap-2 pb-3 mb-3 border-b border-[#ECE5DC] text-xs">
             <div className="flex items-center gap-2 font-bold text-[#18231C]">
               <Eye className="w-4 h-4 text-[#B9522F]" />
-              <span>Simulación: {selectedGarment.name}</span>
+              <span className="truncate max-w-[240px] sm:max-w-xs">{selectedGarment.name}</span>
             </div>
-            <span className="text-[10px] uppercase font-bold text-[#6F6860] bg-[#FAF8F5] px-2 py-0.5 rounded-xs border border-[#DCD4C9]">
-              Color: {selectedColor.name}
-            </span>
+
+            {/* Selector Vista Frente / Espalda */}
+            <div className="flex items-center gap-1 bg-[#FAF8F5] p-0.5 rounded-xs border border-[#DCD4C9]">
+              <button
+                type="button"
+                onClick={() => {
+                  setViewSide('frente');
+                  if (position === 'espalda') handleSelectPosition('pecho_izq');
+                }}
+                className={`px-2.5 py-1 rounded-xs text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-colors ${
+                  viewSide === 'frente'
+                    ? 'bg-[#18231C] text-white'
+                    : 'text-[#6F6860] hover:text-[#18231C]'
+                }`}
+              >
+                Frente
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setViewSide('espalda');
+                  if (position !== 'espalda' && position !== 'manual') {
+                    setPosition('espalda');
+                    setLogoCoords({ x: PRESET_COORDS.espalda.x, y: PRESET_COORDS.espalda.y });
+                    setLogoWidthCm(PRESET_COORDS.espalda.defaultCm);
+                  }
+                }}
+                className={`px-2.5 py-1 rounded-xs text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer transition-colors ${
+                  viewSide === 'espalda'
+                    ? 'bg-[#18231C] text-white'
+                    : 'text-[#6F6860] hover:text-[#18231C]'
+                }`}
+              >
+                <FlipHorizontal className="w-3 h-3" />
+                Espalda
+                {selectedGarment.backImage && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" title="Foto de espalda disponible" />
+                )}
+              </button>
+            </div>
           </div>
 
-          {/* Interactive Garment & Logo Viewport */}
-          <div 
+          {isUsingFallbackForBack && (
+            <div className="w-full mb-3 px-3 py-1.5 bg-amber-50 border border-amber-200 rounded-xs text-[11px] text-amber-900 flex items-center justify-between gap-2">
+              <span>
+                Esta prenda aún no tiene cargada una foto trasera exclusiva (se muestra la vista principal como referencia).
+              </span>
+            </div>
+          )}
+
+          {/* Interactive Garment & Logo Viewport (Drag & Drop directo) */}
+          <div
             ref={previewRef}
-            className="relative w-full max-w-md aspect-square bg-[#FAF8F5] rounded-xs overflow-hidden border border-[#DCD4C9] shadow-inner flex items-center justify-center select-none"
+            onPointerDown={handleViewportPointerDown}
+            onPointerMove={handleViewportPointerMove}
+            onPointerUp={handleViewportPointerUp}
+            className={`relative w-full max-w-md aspect-square bg-white rounded-xs overflow-hidden border border-[#DCD4C9] shadow-inner flex items-center justify-center select-none touch-none ${
+              activeLogoUrl ? 'cursor-crosshair' : ''
+            }`}
           >
-            {/* Color Tint Overlay for Garment */}
-            <div 
-              className="absolute inset-0 z-10 mix-blend-color opacity-70 pointer-events-none transition-colors duration-300"
-              style={{ backgroundColor: selectedColor.hex }}
-            />
-
-            {/* Base Garment Photo */}
-            <img 
-              src={selectedGarment.baseImage || '/logo.png'} 
+            {/* Base / Recolored Garment Photo */}
+            <img
+              src={displayedGarmentImage}
               alt={selectedGarment.name}
-              className="w-full h-full object-cover shrink-0"
-              onError={(e) => { e.currentTarget.src = '/logo.png'; }}
+              draggable={false}
+              className="w-full h-full object-contain pointer-events-none select-none transition-opacity duration-200"
+              onError={(e) => {
+                e.currentTarget.src = '/logo.png';
+              }}
             />
 
-            {/* Overlaid Logo with Embroidery / Transfer Effect */}
-            {logoUrl && (
-              <div 
-                className="absolute z-20 pointer-events-none transition-all duration-200"
+            {isRecoloring && (
+              <div className="absolute top-2.5 left-2.5 z-30 bg-black/75 text-white px-2.5 py-1 rounded-xs text-[10px] font-bold flex items-center gap-1.5">
+                <Loader2 className="w-3 h-3 animate-spin text-[#FDB813]" />
+                Aplicando color a la tela...
+              </div>
+            )}
+
+            {/* Overlaid Logo integrado en la tela y arrastrable */}
+            {activeLogoUrl && (
+              <div
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                  handleViewportPointerDown(e);
+                }}
+                className={`absolute z-20 cursor-grab active:cursor-grabbing ${
+                  isDraggingLogo ? 'ring-1 ring-[#FDB813]/80 rounded-xs' : 'transition-[left,top,width,transform] duration-150'
+                }`}
                 style={{
-                  ...getPlacementStyles(),
-                  width: `${logoScale}px`,
-                  maxWidth: '120px',
+                  top: `${logoCoords.y}%`,
+                  left: `${logoCoords.x}%`,
+                  width: `${widthPercent}%`,
+                  transform: `translate(-50%, -50%) rotate(${logoRotation}deg)`,
                 }}
               >
-                <div 
-                  className={`relative p-1 rounded-xs transition-all ${
-                    technique === 'bordado'
-                      ? 'drop-shadow-[0_2px_4px_rgba(0,0,0,0.6)] contrast-110 saturate-125'
-                      : 'drop-shadow-[0_1px_2px_rgba(0,0,0,0.4)]'
-                  }`}
+                <div
+                  className="relative w-full"
                   style={{
-                    filter: technique === 'bordado' ? 'drop-shadow(0px 1px 1px rgba(0,0,0,0.7))' : 'none',
+                    opacity: logoOpacity / 100,
+                    mixBlendMode: isLightGarment ? 'multiply' : 'normal',
+                    filter:
+                      technique === 'bordado'
+                        ? 'contrast(1.06) saturate(1.12) drop-shadow(0px 1px 1.5px rgba(0,0,0,0.45))'
+                        : 'contrast(1.03) drop-shadow(0px 0.5px 1px rgba(0,0,0,0.28))',
                   }}
                 >
-                  <img 
-                    src={logoUrl} 
-                    alt="Logo Empresa" 
-                    className="w-full h-auto object-contain max-h-24"
+                  <img
+                    src={activeLogoUrl}
+                    alt="Logo Empresa"
+                    draggable={false}
+                    className="w-full h-auto object-contain block pointer-events-none select-none"
                   />
                   {technique === 'bordado' && (
-                    <div 
-                      className="absolute inset-0 border border-white/20 rounded-xs pointer-events-none opacity-40 mix-blend-overlay"
-                      style={{ backgroundImage: 'radial-gradient(circle, #fff 10%, transparent 20%)', backgroundSize: '3px 3px' }}
+                    <div
+                      className="absolute inset-0 pointer-events-none opacity-25 mix-blend-overlay"
+                      style={{
+                        backgroundImage:
+                          'repeating-linear-gradient(45deg, rgba(255,255,255,0.22) 0px, rgba(255,255,255,0.22) 1px, transparent 1px, transparent 3px)',
+                      }}
                     />
                   )}
                 </div>
               </div>
             )}
 
-            {!logoUrl && (
-              <div className="absolute z-20 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-black/60 backdrop-blur-xs text-white p-4 rounded-xs text-center max-w-[200px]">
+            {!activeLogoUrl && (
+              <div className="absolute z-20 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-black/65 backdrop-blur-xs text-white p-4 rounded-xs text-center max-w-[210px] pointer-events-none">
                 <Upload className="w-6 h-6 mx-auto mb-1.5 text-amber-400" />
                 <p className="text-xs font-bold uppercase">Subí tu logo</p>
                 <p className="text-[10px] text-white/80 mt-0.5">para verlo aplicado en la prenda</p>
               </div>
             )}
 
-            {/* Watermark badge */}
-            <div className="absolute bottom-2.5 right-2.5 z-30 bg-black/60 backdrop-blur-xs text-white px-2 py-0.5 rounded-xs text-[9px] font-bold tracking-wider uppercase">
-              Pampero Simulador
+            {/* Drag hint badge */}
+            {activeLogoUrl && (
+              <div className="absolute bottom-2.5 left-2.5 z-30 bg-black/65 backdrop-blur-xs text-white px-2 py-0.5 rounded-xs text-[10px] font-semibold flex items-center gap-1 pointer-events-none">
+                <Move className="w-3 h-3 text-[#FDB813]" />
+                <span>Arrastrá el logo con el mouse o dedo</span>
+              </div>
+            )}
+
+            {/* Color badge */}
+            <div className="absolute bottom-2.5 right-2.5 z-30 bg-black/65 backdrop-blur-xs text-white px-2 py-0.5 rounded-xs text-[9px] font-bold tracking-wider uppercase pointer-events-none flex items-center gap-1.5">
+              {selectedColor && (
+                <span
+                  className="w-2.5 h-2.5 rounded-full border border-white/50"
+                  style={{ backgroundColor: selectedColor.hex }}
+                />
+              )}
+              <span>{selectedColor ? selectedColor.name : 'Foto Original'}</span>
             </div>
           </div>
 
-          <div className="mt-4 flex items-center justify-between w-full text-xs text-[#6F6860] px-2">
-            <span>Técnica: <strong className="text-[#18231C] uppercase">{technique === 'bordado' ? 'Bordado Computarizado' : 'Estampado Transfer HD'}</strong></span>
-            <span>Ubicación: <strong className="text-[#18231C] uppercase">{position.replace('_', ' ')}</strong></span>
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-2 w-full text-xs text-[#6F6860] px-1">
+            <span>
+              Técnica: <strong className="text-[#18231C] uppercase">{technique === 'bordado' ? 'Bordado' : 'Transfer HD'}</strong>
+            </span>
+            <span>
+              Medida: <strong className="text-[#18231C] font-mono">{logoWidthCm} × {calculatedHeightCm} cm</strong>
+            </span>
+            <span>
+              Vista: <strong className="text-[#18231C] uppercase">{viewSide}</strong>
+            </span>
           </div>
         </div>
 
@@ -433,16 +745,28 @@ export const CRMUniformSimulatorTab: React.FC = () => {
               </button>
             </div>
 
-            <label className="border-2 border-dashed border-[#DCD4C9] hover:border-[#B9522F] rounded-xs p-3.5 flex flex-col items-center justify-center cursor-pointer bg-[#FAF8F5] transition-colors">
+            <label className="border-2 border-dashed border-[#DCD4C9] hover:border-[#B9522F] rounded-xs p-3 flex flex-col items-center justify-center cursor-pointer bg-[#FAF8F5] transition-colors">
               <Upload className="w-5 h-5 text-[#8C827A] mb-1" />
-              <span className="text-xs font-bold text-[#18231C]">
+              <span className="text-xs font-bold text-[#18231C] truncate max-w-full">
                 {logoName ? logoName : 'Hacé clic para cargar logo (PNG o JPG)'}
               </span>
               <span className="text-[10px] text-[#6F6860] mt-0.5">
-                Recomendado con fondo transparente
+                Ajusta tamaño e integra sobre la tela automáticamente
               </span>
               <input type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" />
             </label>
+
+            {rawLogoUrl && (
+              <label className="flex items-center gap-2 text-[11px] font-semibold text-[#18231C] cursor-pointer pt-0.5">
+                <input
+                  type="checkbox"
+                  checked={stripWhiteBg}
+                  onChange={(e) => setStripWhiteBg(e.target.checked)}
+                  className="accent-[#B9522F]"
+                />
+                <span>Quitar fondo blanco del logo para integrarlo a la tela</span>
+              </label>
+            )}
           </div>
 
           {/* 3. Selección de Prenda */}
@@ -450,13 +774,15 @@ export const CRMUniformSimulatorTab: React.FC = () => {
             <h4 className="font-bold text-xs uppercase tracking-wider text-[#18231C]">
               3. Tipo de Prenda
             </h4>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto pr-0.5">
               {garmentsList.map((g) => (
                 <button
                   key={g.id}
+                  type="button"
                   onClick={() => {
                     setSelectedGarment(g);
-                    setSelectedColor(g.availableColors[0]);
+                    setSelectedColor(null);
+                    setViewSide('frente');
                   }}
                   className={`p-2.5 rounded-xs border text-left text-xs transition-all cursor-pointer ${
                     selectedGarment.id === g.id
@@ -465,24 +791,39 @@ export const CRMUniformSimulatorTab: React.FC = () => {
                   }`}
                 >
                   <p className="truncate font-semibold text-[#18231C]">{g.name}</p>
-                  <p className="text-[10px] text-[#8C827A]">{g.category}</p>
+                  <p className="text-[10px] text-[#8C827A] truncate">
+                    {g.category}
+                    {g.backImage ? ' · Frente/Espalda' : ''}
+                  </p>
                 </button>
               ))}
             </div>
           </div>
 
-          {/* 4. Color de la Prenda */}
+          {/* 4. Color Real de la Prenda (sin filtro sobre toda la foto) */}
           <div className="space-y-2">
             <h4 className="font-bold text-xs uppercase tracking-wider text-[#18231C]">
-              4. Color de Tela
+              4. Color de Tela (Solo Prenda)
             </h4>
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                type="button"
+                onClick={() => setSelectedColor(null)}
+                className={`px-2.5 py-1 rounded-xs border text-xs cursor-pointer ${
+                  selectedColor === null
+                    ? 'border-[#18231C] bg-[#18231C] text-white font-bold'
+                    : 'border-[#DCD4C9] bg-white text-[#18231C] hover:bg-[#FAF8F5]'
+                }`}
+              >
+                Original
+              </button>
               {selectedGarment.availableColors.map((c) => (
                 <button
                   key={c.name}
+                  type="button"
                   onClick={() => setSelectedColor(c)}
                   className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xs border text-xs cursor-pointer ${
-                    selectedColor.name === c.name
+                    selectedColor?.name === c.name
                       ? 'border-[#18231C] bg-[#18231C] text-white font-bold'
                       : 'border-[#DCD4C9] bg-white text-[#18231C] hover:bg-[#FAF8F5]'
                   }`}
@@ -497,7 +838,7 @@ export const CRMUniformSimulatorTab: React.FC = () => {
             </div>
           </div>
 
-          {/* 5. Ubicación y Técnica */}
+          {/* 5. Ubicación (Prestablecida o Manual) y Técnica */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <h4 className="font-bold text-xs uppercase tracking-wider text-[#18231C] mb-1.5">
@@ -505,13 +846,14 @@ export const CRMUniformSimulatorTab: React.FC = () => {
               </h4>
               <select
                 value={position}
-                onChange={(e) => setPosition(e.target.value as any)}
+                onChange={(e) => handleSelectPosition(e.target.value as LogoPosition)}
                 className="w-full px-2.5 py-1.5 text-xs border border-[#DCD4C9] rounded-xs bg-[#FAF8F5] outline-none font-medium text-[#18231C]"
               >
                 <option value="pecho_izq">Pecho Izquierdo</option>
                 <option value="pecho_centro">Pecho Centro</option>
                 <option value="espalda">Espalda Superior</option>
                 <option value="manga">Manga</option>
+                <option value="manual">Posición Manual (Arrastre)</option>
               </select>
             </div>
 
@@ -521,7 +863,7 @@ export const CRMUniformSimulatorTab: React.FC = () => {
               </h4>
               <select
                 value={technique}
-                onChange={(e) => setTechnique(e.target.value as any)}
+                onChange={(e) => setTechnique(e.target.value as LogoTechnique)}
                 className="w-full px-2.5 py-1.5 text-xs border border-[#DCD4C9] rounded-xs bg-[#FAF8F5] outline-none font-medium text-[#18231C]"
               >
                 <option value="bordado">Bordado Computarizado</option>
@@ -530,20 +872,92 @@ export const CRMUniformSimulatorTab: React.FC = () => {
             </div>
           </div>
 
-          {/* 7. Tamaño del Logo */}
-          <div className="space-y-1.5">
-            <div className="flex justify-between text-xs text-[#6F6860]">
-              <span className="font-bold uppercase tracking-wider text-[#18231C]">Tamaño del Logo:</span>
-              <span className="font-mono">{logoScale}px</span>
+          {/* 7. Tamaño del Logo en cm (input numérico + slider según proporción del logo) */}
+          <div className="p-3 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs space-y-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-bold uppercase tracking-wider text-[#18231C] flex items-center gap-1.5">
+                <Maximize2 className="w-3.5 h-3.5 text-[#B9522F]" />
+                7. Tamaño del Logo (cm)
+              </span>
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="number"
+                  min={3}
+                  max={34}
+                  step={0.5}
+                  value={logoWidthCm}
+                  onChange={(e) => {
+                    const v = parseFloat(e.target.value);
+                    if (!isNaN(v)) setLogoWidthCm(Math.min(34, Math.max(3, v)));
+                  }}
+                  className="w-16 px-2 py-1 text-xs font-mono font-bold text-center border border-[#DCD4C9] rounded-xs bg-white text-[#18231C]"
+                />
+                <span className="text-[11px] font-mono text-[#6F6860]">cm ancho</span>
+              </div>
             </div>
+
             <input
               type="range"
-              min="40"
-              max="110"
-              value={logoScale}
-              onChange={(e) => setLogoScale(Number(e.target.value))}
+              min={3}
+              max={34}
+              step={0.5}
+              value={logoWidthCm}
+              onChange={(e) => setLogoWidthCm(Number(e.target.value))}
               className="w-full accent-[#B9522F] cursor-pointer"
             />
+
+            <div className="flex items-center justify-between text-[10px] text-[#6F6860]">
+              <span>Proporción imagen: {calculatedHeightCm} cm de alto estimado</span>
+              <span>Estándar bolsillo: 8–10 cm</span>
+            </div>
+
+            {/* Ajuste fino manual de ángulo / integración */}
+            <div className="pt-2 border-t border-[#ECE5DC] grid grid-cols-2 gap-3">
+              <div>
+                <div className="flex justify-between text-[10px] font-bold text-[#4A453F] mb-1">
+                  <span>Inclinación / Ángulo</span>
+                  <span className="font-mono">{logoRotation}°</span>
+                </div>
+                <input
+                  type="range"
+                  min={-25}
+                  max={25}
+                  value={logoRotation}
+                  onChange={(e) => setLogoRotation(Number(e.target.value))}
+                  className="w-full accent-[#18231C] cursor-pointer"
+                />
+              </div>
+
+              <div>
+                <div className="flex justify-between text-[10px] font-bold text-[#4A453F] mb-1">
+                  <span>Integración Tela</span>
+                  <span className="font-mono">{logoOpacity}%</span>
+                </div>
+                <input
+                  type="range"
+                  min={65}
+                  max={100}
+                  value={logoOpacity}
+                  onChange={(e) => setLogoOpacity(Number(e.target.value))}
+                  className="w-full accent-[#18231C] cursor-pointer"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  setLogoRotation(0);
+                  setLogoOpacity(95);
+                  handleSelectPosition(position === 'manual' ? 'pecho_izq' : position);
+                }}
+                className="text-[10px] font-bold text-[#6F6860] hover:text-[#18231C] flex items-center gap-1 cursor-pointer"
+              >
+                <RotateCcw className="w-3 h-3" />
+                Restablecer posición y ángulo
+              </button>
+            </div>
           </div>
 
           {/* WhatsApp CTA Action */}

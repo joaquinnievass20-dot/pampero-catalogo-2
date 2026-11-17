@@ -389,7 +389,10 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
   };
 
   return (
-    <div className="w-full min-h-screen bg-[#F5F2EC] text-[#22201D] font-sans flex flex-col items-center">
+    <div 
+      style={{ backgroundColor: theme.catalogBgColor || theme.backgroundColor || '#F5F2EC' }}
+      className="w-full min-h-screen text-[#22201D] font-sans flex flex-col items-center"
+    >
       <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10">
         
         {/* Navigation Breadcrumb / Category switcher */}
@@ -450,7 +453,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                 {activePromoFilter ? activePromoFilter : currentCategory}
               </h1>
               <p 
-                style={{ color: theme.secondaryTextColor || '#6F6860' }}
+                style={{ color: theme.catalogSecondaryTextColor || theme.secondaryTextColor || '#6F6860' }}
                 className="mt-1 text-xs sm:text-sm font-sans"
               >
                 {activePromoFilter

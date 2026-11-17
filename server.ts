@@ -897,6 +897,52 @@ async function startServer() {
     }
   });
 
+  // Safe read-only proxy for existing product images (used to strip background on already-uploaded product photos without CORS issues)
+  app.get('/api/image-proxy', async (req, res) => {
+    try {
+      const rawUrl = typeof req.query.url === 'string' ? req.query.url.trim() : '';
+      if (!rawUrl) {
+        return res.status(400).json({ error: 'Falta parámetro url.' });
+      }
+      let parsed: URL;
+      try {
+        parsed = new URL(rawUrl);
+      } catch {
+        return res.status(400).json({ error: 'URL inválida.' });
+      }
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        return res.status(400).json({ error: 'Protocolo no permitido.' });
+      }
+      const hostLower = parsed.hostname.toLowerCase();
+      if (
+        hostLower === 'localhost' ||
+        hostLower === '127.0.0.1' ||
+        hostLower === '0.0.0.0' ||
+        hostLower === '::1' ||
+        hostLower.startsWith('10.') ||
+        hostLower.startsWith('192.168.') ||
+        /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostLower)
+      ) {
+        return res.status(403).json({ error: 'Host no permitido.' });
+      }
+
+      const upstream = await fetch(parsed.toString());
+      if (!upstream.ok) {
+        return res.status(upstream.status).json({ error: `Upstream HTTP ${upstream.status}` });
+      }
+      const contentType = upstream.headers.get('content-type') || 'image/jpeg';
+      if (!contentType.toLowerCase().startsWith('image/')) {
+        return res.status(400).json({ error: 'El recurso remoto no es una imagen.' });
+      }
+      const arrayBuf = await upstream.arrayBuffer();
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Cache-Control', 'no-store');
+      return res.send(Buffer.from(arrayBuf));
+    } catch (err: any) {
+      return res.status(500).json({ error: err?.message || 'Error cargando imagen remota.' });
+    }
+  });
+
   // Catalog general info
   app.get('/api/catalog/info', (_req, res) => {
     res.json({

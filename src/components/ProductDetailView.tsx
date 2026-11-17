@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Product, UserSession, ThemeConfig, SpecialSizeRange, Promotion } from '../types';
 import { ArrowLeft, MessageCircle, ShoppingBag, Check, Building2, Info, ChevronLeft, ChevronRight, Layers, Tag, ZoomIn } from 'lucide-react';
-import { getColorHex, getColorCode, getProductImageForColor, recordProductInteraction } from '../utils/colorUtils';
+import { getColorHex, getColorCode, getProductImageForColor, getAllImagesForColor, recordProductInteraction } from '../utils/colorUtils';
+import { findSpecialRangeForSize, resolveSpecialRangeSizes, normalizeSpecialSuffix } from '../utils/sizeUtils';
 import { getProductActivePromotion } from '../utils/promoUtils';
 import { ImageLightboxModal } from './ImageLightboxModal';
 import { trackProductClick, trackAddToCart } from '../utils/analytics';
@@ -46,18 +47,57 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
   const activePromo = getProductActivePromotion(product, promotions);
   const promoBadgeLabel = activePromo ? (activePromo.badge || product.promotionTag || activePromo.tagFilter) : null;
 
+  // Normalize special size ranges so even legacy products with sizes: [] resolve cleanly
+  const resolvedSpecialRanges: SpecialSizeRange[] = useMemo(() => {
+    return (product.specialSizeRanges || []).map((r) => ({
+      ...r,
+      suffix: normalizeSpecialSuffix(r.suffix),
+      rangeLabel: r.rangeLabel || r.sizeRangeLabel || r.label || `Talles Especiales ${r.suffix || '-1'}`,
+      sizes: resolveSpecialRangeSizes(r),
+    }));
+  }, [product.specialSizeRanges]);
+
+  // Exclude sizes that belong to a special range from the "standard" row to avoid confusion
+  const specialSizesSet = useMemo(() => {
+    const set = new Set<string>();
+    resolvedSpecialRanges.forEach((r) => {
+      r.sizes.forEach((s) => set.add(String(s).trim().toUpperCase()));
+    });
+    return set;
+  }, [resolvedSpecialRanges]);
+
+  const standardOnlySizes = useMemo(() => {
+    return baseSizes.filter((s) => !specialSizesSet.has(String(s).trim().toUpperCase()));
+  }, [baseSizes, specialSizesSet]);
+
   // Active special size range (null if standard size selected)
-  const [activeSpecialRange, setActiveSpecialRange] = useState<SpecialSizeRange | null>(null);
+  const [activeSpecialRange, setActiveSpecialRange] = useState<SpecialSizeRange | null>(() =>
+    findSpecialRangeForSize(product, baseSizes[0] || '')
+  );
+
+  // Sync defaults if product changes
+  useEffect(() => {
+    const firstColor = colors && colors.length > 0 ? colors[0] : '';
+    const firstSize = standardOnlySizes[0] || baseSizes[0] || resolvedSpecialRanges[0]?.sizes[0] || '';
+    setSelectedColor(firstColor);
+    setSelectedSize(firstSize);
+    setActiveSpecialRange(findSpecialRangeForSize(product, firstSize));
+    setActiveImageIndex(0);
+  }, [product.id]);
 
   // When selectedSize changes, automatically detect if it belongs to a special range
   const handleSelectSize = (size: string, specialRange?: SpecialSizeRange | null) => {
     setSelectedSize(size);
     if (specialRange) {
-      setActiveSpecialRange(specialRange);
+      setActiveSpecialRange({
+        ...specialRange,
+        suffix: normalizeSpecialSuffix(specialRange.suffix),
+        sizes: resolveSpecialRangeSizes(specialRange),
+        rangeLabel: specialRange.rangeLabel || specialRange.sizeRangeLabel || specialRange.label || 'Talles Especiales',
+      });
     } else {
-      // Check if size is in any special range
-      const foundRange = product.specialSizeRanges?.find(r => r.sizes.includes(size));
-      setActiveSpecialRange(foundRange || null);
+      const foundRange = findSpecialRangeForSize(product, size);
+      setActiveSpecialRange(foundRange);
     }
   };
 
@@ -73,7 +113,6 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
       } else if (unisexModelView === 'women' && Array.isArray(product.imagesWomen) && product.imagesWomen.length > 0) {
         list.push(...product.imagesWomen.filter(Boolean));
       } else {
-        // 'all': Combine general + men + women without discarding anything
         if (Array.isArray(product.images) && product.images.length > 0) {
           list.push(...product.images.filter(Boolean));
         }
@@ -110,10 +149,12 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
       list.unshift(product.image);
     }
 
-    // Prioritize selected color image if available
-    const colorImg = getProductImageForColor(product, selectedColor);
-    if (colorImg && !list.includes(colorImg)) {
-      list.unshift(colorImg);
+    // Ensure selected color image(s) are included
+    const selectedColorImgs = getAllImagesForColor(product, selectedColor);
+    for (const cImg of selectedColorImgs.slice().reverse()) {
+      if (cImg && !list.includes(cImg)) {
+        list.unshift(cImg);
+      }
     }
 
     const unique = list.filter((url, index, self): url is string => Boolean(url && url.trim()) && self.indexOf(url) === index);
@@ -124,16 +165,32 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
   // Safe active index clamped to current images length
   const safeActiveIndex = activeImageIndex >= allImages.length ? 0 : activeImageIndex;
 
-  // Update active image if color changes and matches a color-specific image
+  // Update active image immediately when selectedColor changes
+  const handleSelectColor = (color: string) => {
+    setSelectedColor(color);
+    const colorMatches = getAllImagesForColor(product, color);
+    const targetImg = colorMatches[0];
+    if (targetImg) {
+      const foundIdx = allImages.findIndex((img) => img === targetImg);
+      if (foundIdx !== -1) {
+        setActiveImageIndex(foundIdx);
+      } else {
+        setActiveImageIndex(0);
+      }
+    }
+  };
+
   useEffect(() => {
-    const colorImg = getProductImageForColor(product, selectedColor);
-    if (colorImg) {
-      const foundIdx = allImages.findIndex(img => img === colorImg);
+    if (!selectedColor) return;
+    const colorMatches = getAllImagesForColor(product, selectedColor);
+    const targetImg = colorMatches[0];
+    if (targetImg) {
+      const foundIdx = allImages.findIndex((img) => img === targetImg);
       if (foundIdx !== -1) {
         setActiveImageIndex(foundIdx);
       }
     }
-  }, [selectedColor, allImages]);
+  }, [selectedColor, product.id]);
 
   // Record view/click interaction once on mount or when product ID changes
   useEffect(() => {
@@ -146,12 +203,12 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
   
   // Calculate price based on whether a special size range is selected
   const activeProductCode = activeSpecialRange 
-    ? `${product.code}${activeSpecialRange.suffix || '-1'}` 
+    ? `${product.code}${normalizeSpecialSuffix(activeSpecialRange.suffix)}` 
     : product.code;
 
   const currentBasePrice = activeSpecialRange
-    ? activeSpecialRange.price
-    : product.price;
+    ? (isCompany && activeSpecialRange.corporatePrice ? activeSpecialRange.corporatePrice : activeSpecialRange.price)
+    : (isCompany && product.corporatePrice ? product.corporatePrice : product.price);
 
   const hasDiscount = Boolean(product.discountPercentage && product.discountPercentage > 0);
   const discountedPrice = hasDiscount
@@ -492,7 +549,7 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
                       <button
                         key={color}
                         type="button"
-                        onClick={() => setSelectedColor(color)}
+                        onClick={() => handleSelectColor(color)}
                         style={{
                           borderColor: isSelected ? (theme.primaryColor || '#18231C') : '#DCD4C9',
                         }}
@@ -520,21 +577,21 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
             )}
 
             {/* TALLE Selection (Standard & Special Size Ranges) */}
-            {(baseSizes.length > 0 || (product.specialSizeRanges && product.specialSizeRanges.length > 0)) && (
+            {(standardOnlySizes.length > 0 || resolvedSpecialRanges.length > 0) && (
               <div className="space-y-4">
                 {/* 1. Talles Estándar */}
-                {baseSizes.length > 0 && (
+                {standardOnlySizes.length > 0 && (
                   <div>
                     <div className="flex items-center justify-between mb-2">
                       <label className="block text-[10px] uppercase tracking-[0.25em] font-bold text-[#4A453F]">
                         TALLES ESTÁNDAR
                       </label>
                       <span className="text-[11px] text-[#6F6860]">
-                        Precio base: ${product.price.toLocaleString('es-AR')}
+                        Precio base: ${(isCompany && product.corporatePrice ? product.corporatePrice : product.price).toLocaleString('es-AR')}
                       </span>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      {baseSizes.map((size) => {
+                      {standardOnlySizes.map((size) => {
                         const isSelected = selectedSize === size && !activeSpecialRange;
                         return (
                           <button
@@ -557,15 +614,15 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
                 )}
 
               {/* 2. Talles Especiales y Precios Diferenciados */}
-              {product.specialSizeRanges && product.specialSizeRanges.length > 0 && (
+              {resolvedSpecialRanges.length > 0 && (
                 <div className="space-y-3 pt-3 border-t border-[#DCD4C9]/70">
-                  {product.specialSizeRanges.map((range) => {
-                    const rangePrice = range.price;
-                    const isThisRangeActive = activeSpecialRange?.id === range.id;
+                  {resolvedSpecialRanges.map((range) => {
+                    const rangePrice = isCompany && range.corporatePrice ? range.corporatePrice : range.price;
+                    const isThisRangeActive = activeSpecialRange?.id === range.id || activeSpecialRange?.suffix === range.suffix;
 
                     return (
                       <div 
-                        key={range.id} 
+                        key={range.id || range.suffix} 
                         className={`p-3.5 rounded-xs border transition-all ${
                           isThisRangeActive 
                             ? 'bg-amber-50/60 border-amber-400 ring-1 ring-amber-300' 
@@ -592,7 +649,7 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
 
                         <div className="flex flex-wrap gap-2">
                           {range.sizes.map((size) => {
-                            const isSelected = selectedSize === size && activeSpecialRange?.id === range.id;
+                            const isSelected = selectedSize === size && isThisRangeActive;
                             return (
                               <button
                                 key={size}
@@ -644,13 +701,13 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
                 target="_blank"
                 rel="noreferrer"
                 style={{ 
-                  backgroundColor: theme.buttonBgColor || accent,
-                  color: theme.buttonTextColor || '#FFFFFF'
+                  backgroundColor: theme.productDetailButtonBg || theme.buttonBgColor || accent,
+                  color: theme.productDetailButtonTextColor || theme.buttonTextColor || '#FFFFFF'
                 }}
                 className="w-full flex items-center justify-center gap-2 rounded-xs px-6 py-3.5 text-xs font-bold uppercase tracking-[0.25em] transition-all shadow-sm hover:brightness-110 cursor-pointer"
               >
                 <MessageCircle className="w-4 h-4" />
-                <span>{theme.siteTexts?.whatsappConsultBtnText || 'CONSULTAR POR WHATSAPP'}</span>
+                <span>{theme.siteTexts?.productDetailWhatsappBtnText || theme.siteTexts?.whatsappConsultBtnText || 'CONSULTAR POR WHATSAPP'}</span>
               </a>
 
               {/* Add to quote bag button */}
@@ -658,8 +715,8 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
                 type="button"
                 onClick={handleAddToCart}
                 style={{
-                  borderColor: theme.buttonBgColor || theme.primaryColor || '#18231C',
-                  color: theme.buttonBgColor || theme.primaryColor || '#18231C',
+                  borderColor: theme.productDetailBorderColor || theme.buttonBgColor || theme.primaryColor || '#18231C',
+                  color: theme.productDetailTextColor || theme.buttonBgColor || theme.primaryColor || '#18231C',
                 }}
                 className="w-full flex items-center justify-center gap-2 rounded-xs border-2 bg-transparent hover:bg-neutral-100 px-6 py-3.5 text-xs font-bold uppercase tracking-[0.25em] transition-all cursor-pointer"
               >
@@ -671,7 +728,7 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
                 ) : (
                   <>
                     <ShoppingBag className="w-4 h-4" />
-                    <span>{theme.siteTexts?.addToQuoteBtnText || 'AGREGAR A MI PEDIDO'}</span>
+                    <span>{theme.siteTexts?.productDetailAddBtnText || theme.siteTexts?.addToQuoteBtnText || 'AGREGAR A MI PEDIDO'}</span>
                   </>
                 )}
               </button>

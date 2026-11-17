@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Product, UserSession, ThemeConfig, Promotion } from '../types';
 import { Building2, ChevronLeft, ChevronRight } from 'lucide-react';
-import { getColorHex, getProductImageForColor, recordProductInteraction } from '../utils/colorUtils';
+import { getColorHex, getProductImageForColor, getAllImagesForColor, recordProductInteraction } from '../utils/colorUtils';
 import { getProductActivePromotion } from '../utils/promoUtils';
 import { trackProductClick } from '../utils/analytics';
 
@@ -53,12 +53,21 @@ export const ProductCard: React.FC<ProductCardProps> = ({
     if (Array.isArray(product.imagesWomen) && product.imagesWomen.length > 0) {
       list.push(...product.imagesWomen.filter(Boolean));
     }
+    if (product.imagesByColor && typeof product.imagesByColor === 'object') {
+      for (const url of Object.values(product.imagesByColor)) {
+        if (url && typeof url === 'string' && !list.includes(url)) {
+          list.push(url);
+        }
+      }
+    }
     if (product.image && !list.includes(product.image)) {
       list.unshift(product.image);
     }
-    const colorImg = getProductImageForColor(product, selectedColor);
-    if (colorImg && !list.includes(colorImg)) {
-      list.unshift(colorImg);
+    const colorImgs = getAllImagesForColor(product, selectedColor);
+    for (const cImg of colorImgs.slice().reverse()) {
+      if (cImg && !list.includes(cImg)) {
+        list.unshift(cImg);
+      }
     }
     const unique = list.filter((url, idx, self) => Boolean(url && url.trim()) && self.indexOf(url) === idx);
     const fallback = (displayedImage && displayedImage.trim()) || (product.image && product.image.trim()) || '/logo.png';
@@ -67,26 +76,36 @@ export const ProductCard: React.FC<ProductCardProps> = ({
 
   const [currentImgIndex, setCurrentImgIndex] = useState(0);
   const touchStartXRef = useRef<number | null>(null);
+  const prevSyncedColorRef = useRef<string>('');
 
   const handleSelectColor = (e: React.MouseEvent, col: string) => {
     e.stopPropagation();
     setSelectedColor(col);
-    const colorImg = getProductImageForColor(product, col);
-    if (colorImg) {
-      const foundIdx = allImages.findIndex((url) => url === colorImg);
+    const colorMatches = getAllImagesForColor(product, col);
+    const targetImg = colorMatches[0] || getProductImageForColor(product, col);
+    if (targetImg) {
+      const foundIdx = allImages.findIndex((url) => url === targetImg);
       if (foundIdx !== -1) {
         setCurrentImgIndex(foundIdx);
+      } else {
+        setCurrentImgIndex(0);
       }
     }
+    prevSyncedColorRef.current = col;
   };
 
-  // Guarded sync for initial or external color adjustments
+  // Sync only when product ID or selectedColor actually changes (does not override manual arrows)
   useEffect(() => {
-    const colorImg = getProductImageForColor(product, selectedColor);
-    if (colorImg) {
-      const foundIdx = allImages.findIndex((url) => url === colorImg);
+    if (!selectedColor) {
+      setCurrentImgIndex(0);
+      return;
+    }
+    const colorMatches = getAllImagesForColor(product, selectedColor);
+    const targetImg = colorMatches[0];
+    if (targetImg) {
+      const foundIdx = allImages.findIndex((url) => url === targetImg);
       if (foundIdx !== -1) {
-        setCurrentImgIndex((prev) => (prev === foundIdx ? prev : foundIdx));
+        setCurrentImgIndex(foundIdx);
       }
     }
   }, [selectedColor, product.id]);
@@ -147,8 +166,8 @@ export const ProductCard: React.FC<ProductCardProps> = ({
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
         style={{ 
-          backgroundColor: theme.cardBgColor || '#ECE5DC',
-          borderColor: cardBorder 
+          backgroundColor: theme.catalogCardBgColor || theme.cardBgColor || '#ECE5DC',
+          borderColor: theme.catalogCardBorderColor || cardBorder 
         }}
         className="relative overflow-hidden rounded-xs border cursor-pointer transition-colors"
       >
@@ -247,8 +266,8 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             handleDetailClick();
           }}
           style={{ 
-            backgroundColor: theme.cardButtonBg || theme.buttonBgColor || theme.primaryColor || '#18231C',
-            color: theme.cardButtonText || theme.buttonTextColor || '#F5F2EC'
+            backgroundColor: theme.catalogButtonBg || theme.cardButtonBg || theme.buttonBgColor || theme.primaryColor || '#18231C',
+            color: theme.catalogButtonTextColor || theme.cardButtonText || theme.buttonTextColor || '#F5F2EC'
           }}
           className="absolute inset-x-0 bottom-0 translate-y-full py-2.5 text-center text-[10px] font-bold uppercase tracking-[0.25em] transition-transform duration-300 group-hover:translate-y-0 z-10 cursor-pointer"
         >
@@ -304,7 +323,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           )}
           {product.specialSizeRanges && product.specialSizeRanges.length > 0 && (
             <span className="text-[9px] font-bold text-amber-800 bg-amber-50 px-1 rounded-xs border border-amber-200 uppercase tracking-wider">
-              Talles Esp. (-1)
+              Talles Esp. ({product.specialSizeRanges.map((r) => r.suffix || '-1').join(', ')})
             </span>
           )}
         </div>

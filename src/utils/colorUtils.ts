@@ -77,37 +77,117 @@ export function getColorCode(colorName: string): string {
   return found ? found.code : '';
 }
 
-export function getProductImageForColor(product: Product, colorNameOrCode?: string): string {
-  if (!product) return '';
-  if (!colorNameOrCode || !product.imagesByColor) return product.image;
+export function normalizeColorToken(token: string): string {
+  const trimmed = String(token || '').trim();
+  if (!trimmed) return '';
+  if (/^c0*(\d+)$/i.test(trimmed)) {
+    const num = trimmed.replace(/^c0*/i, '');
+    return `C${num}`.toUpperCase();
+  }
+  const codes = getSavedColorCodes();
+  const exactCode = codes.find((c) => c.code.toLowerCase() === trimmed.toLowerCase());
+  if (exactCode) return exactCode.code;
+  return trimmed;
+}
 
+export function resolveColorDef(codeOrName: string): { code: string; name: string; hex: string } {
+  const codes = getSavedColorCodes();
+  const clean = String(codeOrName || '').trim();
+  const normalized = normalizeColorToken(clean);
+  const match =
+    codes.find((c) => c.code.toLowerCase() === normalized.toLowerCase()) ||
+    codes.find((c) => c.name.toLowerCase().includes(clean.toLowerCase()) || clean.toLowerCase().includes(c.name.toLowerCase()));
+
+  if (match) {
+    return { code: match.code, name: match.name, hex: match.hex };
+  }
+  return {
+    code: /^c\d+$/i.test(normalized) ? normalized : '',
+    name: clean,
+    hex: getColorHex(clean),
+  };
+}
+
+export function colorMatchesToken(colorA: string, colorB: string): boolean {
+  const a = String(colorA || '').trim();
+  const b = String(colorB || '').trim();
+  if (!a || !b) return false;
+  if (a.toLowerCase() === b.toLowerCase()) return true;
+
+  const normA = normalizeColorToken(a);
+  const normB = normalizeColorToken(b);
+  if (normA && normB && normA.toLowerCase() === normB.toLowerCase()) return true;
+
+  const defA = resolveColorDef(a);
+  const defB = resolveColorDef(b);
+  if (defA.code && defB.code && defA.code.toLowerCase() === defB.code.toLowerCase()) return true;
+  if (defA.name && defB.name && defA.name.toLowerCase() === defB.name.toLowerCase()) return true;
+
+  const lowerA = a.toLowerCase();
+  const lowerB = b.toLowerCase();
+  return lowerA.includes(lowerB) || lowerB.includes(lowerA);
+}
+
+function urlContainsColorToken(url: string, targetColor: string): boolean {
+  if (!url || !targetColor) return false;
+  let decoded = url;
+  try {
+    decoded = decodeURIComponent(url);
+  } catch {}
+  const def = resolveColorDef(targetColor);
+  const tokens = [def.code, targetColor.trim()].filter((t) => t && t.length >= 2);
+  for (const tok of tokens) {
+    const escaped = tok.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // Match #C1, _C1_, -C1., /C1# etc. (word-boundary or symbol-delimited)
+    const regex = new RegExp(`(?:#|_|\\-|\\/|\\s|^)${escaped}(?=#|_|\\-|\\.|\\?|\\s|$)`, 'i');
+    if (regex.test(decoded)) return true;
+  }
+  return false;
+}
+
+export function getAllImagesForColor(product: Product, colorNameOrCode?: string): string[] {
+  if (!product || !colorNameOrCode) return [];
   const key = colorNameOrCode.trim();
+  if (!key) return [];
 
-  // 1. Direct match
-  if (product.imagesByColor[key]) {
-    return product.imagesByColor[key];
-  }
+  const matched: string[] = [];
 
-  // 2. Case insensitive
-  const lower = key.toLowerCase();
-  for (const [k, url] of Object.entries(product.imagesByColor)) {
-    if (k.toLowerCase() === lower && url) return url;
-  }
-
-  // 3. By code
-  const code = getColorCode(key);
-  if (code && product.imagesByColor[code]) {
-    return product.imagesByColor[code];
-  }
-
-  // 4. Fuzzy match
-  for (const [k, url] of Object.entries(product.imagesByColor)) {
-    if ((k.toLowerCase().includes(lower) || lower.includes(k.toLowerCase())) && url) {
-      return url;
+  // 1. Buscar en imagesByColor con soporte completo de código <-> nombre y normalización (C1 / C01 / Arena)
+  if (product.imagesByColor && typeof product.imagesByColor === 'object') {
+    for (const [entryKey, url] of Object.entries(product.imagesByColor)) {
+      if (url && typeof url === 'string' && colorMatchesToken(key, entryKey)) {
+        if (!matched.includes(url)) matched.push(url);
+      }
     }
   }
 
-  return product.image;
+  // 2. Buscar en todas las galerías URLs que tengan el código del color en el nombre de archivo (#C1, #C4, etc.)
+  const galleryCandidates: string[] = [
+    ...(Array.isArray(product.images) ? product.images : []),
+    ...(Array.isArray(product.imagesMen) ? product.imagesMen : []),
+    ...(Array.isArray(product.imagesWomen) ? product.imagesWomen : []),
+    ...(product.image ? [product.image] : []),
+  ].filter((u): u is string => Boolean(u && typeof u === 'string' && u.trim()));
+
+  for (const url of galleryCandidates) {
+    if (urlContainsColorToken(url, key) && !matched.includes(url)) {
+      matched.push(url);
+    }
+  }
+
+  return matched;
+}
+
+export function getProductImageForColor(product: Product, colorNameOrCode?: string): string {
+  if (!product) return '';
+  if (!colorNameOrCode) return product.image || product.images?.[0] || '';
+
+  const matched = getAllImagesForColor(product, colorNameOrCode);
+  if (matched.length > 0) {
+    return matched[0];
+  }
+
+  return product.image || product.images?.[0] || '';
 }
 
 export function getEffectiveColors(product: Product): string[] {

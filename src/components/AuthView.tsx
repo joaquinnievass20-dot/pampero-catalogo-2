@@ -52,13 +52,13 @@ export const AuthView: React.FC<AuthViewProps> = ({
     setRedirectSuggestion(null);
   };
 
-  const primary = theme?.primaryColor || '#18231C';
-  const accent = theme?.accentColor || '#FDB813';
-  const bg = theme?.backgroundColor || '#F5F2EC';
-  const text = theme?.textColor || '#18231C';
-  const btnText = theme?.buttonTextColor || '#FFFFFF';
-  const panelBg = theme?.panelBgColor || '#FAF8F5';
-  const borderCol = theme?.cardBorderColor || theme?.secondaryColor || '#DCD4C9';
+  const primary = theme?.loginModalButtonBg || theme?.primaryColor || '#18231C';
+  const accent = theme?.loginModalButtonHoverBg || theme?.accentColor || '#FDB813';
+  const bg = theme?.loginModalBgColor || theme?.backgroundColor || '#F5F2EC';
+  const text = theme?.loginModalTextColor || theme?.textColor || '#18231C';
+  const btnText = theme?.loginModalButtonTextColor || theme?.buttonTextColor || '#FFFFFF';
+  const panelBg = theme?.loginModalBgColor || theme?.panelBgColor || '#FAF8F5';
+  const borderCol = theme?.loginModalBorderColor || theme?.cardBorderColor || theme?.secondaryColor || '#DCD4C9';
 
   // Form Fields
   const [fullName, setFullName] = useState('');

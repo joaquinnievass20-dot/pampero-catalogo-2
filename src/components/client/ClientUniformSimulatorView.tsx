@@ -15,7 +15,10 @@ export const ClientUniformSimulatorView: React.FC<ClientUniformSimulatorViewProp
   const accent = theme?.accentColor || '#FDB813';
 
   return (
-    <div className="min-h-screen bg-[#FAF8F5] pb-16">
+    <div 
+      style={{ backgroundColor: theme?.corporateServicesBgColor || '#FAF8F5' }}
+      className="min-h-screen pb-16"
+    >
       {/* Top Banner Navigation */}
       <div className="bg-[#18231C] text-white border-b border-black py-4 px-4 sm:px-8">
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
@@ -32,7 +35,7 @@ export const ClientUniformSimulatorView: React.FC<ClientUniformSimulatorViewProp
             <div className="flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-[#FDB813]" />
               <span className="font-display font-bold uppercase tracking-wider text-sm sm:text-base">
-                Armador de Uniformes Virtual · Pampero Mendoza
+                {theme?.siteTexts?.uniformSimulatorTitle || 'Armador de Uniformes Virtual · Pampero Mendoza'}
               </span>
             </div>
           </div>

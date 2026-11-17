@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { trackWhatsAppQuote } from '../utils/analytics';
 import { saveCRMOrder, getNextCorrelativeOrderNumber } from '../services/firebase';
+import { findSpecialRangeForSize, resolveSpecialRangeSizes, normalizeSpecialSuffix } from '../utils/sizeUtils';
 
 interface QuoteDrawerProps {
   isOpen: boolean;
@@ -222,11 +223,14 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
     const handleSizeChange = (idx: number, newSize: string) => {
       const item = safeItems[idx];
       if (!item || !onUpdateCartItem) return;
-      const matchingRange = item.product.specialSizeRanges?.find((r) => r.sizes.includes(newSize));
+      const matchingRange = findSpecialRangeForSize(item.product, newSize);
       const targetCode = matchingRange?.suffix
-        ? `${item.product.code}${matchingRange.suffix}`
+        ? `${item.product.code}${normalizeSpecialSuffix(matchingRange.suffix)}`
         : item.product.code;
-      const newUnitPrice = matchingRange ? matchingRange.price : undefined;
+      const isComp = userSession?.clientType === 'empresa';
+      const newUnitPrice = matchingRange
+        ? (isComp && matchingRange.corporatePrice ? matchingRange.corporatePrice : matchingRange.price)
+        : undefined;
 
       onUpdateCartItem(idx, {
         ...item,
@@ -557,9 +561,9 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
                               </option>
                             ))}
                             {(item.product.specialSizeRanges || []).map((range) =>
-                              range.sizes.map((s) => (
+                              resolveSpecialRangeSizes(range).map((s) => (
                                 <option key={`spec-${range.suffix}-${s}`} value={s} className="bg-amber-50 text-amber-900 font-bold">
-                                  {s} ({range.rangeLabel} {range.suffix})
+                                  {s} ({range.rangeLabel || range.sizeRangeLabel} {normalizeSpecialSuffix(range.suffix)})
                                 </option>
                               ))
                             )}
@@ -703,7 +707,11 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
                   type="button"
                   id="btn-pasar-pedido-whatsapp"
                   onClick={handleSendWhatsApp}
-                  className="w-full py-3 px-3 rounded-xs font-bold text-xs bg-[#25D366] hover:bg-[#20BA5A] text-white shadow-sm flex items-center justify-center gap-1.5 uppercase tracking-wider transition-all cursor-pointer"
+                  style={{
+                    backgroundColor: theme?.quoteDrawerButtonBg || '#25D366',
+                    color: theme?.quoteDrawerButtonTextColor || '#FFFFFF'
+                  }}
+                  className="w-full py-3 px-3 rounded-xs font-bold text-xs hover:brightness-110 shadow-sm flex items-center justify-center gap-1.5 uppercase tracking-wider transition-all cursor-pointer"
                   title="Enviar pedido con formato completo a WhatsApp"
                 >
                   <MessageCircle className="w-4 h-4 fill-white shrink-0" />

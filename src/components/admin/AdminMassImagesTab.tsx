@@ -1,12 +1,15 @@
 import React, { useState, useRef } from 'react';
 import { Product } from '../../types';
 import { parseImageFileName, ParsedImageInfo } from '../../utils/imageNamingParser';
+import { fetchImageUrlAsFile } from '../../utils/productBackgroundRemover';
+import { colorMatchesToken, resolveColorDef } from '../../utils/colorUtils';
 import { 
   uploadImageToStorage, 
   saveFirestoreProducts, 
   saveSingleFirestoreProduct,
   formatStorageErrorMessage 
 } from '../../services/firebase';
+import { ProductImageBgModal } from './ProductImageBgModal';
 import { 
   Images, 
   Upload, 
@@ -22,7 +25,8 @@ import {
   ExternalLink,
   CheckCircle2,
   Layers,
-  Shirt
+  Shirt,
+  Loader2
 } from 'lucide-react';
 
 interface AdminMassImagesTabProps {
@@ -94,17 +98,83 @@ export const AdminMassImagesTab: React.FC<AdminMassImagesTabProps> = ({
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingStatus, setProcessingStatus] = useState<string>('');
   const [batchErrorNotice, setBatchErrorNotice] = useState<string | null>(null);
+  const [pendingBatchBgFiles, setPendingBatchBgFiles] = useState<File[] | null>(null);
+  const [pendingExistingReplace, setPendingExistingReplace] = useState<{
+    product: Product;
+    oldUrl: string;
+    file: File;
+  } | null>(null);
+  const [loadingExistingBgId, setLoadingExistingBgId] = useState<string | null>(null);
   const fileBatchInputRef = useRef<HTMLInputElement>(null);
 
-  // 1. Carga masiva: Subida directa a Firebase Storage (uploadBytes/getDownloadURL)
-  // con seguimiento paso a paso y try/catch robusto para evitar bloqueos
-  const handleBatchFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleTriggerExistingProductBgRemoval = async (p: Product) => {
+    const targetUrl = (p.image && p.image.trim()) || (p.images && p.images[0]) || '';
+    if (!targetUrl || loadingExistingBgId) return;
+    setLoadingExistingBgId(p.id);
+    setBatchErrorNotice(null);
+    try {
+      const file = await fetchImageUrlAsFile(targetUrl, `${p.code || 'producto'}.jpg`);
+      setPendingExistingReplace({ product: p, oldUrl: targetUrl, file });
+    } catch (err: any) {
+      alert(`No se pudo cargar la foto de ${p.code} para quitar el fondo: ${err?.message || 'Error de red'}`);
+    } finally {
+      setLoadingExistingBgId(null);
+    }
+  };
+
+  const handleConfirmExistingProductBgReplace = async (approvedFile: File) => {
+    const target = pendingExistingReplace;
+    setPendingExistingReplace(null);
+    if (!target) return;
+    setIsProcessing(true);
+    setProcessingStatus(`Subiendo foto sin fondo para ${target.product.code}...`);
+    try {
+      const skuPrefix = (target.product.code || 'producto').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const newUrl = await uploadImageToStorage(approvedFile, `products/${skuPrefix}`);
+      const swapArr = (arr?: string[]) =>
+        Array.isArray(arr) ? arr.map((u) => (u === target.oldUrl ? newUrl : u)) : [];
+      const nextByColor: Record<string, string> = { ...(target.product.imagesByColor || {}) };
+      for (const [k, v] of Object.entries(nextByColor)) {
+        if (v === target.oldUrl) nextByColor[k] = newUrl;
+      }
+      const nextImages = swapArr(target.product.images);
+      if (!nextImages.includes(newUrl)) nextImages.unshift(newUrl);
+
+      const updatedProd: Product = {
+        ...target.product,
+        image: newUrl,
+        images: nextImages,
+        imagesMen: swapArr(target.product.imagesMen),
+        imagesWomen: swapArr(target.product.imagesWomen),
+        imagesByColor: nextByColor,
+      };
+      await saveSingleFirestoreProduct(updatedProd);
+      const updatedCatalog = products.map((item) => (item.id === target.product.id ? updatedProd : item));
+      onUpdateProducts(updatedCatalog);
+      triggerSaveNotice();
+    } catch (err: any) {
+      alert(`Error guardando la nueva foto sin fondo: ${err?.message || err}`);
+    } finally {
+      setIsProcessing(false);
+      setProcessingStatus('');
+    }
+  };
+
+  // 1. Interceptar fotos de productos para eliminar fondo y previsualizar antes de subir
+  const handleBatchFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
+    setBatchErrorNotice(null);
+    setPendingBatchBgFiles(Array.from(files) as File[]);
+    e.target.value = '';
+  };
+
+  // Ejecución real de subida a Firebase Storage tras aprobación en ProductImageBgModal
+  const uploadApprovedBatchFiles = async (fileList: File[]) => {
+    if (!fileList || fileList.length === 0) return;
 
     setIsProcessing(true);
     setBatchErrorNotice(null);
-    const fileList = Array.from(files) as File[];
     const successfulPreviews: Array<{
       name: string;
       dataUrl: string;
@@ -149,12 +219,25 @@ export const AdminMassImagesTab: React.FC<AdminMassImagesTabProps> = ({
             parsedInfo,
           });
 
-          // Actualización del Documento: Guardar inmediatamente la URL en el producto en Cloud Firestore
+          // Actualización del Documento: Guardar inmediatamente la URL en el producto en Cloud Firestore (incluyendo color)
           if (matched) {
+            const nextByColor: Record<string, string> = { ...(matched.imagesByColor || {}) };
+            const nextColors: string[] = Array.isArray(matched.availableColors) ? [...matched.availableColors] : [];
+            if (parsedInfo.colorCode) {
+              if (!nextByColor[parsedInfo.colorCode]) nextByColor[parsedInfo.colorCode] = publicUrl;
+              const resolved = resolveColorDef(parsedInfo.colorCode);
+              if (!nextColors.some((c) => colorMatchesToken(c, parsedInfo.colorCode!))) {
+                nextColors.push(resolved.name || parsedInfo.colorCode);
+              }
+              const matchingCol = nextColors.find((c) => colorMatchesToken(c, parsedInfo.colorCode!));
+              if (matchingCol && !nextByColor[matchingCol]) nextByColor[matchingCol] = publicUrl;
+            }
             const updatedItem: Product = {
               ...matched,
-              image: publicUrl,
+              image: matched.image || publicUrl,
               images: Array.from(new Set([...(matched.images || (matched.image ? [matched.image] : [])), publicUrl])),
+              imagesByColor: nextByColor,
+              availableColors: nextColors,
             };
             saveSingleFirestoreProduct(updatedItem).then((res) => {
               if (res.success) {
@@ -188,8 +271,6 @@ export const AdminMassImagesTab: React.FC<AdminMassImagesTabProps> = ({
       // Garantizar SIEMPRE que el spinner de carga se detenga para no congelar la pantalla
       setIsProcessing(false);
       setProcessingStatus('');
-      // Limpiar el input para permitir seleccionar de nuevo los mismos archivos si se desea
-      if (e.target) e.target.value = '';
     }
   };
 
@@ -236,6 +317,8 @@ export const AdminMassImagesTab: React.FC<AdminMassImagesTabProps> = ({
         const generalPhotos: string[] = Array.isArray(p.images) && p.images.length > 0 
           ? [...p.images] 
           : (p.image ? [p.image] : []);
+        const nextByColor: Record<string, string> = { ...(p.imagesByColor || {}) };
+        const nextColors: string[] = Array.isArray(p.availableColors) ? [...p.availableColors] : [];
 
         let hasGenderSpecific = false;
 
@@ -249,6 +332,19 @@ export const AdminMassImagesTab: React.FC<AdminMassImagesTabProps> = ({
             if (!menPhotos.includes(item.dataUrl)) menPhotos.push(item.dataUrl);
           } else {
             if (!generalPhotos.includes(item.dataUrl)) generalPhotos.push(item.dataUrl);
+          }
+
+          if (item.parsedInfo.colorCode) {
+            const cCode = item.parsedInfo.colorCode;
+            if (!nextByColor[cCode]) nextByColor[cCode] = item.dataUrl;
+            const resolved = resolveColorDef(cCode);
+            if (!nextColors.some((c) => colorMatchesToken(c, cCode))) {
+              nextColors.push(resolved.name || cCode);
+            }
+            const existingMatch = nextColors.find((c) => colorMatchesToken(c, cCode));
+            if (existingMatch && !nextByColor[existingMatch]) {
+              nextByColor[existingMatch] = item.dataUrl;
+            }
           }
         });
 
@@ -266,6 +362,8 @@ export const AdminMassImagesTab: React.FC<AdminMassImagesTabProps> = ({
           images: finalGeneral,
           imagesMen: menPhotos,
           imagesWomen: womenPhotos,
+          imagesByColor: nextByColor,
+          availableColors: nextColors,
           isUnisex,
         };
       });
@@ -754,12 +852,53 @@ export const AdminMassImagesTab: React.FC<AdminMassImagesTabProps> = ({
                       placeholder="Pegar URL de foto..."
                       className="w-full px-2 py-1 bg-white border border-[#DCD4C9] rounded-xs text-[10px] font-mono"
                     />
+                    <button
+                      type="button"
+                      disabled={loadingExistingBgId === p.id || (!p.image && !(p.images && p.images[0]))}
+                      onClick={() => handleTriggerExistingProductBgRemoval(p)}
+                      className="w-full py-1 px-2 bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 text-[10px] font-bold uppercase tracking-wider rounded-xs flex items-center justify-center gap-1 transition-colors cursor-pointer disabled:opacity-50"
+                      title="Eliminar el fondo de esta foto ya cargada y dejarla en blanco puro"
+                    >
+                      {loadingExistingBgId === p.id ? (
+                        <>
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          <span>Cargando...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-3 h-3 text-amber-700" />
+                          <span>Quitar Fondo (Blanco)</span>
+                        </>
+                      )}
+                    </button>
                   </div>
                 </div>
               ))}
           </div>
         </div>
       )}
+
+      {/* Previsualización y Eliminación de Fondo (Exclusivo Productos - Lote o Foto Existente) */}
+      <ProductImageBgModal
+        isOpen={Boolean((pendingBatchBgFiles && pendingBatchBgFiles.length > 0) || pendingExistingReplace)}
+        files={pendingExistingReplace ? [pendingExistingReplace.file] : (pendingBatchBgFiles || [])}
+        onCancel={() => {
+          setPendingBatchBgFiles(null);
+          setPendingExistingReplace(null);
+        }}
+        onConfirm={(approvedFiles) => {
+          if (pendingExistingReplace) {
+            if (approvedFiles.length > 0) {
+              handleConfirmExistingProductBgReplace(approvedFiles[0]);
+            } else {
+              setPendingExistingReplace(null);
+            }
+            return;
+          }
+          setPendingBatchBgFiles(null);
+          uploadApprovedBatchFiles(approvedFiles);
+        }}
+      />
     </div>
   );
 };
