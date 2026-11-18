@@ -54,6 +54,11 @@ import {
   SiteTextsConfig,
 } from '../types';
 import { MASTER_ADMIN_EMAIL } from '../utils/authInit';
+import {
+  normalizeCRMOrder,
+  normalizeLeadVisit,
+  normalizeSupplierOrder,
+} from '../utils/crmNormalizers';
 
 /**
  * Firebase Client Configuration
@@ -1080,18 +1085,7 @@ import { fixUtf8Encoding, sanitizeObjectEncoding } from '../utils/encodingUtils'
 
 // --- CRM FIREBASE INTEGRATION ---
 export const saveCRMOrder = async (orderData: any): Promise<{ success: boolean; id: string; error?: string }> => {
-  const orderId = orderData.id || `PED-${Date.now().toString().slice(-6)}`;
-  const initialStatus = orderData.status || orderData.columnId || 'cotizacion';
-  const columnId = orderData.columnId || initialStatus;
-
-  const fullOrder = sanitizeObjectEncoding({
-    ...orderData,
-    id: orderId,
-    status: initialStatus,
-    columnId: columnId,
-    updatedAt: new Date().toISOString(),
-    createdAt: orderData.createdAt || new Date().toISOString(),
-  });
+  const fullOrder = normalizeCRMOrder(orderData);
 
   try {
     const local = JSON.parse(localStorage.getItem('pampero_crm_orders') || '[]');
@@ -1149,23 +1143,27 @@ export const deleteCRMOrder = async (orderId: string): Promise<{ success: boolea
 };
 
 export const subscribeToCRMOrders = (onUpdate: (orders: any[]) => void): () => void => {
-  // 1. Initial immediate local or seed load
+  // 1. Initial immediate local or seed load (healing any poisoned local records)
   try {
     const local = localStorage.getItem('pampero_crm_orders');
     if (local) {
       const parsed = JSON.parse(local);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        onUpdate(parsed.map(sanitizeObjectEncoding));
+        const healed = parsed.map((o, i) => normalizeCRMOrder(o, i));
+        localStorage.setItem('pampero_crm_orders', JSON.stringify(healed));
+        onUpdate(healed);
       } else {
-        onUpdate(INITIAL_CRM_ORDERS.map(sanitizeObjectEncoding));
-        localStorage.setItem('pampero_crm_orders', JSON.stringify(INITIAL_CRM_ORDERS));
+        const seeded = INITIAL_CRM_ORDERS.map((o, i) => normalizeCRMOrder(o, i));
+        onUpdate(seeded);
+        localStorage.setItem('pampero_crm_orders', JSON.stringify(seeded));
       }
     } else {
-      onUpdate(INITIAL_CRM_ORDERS.map(sanitizeObjectEncoding));
-      localStorage.setItem('pampero_crm_orders', JSON.stringify(INITIAL_CRM_ORDERS));
+      const seeded = INITIAL_CRM_ORDERS.map((o, i) => normalizeCRMOrder(o, i));
+      onUpdate(seeded);
+      localStorage.setItem('pampero_crm_orders', JSON.stringify(seeded));
     }
   } catch {
-    onUpdate(INITIAL_CRM_ORDERS.map(sanitizeObjectEncoding));
+    onUpdate(INITIAL_CRM_ORDERS.map((o, i) => normalizeCRMOrder(o, i)));
   }
 
   // 2. Realtime listener from Firestore
@@ -1176,7 +1174,7 @@ export const subscribeToCRMOrders = (onUpdate: (orders: any[]) => void): () => v
     const colRef = collection(firestoreDb, 'crm_orders');
     return onSnapshot(colRef, (snapshot) => {
       if (!snapshot.empty) {
-        const orders = snapshot.docs.map(doc => sanitizeObjectEncoding({ id: doc.id, ...doc.data() }) as any);
+        const orders = snapshot.docs.map((d, i) => normalizeCRMOrder({ id: d.id, ...d.data() }, i));
         localStorage.setItem('pampero_crm_orders', JSON.stringify(orders));
         onUpdate(orders);
       }
@@ -1191,19 +1189,7 @@ export const subscribeToCRMOrders = (onUpdate: (orders: any[]) => void): () => v
 
 // --- LEADS & VISITAS COMERCIALES ---
 export const saveLeadVisit = async (visitData: any): Promise<{ success: boolean; id: string; error?: string }> => {
-  const visitId = visitData.id || `VIS-${Date.now().toString().slice(-6)}`;
-  const initialCol = visitData.columnId || visitData.step || visitData.kanbanStep || 'primer_contacto';
-  
-  const fullVisit = sanitizeObjectEncoding({
-    ...visitData,
-    id: visitId,
-    columnId: initialCol,
-    step: visitData.step || initialCol,
-    kanbanStep: visitData.kanbanStep || initialCol,
-    status: visitData.status || (initialCol === 'convertida' ? 'cerrada' : initialCol === 'previo_cotizacion' ? 'presupuesto_enviado' : initialCol === 'reunion' ? 'realizada' : 'programada'),
-    updatedAt: new Date().toISOString(),
-    createdAt: visitData.createdAt || new Date().toISOString(),
-  });
+  const fullVisit = normalizeLeadVisit(visitData);
 
   try {
     const local = JSON.parse(localStorage.getItem('pampero_lead_visits') || '[]');
@@ -1253,13 +1239,18 @@ export const subscribeToLeadVisits = (onUpdate: (visits: any[]) => void): () => 
     const local = localStorage.getItem('pampero_lead_visits');
     if (local) {
       const parsed = JSON.parse(local);
-      if (Array.isArray(parsed) && parsed.length > 0) onUpdate(parsed.map(sanitizeObjectEncoding));
-      else onUpdate(INITIAL_LEAD_VISITS.map(sanitizeObjectEncoding));
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const healed = parsed.map((v, i) => normalizeLeadVisit(v, i));
+        localStorage.setItem('pampero_lead_visits', JSON.stringify(healed));
+        onUpdate(healed);
+      } else {
+        onUpdate(INITIAL_LEAD_VISITS.map((v, i) => normalizeLeadVisit(v, i)));
+      }
     } else {
-      onUpdate(INITIAL_LEAD_VISITS.map(sanitizeObjectEncoding));
+      onUpdate(INITIAL_LEAD_VISITS.map((v, i) => normalizeLeadVisit(v, i)));
     }
   } catch {
-    onUpdate(INITIAL_LEAD_VISITS.map(sanitizeObjectEncoding));
+    onUpdate(INITIAL_LEAD_VISITS.map((v, i) => normalizeLeadVisit(v, i)));
   }
 
   const firestoreDb = db || getFirebaseDb();
@@ -1269,7 +1260,7 @@ export const subscribeToLeadVisits = (onUpdate: (visits: any[]) => void): () => 
     const colRef = collection(firestoreDb, 'crm_leads_visitas');
     return onSnapshot(colRef, (snapshot) => {
       if (!snapshot.empty) {
-        const visits = snapshot.docs.map(doc => sanitizeObjectEncoding({ id: doc.id, ...doc.data() }) as any);
+        const visits = snapshot.docs.map((d, i) => normalizeLeadVisit({ id: d.id, ...d.data() }, i));
         localStorage.setItem('pampero_lead_visits', JSON.stringify(visits));
         onUpdate(visits);
       }
@@ -1284,17 +1275,19 @@ export const subscribeToLeadVisits = (onUpdate: (visits: any[]) => void): () => 
 
 // --- PEDIDOS A PROVEEDOR (MACATA / PAMPERO CENTRAL) ---
 export const saveSupplierOrder = async (orderData: any) => {
+  const fullOrder = normalizeSupplierOrder(orderData);
   try {
     const local = JSON.parse(localStorage.getItem('pampero_supplier_orders') || '[]');
-    const updated = [orderData, ...local.filter((o: any) => o.id !== orderData.id)];
+    const updated = [fullOrder, ...local.filter((o: any) => o.id !== fullOrder.id)];
     localStorage.setItem('pampero_supplier_orders', JSON.stringify(updated));
   } catch {}
 
   const firestoreDb = db || getFirebaseDb();
   if (!firestoreDb) return;
   try {
-    const docRef = doc(firestoreDb, 'crm_pedidos_proveedor', orderData.id);
-    await setDoc(docRef, { ...orderData, updatedAt: new Date().toISOString() }, { merge: true });
+    const docRef = doc(firestoreDb, 'crm_pedidos_proveedor', fullOrder.id);
+    const cleaned = JSON.parse(JSON.stringify(fullOrder, (k, v) => (v === undefined ? null : v)));
+    await setDoc(docRef, cleaned, { merge: true });
   } catch (err) {
     console.error('Error saving supplier order:', err);
   }
@@ -1321,13 +1314,18 @@ export const subscribeToSupplierOrders = (onUpdate: (orders: any[]) => void) => 
     const local = localStorage.getItem('pampero_supplier_orders');
     if (local) {
       const parsed = JSON.parse(local);
-      if (Array.isArray(parsed) && parsed.length > 0) onUpdate(parsed);
-      else onUpdate(INITIAL_SUPPLIER_ORDERS);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const healed = parsed.map((o, i) => normalizeSupplierOrder(o, i));
+        localStorage.setItem('pampero_supplier_orders', JSON.stringify(healed));
+        onUpdate(healed);
+      } else {
+        onUpdate(INITIAL_SUPPLIER_ORDERS.map((o, i) => normalizeSupplierOrder(o, i)));
+      }
     } else {
-      onUpdate(INITIAL_SUPPLIER_ORDERS);
+      onUpdate(INITIAL_SUPPLIER_ORDERS.map((o, i) => normalizeSupplierOrder(o, i)));
     }
   } catch {
-    onUpdate(INITIAL_SUPPLIER_ORDERS);
+    onUpdate(INITIAL_SUPPLIER_ORDERS.map((o, i) => normalizeSupplierOrder(o, i)));
   }
 
   const firestoreDb = db || getFirebaseDb();
@@ -1336,7 +1334,7 @@ export const subscribeToSupplierOrders = (onUpdate: (orders: any[]) => void) => 
     const colRef = collection(firestoreDb, 'crm_pedidos_proveedor');
     return onSnapshot(colRef, (snapshot) => {
       if (!snapshot.empty) {
-        const orders = snapshot.docs.map(doc => doc.data() as any);
+        const orders = snapshot.docs.map((d, i) => normalizeSupplierOrder({ id: d.id, ...d.data() }, i));
         localStorage.setItem('pampero_supplier_orders', JSON.stringify(orders));
         onUpdate(orders);
       }

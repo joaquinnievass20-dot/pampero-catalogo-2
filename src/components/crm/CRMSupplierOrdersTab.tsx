@@ -149,13 +149,14 @@ export const CRMSupplierOrdersTab: React.FC<CRMSupplierOrdersTabProps> = ({ orde
   };
 
   const filteredOrders = orders.filter((o) => {
-    const matchSupplier = supplierFilter === 'todos' || o.supplierName.toLowerCase() === supplierFilter.toLowerCase();
+    const q = searchQuery.toLowerCase();
+    const matchSupplier = supplierFilter === 'todos' || String(o.supplierName ?? '').toLowerCase() === supplierFilter.toLowerCase();
     const matchStatus = statusFilter === 'todos' || o.status === statusFilter;
     const matchSearch =
-      !searchQuery ||
-      o.orderNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      o.supplierName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      o.itemsDescription.toLowerCase().includes(searchQuery.toLowerCase());
+      !q ||
+      String(o.orderNumber ?? '').toLowerCase().includes(q) ||
+      String(o.supplierName ?? '').toLowerCase().includes(q) ||
+      String(o.itemsDescription ?? '').toLowerCase().includes(q);
     return matchSupplier && matchStatus && matchSearch;
   });
 

@@ -62,11 +62,74 @@ import {
   CheckSquare
 } from 'lucide-react';
 import { exportOrdersToExcel, importOrdersFromExcel } from '../../utils/kanbanExcelUtils';
+import { normalizeCRMOrder, normalizeLeadVisit, normalizeSupplierOrder } from '../../utils/crmNormalizers';
 import { CRMNotificationsModal } from './CRMNotificationsModal';
 import { CRMVisitsTab } from './CRMVisitsTab';
 import { CRMTasksTab } from './CRMTasksTab';
 import { CRMSupplierOrdersTab } from './CRMSupplierOrdersTab';
 import { CRMCostsTab } from './CRMCostsTab';
+
+interface CRMTabErrorBoundaryProps {
+  tabKey: string;
+  onRetry?: () => void;
+  children: React.ReactNode;
+}
+
+interface CRMTabErrorBoundaryState {
+  hasError: boolean;
+  errorMsg: string;
+}
+
+class CRMTabErrorBoundary extends React.Component<
+  CRMTabErrorBoundaryProps,
+  CRMTabErrorBoundaryState
+> {
+  declare props: CRMTabErrorBoundaryProps;
+  declare state: CRMTabErrorBoundaryState;
+  declare setState: (
+    next: Partial<CRMTabErrorBoundaryState> | ((prev: CRMTabErrorBoundaryState) => Partial<CRMTabErrorBoundaryState>)
+  ) => void;
+
+  constructor(props: CRMTabErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false, errorMsg: '' };
+  }
+
+  static getDerivedStateFromError(error: any): CRMTabErrorBoundaryState {
+    return { hasError: true, errorMsg: error?.message || String(error) || 'Error inesperado en la pestaña.' };
+  }
+
+  componentDidUpdate(prevProps: { tabKey: string }) {
+    if (prevProps.tabKey !== this.props.tabKey && this.state.hasError) {
+      this.setState({ hasError: false, errorMsg: '' });
+    }
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-6 bg-white border-2 border-red-300 rounded-xs shadow-sm text-center space-y-3 max-w-xl mx-auto my-8">
+          <AlertTriangle className="w-8 h-8 text-red-600 mx-auto" />
+          <h3 className="font-bold text-sm uppercase text-[#18231C]">
+            Se detectó un problema al mostrar esta sección
+          </h3>
+          <p className="text-xs text-[#6F6860] break-words">{this.state.errorMsg}</p>
+          <button
+            type="button"
+            onClick={() => {
+              this.setState({ hasError: false, errorMsg: '' });
+              if (this.props.onRetry) this.props.onRetry();
+            }}
+            className="px-4 py-2 bg-[#18231C] hover:bg-black text-white text-xs font-bold uppercase tracking-wider rounded-xs cursor-pointer"
+          >
+            Reintentar cargar pestaña
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 interface CRMViewProps {
   userSession: UserSession | null;
@@ -276,27 +339,31 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
 
   const accent = theme?.accentColor || '#FDB813';
 
-  // Real-time Firestore Subscriptions with clean encoding and equality guards
+  // Real-time Firestore Subscriptions with clean encoding, normalization and equality guards
   useEffect(() => {
     const unsubOrders = subscribeToCRMOrders((fetched) => {
+      const normalized = fetched.map((o, idx) => normalizeCRMOrder(o, idx));
       setOrders((prev) => {
-        if (prev.length === fetched.length) {
-          const hasDiff = fetched.some((o, i) => !prev[i] || prev[i].id !== o.id || prev[i].status !== o.status || prev[i].updatedAt !== o.updatedAt);
+        if (prev.length === normalized.length) {
+          const hasDiff = normalized.some((o, i) => !prev[i] || prev[i].id !== o.id || prev[i].status !== o.status || prev[i].updatedAt !== o.updatedAt);
           if (!hasDiff) return prev;
         }
-        return fetched.map(sanitizeObjectEncoding);
+        return normalized;
       });
     });
     const unsubVisits = subscribeToLeadVisits((fetched) => {
+      const normalized = fetched.map((v, idx) => normalizeLeadVisit(v, idx));
       setVisits((prev) => {
-        if (prev.length === fetched.length) {
-          const hasDiff = fetched.some((v, i) => !prev[i] || prev[i].id !== v.id || prev[i].status !== v.status || prev[i].updatedAt !== v.updatedAt);
+        if (prev.length === normalized.length) {
+          const hasDiff = normalized.some((v, i) => !prev[i] || prev[i].id !== v.id || prev[i].status !== v.status || prev[i].updatedAt !== v.updatedAt || prev[i].phone !== v.phone);
           if (!hasDiff) return prev;
         }
-        return fetched.map(sanitizeObjectEncoding);
+        return normalized;
       });
     });
-    const unsubSuppliers = subscribeToSupplierOrders((fetched) => setSupplierOrders(fetched.map(sanitizeObjectEncoding)));
+    const unsubSuppliers = subscribeToSupplierOrders((fetched) =>
+      setSupplierOrders(fetched.map((o, idx) => normalizeSupplierOrder(o, idx)))
+    );
     const unsubCampaigns = subscribeToSizingCampaigns((fetched) => setSizingCampaigns(fetched.map(sanitizeObjectEncoding)));
     const unsubSizes = subscribeToEmployeeSizeEntries('all', (fetched) => setEmployeeSizes(fetched.map(sanitizeObjectEncoding)));
 
@@ -1072,11 +1139,26 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
 
         {/* === TAB 1: VISITAS COMERCIALES (KANBAN) === */}
         {activeTab === 'visits' && (
-          <CRMVisitsTab
-            visits={visits}
-            accentColor={accent}
-            onPromoteToCompanies={handlePromoteVisitToCompanyOrder}
-          />
+          <CRMTabErrorBoundary
+            tabKey="visits"
+            onRetry={() => {
+              try {
+                const raw = JSON.parse(localStorage.getItem('pampero_lead_visits') || '[]');
+                if (Array.isArray(raw)) {
+                  setVisits(raw.map((v, idx) => normalizeLeadVisit(v, idx)));
+                }
+              } catch {
+                setVisits([]);
+              }
+            }}
+          >
+            <CRMVisitsTab
+              visits={visits}
+              accentColor={accent}
+              onPromoteToCompanies={handlePromoteVisitToCompanyOrder}
+              onVisitsUpdated={setVisits}
+            />
+          </CRMTabErrorBoundary>
         )}
 
         {/* === TAB 3: TAREAS DEL EQUIPO (KANBAN) === */}

@@ -194,9 +194,9 @@ export const CRMNotificationsModal: React.FC<CRMNotificationsModalProps> = ({
                         Vendedor: {v.seller} · Próximo paso: {v.nextStep}
                       </p>
                     </div>
-                    {v.phone && (
+                    {Boolean(v.phone && String(v.phone).trim()) && (
                       <a
-                        href={`https://wa.me/${v.phone.replace(/\D/g, '')}?text=Hola%20${encodeURIComponent(v.contactName)},%20te%20escribimos%20de%20Pampero%20Mendoza.`}
+                        href={`https://wa.me/${String(v.phone).replace(/\D/g, '')}?text=Hola%20${encodeURIComponent(String(v.contactName || ''))},%20te%20escribimos%20de%20Pampero%20Mendoza.`}
                         target="_blank"
                         rel="noreferrer"
                         className="px-2.5 py-1 bg-white border border-blue-300 text-blue-900 hover:bg-blue-100 text-[10px] font-bold rounded-xs flex items-center gap-1 cursor-pointer"

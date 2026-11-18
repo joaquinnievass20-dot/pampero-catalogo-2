@@ -220,12 +220,18 @@ export const CRMImportSalesModal: React.FC<CRMImportSalesModalProps> = ({
         );
       } finally {
         setIsParsing(false);
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
       }
     };
 
     reader.onerror = () => {
       setIsParsing(false);
       setErrorMessage('Error al leer el archivo en el navegador.');
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
     };
 
     reader.readAsArrayBuffer(selectedFile);

@@ -5,9 +5,24 @@
  */
 
 export function fixUtf8Encoding(input: any): string {
-  if (typeof input !== 'string' || !input) return input || '';
+  if (input === null || input === undefined) return '';
+  if (input instanceof Date) {
+    return isNaN(input.getTime()) ? '' : input.toISOString().split('T')[0];
+  }
+  if (typeof input === 'object') {
+    if (typeof input.toDate === 'function') {
+      try {
+        const d = input.toDate();
+        return d instanceof Date && !isNaN(d.getTime()) ? d.toISOString().split('T')[0] : '';
+      } catch {
+        return '';
+      }
+    }
+    return '';
+  }
 
-  let s = input;
+  let s = typeof input === 'string' ? input : String(input);
+  if (!s) return '';
 
   // Specific common CRM corrupted patterns
   s = s
@@ -29,9 +44,9 @@ export function fixUtf8Encoding(input: any): string {
     .replace(/Ã³/g, 'ó')
     .replace(/Ãº/g, 'ú')
     .replace(/Ã±/g, 'ñ')
-    .replace(/Ã/g, 'Á')
+    .replace(/Ã /g, 'Á')
     .replace(/Ã‰/g, 'É')
-    .replace(/Ã/g, 'Í')
+    .replace(/Ã /g, 'Í')
     .replace(/Ã“/g, 'Ó')
     .replace(/Ãš/g, 'Ú')
     .replace(/Ã‘/g, 'Ñ')
@@ -53,6 +68,19 @@ export function fixUtf8Encoding(input: any): string {
 
 export function sanitizeObjectEncoding<T>(obj: T): T {
   if (!obj || typeof obj !== 'object') return obj;
+
+  if (obj instanceof Date) {
+    return (isNaN(obj.getTime()) ? '' : obj.toISOString()) as unknown as T;
+  }
+
+  if (typeof (obj as any).toDate === 'function') {
+    try {
+      const d = (obj as any).toDate();
+      return (d instanceof Date && !isNaN(d.getTime()) ? d.toISOString() : '') as unknown as T;
+    } catch {
+      return '' as unknown as T;
+    }
+  }
 
   if (Array.isArray(obj)) {
     return obj.map((item) => sanitizeObjectEncoding(item)) as unknown as T;

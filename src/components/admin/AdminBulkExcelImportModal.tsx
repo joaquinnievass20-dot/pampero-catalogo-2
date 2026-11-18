@@ -144,22 +144,32 @@ export const AdminBulkExcelImportModal: React.FC<AdminBulkExcelImportModalProps>
     const list: Partial<Product>[] = [];
 
     rows.forEach((r) => {
-      // Look for keys flexibly (case-insensitive and accent-insensitive)
+      // Exact normalized header match first, then partial fallback
       const getVal = (possibleKeys: string[]) => {
-        for (const k of Object.keys(r)) {
-          const cleanKey = k.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, '');
-          for (const pk of possibleKeys) {
-            const cleanPk = pk.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, '');
-            if (cleanKey.includes(cleanPk)) {
-              return r[k];
-            }
+        const entries = Object.keys(r).map((k) => ({
+          raw: k,
+          norm: k.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, ''),
+        }));
+        for (const pk of possibleKeys) {
+          const cleanPk = pk.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+          const exact = entries.find((e) => e.norm === cleanPk);
+          if (exact && r[exact.raw] !== undefined && r[exact.raw] !== '') {
+            return r[exact.raw];
+          }
+        }
+        for (const pk of possibleKeys) {
+          const cleanPk = pk.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+          if (cleanPk.length < 3) continue;
+          const partial = entries.find((e) => e.norm.includes(cleanPk));
+          if (partial && r[partial.raw] !== undefined && r[partial.raw] !== '') {
+            return r[partial.raw];
           }
         }
         return undefined;
       };
 
       // SKU Obligatorio: extraer exactamente el código de la columna del Excel
-      const rawCode = 
+      const rawCode =
         r['CÓDIGO'] !== undefined ? r['CÓDIGO'] :
         r['CODIGO'] !== undefined ? r['CODIGO'] :
         r['Código'] !== undefined ? r['Código'] :
@@ -172,8 +182,8 @@ export const AdminBulkExcelImportModal: React.FC<AdminBulkExcelImportModalProps>
 
       const code = rawCode !== undefined && rawCode !== null ? String(rawCode).trim() : '';
 
-      // Si no tiene código/SKU se salta la fila (no se generan IDs automáticos)
-      if (!code) return;
+      // Si no tiene código/SKU o es la fila de instrucciones de la plantilla, saltar
+      if (!code || code.toUpperCase().startsWith('INSTRUCCIONES')) return;
 
       const rawName = getVal(['nombre', 'producto', 'denominacion', 'item', 'titulo', 'descripcioncorta']);
       const name = rawName !== undefined && rawName !== null ? String(rawName).trim() : '';
@@ -310,7 +320,7 @@ export const AdminBulkExcelImportModal: React.FC<AdminBulkExcelImportModalProps>
     setErrorMsg(list.length === 0 ? 'No se encontraron filas válidas con Código (SKU) en la planilla.' : null);
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -318,22 +328,58 @@ export const AdminBulkExcelImportModal: React.FC<AdminBulkExcelImportModalProps>
     setIsProcessing(true);
     setErrorMsg(null);
 
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      try {
-        const data = evt.target?.result;
-        const workbook = XLSX.read(data, { type: 'binary' });
-        const sheetName = workbook.SheetNames[0];
-        const sheet = workbook.Sheets[sheetName];
-        const jsonData = XLSX.utils.sheet_to_json(sheet);
-        parseRawRows(jsonData);
-      } catch (err: any) {
-        setErrorMsg('Error al leer el archivo Excel/CSV. Comprobá el formato.');
-      } finally {
-        setIsProcessing(false);
+    try {
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+      const sheetName = workbook.SheetNames[0];
+      if (!sheetName) {
+        throw new Error('El archivo no contiene hojas válidas.');
       }
-    };
-    reader.readAsBinaryString(file);
+      const sheet = workbook.Sheets[sheetName];
+      const matrix: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: '' });
+
+      if (!matrix || matrix.length === 0) {
+        throw new Error('La hoja está vacía.');
+      }
+
+      // Detectar automáticamente la fila de encabezados (hasta primeras 10 filas)
+      const hintTokens = ['codigo', 'sku', 'nombre', 'producto', 'categoria', 'precio', 'colores', 'talles'];
+      let headerIdx = 0;
+      let bestScore = -1;
+      for (let r = 0; r < Math.min(10, matrix.length); r++) {
+        const rowArr = Array.isArray(matrix[r]) ? matrix[r] : [];
+        let score = 0;
+        for (const cell of rowArr) {
+          const norm = String(cell ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+          if (norm && hintTokens.some((h) => norm === h || norm.includes(h))) score += 1;
+        }
+        if (score > bestScore) {
+          bestScore = score;
+          headerIdx = r;
+        }
+      }
+
+      const headers = (matrix[headerIdx] || []).map((h, i) => String(h ?? '').trim() || `COL_${i + 1}`);
+      const jsonData: any[] = [];
+      for (let r = headerIdx + 1; r < matrix.length; r++) {
+        const rowArr = matrix[r];
+        if (!Array.isArray(rowArr)) continue;
+        const hasVal = rowArr.some((c) => c !== null && c !== undefined && String(c).trim() !== '');
+        if (!hasVal) continue;
+        const obj: any = {};
+        headers.forEach((h, idx) => {
+          obj[h] = idx < rowArr.length ? rowArr[idx] : '';
+        });
+        jsonData.push(obj);
+      }
+
+      parseRawRows(jsonData);
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Error al leer el archivo Excel/CSV. Comprobá el formato.');
+    } finally {
+      setIsProcessing(false);
+      e.target.value = '';
+    }
   };
 
   const handlePasteProcess = () => {
@@ -529,15 +575,16 @@ export const AdminBulkExcelImportModal: React.FC<AdminBulkExcelImportModalProps>
         for (const producto of chunk) {
           const sku = String(producto.code || producto.id).trim();
           if (!sku) continue;
+          const safeDocId = sku.replace(/[/\\?#\[\]]+/g, '-').replace(/^\.+|\.+$/g, '') || `SKU-${Date.now()}`;
 
-          const docRefProducts = doc(firestoreDb, 'products', sku);
-          const docRefProductos = doc(firestoreDb, 'productos', sku);
+          const docRefProducts = doc(firestoreDb, 'products', safeDocId);
+          const docRefProductos = doc(firestoreDb, 'productos', safeDocId);
 
           const datos = JSON.parse(
             JSON.stringify(
               {
                 ...producto,
-                id: sku,
+                id: safeDocId,
                 code: sku,
                 updatedAt: new Date().toISOString(),
               },

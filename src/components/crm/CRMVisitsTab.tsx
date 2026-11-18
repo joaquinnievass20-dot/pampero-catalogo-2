@@ -34,11 +34,13 @@ import {
   CheckCircle2
 } from 'lucide-react';
 import { exportVisitsToExcel, importVisitsFromExcel } from '../../utils/kanbanExcelUtils';
+import { normalizeLeadVisit } from '../../utils/crmNormalizers';
 
 interface CRMVisitsTabProps {
   visits: LeadVisit[];
   accentColor: string;
   onPromoteToCompanies?: (visit: LeadVisit) => void;
+  onVisitsUpdated?: (visits: LeadVisit[]) => void;
 }
 
 export type VisitKanbanStep = 'primer_contacto' | 'reunion' | 'previo_cotizacion' | 'convertida';
@@ -74,7 +76,7 @@ export const VISIT_COLUMNS: { id: VisitKanbanStep; label: string; description: s
   },
 ];
 
-export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor, onPromoteToCompanies }) => {
+export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor, onPromoteToCompanies, onVisitsUpdated }) => {
   const [columns, setColumns] = useState<KanbanColumnConfig[]>(() => {
     try {
       const saved = localStorage.getItem('pampero_kanban_visits_cols');
@@ -88,20 +90,23 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
     return DEFAULT_VISIT_COLUMNS.map(sanitizeObjectEncoding);
   });
 
-  const [localVisits, setLocalVisits] = useState<LeadVisit[]>(() => (visits || []).map(sanitizeObjectEncoding));
+  const [localVisits, setLocalVisits] = useState<LeadVisit[]>(() =>
+    (Array.isArray(visits) ? visits : []).map((v, idx) => normalizeLeadVisit(v, idx))
+  );
 
   // Sync prop updates safely without infinite re-renders
   useEffect(() => {
     if (Array.isArray(visits)) {
+      const normalized = visits.map((v, idx) => normalizeLeadVisit(v, idx));
       setLocalVisits((prev) => {
-        if (prev.length === visits.length) {
-          const hasDiff = visits.some((v, idx) => {
+        if (prev.length === normalized.length) {
+          const hasDiff = normalized.some((v, idx) => {
             const p = prev[idx];
-            return !p || p.id !== v.id || p.status !== v.status || p.updatedAt !== v.updatedAt;
+            return !p || p.id !== v.id || p.status !== v.status || p.updatedAt !== v.updatedAt || p.phone !== v.phone;
           });
           if (!hasDiff) return prev;
         }
-        return visits.map(sanitizeObjectEncoding);
+        return normalized;
       });
     }
   }, [visits]);
@@ -113,15 +118,16 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
     }
     const unsub = subscribeToLeadVisits((updated) => {
       if (Array.isArray(updated)) {
+        const normalized = updated.map((v, idx) => normalizeLeadVisit(v, idx));
         setLocalVisits((prev) => {
-          if (prev.length === updated.length) {
-            const hasDiff = updated.some((v, idx) => {
+          if (prev.length === normalized.length) {
+            const hasDiff = normalized.some((v, idx) => {
               const p = prev[idx];
-              return !p || p.id !== v.id || p.status !== v.status || p.updatedAt !== v.updatedAt;
+              return !p || p.id !== v.id || p.status !== v.status || p.updatedAt !== v.updatedAt || p.phone !== v.phone;
             });
             if (!hasDiff) return prev;
           }
-          return updated.map(sanitizeObjectEncoding);
+          return normalized;
         });
       }
     });
@@ -147,6 +153,7 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
   const [draggedVisitId, setDraggedVisitId] = useState<string | null>(null);
   const [dragOverCol, setDragOverCol] = useState<string | null>(null);
   const [excelNotice, setExcelNotice] = useState<string | null>(null);
+  const [excelError, setExcelError] = useState<string | null>(null);
   const [isExcelProcessing, setIsExcelProcessing] = useState(false);
   const fileInputVisitsRef = React.useRef<HTMLInputElement>(null);
 
@@ -158,13 +165,18 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
     const file = e.target.files?.[0];
     if (!file) return;
     setIsExcelProcessing(true);
+    setExcelError(null);
+    setExcelNotice(null);
     try {
-      const res = await importVisitsFromExcel(file, localVisits);
-      setLocalVisits(res.visits);
+      const res = await importVisitsFromExcel(file, localVisits, columns);
+      const safeVisits = (res.visits || []).map((v, idx) => normalizeLeadVisit(v, idx));
+      setLocalVisits(safeVisits);
+      if (onVisitsUpdated) onVisitsUpdated(safeVisits);
       setExcelNotice(`¡Visitas actualizadas con éxito! ${res.updatedCount} actualizadas, ${res.newCount} nuevas en Firestore.`);
-      setTimeout(() => setExcelNotice(null), 6000);
+      setTimeout(() => setExcelNotice(null), 7000);
     } catch (err: any) {
-      alert(`Error al importar Excel de visitas: ${err?.message || err}`);
+      const msg = err?.message || String(err) || 'Error desconocido al leer el archivo Excel.';
+      setExcelError(`No se pudo procesar el Excel: ${msg}`);
     } finally {
       setIsExcelProcessing(false);
       if (fileInputVisitsRef.current) fileInputVisitsRef.current.value = '';
@@ -334,15 +346,17 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
     setDragOverCol(null);
   };
 
-  // Filter visits from localVisits
+  // Filter visits from localVisits (con coerción segura a string)
   const filteredVisits = localVisits.filter((v) => {
-    const matchesSeller = sellerFilter === 'todos' || (v.seller || '').toLowerCase() === sellerFilter.toLowerCase();
-    const matchesBranch = branchFilter === 'todos' || (v.branch || '').toLowerCase() === branchFilter.toLowerCase();
-    const matchesQuery = 
-      !searchQuery.trim() ||
-      (v.companyName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (v.contactName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (v.notes || '').toLowerCase().includes(searchQuery.toLowerCase());
+    const q = searchQuery.toLowerCase();
+    const matchesSeller = sellerFilter === 'todos' || String(v.seller ?? '').toLowerCase() === sellerFilter.toLowerCase();
+    const matchesBranch = branchFilter === 'todos' || String(v.branch ?? '').toLowerCase() === branchFilter.toLowerCase();
+    const matchesQuery =
+      !q.trim() ||
+      String(v.companyName ?? '').toLowerCase().includes(q) ||
+      String(v.contactName ?? '').toLowerCase().includes(q) ||
+      String(v.phone ?? '').toLowerCase().includes(q) ||
+      String(v.notes ?? '').toLowerCase().includes(q);
     return matchesSeller && matchesBranch && matchesQuery;
   });
 
@@ -405,7 +419,20 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
         </div>
       </div>
 
-      {/* Excel Notification Banner */}
+      {/* Excel Notification Banners */}
+      {excelError && (
+        <div className="p-3 bg-red-50 border border-red-300 rounded-xs flex items-center justify-between gap-2 text-xs text-red-900 animate-fadeIn">
+          <span className="font-semibold">{excelError}</span>
+          <button
+            type="button"
+            onClick={() => setExcelError(null)}
+            className="text-red-700 hover:text-red-900 font-bold text-xs cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {excelNotice && (
         <div className="p-3 bg-emerald-50 border border-emerald-300 rounded-xs flex items-center justify-between gap-2 text-xs text-emerald-950 animate-fadeIn">
           <div className="flex items-center gap-2">
@@ -415,7 +442,7 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
           <button
             type="button"
             onClick={() => setExcelNotice(null)}
-            className="text-emerald-700 hover:text-emerald-900 font-bold text-xs"
+            className="text-emerald-700 hover:text-emerald-900 font-bold text-xs cursor-pointer"
           >
             ✕
           </button>
@@ -547,15 +574,15 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
 
                           {/* Contact quick links */}
                           <div className="text-[10px] text-[#6F6860] flex flex-wrap gap-2 pt-1 border-t border-neutral-100">
-                            {visit.phone && (
+                            {Boolean(visit.phone && String(visit.phone).trim()) && (
                               <a
-                                href={`https://wa.me/${visit.phone.replace(/\D/g, '')}`}
+                                href={`https://wa.me/${String(visit.phone).replace(/\D/g, '')}`}
                                 target="_blank"
                                 rel="noreferrer"
                                 className="flex items-center gap-1 text-emerald-700 hover:underline font-semibold"
                               >
                                 <MessageCircle className="w-3 h-3 text-emerald-600" />
-                                <span>{visit.phone}</span>
+                                <span>{String(visit.phone)}</span>
                               </a>
                             )}
                             <span className="text-neutral-500">Resp: <strong>{fixUtf8Encoding(visit.seller || '')}</strong></span>
