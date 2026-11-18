@@ -60,11 +60,9 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   theme,
   initialTab = 'profile',
 }) => {
-  if (!isOpen || !userSession) return null;
-
   const accent = theme?.accentColor || '#FDB813';
-  const isCompany = userSession.clientType === 'empresa';
-  const d = userSession.clientData || {};
+  const isCompany = userSession?.clientType === 'empresa';
+  const d = userSession?.clientData || {};
 
   const [activeTab, setActiveTab] = useState<'profile' | 'quotes' | 'security'>(initialTab);
   const [quoteHistory, setQuoteHistory] = useState<any[]>([]);
@@ -96,7 +94,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   const [fullName, setFullName] = useState(d.fullName || d.repFullName || '');
   const [companyName, setCompanyName] = useState(d.companyName || '');
   const [cuit, setCuit] = useState(d.cuit || '');
-  const [email, setEmail] = useState(userSession.email || d.email || d.institutionalEmail || '');
+  const [email, setEmail] = useState(userSession?.email || d.email || d.institutionalEmail || '');
   const [phone, setPhone] = useState(d.phone || d.institutionalPhone || '');
   const [street, setStreet] = useState(initialStreet);
   const [streetNumber, setStreetNumber] = useState(initialNumber);
@@ -104,9 +102,10 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   const [savedSuccess, setSavedSuccess] = useState(false);
 
   // Avatar and password states
-  const [avatarUrl, setAvatarUrl] = useState(userSession.avatarUrl || '');
+  const [avatarUrl, setAvatarUrl] = useState(userSession?.avatarUrl || '');
   const [showPassword, setShowPassword] = useState(false);
   const [currentPassword, setCurrentPassword] = useState<string>(() => {
+    if (!userSession) return '';
     if (userSession.password) return userSession.password;
     try {
       const userEmail = (userSession.email || '').toLowerCase().trim();
@@ -125,6 +124,33 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
     return 'pampero2026';
   });
 
+  // Sync form fields when modal opens or active userSession changes
+  useEffect(() => {
+    if (!isOpen || !userSession) return;
+    const data = userSession.clientData || {};
+    let nextStreet = '';
+    let nextNumber = '';
+    let nextCity = 'Gran Mendoza';
+    if (typeof data.address === 'string') {
+      nextStreet = data.address;
+    } else if (data.address && typeof data.address === 'object') {
+      nextStreet = data.address.street || '';
+      nextNumber = data.address.number || '';
+      nextCity = data.address.city || 'Gran Mendoza';
+    }
+    setActiveTab(initialTab);
+    setFullName(data.fullName || data.repFullName || '');
+    setCompanyName(data.companyName || '');
+    setCuit(data.cuit || '');
+    setEmail(userSession.email || data.email || data.institutionalEmail || '');
+    setPhone(data.phone || data.institutionalPhone || '');
+    setStreet(nextStreet);
+    setStreetNumber(nextNumber);
+    setCity(nextCity);
+    setAvatarUrl(userSession.avatarUrl || '');
+    setSavedSuccess(false);
+  }, [isOpen, userSession?.id, userSession?.email, initialTab]);
+
   const handleAvatarFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -142,6 +168,10 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
 
   // Check initial MFA enrollment status
   useEffect(() => {
+    if (!userSession) {
+      setIsEnrolled(false);
+      return;
+    }
     if (userSession.mfaEnrolled || userSession.totpSecret) {
       setIsEnrolled(true);
       return;
@@ -185,6 +215,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
 
   // Load quote history for this user from live crm_orders collection + local storage
   useEffect(() => {
+    if (!isOpen || !userSession) return;
     const unsub = subscribeToCRMOrders((orders: CRMOrder[]) => {
       const uEmail = (userSession?.email || '').toLowerCase().trim();
       const uId = userSession?.id;
@@ -233,7 +264,9 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
     });
 
     return () => unsub();
-  }, [userSession?.id, userSession?.email, userSession?.name, userSession?.clientData?.companyName, userSession?.clientData?.fullName]);
+  }, [isOpen, userSession?.id, userSession?.email, userSession?.name, userSession?.clientData?.companyName, userSession?.clientData?.fullName]);
+
+  if (!isOpen || !userSession) return null;
 
   const handleProfileAcceptQuote = async (order: CRMOrder) => {
     if (!window.confirm('¿Confirmás la aprobación de esta cotización? Tu pedido pasará a preparación y reserva de stock.')) {
@@ -476,7 +509,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 backdrop-blur-xs p-4 animate-fadeIn">
-      <div className="bg-[#F5F2EC] rounded-xs border border-[#DCD4C9] shadow-2xl max-w-lg w-full overflow-hidden flex flex-col max-h-[90vh]">
+      <div className="bg-[#F5F2EC] rounded-xs border border-[#DCD4C9] shadow-2xl max-w-2xl w-full overflow-hidden flex flex-col max-h-[90vh]">
         {/* Header */}
         <div className="bg-[#18231C] px-6 py-4 flex items-center justify-between border-b border-[#DCD4C9]">
           <div className="flex items-center gap-3">
@@ -506,25 +539,26 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="text-white/60 hover:text-white p-1 transition-colors cursor-pointer"
+            className="text-white/60 hover:text-white p-1.5 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Tab switcher */}
-        <div className="flex border-b border-[#DCD4C9] bg-[#ECE5DC]/60 px-6 pt-2 gap-2 overflow-x-auto">
+        <div className="flex flex-wrap sm:flex-nowrap items-center border-b border-[#DCD4C9] bg-[#ECE5DC]/60 px-5 pt-2 gap-1.5">
           <button
             type="button"
             onClick={() => setActiveTab('profile')}
             style={activeTab === 'profile' ? { borderColor: accent, color: '#18231C' } : {}}
-            className={`pb-2.5 px-3 text-xs font-bold uppercase tracking-wider transition-colors border-b-2 cursor-pointer shrink-0 ${
+            className={`py-3 px-3.5 text-xs font-bold uppercase tracking-wide transition-colors border-b-2 flex items-center gap-1.5 cursor-pointer shrink-0 ${
               activeTab === 'profile'
                 ? 'border-b-2 font-black'
                 : 'border-transparent text-[#6F6860] hover:text-[#18231C]'
             }`}
           >
-            Datos de Contacto
+            <User className="w-3.5 h-3.5" />
+            <span>Datos de Contacto</span>
           </button>
 
           {/* Apartado de Seguridad (Visible y funcional TANTO para cuentas con rol admin como employee) */}
@@ -535,7 +569,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
               setEnrollError(null);
             }}
             style={activeTab === 'security' ? { borderColor: accent, color: '#18231C' } : {}}
-            className={`pb-2.5 px-3 text-xs font-bold uppercase tracking-wider transition-colors border-b-2 flex items-center gap-1.5 cursor-pointer shrink-0 ${
+            className={`py-3 px-3.5 text-xs font-bold uppercase tracking-wide transition-colors border-b-2 flex items-center gap-1.5 cursor-pointer shrink-0 ${
               activeTab === 'security'
                 ? 'border-b-2 font-black'
                 : 'border-transparent text-[#6F6860] hover:text-[#18231C]'
@@ -544,7 +578,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
             <ShieldCheck className="w-3.5 h-3.5 text-[#B9522F]" />
             <span>Seguridad</span>
             {isEnrolled ? (
-              <span className="px-1.5 py-0.2 text-[9px] rounded-full bg-emerald-100 text-emerald-800 font-bold border border-emerald-300">
+              <span className="px-2 py-0.5 text-[10px] rounded-full bg-emerald-100 text-emerald-800 font-bold border border-emerald-300 leading-none">
                 2FA Activo
               </span>
             ) : (
@@ -556,18 +590,18 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
             type="button"
             onClick={() => setActiveTab('quotes')}
             style={activeTab === 'quotes' ? { borderColor: accent, color: '#18231C' } : {}}
-            className={`pb-2.5 px-3 text-xs font-bold uppercase tracking-wider transition-colors border-b-2 flex items-center gap-1.5 cursor-pointer shrink-0 ${
+            className={`py-3 px-3.5 text-xs font-bold uppercase tracking-wide transition-colors border-b-2 flex items-center gap-1.5 cursor-pointer shrink-0 ${
               activeTab === 'quotes'
                 ? 'border-b-2 font-black'
                 : 'border-transparent text-[#6F6860] hover:text-[#18231C]'
             }`}
           >
             <ShoppingBag className="w-3.5 h-3.5" />
-            Historial de Cotizaciones
+            <span>Historial de Cotizaciones</span>
             {quoteHistory.length > 0 && (
               <span 
                 style={{ backgroundColor: accent, color: '#18231C' }}
-                className="px-1.5 py-0.2 text-[10px] rounded-full font-mono font-bold"
+                className="px-2 py-0.5 text-[10px] rounded-full font-mono font-bold leading-none"
               >
                 {quoteHistory.length}
               </span>

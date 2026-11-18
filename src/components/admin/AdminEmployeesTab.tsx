@@ -122,6 +122,7 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
   const [password, setPassword] = useState('');
   const [branch, setBranch] = useState('Maipú');
   const [sellerName, setSellerName] = useState('');
+  const [sellerRole, setSellerRole] = useState<'local' | 'vendedor'>('vendedor');
   const [crmScope, setCrmScope] = useState<'all' | 'branch_only' | 'own_only'>('branch_only');
   const [allowedTabs, setAllowedTabs] = useState<string[]>([
     'products',
@@ -154,6 +155,7 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
     setPassword('Pampero2026');
     setBranch('Maipú');
     setSellerName('');
+    setSellerRole('vendedor');
     setCrmScope('branch_only');
     setAllowedTabs(['products', 'variants', 'prices', 'mass_images', 'quotes', 'crm']);
     setShowCreateModal(true);
@@ -167,6 +169,7 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
     setPassword(emp.password || '');
     setBranch(emp.branch || 'Maipú');
     setSellerName(emp.sellerName || '');
+    setSellerRole(emp.sellerRole === 'local' ? 'local' : 'vendedor');
     setCrmScope(emp.crmScope || 'branch_only');
     setAllowedTabs(emp.allowedTabs || []);
     setShowCreateModal(true);
@@ -195,6 +198,7 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
           email: email.trim().toLowerCase(),
           password: passClean || existing?.password || 'Pampero2026',
           role: 'employee',
+          sellerRole,
           branch,
           sellerName: sellerName.trim() || name.trim(),
           crmScope,
@@ -214,10 +218,10 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
           role: 'employee' as const,
           type: 'empleado' as const,
           branch,
-          sellerRole: 'vendedor' as const,
+          sellerRole,
           status: 'active' as const,
           allowedTabs,
-          crmTabs: ['visits', 'board', 'suppliers', 'costs'],
+          crmTabs: ['visits', 'board', 'tasks', 'suppliers', 'costs'],
         };
 
         const authResult = await createFirebaseAuthAndFirestoreUser(newUserPayload, passClean);
@@ -234,6 +238,7 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
           email: email.trim().toLowerCase(),
           password: passClean,
           role: 'employee',
+          sellerRole,
           branch,
           sellerName: sellerName.trim() || name.trim(),
           crmScope,
@@ -536,6 +541,20 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
                     <option value="Ciudad">Ciudad</option>
                     <option value="Luján">Luján de Cuyo</option>
                     <option value="Todas">Todas (Supervisor / Gerente)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-[#18231C] mb-1">
+                    Rol Operativo (Tareas y Local) *
+                  </label>
+                  <select
+                    value={sellerRole}
+                    onChange={(e) => setSellerRole(e.target.value as 'local' | 'vendedor')}
+                    className="w-full px-3 py-2 text-xs bg-[#FAF8F5] rounded-xs border border-[#DCD4C9] outline-none cursor-pointer font-semibold"
+                  >
+                    <option value="vendedor">Usuario / Vendedor del Local</option>
+                    <option value="local">Encargado del Local (Ve avances, edita plazos y metas)</option>
                   </select>
                 </div>
 

@@ -190,10 +190,10 @@ export const HubView: React.FC<HubViewProps> = ({
               type="button"
               id="btn-hub-crm"
               onClick={onOpenCRM}
-              className="w-full py-3.5 px-4 rounded-xs bg-[#B9522F] hover:bg-[#9E3E1E] text-white text-xs font-black uppercase tracking-[0.15em] transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
+              className="w-full py-3.5 px-4 rounded-xs bg-[#B9522F] hover:bg-[#9E3E1E] text-white text-xs font-black uppercase tracking-[0.15em] transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer border border-[#B9522F]"
             >
               <span>Ir a Gestión / CRM</span>
-              <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+              <ArrowRight className="w-4 h-4 shrink-0 text-white group-hover:translate-x-1 transition-transform" />
             </button>
           </div>
 
@@ -215,7 +215,7 @@ export const HubView: React.FC<HubViewProps> = ({
               className="w-full py-3.5 px-4 rounded-xs bg-[#18231C] hover:bg-black text-[#F5F2EC] text-xs font-black uppercase tracking-[0.15em] transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer border border-[#18231C]"
             >
               <span>Panel de Control</span>
-              <ArrowRight className="w-4 h-4 text-[#FDB813] group-hover:translate-x-1 transition-transform" />
+              <ArrowRight className="w-4 h-4 shrink-0 text-[#FDB813] group-hover:translate-x-1 transition-transform" />
             </button>
           </div>
 
@@ -234,10 +234,11 @@ export const HubView: React.FC<HubViewProps> = ({
               type="button"
               id="btn-hub-catalog"
               onClick={onOpenCatalog}
-              style={{ backgroundColor: accent }}
-              className="w-full py-3.5 px-4 rounded-xs hover:brightness-105 text-[#18231C] text-xs font-black uppercase tracking-[0.15em] transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
+              style={{ backgroundColor: accent, borderColor: accent }}
+              className="w-full py-3.5 px-4 rounded-xs hover:brightness-105 text-[#18231C] text-xs font-black uppercase tracking-[0.15em] transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer border"
             >
-              <span>VER CATÁLOGO →</span>
+              <span>Ver Catálogo</span>
+              <ArrowRight className="w-4 h-4 shrink-0 text-[#18231C] group-hover:translate-x-1 transition-transform" />
             </button>
           </div>
         </div>

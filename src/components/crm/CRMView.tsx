@@ -58,11 +58,13 @@ import {
   Download,
   Upload,
   FileSpreadsheet,
-  FileText
+  FileText,
+  CheckSquare
 } from 'lucide-react';
 import { exportOrdersToExcel, importOrdersFromExcel } from '../../utils/kanbanExcelUtils';
 import { CRMNotificationsModal } from './CRMNotificationsModal';
 import { CRMVisitsTab } from './CRMVisitsTab';
+import { CRMTasksTab } from './CRMTasksTab';
 import { CRMSupplierOrdersTab } from './CRMSupplierOrdersTab';
 import { CRMCostsTab } from './CRMCostsTab';
 
@@ -131,8 +133,9 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
     ? 'all'
     : (currentEmployee?.crmScope || 'branch_only');
 
-  const assignedBranch = currentEmployee?.branch || 'Maipú';
-  const assignedSellerName = currentEmployee?.sellerName || userSession?.clientData?.fullName || '';
+  const assignedBranch = (userSession as any)?.branch || currentEmployee?.branch || 'Maipú';
+  const assignedSellerName =
+    (userSession as any)?.sellerName || currentEmployee?.sellerName || userSession?.clientData?.fullName || '';
 
   // Dynamic sellers list from localStorage / store
   const sellersList: Seller[] = React.useMemo(() => {
@@ -150,19 +153,49 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
     ];
   }, []);
 
+  // Detectar si el usuario activo es Administrador o Encargado del Local (sellerRole === 'local')
+  const isManager = React.useMemo(() => {
+    if (userSession?.role === 'admin') return true;
+    if ((userSession as any)?.sellerRole === 'local') return true;
+    if (currentEmployee?.sellerRole === 'local') return true;
+
+    const emailLow = (userSession?.email || '').toLowerCase();
+    const nameLow = (assignedSellerName || '').toLowerCase();
+    const matchedSeller: any = sellersList.find(
+      (s: any) =>
+        (emailLow && s.email?.toLowerCase() === emailLow) ||
+        (nameLow && s.name?.toLowerCase() === nameLow)
+    );
+    if (matchedSeller?.role === 'local' || matchedSeller?.role === 'admin') return true;
+
+    try {
+      const regUsers: any[] = JSON.parse(localStorage.getItem('pampero_registered_users') || '[]');
+      const regMatch = regUsers.find(
+        (u) => emailLow && (u.email || '').toLowerCase() === emailLow
+      );
+      if (regMatch?.sellerRole === 'local' || regMatch?.role === 'admin') return true;
+    } catch {}
+
+    return false;
+  }, [userSession, currentEmployee, assignedSellerName, sellersList]);
+
   const activeStaffUser = userSession?.clientData?.fullName || (userSession?.role === 'admin' ? 'Administrador General' : userSession?.email?.split('@')[0] || 'Personal Pampero');
 
   // Allowed CRM tabs based on Admin or Employee Permissions
   const crmTabsStr = currentEmployee?.crmTabs?.join(',') || '';
-  const allowedCrmTabs: ('visits' | 'board' | 'suppliers' | 'costs')[] = React.useMemo(() => {
-    if (userSession?.role === 'admin') return ['visits', 'board', 'suppliers', 'costs'];
+  const crmTasksConfigured = Boolean(currentEmployee?.crmTasksConfigured);
+  const allowedCrmTabs: ('visits' | 'board' | 'tasks' | 'suppliers' | 'costs')[] = React.useMemo(() => {
+    if (userSession?.role === 'admin') return ['visits', 'board', 'tasks', 'suppliers', 'costs'];
     if (currentEmployee?.crmTabs && Array.isArray(currentEmployee.crmTabs) && currentEmployee.crmTabs.length > 0) {
-      return currentEmployee.crmTabs as ('visits' | 'board' | 'suppliers' | 'costs')[];
+      if (!crmTasksConfigured && !currentEmployee.crmTabs.includes('tasks')) {
+        return [...currentEmployee.crmTabs, 'tasks'] as ('visits' | 'board' | 'tasks' | 'suppliers' | 'costs')[];
+      }
+      return currentEmployee.crmTabs as ('visits' | 'board' | 'tasks' | 'suppliers' | 'costs')[];
     }
-    return ['visits', 'board', 'suppliers'];
-  }, [userSession?.role, crmTabsStr]);
+    return ['visits', 'board', 'tasks', 'suppliers'];
+  }, [userSession?.role, crmTabsStr, crmTasksConfigured]);
 
-  const [activeTab, setActiveTab] = useState<'visits' | 'board' | 'suppliers' | 'costs'>('visits');
+  const [activeTab, setActiveTab] = useState<'visits' | 'board' | 'tasks' | 'suppliers' | 'costs'>('visits');
 
   useEffect(() => {
     if (allowedCrmTabs.length > 0 && !allowedCrmTabs.includes(activeTab)) {
@@ -443,6 +476,7 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
       };
       (empSession as any).branch = seller?.branch || 'Maipú';
       (empSession as any).sellerName = seller?.name || 'Itatí';
+      (empSession as any).sellerRole = (seller as any)?.role || 'vendedor';
       localStorage.setItem('pampero_session', JSON.stringify(empSession));
       onSetSession(empSession);
     }
@@ -518,6 +552,7 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
             {[
               { key: 'visits' as const, label: '1. Visitas Comerciales', icon: Building2 },
               { key: 'board' as const, label: '2. Seguimiento Empresas', icon: LayoutDashboard },
+              { key: 'tasks' as const, label: '3. Tareas', icon: CheckSquare },
               { key: 'suppliers' as const, label: 'Pedidos Proveedor', icon: Truck },
               { key: 'costs' as const, label: 'Control de Costos', icon: DollarSign },
             ]
@@ -1044,7 +1079,21 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
           />
         )}
 
-        {/* === TAB 3: PEDIDOS A PROVEEDOR === */}
+        {/* === TAB 3: TAREAS DEL EQUIPO (KANBAN) === */}
+        {activeTab === 'tasks' && (
+          <CRMTasksTab
+            userSession={userSession}
+            sellersList={sellersList}
+            assignedBranch={assignedBranch}
+            assignedSellerName={assignedSellerName}
+            activeStaffUser={activeStaffUser}
+            isManager={isManager}
+            crmScope={crmScope}
+            theme={theme}
+          />
+        )}
+
+        {/* === TAB 4: PEDIDOS A PROVEEDOR === */}
         {activeTab === 'suppliers' && (
           <CRMSupplierOrdersTab orders={supplierOrders} accentColor={accent} />
         )}

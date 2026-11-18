@@ -12,13 +12,15 @@ import {
   ArrowRight,
   Palette,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  CheckSquare
 } from 'lucide-react';
 import { 
   saveKanbanColumns, 
   subscribeToKanbanColumns, 
   DEFAULT_VISIT_COLUMNS, 
   DEFAULT_COMPANY_COLUMNS, 
+  DEFAULT_TASK_COLUMNS,
   KanbanColumnConfig 
 } from '../../services/firebase';
 import { fixUtf8Encoding, sanitizeObjectEncoding } from '../../utils/encodingUtils';
@@ -28,9 +30,10 @@ interface AdminKanbanConfigTabProps {
 }
 
 export const AdminKanbanConfigTab: React.FC<AdminKanbanConfigTabProps> = ({ triggerSaveNotice }) => {
-  const [activeBoard, setActiveBoard] = useState<'visits' | 'companies'>('visits');
+  const [activeBoard, setActiveBoard] = useState<'visits' | 'companies' | 'tasks'>('visits');
   const [visitColumns, setVisitColumns] = useState<KanbanColumnConfig[]>(DEFAULT_VISIT_COLUMNS);
   const [companyColumns, setCompanyColumns] = useState<KanbanColumnConfig[]>(DEFAULT_COMPANY_COLUMNS);
+  const [taskColumns, setTaskColumns] = useState<KanbanColumnConfig[]>(DEFAULT_TASK_COLUMNS);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [feedbackNotice, setFeedbackNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
@@ -50,26 +53,25 @@ export const AdminKanbanConfigTab: React.FC<AdminKanbanConfigTabProps> = ({ trig
       if (Array.isArray(data.companies) && data.companies.length > 0) {
         setCompanyColumns(data.companies.map(sanitizeObjectEncoding));
       }
+      if (Array.isArray(data.tasks) && data.tasks.length > 0) {
+        setTaskColumns(data.tasks.map(sanitizeObjectEncoding));
+      }
     });
     return () => unsub();
   }, []);
 
-  const currentColumns = activeBoard === 'visits' ? visitColumns : companyColumns;
+  const currentColumns =
+    activeBoard === 'visits' ? visitColumns : activeBoard === 'companies' ? companyColumns : taskColumns;
 
   const handleUpdateCol = (idx: number, field: keyof KanbanColumnConfig, val: string) => {
-    if (activeBoard === 'visits') {
-      setVisitColumns((prev) => {
-        const next = [...prev];
-        next[idx] = { ...next[idx], [field]: val };
-        return next;
-      });
-    } else {
-      setCompanyColumns((prev) => {
-        const next = [...prev];
-        next[idx] = { ...next[idx], [field]: val };
-        return next;
-      });
-    }
+    const updater = (prev: KanbanColumnConfig[]) => {
+      const next = [...prev];
+      next[idx] = { ...next[idx], [field]: val };
+      return next;
+    };
+    if (activeBoard === 'visits') setVisitColumns(updater);
+    else if (activeBoard === 'companies') setCompanyColumns(updater);
+    else setTaskColumns(updater);
   };
 
   const handleAddColumn = (e: React.FormEvent) => {
@@ -94,8 +96,10 @@ export const AdminKanbanConfigTab: React.FC<AdminKanbanConfigTabProps> = ({ trig
 
     if (activeBoard === 'visits') {
       setVisitColumns((prev) => [...prev, newCol]);
-    } else {
+    } else if (activeBoard === 'companies') {
       setCompanyColumns((prev) => [...prev, newCol]);
+    } else {
+      setTaskColumns((prev) => [...prev, newCol]);
     }
 
     setNewColLabel('');
@@ -114,8 +118,10 @@ export const AdminKanbanConfigTab: React.FC<AdminKanbanConfigTabProps> = ({ trig
 
     if (activeBoard === 'visits') {
       setVisitColumns((prev) => prev.filter((_, i) => i !== idx));
-    } else {
+    } else if (activeBoard === 'companies') {
       setCompanyColumns((prev) => prev.filter((_, i) => i !== idx));
+    } else {
+      setTaskColumns((prev) => prev.filter((_, i) => i !== idx));
     }
     setFeedbackNotice({ type: 'success', message: `Columna "${label}" eliminada del borrador. Presioná "Guardar Columnas" para confirmar.` });
     setTimeout(() => setFeedbackNotice(null), 4000);
@@ -132,8 +138,10 @@ export const AdminKanbanConfigTab: React.FC<AdminKanbanConfigTabProps> = ({ trig
 
     if (activeBoard === 'visits') {
       setVisitColumns(list);
-    } else {
+    } else if (activeBoard === 'companies') {
       setCompanyColumns(list);
+    } else {
+      setTaskColumns(list);
     }
   };
 
@@ -144,6 +152,7 @@ export const AdminKanbanConfigTab: React.FC<AdminKanbanConfigTabProps> = ({ trig
     const success = await saveKanbanColumns({
       visits: visitColumns,
       companies: companyColumns,
+      tasks: taskColumns,
     });
 
     setIsSaving(false);
@@ -164,8 +173,10 @@ export const AdminKanbanConfigTab: React.FC<AdminKanbanConfigTabProps> = ({ trig
     if (!confirm('¿Restablecer las columnas a los nombres oficiales predeterminados de Pampero?')) return;
     if (activeBoard === 'visits') {
       setVisitColumns(DEFAULT_VISIT_COLUMNS);
-    } else {
+    } else if (activeBoard === 'companies') {
       setCompanyColumns(DEFAULT_COMPANY_COLUMNS);
+    } else {
+      setTaskColumns(DEFAULT_TASK_COLUMNS);
     }
     setFeedbackNotice({ type: 'success', message: 'Columnas restablecidas a valores de fábrica. Presioná "Guardar Columnas" para confirmar.' });
   };
@@ -184,7 +195,7 @@ export const AdminKanbanConfigTab: React.FC<AdminKanbanConfigTabProps> = ({ trig
                 Editar Gestión · Columnas de Tableros Kanban
               </h3>
               <p className="text-xs text-[#6F6860]">
-                Podés agregar, renombrar, cambiar color o eliminar las etapas de ambos tableros ("Visitas comerciales" y "Seguimiento empresas").
+                Podés agregar, renombrar, cambiar color o eliminar las etapas de los tableros ("Visitas comerciales", "Seguimiento empresas" y "Tareas").
               </p>
             </div>
           </div>
@@ -234,7 +245,7 @@ export const AdminKanbanConfigTab: React.FC<AdminKanbanConfigTabProps> = ({ trig
       )}
 
       {/* Board Selector Tabs */}
-      <div className="flex border-b border-[#DCD4C9] bg-white px-4 pt-3 gap-2 rounded-t-xs">
+      <div className="flex flex-wrap border-b border-[#DCD4C9] bg-white px-4 pt-3 gap-2 rounded-t-xs">
         <button
           type="button"
           onClick={() => {
@@ -266,13 +277,37 @@ export const AdminKanbanConfigTab: React.FC<AdminKanbanConfigTabProps> = ({ trig
           <LayoutDashboard className="w-4 h-4" />
           <span>2. Tablero: Seguimiento Empresas ({companyColumns.length} columnas)</span>
         </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setActiveBoard('tasks');
+            setShowAddForm(false);
+          }}
+          className={`py-2 px-4 border-b-2 text-xs font-bold uppercase tracking-wider flex items-center gap-2 cursor-pointer transition-colors ${
+            activeBoard === 'tasks'
+              ? 'border-[#B9522F] text-[#B9522F] bg-[#FAF8F5]'
+              : 'border-transparent text-[#6F6860] hover:text-[#18231C]'
+          }`}
+        >
+          <CheckSquare className="w-4 h-4" />
+          <span>3. Tablero: Tareas ({taskColumns.length} columnas)</span>
+        </button>
       </div>
 
       {/* Column Editor Container */}
       <div className="bg-white p-5 rounded-b-xs border border-[#DCD4C9] shadow-2xs space-y-5">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <p className="text-xs text-[#6F6860]">
-            Editá los pasos para el tablero de <strong>{activeBoard === 'visits' ? 'Visitas comerciales' : 'Seguimiento empresas'}</strong>. Podés reordenarlas, cambiarles el color y agregar nuevos pasos según la necesidad comercial.
+            Editá los pasos para el tablero de{' '}
+            <strong>
+              {activeBoard === 'visits'
+                ? 'Visitas comerciales'
+                : activeBoard === 'companies'
+                ? 'Seguimiento empresas'
+                : 'Tareas del equipo'}
+            </strong>
+            . Podés reordenarlas, cambiarles el color y agregar nuevos pasos según la necesidad operativa.
           </p>
 
           <button
@@ -290,7 +325,12 @@ export const AdminKanbanConfigTab: React.FC<AdminKanbanConfigTabProps> = ({ trig
           <form onSubmit={handleAddColumn} className="p-4 bg-amber-50/70 border border-amber-300 rounded-xs space-y-3 animate-fadeIn">
             <h5 className="font-bold text-xs uppercase tracking-wider text-[#18231C] flex items-center gap-2">
               <Plus className="w-4 h-4 text-[#B9522F]" />
-              Crear Nuevo Paso / Columna para {activeBoard === 'visits' ? 'Visitas Comerciales' : 'Seguimiento Empresas'}
+              Crear Nuevo Paso / Columna para{' '}
+              {activeBoard === 'visits'
+                ? 'Visitas Comerciales'
+                : activeBoard === 'companies'
+                ? 'Seguimiento Empresas'
+                : 'Tareas del Equipo'}
             </h5>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">

@@ -22,7 +22,7 @@ interface AdminPermissionsTabProps {
   triggerSaveNotice?: () => void;
 }
 
-export type CRMTabPermissionKey = 'visits' | 'board' | 'suppliers' | 'costs';
+export type CRMTabPermissionKey = 'visits' | 'board' | 'tasks' | 'suppliers' | 'costs';
 
 export const CRM_TAB_DEFINITIONS: { key: CRMTabPermissionKey; label: string; description: string; badge: string }[] = [
   { 
@@ -36,6 +36,12 @@ export const CRM_TAB_DEFINITIONS: { key: CRMTabPermissionKey; label: string; des
     label: '2. Seguimiento empresas', 
     description: 'Cotizaciones, seña 50%, taller y entregas',
     badge: 'Kanban Empresas'
+  },
+  { 
+    key: 'tasks', 
+    label: '3. Tareas', 
+    description: 'Tareas operativas, importancia, tiempos límites y avances',
+    badge: 'Kanban Tareas'
   },
   { 
     key: 'suppliers', 
@@ -57,10 +63,11 @@ const INITIAL_FALLBACK_EMPLOYEES: EmployeeAccount[] = [
     name: 'Itatí',
     email: 'itati@pamperomaipu.com.ar',
     role: 'employee',
+    sellerRole: 'local',
     branch: 'Maipú',
     sellerName: 'Itatí',
     allowedTabs: ['crm', 'products', 'variants', 'prices', 'quotes'],
-    crmTabs: ['visits', 'board', 'suppliers'],
+    crmTabs: ['visits', 'board', 'tasks', 'suppliers'],
     crmScope: 'branch_only',
     createdAt: '2026-01-10',
     active: true,
@@ -70,10 +77,11 @@ const INITIAL_FALLBACK_EMPLOYEES: EmployeeAccount[] = [
     name: 'Guada',
     email: 'guada@pampero.com.ar',
     role: 'employee',
+    sellerRole: 'local',
     branch: 'Ciudad',
     sellerName: 'Guada',
     allowedTabs: ['crm', 'products', 'variants', 'prices', 'quotes'],
-    crmTabs: ['visits', 'board', 'suppliers'],
+    crmTabs: ['visits', 'board', 'tasks', 'suppliers'],
     crmScope: 'branch_only',
     createdAt: '2026-01-12',
     active: true,
@@ -83,10 +91,11 @@ const INITIAL_FALLBACK_EMPLOYEES: EmployeeAccount[] = [
     name: 'Carolina',
     email: 'carolina@pampero.com.ar',
     role: 'employee',
+    sellerRole: 'local',
     branch: 'Luján',
     sellerName: 'Carolina',
     allowedTabs: ['crm', 'products', 'variants', 'prices', 'quotes'],
-    crmTabs: ['visits', 'board', 'suppliers', 'costs'],
+    crmTabs: ['visits', 'board', 'tasks', 'suppliers', 'costs'],
     crmScope: 'branch_only',
     createdAt: '2026-01-15',
     active: true,
@@ -120,7 +129,9 @@ export const AdminPermissionsTab: React.FC<AdminPermissionsTabProps> = ({ trigge
     const target = employees.find((e) => e.id === empId);
     if (!target) return;
 
-    const currentTabs = target.crmTabs || ['visits', 'board', 'suppliers'];
+    const currentTabs: CRMTabPermissionKey[] = target.crmTabs
+      ? (target.crmTasksConfigured ? target.crmTabs : Array.from(new Set([...target.crmTabs, 'tasks'])))
+      : ['visits', 'board', 'tasks', 'suppliers'];
     const hasTab = currentTabs.includes(tabKey);
     const updatedTabs: CRMTabPermissionKey[] = hasTab
       ? currentTabs.filter((t) => t !== tabKey)
@@ -129,6 +140,7 @@ export const AdminPermissionsTab: React.FC<AdminPermissionsTabProps> = ({ trigge
     const updatedEmp: EmployeeAccount = {
       ...target,
       crmTabs: updatedTabs,
+      crmTasksConfigured: true,
       allowedTabs: updatedTabs.length > 0
         ? Array.from(new Set([...(target.allowedTabs || []), 'crm']))
         : (target.allowedTabs || []).filter((t) => t !== 'crm'),
@@ -156,10 +168,11 @@ export const AdminPermissionsTab: React.FC<AdminPermissionsTabProps> = ({ trigge
     const target = employees.find((e) => e.id === empId);
     if (!target) return;
 
-    const allTabs: CRMTabPermissionKey[] = ['visits', 'board', 'suppliers', 'costs'];
+    const allTabs: CRMTabPermissionKey[] = ['visits', 'board', 'tasks', 'suppliers', 'costs'];
     const updatedEmp: EmployeeAccount = {
       ...target,
       crmTabs: allTabs,
+      crmTasksConfigured: true,
       allowedTabs: Array.from(new Set([...(target.allowedTabs || []), 'crm'])),
     };
 
@@ -187,6 +200,7 @@ export const AdminPermissionsTab: React.FC<AdminPermissionsTabProps> = ({ trigge
     const updatedEmp: EmployeeAccount = {
       ...target,
       crmTabs: [],
+      crmTasksConfigured: true,
       allowedTabs: (target.allowedTabs || []).filter((t) => t !== 'crm'),
     };
 
@@ -255,7 +269,11 @@ export const AdminPermissionsTab: React.FC<AdminPermissionsTabProps> = ({ trigge
             </thead>
             <tbody className="divide-y divide-[#DCD4C9]">
               {employees.map((emp) => {
-                const assignedTabs = emp.crmTabs || ['visits', 'board', 'suppliers'];
+                const baseTabs = emp.crmTabs || ['visits', 'board', 'tasks', 'suppliers'];
+                const assignedTabs =
+                  emp.crmTabs && !emp.crmTasksConfigured && emp.crmTabs.length > 0
+                    ? Array.from(new Set([...emp.crmTabs, 'tasks']))
+                    : baseTabs;
                 const isSaving = savingId === emp.id;
 
                 return (

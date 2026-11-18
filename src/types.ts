@@ -55,7 +55,9 @@ export interface EmployeeAccount {
   password?: string;
   role: 'employee';
   allowedTabs: string[]; // e.g. ['promos', 'mass_images', 'prices', 'coupons', 'variants', 'products', 'branches', 'quotes', 'users', 'analytics', 'crm']
-  crmTabs?: ('visits' | 'board' | 'suppliers' | 'costs')[]; // CRM specific tab permissions: visits, board, suppliers, costs
+  crmTabs?: ('visits' | 'board' | 'tasks' | 'suppliers' | 'costs')[]; // CRM specific tab permissions
+  crmTasksConfigured?: boolean;
+  sellerRole?: 'admin' | 'local' | 'vendedor';
   branch?: string; // 'Maipú' | 'Ciudad' | 'Luján' | 'Todas'
   sellerName?: string;
   crmScope?: 'all' | 'branch_only' | 'own_only'; // 'all': todas las empresas, 'branch_only': sucursal, 'own_only': solo su cartera
@@ -204,7 +206,7 @@ export interface RegisteredUser {
   branch?: string;
   sellerRole?: 'admin' | 'local' | 'vendedor';
   allowedTabs?: string[];
-  crmTabs?: ('visits' | 'board' | 'suppliers' | 'costs')[];
+  crmTabs?: ('visits' | 'board' | 'tasks' | 'suppliers' | 'costs')[];
   createdAt: string;
   updatedAt?: string;
   status: 'active' | 'pending' | 'suspended';
@@ -722,4 +724,37 @@ export interface CRMSale {
   importedAt?: string;
   createdAt?: string;
   updatedAt?: string;
+}
+
+// --- CRM TASKS KANBAN (3. TAREAS DEL EQUIPO) ---
+export type CRMTaskImportance = 'urgente' | 'alta' | 'media' | 'baja';
+
+export interface CRMTaskAdvanceLog {
+  id: string;
+  author: string;
+  authorRole?: 'admin' | 'local' | 'vendedor';
+  note: string;
+  progressPercent: number;
+  createdAt: string;
+}
+
+export interface CRMTask {
+  id: string;
+  title: string;
+  description?: string;
+  columnId: string;
+  importance: CRMTaskImportance;
+  assignedTo: string;
+  assignedToEmail?: string;
+  createdBy: string;
+  createdByEmail?: string;
+  branch: string;
+  dueDate?: string; // YYYY-MM-DD
+  dueTime?: string; // HH:mm
+  requiredAdvance?: string; // Qué se necesita de avance (definido/editable por Encargado del Local o Admin)
+  targetProgressPercent?: number; // % mínimo requerido por Encargado del Local (default 100)
+  progressPercent: number; // 0 - 100
+  advanceLogs?: CRMTaskAdvanceLog[];
+  createdAt: string;
+  updatedAt: string;
 }

@@ -48,6 +48,7 @@ import {
   CRMExpense,
   CostCategoryConfig,
   CRMSale,
+  CRMTask,
   UserSession,
   AuditLogEntry,
   SiteTextsConfig,
@@ -1538,9 +1539,10 @@ export const saveFirestoreUser = async (user: RegisteredUser): Promise<{ success
         email: sanitizedUser.email,
         password: passwordToKeep || undefined,
         role: 'employee',
+        sellerRole: sanitizedUser.sellerRole || 'vendedor',
         branch: sanitizedUser.branch || 'Maipú',
         allowedTabs: sanitizedUser.allowedTabs || ['products', 'variants', 'prices', 'mass_images', 'promos', 'quotes', 'crm'],
-        crmTabs: sanitizedUser.crmTabs || ['visits', 'board', 'suppliers', 'costs'],
+        crmTabs: sanitizedUser.crmTabs || ['visits', 'board', 'tasks', 'suppliers', 'costs'],
         active: sanitizedUser.status === 'active',
         createdAt: sanitizedUser.createdAt || new Date().toISOString(),
       };
@@ -1770,9 +1772,10 @@ export async function createFirebaseAuthAndFirestoreUser(
           email: user.email,
           username: derivedUsername,
           role: 'employee',
+          sellerRole: user.sellerRole || 'vendedor',
           branch: user.branch || 'Maipú',
           allowedTabs: user.allowedTabs || ['products', 'variants', 'prices', 'mass_images', 'promos', 'quotes', 'crm'],
-          crmTabs: user.crmTabs || ['visits', 'board', 'suppliers', 'costs'],
+          crmTabs: user.crmTabs || ['visits', 'board', 'tasks', 'suppliers', 'costs'],
           active: user.status === 'active',
           createdAt: user.createdAt || new Date().toISOString(),
         },
@@ -3673,13 +3676,27 @@ export const DEFAULT_COMPANY_COLUMNS: KanbanColumnConfig[] = [
   { id: 'entregado', label: 'Entregado / Cerrado', color: '#3B82F6', description: 'Retirado por el cliente o despachado con remito' },
 ];
 
-export async function saveKanbanColumns(config: { visits?: KanbanColumnConfig[]; companies?: KanbanColumnConfig[] }): Promise<boolean> {
+export const DEFAULT_TASK_COLUMNS: KanbanColumnConfig[] = [
+  { id: 'pendiente', label: '1. Pendiente / Por Hacer', color: '#3B82F6', description: 'Tareas registradas esperando inicio de ejecución' },
+  { id: 'en_progreso', label: '2. En Curso', color: '#F97316', description: 'Tareas actualmente en proceso con avances parciales' },
+  { id: 'en_revision', label: '3. En Revisión / Control', color: '#8B5CF6', description: 'Avances listos para revisión del encargado de local' },
+  { id: 'completada', label: '4. Completada', color: '#10B981', description: 'Tareas finalizadas y aprobadas' },
+];
+
+export async function saveKanbanColumns(config: {
+  visits?: KanbanColumnConfig[];
+  companies?: KanbanColumnConfig[];
+  tasks?: KanbanColumnConfig[];
+}): Promise<boolean> {
   try {
     if (config.visits) {
       localStorage.setItem('pampero_kanban_visits_cols', JSON.stringify(config.visits));
     }
     if (config.companies) {
       localStorage.setItem('pampero_kanban_company_cols', JSON.stringify(config.companies));
+    }
+    if (config.tasks) {
+      localStorage.setItem('pampero_kanban_tasks_cols', JSON.stringify(config.tasks));
     }
     const firestoreDb = db || getFirebaseDb();
     if (firestoreDb) {
@@ -3696,19 +3713,29 @@ export async function saveKanbanColumns(config: { visits?: KanbanColumnConfig[];
   }
 }
 
-export function subscribeToKanbanColumns(onUpdate: (data: { visits: KanbanColumnConfig[]; companies: KanbanColumnConfig[] }) => void): () => void {
+export function subscribeToKanbanColumns(
+  onUpdate: (data: {
+    visits: KanbanColumnConfig[];
+    companies: KanbanColumnConfig[];
+    tasks: KanbanColumnConfig[];
+  }) => void
+): () => void {
   const getInitial = () => {
     let visits = DEFAULT_VISIT_COLUMNS;
     let companies = DEFAULT_COMPANY_COLUMNS;
+    let tasks = DEFAULT_TASK_COLUMNS;
     try {
       const v = localStorage.getItem('pampero_kanban_visits_cols');
       if (v) visits = JSON.parse(v);
       const c = localStorage.getItem('pampero_kanban_company_cols');
       if (c) companies = JSON.parse(c);
+      const t = localStorage.getItem('pampero_kanban_tasks_cols');
+      if (t) tasks = JSON.parse(t);
     } catch {}
     return {
       visits: (visits || DEFAULT_VISIT_COLUMNS).map(sanitizeObjectEncoding),
       companies: (companies || DEFAULT_COMPANY_COLUMNS).map(sanitizeObjectEncoding),
+      tasks: (tasks || DEFAULT_TASK_COLUMNS).map(sanitizeObjectEncoding),
     };
   };
 
@@ -3725,11 +3752,14 @@ export function subscribeToKanbanColumns(onUpdate: (data: { visits: KanbanColumn
         const data = snap.data();
         const rawVisits = Array.isArray(data?.visits) && data.visits.length > 0 ? data.visits : DEFAULT_VISIT_COLUMNS;
         const rawCompanies = Array.isArray(data?.companies) && data.companies.length > 0 ? data.companies : DEFAULT_COMPANY_COLUMNS;
+        const rawTasks = Array.isArray(data?.tasks) && data.tasks.length > 0 ? data.tasks : DEFAULT_TASK_COLUMNS;
         const visits = rawVisits.map(sanitizeObjectEncoding);
         const companies = rawCompanies.map(sanitizeObjectEncoding);
+        const tasks = rawTasks.map(sanitizeObjectEncoding);
         localStorage.setItem('pampero_kanban_visits_cols', JSON.stringify(visits));
         localStorage.setItem('pampero_kanban_company_cols', JSON.stringify(companies));
-        onUpdate({ visits, companies });
+        localStorage.setItem('pampero_kanban_tasks_cols', JSON.stringify(tasks));
+        onUpdate({ visits, companies, tasks });
       } else {
         onUpdate(getInitial());
       }
@@ -3738,6 +3768,116 @@ export function subscribeToKanbanColumns(onUpdate: (data: { visits: KanbanColumn
     });
   } catch {
     onUpdate(getInitial());
+    return () => {};
+  }
+}
+
+// ==========================================
+// CRM TASKS KANBAN PERSISTENCE (crm_tareas)
+// ==========================================
+
+export async function saveCRMTask(task: CRMTask): Promise<{ success: boolean; id: string; error?: string }> {
+  const taskId = task.id || `TSK-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+  const cleanTask: CRMTask = sanitizeObjectEncoding({
+    ...task,
+    id: taskId,
+    progressPercent: Math.max(0, Math.min(100, Number(task.progressPercent) || 0)),
+    targetProgressPercent:
+      task.targetProgressPercent !== undefined
+        ? Math.max(0, Math.min(100, Number(task.targetProgressPercent) || 100))
+        : 100,
+    updatedAt: new Date().toISOString(),
+    createdAt: task.createdAt || new Date().toISOString(),
+  });
+
+  try {
+    const local: CRMTask[] = JSON.parse(localStorage.getItem('pampero_crm_tasks') || '[]');
+    const updated = [cleanTask, ...local.filter((t) => t.id !== cleanTask.id)];
+    localStorage.setItem('pampero_crm_tasks', JSON.stringify(updated));
+  } catch {}
+
+  const firestoreDb = db || getFirebaseDb();
+  if (firestoreDb) {
+    try {
+      const docRef = doc(firestoreDb, 'crm_tareas', cleanTask.id);
+      const cleaned = JSON.parse(
+        JSON.stringify(cleanTask, (_k, v) => (v === undefined ? null : v))
+      );
+      await setDoc(docRef, cleaned, { merge: true });
+      return { success: true, id: cleanTask.id };
+    } catch (err: any) {
+      console.warn('[FIREBASE] saveCRMTask warning:', err?.message || err);
+      return { success: false, id: cleanTask.id, error: err?.message || 'Error guardando tarea en Firestore' };
+    }
+  }
+  return { success: true, id: cleanTask.id };
+}
+
+export async function deleteCRMTask(taskId: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const local: CRMTask[] = JSON.parse(localStorage.getItem('pampero_crm_tasks') || '[]');
+    const updated = local.filter((t) => t.id !== taskId);
+    localStorage.setItem('pampero_crm_tasks', JSON.stringify(updated));
+  } catch {}
+
+  const firestoreDb = db || getFirebaseDb();
+  if (firestoreDb) {
+    try {
+      await deleteDoc(doc(firestoreDb, 'crm_tareas', taskId));
+      return { success: true };
+    } catch (err: any) {
+      console.warn('[FIREBASE] deleteCRMTask warning:', err?.message || err);
+      return { success: false, error: err?.message || 'Error eliminando tarea en Firestore' };
+    }
+  }
+  return { success: true };
+}
+
+export function subscribeToCRMTasks(
+  onUpdate: (tasks: CRMTask[]) => void,
+  onError?: (err: Error) => void
+): () => void {
+  try {
+    const local = localStorage.getItem('pampero_crm_tasks');
+    if (local) {
+      const parsed = JSON.parse(local);
+      if (Array.isArray(parsed)) {
+        onUpdate(parsed.map(sanitizeObjectEncoding));
+      }
+    }
+  } catch {}
+
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return () => {};
+
+  try {
+    const colRef = collection(firestoreDb, 'crm_tareas');
+    return onSnapshot(
+      colRef,
+      (snapshot) => {
+        const list: CRMTask[] = [];
+        snapshot.forEach((d) => {
+          const data = d.data() as CRMTask;
+          list.push(
+            sanitizeObjectEncoding({
+              ...data,
+              id: d.id,
+              progressPercent: Math.max(0, Math.min(100, Number(data.progressPercent) || 0)),
+            })
+          );
+        });
+        try {
+          localStorage.setItem('pampero_crm_tasks', JSON.stringify(list));
+        } catch {}
+        onUpdate(list);
+      },
+      (error) => {
+        console.warn('[FIREBASE] crm_tareas listener warning:', error.message);
+        if (onError) onError(error);
+      }
+    );
+  } catch (err) {
+    console.warn('[FIREBASE] Error subscribing to crm_tareas:', err);
     return () => {};
   }
 }
