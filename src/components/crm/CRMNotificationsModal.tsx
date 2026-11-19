@@ -1,6 +1,6 @@
 import React from 'react';
 import { CRMOrder, LeadVisit } from '../../types';
-import { X, AlertTriangle, Clock, MessageCircle, Building2, User, CheckCircle2 } from 'lucide-react';
+import { X, AlertTriangle, Clock, MessageCircle, Building2, User, CheckCircle2, Bell, Calendar } from 'lucide-react';
 
 interface CRMNotificationsModalProps {
   isOpen: boolean;
@@ -19,6 +19,8 @@ export const CRMNotificationsModal: React.FC<CRMNotificationsModalProps> = ({
 }) => {
   if (!isOpen) return null;
 
+  const todayIso = new Date().toISOString().split('T')[0];
+
   // Read configurable notification settings from Admin Panel
   let settings = {
     staleQuoteDays: 7,
@@ -31,6 +33,17 @@ export const CRMNotificationsModal: React.FC<CRMNotificationsModalProps> = ({
     const saved = localStorage.getItem('pampero_notification_settings');
     if (saved) settings = { ...settings, ...JSON.parse(saved) };
   } catch {}
+
+  // 0. Observation Reminders (Visitas Comerciales + Seguimiento Empresas)
+  const orderReminders = orders.filter(
+    (o) => Boolean(o.reminderDate) && o.status !== 'entregado' && o.status !== 'cancelado'
+  );
+  const visitReminders = visits.filter(
+    (v) => Boolean(v.reminderDate) && v.status !== 'cerrada' && v.status !== 'cancelada'
+  );
+  const dueObservationRemindersCount =
+    orderReminders.filter((o) => (o.reminderDate || '') <= todayIso).length +
+    visitReminders.filter((v) => (v.reminderDate || '') <= todayIso).length;
 
   // 1. Identify delayed orders based on configured staleQuoteDays
   const delayedOrders = settings.notifyStaleOrders
@@ -50,15 +63,7 @@ export const CRMNotificationsModal: React.FC<CRMNotificationsModalProps> = ({
     ? visits.filter((v) => v.status === 'programada' || v.status === 'presupuesto_enviado')
     : [];
 
-  // 4. Identify recent new quotes (< 2 days)
-  const newQuotes = settings.notifyNewQuotes
-    ? orders.filter((o) => {
-        const daysOld = Math.floor((Date.now() - new Date(o.date).getTime()) / (1000 * 60 * 60 * 24));
-        return daysOld <= 2 && o.status === 'cotizacion';
-      })
-    : [];
-
-  const totalAlerts = delayedOrders.length + blockedOrders.length + pendingVisits.length;
+  const totalAlerts = delayedOrders.length + blockedOrders.length + pendingVisits.length + dueObservationRemindersCount;
 
   const handleWhatsAppFollowUp = (clientName: string, id: string) => {
     const text = encodeURIComponent(
@@ -90,6 +95,104 @@ export const CRMNotificationsModal: React.FC<CRMNotificationsModalProps> = ({
 
         {/* Content list */}
         <div className="p-6 overflow-y-auto space-y-6">
+          {/* Section 0: Recordatorios de Observaciones y Eventos */}
+          {(orderReminders.length > 0 || visitReminders.length > 0) && (
+            <div>
+              <h4 className="text-xs font-bold uppercase tracking-wider text-[#B9522F] flex items-center gap-1.5 mb-2.5">
+                <Bell className="w-3.5 h-3.5" />
+                Recordatorios de Observaciones ({orderReminders.length + visitReminders.length})
+              </h4>
+              <div className="space-y-2">
+                {orderReminders.map((o) => {
+                  const isDue = (o.reminderDate || '') <= todayIso;
+                  return (
+                    <div
+                      key={`rem-ord-${o.id}`}
+                      className={`p-3 rounded-xs border flex items-start justify-between gap-3 ${
+                        isDue ? 'bg-amber-50 border-amber-300' : 'bg-[#FAF8F5] border-[#DCD4C9]'
+                      }`}
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 font-bold text-xs text-[#18231C] flex-wrap">
+                          <Calendar className="w-3.5 h-3.5 text-[#B9522F]" />
+                          <span>Seguimiento · {o.clientName}</span>
+                          <span className="text-[10px] font-mono text-[#6F6860]">
+                            {o.trackingCode || o.orderNumber || `#${o.id.slice(-6)}`}
+                          </span>
+                          {isDue && (
+                            <span className="text-[9px] font-black uppercase px-1.5 py-0.2 bg-red-600 text-white rounded-xs">
+                              Vence Hoy / Atrasado
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-[#18231C] mt-1 font-medium">
+                          {o.reminderNote || o.observations || 'Recordatorio programado'}
+                        </p>
+                        <p className="text-[10px] text-[#6F6860] mt-0.5">
+                          Fecha aviso: <strong>{o.reminderDate}</strong> {o.reminderTime ? `${o.reminderTime}hs` : ''} · Vendedor: {o.seller || 'Sin asignar'}
+                        </p>
+                      </div>
+                      {onSelectOrder && (
+                        <button
+                          onClick={() => {
+                            onSelectOrder(o);
+                            onClose();
+                          }}
+                          className="px-2.5 py-1 bg-[#18231C] hover:bg-black text-white text-[10px] font-bold rounded-xs cursor-pointer shrink-0"
+                        >
+                          Ver Ficha
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+                {visitReminders.map((v) => {
+                  const isDue = (v.reminderDate || '') <= todayIso;
+                  return (
+                    <div
+                      key={`rem-vis-${v.id}`}
+                      className={`p-3 rounded-xs border flex items-start justify-between gap-3 ${
+                        isDue ? 'bg-amber-50 border-amber-300' : 'bg-[#FAF8F5] border-[#DCD4C9]'
+                      }`}
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 font-bold text-xs text-[#18231C] flex-wrap">
+                          <Calendar className="w-3.5 h-3.5 text-purple-700" />
+                          <span>Visita · {v.companyName}</span>
+                          {v.trackingCode && (
+                            <span className="text-[10px] font-mono text-[#6F6860]">{v.trackingCode}</span>
+                          )}
+                          {isDue && (
+                            <span className="text-[9px] font-black uppercase px-1.5 py-0.2 bg-red-600 text-white rounded-xs">
+                              Vence Hoy / Atrasado
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-[#18231C] mt-1 font-medium">
+                          {v.reminderNote || v.notes || 'Recordatorio de visita comercial'}
+                        </p>
+                        <p className="text-[10px] text-[#6F6860] mt-0.5">
+                          Fecha aviso: <strong>{v.reminderDate}</strong> {v.reminderTime ? `${v.reminderTime}hs` : ''} · Vendedor: {v.seller}
+                        </p>
+                      </div>
+                      {Boolean(v.phone && String(v.phone).trim()) && (
+                        <a
+                          href={`https://wa.me/${String(v.phone).replace(/\D/g, '')}?text=Hola%20${encodeURIComponent(String(v.contactName || ''))},%20te%20escribimos%20de%20Pampero%20Mendoza.`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="px-2.5 py-1 bg-[#25D366] text-white text-[10px] font-bold rounded-xs flex items-center gap-1 shrink-0"
+                        >
+                          <MessageCircle className="w-3 h-3" />
+                          WhatsApp
+                        </a>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Section A: Pedidos Bloqueados */}
           {blockedOrders.length > 0 && (
             <div>

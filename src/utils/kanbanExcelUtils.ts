@@ -4,6 +4,7 @@ import { CRMOrder, LeadVisit, SupplierOrder } from '../types';
 import {
   db,
   getFirebaseDb,
+  getNextStructuredTrackingCode,
   parseExcelDate,
   saveCRMOrder,
   saveLeadVisit,
@@ -209,13 +210,16 @@ export function exportOrdersToExcel(orders: CRMOrder[]): void {
   const rows = orders.map((raw) => {
     const o = normalizeCRMOrder(raw);
     return {
-      'Número de Pedido': o.orderNumber || o.id,
+      'Número de Pedido': o.orderNumber || o.trackingCode || o.id,
+      'N° Seguimiento': o.trackingCode || o.orderNumber || o.id,
       'ID Sistema': o.id,
       'Cliente / Razón Social': o.clientName,
       'Tipo Cliente': o.clientType === 'empresa' ? 'Empresa' : 'Consumidor Final',
       'Estado / Columna': o.status || o.columnId || 'cotizacion',
       'Vendedor Asignado': o.seller || '',
       'Sucursal': o.branch || '',
+      'Ubicación Empresa': o.companyLocation || '',
+      'Link Mapa': o.locationUrl || '',
       'Total Unidades': o.totalUnits || 0,
       'Total Estimado ($)': o.totalEstimated || 0,
       'Fecha': o.date || '',
@@ -242,12 +246,14 @@ export async function importOrdersFromExcel(
 ): Promise<{ updatedCount: number; newCount: number; orders: CRMOrder[] }> {
   const { rows: rawRows } = await parseSpreadsheetSheet(file, [
     'Numero de Pedido',
+    'Nro Seguimiento',
     'ID Sistema',
     'Cliente',
     'Razon Social',
     'Estado',
     'Vendedor',
     'Sucursal',
+    'Ubicacion',
     'Unidades',
     'Total Estimado',
     'Telefono',
@@ -262,9 +268,13 @@ export async function importOrdersFromExcel(
   const resultingOrders: CRMOrder[] = currentOrders.map((o, idx) => normalizeCRMOrder(o, idx));
   const toPersist: CRMOrder[] = [];
 
-  rawRows.forEach((row, idx) => {
+  for (let idx = 0; idx < rawRows.length; idx++) {
+    const row = rawRows[idx];
     const rawOrderNum = safeCellString(
-      getRowField(row, ['Número de Pedido', 'Numero de Pedido', 'Nro Pedido', 'Pedido'], ['pedido'])
+      getRowField(row, ['Número de Pedido', 'Numero de Pedido', 'Nro Pedido', 'N° Seguimiento', 'Nro Seguimiento', 'Pedido'], ['pedido', 'seguimiento'])
+    );
+    const rawTracking = safeCellString(
+      getRowField(row, ['N° Seguimiento', 'Nro Seguimiento', 'Tracking'], ['seguimiento', 'tracking'])
     );
     const rawId = safeCellString(getRowField(row, ['ID Sistema', 'ID'], []));
     const clientName = safeCellString(
@@ -275,7 +285,7 @@ export async function importOrdersFromExcel(
       )
     );
 
-    if (!clientName && !rawOrderNum && !rawId) return;
+    if (!clientName && !rawOrderNum && !rawId) continue;
 
     const orderKey = rawOrderNum.toLowerCase();
     const idKey = rawId ? sanitizeFirestoreDocId(rawId, 'ord', idx) : '';
@@ -312,6 +322,12 @@ export async function importOrdersFromExcel(
     const branch = safeCellString(
       getRowField(row, ['Sucursal', 'Local', 'Sede'], ['sucursal', 'local'])
     );
+    const companyLocation = safeCellString(
+      getRowField(row, ['Ubicación Empresa', 'Ubicación / Zona', 'Ubicación', 'Ubicacion', 'Dirección', 'Direccion', 'Zona'], ['ubicacion', 'direccion'])
+    );
+    const locationUrl = safeCellString(
+      getRowField(row, ['Link Mapa', 'Google Maps', 'Mapa', 'URL Mapa'], ['mapa'])
+    );
     const observations = safeCellString(
       getRowField(row, ['Observaciones', 'Notas', 'Detalle', 'Comentarios'], ['observacion', 'nota'])
     );
@@ -329,6 +345,7 @@ export async function importOrdersFromExcel(
       const updated = normalizeCRMOrder({
         ...existing,
         clientName: clientName || existing.clientName,
+        trackingCode: rawTracking || existing.trackingCode,
         status: normalizedStatus,
         columnId: normalizedStatus,
         step: normalizedStatus,
@@ -336,6 +353,8 @@ export async function importOrdersFromExcel(
         totalEstimated: totalEstimated || existing.totalEstimated,
         seller: seller || existing.seller,
         branch: branch || existing.branch,
+        companyLocation: companyLocation || existing.companyLocation,
+        locationUrl: locationUrl || existing.locationUrl,
         observations: observations || existing.observations,
         clientPhone: clientPhone || existing.clientPhone,
         clientEmail: clientEmail || existing.clientEmail,
@@ -347,17 +366,23 @@ export async function importOrdersFromExcel(
       updatedCount++;
     } else {
       const newId = idKey || sanitizeFirestoreDocId('', 'ord', idx);
+      const resolvedBranch = branch || 'Maipú';
+      const generatedTracking = rawTracking || rawOrderNum || await getNextStructuredTrackingCode('empresa', resolvedBranch);
       const newCard = normalizeCRMOrder({
         id: newId,
-        orderNumber: rawOrderNum || `PED-${Math.floor(100 + Math.random() * 900)}`,
+        orderNumber: generatedTracking,
+        trackingCode: generatedTracking,
         date: dateVal,
         clientName: clientName || 'Empresa',
         clientType: 'empresa',
         status: normalizedStatus,
         columnId: normalizedStatus,
         step: normalizedStatus,
-        seller: seller || 'Itatí',
-        branch: branch || 'Maipú',
+        seller: seller || 'Sin asignar',
+        branch: resolvedBranch,
+        nearestBranch: resolvedBranch,
+        companyLocation: companyLocation || undefined,
+        locationUrl: locationUrl || undefined,
         totalUnits,
         totalEstimated,
         observations,
@@ -370,7 +395,7 @@ export async function importOrdersFromExcel(
       toPersist.push(newCard);
       newCount++;
     }
-  });
+  }
 
   if (toPersist.length === 0) {
     throw new Error(
@@ -395,10 +420,13 @@ export function exportVisitsToExcel(visits: LeadVisit[]): void {
     const v = normalizeLeadVisit(raw);
     return {
       'ID Visita': v.id,
+      'N° Seguimiento': v.trackingCode || '',
       'Empresa': v.companyName,
       'Contacto': v.contactName,
       'Teléfono': v.phone || '',
       'Email': v.email || '',
+      'Ubicación / Zona': v.companyLocation || '',
+      'Link Mapa': v.locationUrl || '',
       'Vendedor': v.seller || '',
       'Sucursal': v.branch || '',
       'Fase / Columna': v.columnId || v.status || 'primer_contacto',
@@ -481,8 +509,12 @@ export async function importVisitsFromExcel(
   const resultingVisits: LeadVisit[] = currentVisits.map((v, idx) => normalizeLeadVisit(v, idx));
   const toPersist: LeadVisit[] = [];
 
-  rawRows.forEach((row, idx) => {
+  for (let idx = 0; idx < rawRows.length; idx++) {
+    const row = rawRows[idx];
     const rawId = safeCellString(getRowField(row, ['ID Visita', 'ID Sistema', 'ID'], []));
+    const rawTracking = safeCellString(
+      getRowField(row, ['N° Seguimiento', 'Nro Seguimiento', 'Tracking'], ['seguimiento', 'tracking'])
+    );
     const company = safeCellString(
       getRowField(
         row,
@@ -520,7 +552,7 @@ export async function importVisitsFromExcel(
     );
 
     // Si la fila no tiene ni empresa ni contacto ni teléfono ni email, omitir fila basura
-    if (!company && !contactName && !phone && !email) return;
+    if (!company && !contactName && !phone && !email) continue;
 
     const safeIdCandidate = rawId ? sanitizeFirestoreDocId(rawId, 'vis', idx) : '';
     const companyLow = company.toLowerCase();
@@ -554,6 +586,12 @@ export async function importVisitsFromExcel(
     const branch = safeCellString(
       getRowField(row, ['Sucursal', 'Local', 'Sede'], ['sucursal', 'local'])
     );
+    const companyLocation = safeCellString(
+      getRowField(row, ['Ubicación / Zona', 'Ubicación Empresa', 'Ubicación', 'Ubicacion', 'Dirección', 'Direccion', 'Zona'], ['ubicacion', 'direccion'])
+    );
+    const locationUrl = safeCellString(
+      getRowField(row, ['Link Mapa', 'Google Maps', 'Mapa', 'URL Mapa'], ['mapa'])
+    );
     const estimatedUnitsRaw = getRowField(
       row,
       ['Unidades Estimadas', 'Unidades', 'Cantidad', 'Prendas', 'Empleados'],
@@ -572,7 +610,7 @@ export async function importVisitsFromExcel(
     const nextStepDateRaw = getRowField(row, ['Fecha Próximo Paso', 'Fecha Proximo Paso'], []);
     const nextStepDate = parseExcelDate(nextStepDateRaw) || safeCellString(nextStepDateRaw);
     const notes = safeCellString(
-      getRowField(row, ['Notas', 'Observaciones', 'Comentarios', 'Detalle', 'Dirección', 'Direccion'], ['nota', 'observacion', 'comentario'])
+      getRowField(row, ['Notas', 'Observaciones', 'Comentarios', 'Detalle'], ['nota', 'observacion', 'comentario'])
     );
     const rawDate = getRowField(row, ['Fecha', 'Fecha Visita', 'Fecha Contacto'], ['fecha']);
     const dateVal = parseExcelDate(rawDate) || safeCellString(rawDate) || new Date().toISOString().split('T')[0];
@@ -581,10 +619,13 @@ export async function importVisitsFromExcel(
       const existing = resultingVisits[matchedIndex];
       const updated = normalizeLeadVisit({
         ...existing,
+        trackingCode: rawTracking || existing.trackingCode,
         companyName: company || existing.companyName,
         contactName: contactName || existing.contactName,
         phone: phone || existing.phone,
         email: email || existing.email,
+        companyLocation: companyLocation || existing.companyLocation,
+        locationUrl: locationUrl || existing.locationUrl,
         seller: seller || existing.seller,
         branch: branch || existing.branch,
         status: normalizedStatus,
@@ -604,15 +645,20 @@ export async function importVisitsFromExcel(
       updatedCount++;
     } else {
       const newId = safeIdCandidate || sanitizeFirestoreDocId('', 'vis', idx);
+      const resolvedBranch = branch || 'Maipú';
+      const generatedTracking = rawTracking || await getNextStructuredTrackingCode('empresa', resolvedBranch);
       const newVisit = normalizeLeadVisit({
         id: newId,
+        trackingCode: generatedTracking,
         date: dateVal,
         companyName: company || contactName || 'Nueva Empresa',
         contactName,
         phone,
         email,
-        seller: seller || 'Gustavo',
-        branch: branch || 'Maipú',
+        companyLocation: companyLocation || undefined,
+        locationUrl: locationUrl || undefined,
+        seller: seller || 'Sin asignar',
+        branch: resolvedBranch,
         status: normalizedStatus,
         columnId: resolvedStep,
         step: resolvedStep,
@@ -629,7 +675,7 @@ export async function importVisitsFromExcel(
       toPersist.push(newVisit);
       newCount++;
     }
-  });
+  }
 
   if (toPersist.length === 0) {
     throw new Error(

@@ -1,12 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import { LeadVisit } from '../../types';
+import React, { useState, useEffect, useRef } from 'react';
+import { LeadVisit, ObservationHistoryEntry } from '../../types';
 import { 
   saveLeadVisit, 
   deleteLeadVisit, 
   subscribeToLeadVisits,
   subscribeToKanbanColumns, 
   DEFAULT_VISIT_COLUMNS, 
-  KanbanColumnConfig 
+  KanbanColumnConfig,
+  getNextStructuredTrackingCode,
+  isValidStructuredTrackingCode,
+  ensureVisitsHaveStructuredTrackingCodes,
+  upsertObservationReminderCalendarEvent,
 } from '../../services/firebase';
 import { fixUtf8Encoding, sanitizeObjectEncoding } from '../../utils/encodingUtils';
 import { 
@@ -21,6 +25,9 @@ import {
   ArrowRight, 
   Trash2, 
   Edit3, 
+  Eye,
+  MapPin,
+  ExternalLink,
   CheckCircle,
   X,
   Save,
@@ -31,7 +38,8 @@ import {
   ArrowRightCircle,
   Download,
   Upload,
-  CheckCircle2
+  CheckCircle2,
+  Bell
 } from 'lucide-react';
 import { exportVisitsToExcel, importVisitsFromExcel } from '../../utils/kanbanExcelUtils';
 import { normalizeLeadVisit } from '../../utils/crmNormalizers';
@@ -148,14 +156,60 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
   const [sellerFilter, setSellerFilter] = useState('todos');
   const [branchFilter, setBranchFilter] = useState('todos');
   const [searchQuery, setSearchQuery] = useState('');
+  const [compactView, setCompactView] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [editingVisit, setEditingVisit] = useState<LeadVisit | null>(null);
+  const [viewingVisit, setViewingVisit] = useState<LeadVisit | null>(null);
   const [draggedVisitId, setDraggedVisitId] = useState<string | null>(null);
   const [dragOverCol, setDragOverCol] = useState<string | null>(null);
   const [excelNotice, setExcelNotice] = useState<string | null>(null);
   const [excelError, setExcelError] = useState<string | null>(null);
   const [isExcelProcessing, setIsExcelProcessing] = useState(false);
   const fileInputVisitsRef = React.useRef<HTMLInputElement>(null);
+  const backfilledVisitIdsRef = useRef<Set<string>>(new Set());
+
+  // Centralizar TODAS las visitas (incluidas iniciales/generales sin código estructurado)
+  useEffect(() => {
+    const missing = localVisits.filter(
+      (v) => v && v.id && !isValidStructuredTrackingCode(v.trackingCode) && !backfilledVisitIdsRef.current.has(v.id)
+    );
+    if (missing.length === 0) return;
+    missing.forEach((v) => backfilledVisitIdsRef.current.add(v.id));
+
+    let cancelled = false;
+    ensureVisitsHaveStructuredTrackingCodes(localVisits).then((enriched) => {
+      if (cancelled) return;
+      setLocalVisits(enriched);
+      if (onVisitsUpdated) onVisitsUpdated(enriched);
+    }).catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [localVisits, onVisitsUpdated]);
+
+  // Lista dinámica de vendedores (conservando nombres cargados por Excel o manualmente)
+  const sellerOptions = React.useMemo(() => {
+    const map = new Map<string, string>();
+    const seed = ['Itatí', 'Guada', 'Carolina', 'Gustavo'];
+    seed.forEach((n) => map.set(n.toLowerCase(), n));
+    try {
+      const savedSellers = JSON.parse(localStorage.getItem('pampero_sellers') || '[]');
+      if (Array.isArray(savedSellers)) {
+        savedSellers.forEach((s: any) => {
+          const nm = String(s?.name || '').trim();
+          if (nm) map.set(nm.toLowerCase(), fixUtf8Encoding(nm));
+        });
+      }
+    } catch {}
+    localVisits.forEach((v) => {
+      const nm = String(v.seller || '').trim();
+      if (nm && nm.toLowerCase() !== 'sin asignar') {
+        map.set(nm.toLowerCase(), fixUtf8Encoding(nm));
+      }
+    });
+    return Array.from(map.values());
+  }, [localVisits]);
 
   const handleExportVisits = () => {
     exportVisitsToExcel(localVisits);
@@ -188,14 +242,22 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
   const [contactName, setContactName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
+  const [companyLocation, setCompanyLocation] = useState('');
+  const [locationUrl, setLocationUrl] = useState('');
   const [seller, setSeller] = useState('Itatí');
   const [branch, setBranch] = useState('Maipú');
   const [step, setStep] = useState<VisitKanbanStep>('primer_contacto');
   const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [objective, setObjective] = useState('');
   const [nextStep, setNextStep] = useState('');
+  const [nextStepDate, setNextStepDate] = useState('');
   const [estimatedUnits, setEstimatedUnits] = useState('');
   const [notes, setNotes] = useState('');
+  const [observationDate, setObservationDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [reminderDate, setReminderDate] = useState('');
+  const [reminderTime, setReminderTime] = useState('');
+  const [reminderNote, setReminderNote] = useState('');
+  const [generateReminder, setGenerateReminder] = useState(false);
 
   // Normalize visit step dynamically
   const getVisitStep = (v: LeadVisit): string => {
@@ -216,19 +278,28 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
 
   const openNewModal = (defaultStep?: string) => {
     const targetStep = defaultStep || columns[0]?.id || 'primer_contacto';
+    const todayIso = new Date().toISOString().split('T')[0];
     setEditingVisit(null);
     setCompanyName('');
     setContactName('');
     setPhone('');
     setEmail('');
+    setCompanyLocation('');
+    setLocationUrl('');
     setSeller('Itatí');
     setBranch('Maipú');
     setStep(targetStep as any);
-    setDate(new Date().toISOString().split('T')[0]);
+    setDate(todayIso);
     setObjective('');
     setNextStep('');
+    setNextStepDate('');
     setEstimatedUnits('');
     setNotes('');
+    setObservationDate(todayIso);
+    setReminderDate('');
+    setReminderTime('');
+    setReminderNote('');
+    setGenerateReminder(false);
     setShowModal(true);
   };
 
@@ -238,14 +309,22 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
     setContactName(v.contactName || '');
     setPhone(v.phone || '');
     setEmail(v.email || '');
-    setSeller(v.seller || 'Itatí');
+    setCompanyLocation(v.companyLocation || '');
+    setLocationUrl(v.locationUrl || '');
+    setSeller(v.seller || 'Sin asignar');
     setBranch(v.branch || 'Maipú');
     setStep(getVisitStep(v) as any);
     setDate(v.date || new Date().toISOString().split('T')[0]);
     setObjective(v.objective || '');
     setNextStep(v.nextStep || '');
+    setNextStepDate(v.nextStepDate || '');
     setEstimatedUnits(v.estimatedUnits ? String(v.estimatedUnits) : '');
     setNotes(v.notes || '');
+    setObservationDate(v.observationDate || new Date().toISOString().split('T')[0]);
+    setReminderDate(v.reminderDate || '');
+    setReminderTime(v.reminderTime || '');
+    setReminderNote(v.reminderNote || '');
+    setGenerateReminder(Boolean(v.reminderDate));
     setShowModal(true);
   };
 
@@ -254,14 +333,55 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
     if (!companyName.trim()) return;
 
     const chosenStep = step || columns[0]?.id || 'primer_contacto';
+    const rawDateStr = String(date || '').trim();
+    const visitDateObj = /^\d{4}-\d{2}-\d{2}$/.test(rawDateStr)
+      ? new Date(`${rawDateStr}T12:00:00`)
+      : new Date();
+    const resolvedTracking =
+      editingVisit?.trackingCode && isValidStructuredTrackingCode(editingVisit.trackingCode)
+        ? editingVisit.trackingCode
+        : await getNextStructuredTrackingCode('empresa', branch || 'Maipú', visitDateObj);
+
+    const visitId = editingVisit ? editingVisit.id : `VIS-${Date.now().toString().slice(-6)}`;
+    const activeReminderDate = generateReminder && reminderDate.trim() ? reminderDate.trim() : undefined;
+    const activeReminderTime = generateReminder && reminderTime.trim() ? reminderTime.trim() : undefined;
+    const activeReminderNote =
+      generateReminder && (reminderNote.trim() || notes.trim())
+        ? (reminderNote.trim() || notes.trim())
+        : undefined;
+
+    const prevHistory: ObservationHistoryEntry[] = Array.isArray(editingVisit?.observationHistory)
+      ? editingVisit!.observationHistory!
+      : [];
+    const cleanNotes = notes.trim();
+    const notesChanged = cleanNotes && cleanNotes !== (editingVisit?.notes || '').trim();
+    const reminderAdded = activeReminderDate && activeReminderDate !== (editingVisit?.reminderDate || '');
+    const nextHistory: ObservationHistoryEntry[] =
+      notesChanged || reminderAdded
+        ? [
+            {
+              id: `obs-${Date.now()}`,
+              observationDate: observationDate || new Date().toISOString().split('T')[0],
+              text: cleanNotes || activeReminderNote || 'Recordatorio programado',
+              reminderDate: activeReminderDate,
+              reminderTime: activeReminderTime,
+              author: seller.trim() || 'Equipo Pampero',
+              createdAt: new Date().toISOString(),
+            },
+            ...prevHistory,
+          ]
+        : prevHistory;
 
     const updatedVisit: LeadVisit = sanitizeObjectEncoding({
-      id: editingVisit ? editingVisit.id : `VIS-${Date.now().toString().slice(-6)}`,
+      id: visitId,
+      trackingCode: resolvedTracking,
       companyName: companyName.trim(),
       contactName: contactName.trim(),
       phone: phone.trim(),
       email: email.trim(),
-      seller,
+      companyLocation: companyLocation.trim() || undefined,
+      locationUrl: locationUrl.trim() || undefined,
+      seller: seller.trim() || 'Sin asignar',
       branch,
       status: (chosenStep === 'convertida' ? 'cerrada' : chosenStep === 'previo_cotizacion' ? 'presupuesto_enviado' : chosenStep === 'reunion' ? 'realizada' : 'programada') as any,
       columnId: chosenStep,
@@ -269,8 +389,14 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
       kanbanStep: chosenStep,
       objective: objective.trim(),
       nextStep: nextStep.trim(),
+      nextStepDate: nextStepDate.trim() || undefined,
       estimatedUnits: estimatedUnits ? Number(estimatedUnits) : undefined,
-      notes: notes.trim(),
+      notes: cleanNotes,
+      observationDate: cleanNotes || activeReminderDate ? (observationDate || new Date().toISOString().split('T')[0]) : undefined,
+      reminderDate: activeReminderDate,
+      reminderTime: activeReminderTime,
+      reminderNote: activeReminderNote,
+      observationHistory: nextHistory.length > 0 ? nextHistory : undefined,
       date,
       createdAt: editingVisit ? editingVisit.createdAt : new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -281,6 +407,16 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
 
     try {
       await saveLeadVisit(updatedVisit);
+      await upsertObservationReminderCalendarEvent('visit', {
+        sourceId: visitId,
+        title: `${updatedVisit.companyName}${updatedVisit.trackingCode ? ` (${updatedVisit.trackingCode})` : ''}`,
+        reminderDate: activeReminderDate || '',
+        reminderTime: activeReminderTime,
+        reminderNote: activeReminderNote || cleanNotes,
+        branch: updatedVisit.branch,
+        seller: updatedVisit.seller,
+        createdBy: updatedVisit.seller,
+      });
     } catch (err) {
       console.error('Error guardando visita:', err);
     }
@@ -356,6 +492,9 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
       String(v.companyName ?? '').toLowerCase().includes(q) ||
       String(v.contactName ?? '').toLowerCase().includes(q) ||
       String(v.phone ?? '').toLowerCase().includes(q) ||
+      String(v.trackingCode ?? '').toLowerCase().includes(q) ||
+      String(v.companyLocation ?? '').toLowerCase().includes(q) ||
+      String(v.seller ?? '').toLowerCase().includes(q) ||
       String(v.notes ?? '').toLowerCase().includes(q);
     return matchesSeller && matchesBranch && matchesQuery;
   });
@@ -368,7 +507,7 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
           <div className="flex items-center gap-2">
             <h3 className="font-bold text-base text-[#18231C] uppercase tracking-wider flex items-center gap-2">
               <Layers className="w-5 h-5 text-[#B9522F]" />
-              Tablero Kanban · Visitas Comerciales
+              Visitas Comerciales
             </h3>
             <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-xs bg-amber-100 text-amber-900 border border-amber-300">
               Prospección a Empresas
@@ -460,10 +599,11 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
             className="text-xs border border-[#DCD4C9] rounded-xs px-2.5 py-1.5 outline-none font-medium bg-white text-[#18231C]"
           >
             <option value="todos">Vendedor: Todos</option>
-            <option value="Itatí">Itatí</option>
-            <option value="Guada">Guada</option>
-            <option value="Carolina">Carolina</option>
-            <option value="Gustavo">Gustavo</option>
+            {sellerOptions.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
           </select>
         </div>
 
@@ -487,10 +627,27 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Buscar empresa, contacto o notas..."
+            placeholder="Buscar empresa, código, contacto o ubicación..."
             className="w-full pl-8 pr-3 py-1.5 text-xs border border-[#DCD4C9] rounded-xs outline-none focus:border-[#B9522F]"
           />
         </div>
+
+        <label
+          className={`flex items-center gap-2 px-3 py-1.5 rounded-xs border text-xs font-bold cursor-pointer select-none transition-colors ${
+            compactView
+              ? 'bg-[#18231C] text-white border-[#18231C]'
+              : 'bg-[#FAF8F5] text-[#18231C] border-[#DCD4C9] hover:bg-[#ECE5DC]'
+          }`}
+          title="Achicar tarjetas para ver solo los nombres de las empresas"
+        >
+          <input
+            type="checkbox"
+            checked={compactView}
+            onChange={(e) => setCompactView(e.target.checked)}
+            className="accent-[#FDB813] w-3.5 h-3.5 cursor-pointer"
+          />
+          <span>Solo nombres de empresas</span>
+        </label>
       </div>
 
       {/* Kanban Board with Dynamic Columns */}
@@ -550,6 +707,41 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
                   ) : (
                     colVisits.map((visit) => {
                       const currentStep = getVisitStep(visit);
+
+                      if (compactView) {
+                        return (
+                          <div
+                            key={visit.id}
+                            draggable
+                            onDragStart={() => handleDragStart(visit.id)}
+                            onClick={() => setViewingVisit(visit)}
+                            className="bg-white rounded-xs px-3 py-2 border border-[#DCD4C9] hover:border-[#18231C] shadow-2xs transition-all cursor-pointer flex items-center justify-between gap-2"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <span className="font-bold text-xs text-[#18231C] block truncate uppercase">
+                                {fixUtf8Encoding(visit.companyName)}
+                              </span>
+                              {visit.trackingCode && (
+                                <span className="text-[9px] font-mono text-[#6F6860] block truncate">
+                                  {visit.trackingCode}
+                                </span>
+                              )}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setViewingVisit(visit);
+                              }}
+                              className="p-1.5 hover:bg-amber-50 rounded-xs text-[#18231C] border border-transparent hover:border-amber-300 cursor-pointer shrink-0"
+                              title="Ver ficha completa"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        );
+                      }
+
                       return (
                         <div
                           key={visit.id}
@@ -559,6 +751,11 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
                         >
                           <div className="flex items-start justify-between gap-1.5">
                             <div className="min-w-0">
+                              {visit.trackingCode && (
+                                <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded-xs bg-[#18231C] text-[#FDB813] inline-block mb-1">
+                                  {visit.trackingCode}
+                                </span>
+                              )}
                               <span className="font-bold text-xs text-[#18231C] block truncate uppercase">
                                 {fixUtf8Encoding(visit.companyName)}
                               </span>
@@ -585,8 +782,33 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
                                 <span>{String(visit.phone)}</span>
                               </a>
                             )}
-                            <span className="text-neutral-500">Resp: <strong>{fixUtf8Encoding(visit.seller || '')}</strong></span>
+                            <span className="text-neutral-500">
+                              Resp: <strong>{fixUtf8Encoding(visit.seller || 'Sin asignar')}</strong>
+                            </span>
                           </div>
+
+                          {/* Ubicación de la empresa para entregas / logística */}
+                          {(visit.companyLocation || visit.locationUrl) && (
+                            <div className="text-[10px] bg-blue-50/80 text-blue-950 px-2 py-1 rounded-xs border border-blue-200 flex items-center justify-between gap-1.5">
+                              <span className="truncate flex items-center gap-1">
+                                <MapPin className="w-3 h-3 text-blue-700 shrink-0" />
+                                <span>{fixUtf8Encoding(visit.companyLocation || 'Ubicación registrada')}</span>
+                              </span>
+                              {visit.locationUrl && (
+                                <a
+                                  href={visit.locationUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="text-blue-700 hover:underline font-bold shrink-0 flex items-center gap-0.5"
+                                  title="Abrir mapa en Google Maps"
+                                >
+                                  <span>Mapa</span>
+                                  <ExternalLink className="w-2.5 h-2.5" />
+                                </a>
+                              )}
+                            </div>
+                          )}
 
                           {visit.objective && (
                             <p className="text-[11px] text-neutral-700 bg-neutral-50 p-1.5 rounded-xs border border-neutral-200/60 leading-snug">
@@ -604,7 +826,20 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
                           {visit.nextStep && (
                             <div className="text-[10px] text-purple-900 bg-purple-50 px-2 py-1 rounded-xs border border-purple-200 flex items-center gap-1">
                               <Clock className="w-3 h-3 text-purple-600 shrink-0" />
-                              <span className="truncate">Próximo paso: <strong>{fixUtf8Encoding(visit.nextStep)}</strong></span>
+                              <span className="truncate">
+                                Próximo paso{visit.nextStepDate ? ` (${visit.nextStepDate})` : ''}:{' '}
+                                <strong>{fixUtf8Encoding(visit.nextStep)}</strong>
+                              </span>
+                            </div>
+                          )}
+
+                          {/* Observation Reminder Badge */}
+                          {visit.reminderDate && (
+                            <div className="text-[10px] text-amber-950 bg-amber-50 px-2 py-1 rounded-xs border border-amber-300 flex items-center gap-1 font-semibold">
+                              <Bell className="w-3 h-3 text-[#B9522F] shrink-0" />
+                              <span className="truncate">
+                                Recordatorio: {visit.reminderDate}{visit.reminderTime ? ` ${visit.reminderTime}hs` : ''}
+                              </span>
                             </div>
                           )}
 
@@ -613,11 +848,12 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
                             <div className="flex items-center gap-1">
                               <button
                                 type="button"
-                                onClick={() => openEditModal(visit)}
-                                className="p-1 hover:bg-neutral-100 rounded-xs text-neutral-600 hover:text-black cursor-pointer"
-                                title="Editar detalles"
+                                onClick={() => setViewingVisit(visit)}
+                                className="px-1.5 py-1 hover:bg-amber-50 rounded-xs text-[#18231C] border border-transparent hover:border-amber-300 cursor-pointer flex items-center gap-1 text-[10px] font-bold"
+                                title="Ver ficha completa"
                               >
-                                <Edit3 className="w-3 h-3" />
+                                <Eye className="w-3.5 h-3.5" />
+                                <span>Ficha</span>
                               </button>
                               <button
                                 type="button"
@@ -683,14 +919,212 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
         </div>
       </div>
 
+      {/* Modal Ver Ficha Completa (con lápiz para editar adentro) */}
+      {viewingVisit && (
+        <div className="fixed inset-0 z-50 bg-black/55 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white rounded-xs border border-[#DCD4C9] max-w-lg w-full overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="bg-[#18231C] px-5 py-4 flex items-center justify-between text-white">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  {viewingVisit.trackingCode && (
+                    <span className="text-[10px] font-mono font-black px-2 py-0.5 rounded-xs bg-[#FDB813] text-[#18231C]">
+                      {viewingVisit.trackingCode}
+                    </span>
+                  )}
+                  <span className="text-[10px] uppercase font-bold text-[#DCD4C9]">
+                    {fixUtf8Encoding(viewingVisit.branch || 'Maipú')}
+                  </span>
+                </div>
+                <h4 className="font-bold text-base uppercase tracking-wider truncate mt-1">
+                  {fixUtf8Encoding(viewingVisit.companyName)}
+                </h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewingVisit(null)}
+                className="text-white/70 hover:text-white cursor-pointer p-1"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-3.5 text-xs overflow-y-auto">
+              <div className="grid grid-cols-2 gap-3 bg-[#FAF8F5] p-3 rounded-xs border border-[#DCD4C9]">
+                <div>
+                  <span className="text-[10px] font-bold uppercase text-[#8C827A] block">Contacto</span>
+                  <span className="font-bold text-[#18231C]">{fixUtf8Encoding(viewingVisit.contactName || 'Sin contacto')}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold uppercase text-[#8C827A] block">Vendedor Asignado</span>
+                  <span className="font-bold text-[#18231C]">{fixUtf8Encoding(viewingVisit.seller || 'Sin asignar')}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold uppercase text-[#8C827A] block">Teléfono / WhatsApp</span>
+                  {viewingVisit.phone ? (
+                    <a
+                      href={`https://wa.me/${String(viewingVisit.phone).replace(/\D/g, '')}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-bold text-emerald-700 hover:underline flex items-center gap-1"
+                    >
+                      <MessageCircle className="w-3.5 h-3.5" />
+                      {viewingVisit.phone}
+                    </a>
+                  ) : (
+                    <span className="text-neutral-500">Sin teléfono</span>
+                  )}
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold uppercase text-[#8C827A] block">Email</span>
+                  <span className="font-medium text-[#18231C] break-all">{viewingVisit.email || 'Sin email'}</span>
+                </div>
+              </div>
+
+              {/* Ubicación de la empresa para entregas / cadetería */}
+              <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-xs space-y-1.5">
+                <span className="text-[10px] font-black uppercase text-blue-900 flex items-center gap-1">
+                  <MapPin className="w-3.5 h-3.5 text-blue-700" />
+                  <span>Ubicación de la Empresa (Entrega / Logística)</span>
+                </span>
+                <p className="text-xs font-semibold text-blue-950">
+                  {fixUtf8Encoding(viewingVisit.companyLocation || 'Sin dirección / zona cargada')}
+                </p>
+                {viewingVisit.locationUrl && (
+                  <a
+                    href={viewingVisit.locationUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-700 hover:bg-blue-800 text-white rounded-xs text-[11px] font-bold"
+                  >
+                    <ExternalLink className="w-3 h-3" />
+                    <span>Abrir Ubicación en Google Maps</span>
+                  </a>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-2.5 bg-white border border-[#DCD4C9] rounded-xs">
+                  <span className="text-[10px] font-bold uppercase text-[#8C827A] block">Fecha Registro</span>
+                  <span className="font-bold text-[#18231C]">{viewingVisit.date || '-'}</span>
+                </div>
+                <div className="p-2.5 bg-white border border-[#DCD4C9] rounded-xs">
+                  <span className="text-[10px] font-bold uppercase text-[#8C827A] block">Unidades Estimadas</span>
+                  <span className="font-bold text-amber-900">
+                    {viewingVisit.estimatedUnits ? `${viewingVisit.estimatedUnits} prendas` : 'No especificado'}
+                  </span>
+                </div>
+              </div>
+
+              {viewingVisit.objective && (
+                <div>
+                  <span className="text-[10px] font-bold uppercase text-[#8C827A] block mb-1">Objetivo del Contacto</span>
+                  <p className="p-2.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-[#18231C]">
+                    {fixUtf8Encoding(viewingVisit.objective)}
+                  </p>
+                </div>
+              )}
+
+              {(viewingVisit.nextStep || viewingVisit.nextStepDate) && (
+                <div>
+                  <span className="text-[10px] font-bold uppercase text-purple-800 block mb-1">
+                    Próximo Paso {viewingVisit.nextStepDate ? `(${viewingVisit.nextStepDate})` : ''}
+                  </span>
+                  <p className="p-2.5 bg-purple-50 border border-purple-200 rounded-xs text-purple-950 font-semibold">
+                    {fixUtf8Encoding(viewingVisit.nextStep || 'Seguimiento programado')}
+                  </p>
+                </div>
+              )}
+
+              {(viewingVisit.notes || viewingVisit.reminderDate || (viewingVisit.observationHistory && viewingVisit.observationHistory.length > 0)) && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold uppercase text-[#8C827A]">
+                      Observaciones {viewingVisit.observationDate ? `(${viewingVisit.observationDate})` : ''}
+                    </span>
+                    {viewingVisit.reminderDate && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 bg-amber-100 text-amber-950 border border-amber-300 rounded-xs flex items-center gap-1">
+                        <Bell className="w-3 h-3 text-[#B9522F]" />
+                        Recordatorio: {viewingVisit.reminderDate} {viewingVisit.reminderTime || ''}
+                      </span>
+                    )}
+                  </div>
+                  {viewingVisit.notes && (
+                    <p className="p-2.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-[#18231C] whitespace-pre-wrap">
+                      {fixUtf8Encoding(viewingVisit.notes)}
+                    </p>
+                  )}
+                  {Array.isArray(viewingVisit.observationHistory) && viewingVisit.observationHistory.length > 1 && (
+                    <div className="space-y-1 max-h-28 overflow-y-auto pt-1">
+                      <span className="text-[9px] font-bold uppercase text-[#8C827A] block">Historial de observaciones:</span>
+                      {viewingVisit.observationHistory.map((h) => (
+                        <div key={h.id} className="text-[10px] p-1.5 bg-white border border-[#ECE5DC] rounded-xs">
+                          <span className="font-bold text-[#18231C]">{h.observationDate} · {fixUtf8Encoding(h.author)}:</span>{' '}
+                          <span className="text-[#4A453F]">{fixUtf8Encoding(h.text)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 border-t border-[#DCD4C9] bg-[#FAF8F5] flex items-center justify-between gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={() => {
+                  const target = viewingVisit;
+                  setViewingVisit(null);
+                  openEditModal(target);
+                }}
+                className="px-4 py-2 bg-[#18231C] hover:bg-black text-white text-xs font-bold uppercase rounded-xs flex items-center gap-1.5 cursor-pointer"
+              >
+                <Edit3 className="w-3.5 h-3.5 text-[#FDB813]" />
+                <span>Editar Ficha</span>
+              </button>
+
+              <div className="flex items-center gap-2">
+                {getVisitStep(viewingVisit) !== 'convertida' && onPromoteToCompanies && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const target = viewingVisit;
+                      setViewingVisit(null);
+                      handleMoveStep(target, 'convertida');
+                    }}
+                    className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold uppercase rounded-xs flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <ArrowRightCircle className="w-3.5 h-3.5" />
+                    <span>Pasar a Seguimiento</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setViewingVisit(null)}
+                  className="px-3 py-2 border border-[#DCD4C9] bg-white hover:bg-neutral-100 text-xs font-bold rounded-xs cursor-pointer"
+                >
+                  Cerrar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modal Nueva / Editar Visita */}
       {showModal && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-xs border border-[#DCD4C9] max-w-lg w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b pb-3">
-              <h4 className="font-bold text-sm uppercase text-[#18231C]">
-                {editingVisit ? 'Editar Visita / Contacto Comercial' : 'Nueva Visita / Contacto Comercial'}
-              </h4>
+              <div>
+                <h4 className="font-bold text-sm uppercase text-[#18231C]">
+                  {editingVisit ? 'Editar Visita / Contacto Comercial' : 'Nueva Visita / Contacto Comercial'}
+                </h4>
+                {editingVisit?.trackingCode && (
+                  <span className="text-[10px] font-mono font-bold text-[#B9522F]">
+                    Seguimiento: {editingVisit.trackingCode}
+                  </span>
+                )}
+              </div>
               <button
                 type="button"
                 onClick={() => setShowModal(false)}
@@ -736,19 +1170,46 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
                 </div>
               </div>
 
+              {/* Ubicación física y link de mapa para reparto/visitas */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-[#FAF8F5] p-2.5 rounded-xs border border-[#DCD4C9]">
+                <div>
+                  <label className="block font-bold text-neutral-700 mb-1">Ubicación / Dirección de la Empresa</label>
+                  <input
+                    type="text"
+                    value={companyLocation}
+                    onChange={(e) => setCompanyLocation(e.target.value)}
+                    placeholder="Ej: Carril Rodríguez Peña 2400, Maipú"
+                    className="w-full px-3 py-2 border border-[#DCD4C9] rounded-xs bg-white outline-none focus:border-[#B9522F]"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-neutral-700 mb-1">Link Google Maps (opcional)</label>
+                  <input
+                    type="url"
+                    value={locationUrl}
+                    onChange={(e) => setLocationUrl(e.target.value)}
+                    placeholder="https://maps.app.goo.gl/..."
+                    className="w-full px-3 py-2 border border-[#DCD4C9] rounded-xs bg-white outline-none focus:border-[#B9522F]"
+                  />
+                </div>
+              </div>
+
               <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label className="block font-bold text-neutral-700 mb-1">Vendedor Asignado</label>
-                  <select
+                  <input
+                    type="text"
+                    list="visits-sellers-datalist"
                     value={seller}
                     onChange={(e) => setSeller(e.target.value)}
-                    className="w-full px-2.5 py-2 border border-[#DCD4C9] rounded-xs bg-white outline-none"
-                  >
-                    <option value="Itatí">Itatí</option>
-                    <option value="Guada">Guada</option>
-                    <option value="Carolina">Carolina</option>
-                    <option value="Gustavo">Gustavo</option>
-                  </select>
+                    placeholder="Nombre del vendedor"
+                    className="w-full px-2.5 py-2 border border-[#DCD4C9] rounded-xs bg-white outline-none focus:border-[#B9522F]"
+                  />
+                  <datalist id="visits-sellers-datalist">
+                    {sellerOptions.map((s) => (
+                      <option key={s} value={s} />
+                    ))}
+                  </datalist>
                 </div>
                 <div>
                   <label className="block font-bold text-neutral-700 mb-1">Local / Sucursal</label>
@@ -790,14 +1251,35 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-2">
                   <label className="block font-bold text-neutral-700 mb-1">Próximo Paso Acordado</label>
                   <input
                     type="text"
                     value={nextStep}
                     onChange={(e) => setNextStep(e.target.value)}
-                    placeholder="Ej: Enviar muestras de talle y cotización"
+                    placeholder="Ej: Enviar muestras de talle"
+                    className="w-full px-3 py-2 border border-[#DCD4C9] rounded-xs outline-none focus:border-[#B9522F]"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-neutral-700 mb-1">Fecha Próx. Paso</label>
+                  <input
+                    type="date"
+                    value={nextStepDate}
+                    onChange={(e) => setNextStepDate(e.target.value)}
+                    className="w-full px-2 py-2 border border-[#DCD4C9] rounded-xs outline-none focus:border-[#B9522F]"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-neutral-700 mb-1">Fecha Visita</label>
+                  <input
+                    type="date"
+                    value={date}
+                    onChange={(e) => setDate(e.target.value)}
                     className="w-full px-3 py-2 border border-[#DCD4C9] rounded-xs outline-none focus:border-[#B9522F]"
                   />
                 </div>
@@ -813,15 +1295,86 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
                 </div>
               </div>
 
-              <div>
-                <label className="block font-bold text-neutral-700 mb-1">Observaciones / Requerimientos</label>
+              <div className="p-3 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs space-y-2.5">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <label className="font-bold text-neutral-700">Observaciones / Requerimientos</label>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-bold uppercase text-[#6F6860]">Fecha Obs.:</span>
+                    <input
+                      type="date"
+                      value={observationDate}
+                      onChange={(e) => setObservationDate(e.target.value)}
+                      className="px-2 py-1 border border-[#DCD4C9] rounded-xs bg-white text-[11px] outline-none focus:border-[#B9522F]"
+                    />
+                  </div>
+                </div>
                 <textarea
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   rows={2}
                   placeholder="Detalles sobre bordados de logo, plazos urgentes, etc."
-                  className="w-full p-2.5 border border-[#DCD4C9] rounded-xs outline-none focus:border-[#B9522F] resize-none"
+                  className="w-full p-2.5 border border-[#DCD4C9] rounded-xs bg-white outline-none focus:border-[#B9522F] resize-none"
                 />
+
+                {/* Recordatorio automático en Calendario y Centro de Notificaciones */}
+                <div className="pt-2 border-t border-[#DCD4C9]/80 space-y-2">
+                  <label className="flex items-center gap-2 cursor-pointer font-bold text-[#18231C] text-[11px]">
+                    <input
+                      type="checkbox"
+                      checked={generateReminder}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setGenerateReminder(checked);
+                        if (checked && !reminderDate) {
+                          setReminderDate(nextStepDate || new Date().toISOString().split('T')[0]);
+                        }
+                      }}
+                      className="accent-[#B9522F] w-3.5 h-3.5 cursor-pointer"
+                    />
+                    <Bell className="w-3.5 h-3.5 text-[#B9522F]" />
+                    <span>Generar notificación y evento recordatorio en Calendario</span>
+                  </label>
+
+                  {generateReminder && (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+                      <div>
+                        <label className="block text-[9px] font-bold uppercase text-[#6F6860] mb-0.5">
+                          Fecha Recordatorio *
+                        </label>
+                        <input
+                          type="date"
+                          required={generateReminder}
+                          value={reminderDate}
+                          onChange={(e) => setReminderDate(e.target.value)}
+                          className="w-full px-2 py-1.5 border border-[#DCD4C9] rounded-xs bg-white text-[11px] outline-none focus:border-[#B9522F]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[9px] font-bold uppercase text-[#6F6860] mb-0.5">
+                          Hora (opcional)
+                        </label>
+                        <input
+                          type="time"
+                          value={reminderTime}
+                          onChange={(e) => setReminderTime(e.target.value)}
+                          className="w-full px-2 py-1.5 border border-[#DCD4C9] rounded-xs bg-white text-[11px] outline-none focus:border-[#B9522F]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[9px] font-bold uppercase text-[#6F6860] mb-0.5">
+                          Texto de Aviso
+                        </label>
+                        <input
+                          type="text"
+                          value={reminderNote}
+                          onChange={(e) => setReminderNote(e.target.value)}
+                          placeholder="Ej: Llamar para confirmar muestra"
+                          className="w-full px-2 py-1.5 border border-[#DCD4C9] rounded-xs bg-white text-[11px] outline-none focus:border-[#B9522F]"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="flex justify-end gap-2 pt-3 border-t">

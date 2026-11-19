@@ -12,6 +12,9 @@ export interface ConsumerClient {
   email: string;
   phone: string;
   address: Address;
+  nearestBranch?: string;
+  companyLocation?: string;
+  locationUrl?: string;
 }
 
 export interface CompanyClient {
@@ -21,11 +24,15 @@ export interface CompanyClient {
   institutionalEmail: string;
   institutionalPhone: string;
   address: Address;
+  nearestBranch?: string;
+  companyLocation?: string;
+  locationUrl?: string;
 }
 
 export interface UserSession {
   id?: string;
   email?: string;
+  name?: string;
   role: 'admin' | 'client' | 'employee';
   clientType?: ClientType | 'consumidor' | 'empresa' | 'empleado';
   clientData?: ConsumerClient | CompanyClient | any;
@@ -37,6 +44,10 @@ export interface UserSession {
   avatarUrl?: string;
   mustChangePassword?: boolean;
   password?: string;
+  branch?: string;
+  sellerName?: string;
+  sellerRole?: 'admin' | 'local' | 'vendedor';
+  canControlTasks?: boolean;
 }
 
 export interface Seller {
@@ -48,6 +59,8 @@ export interface Seller {
   active: boolean;
 }
 
+export type CRMTabKey = 'visits' | 'board' | 'tasks' | 'calendar' | 'suppliers' | 'costs';
+
 export interface EmployeeAccount {
   id: string;
   name: string;
@@ -55,8 +68,10 @@ export interface EmployeeAccount {
   password?: string;
   role: 'employee';
   allowedTabs: string[]; // e.g. ['promos', 'mass_images', 'prices', 'coupons', 'variants', 'products', 'branches', 'quotes', 'users', 'analytics', 'crm']
-  crmTabs?: ('visits' | 'board' | 'tasks' | 'suppliers' | 'costs')[]; // CRM specific tab permissions
+  crmTabs?: CRMTabKey[]; // CRM specific tab permissions
   crmTasksConfigured?: boolean;
+  crmCalendarConfigured?: boolean;
+  canControlTasks?: boolean; // Permite auditar tareas y cargar fotos de respaldo
   sellerRole?: 'admin' | 'local' | 'vendedor';
   branch?: string; // 'Maipú' | 'Ciudad' | 'Luján' | 'Todas'
   sellerName?: string;
@@ -187,6 +202,9 @@ export interface Promotion {
   subtitleFontSize?: string; // Tamaño de la fuente del subtítulo (ej. 16px, 18px)
   primaryBtnText?: string;
   buttons?: PromotionButton[]; // Botones configurables dinámicos
+  linkedHolidayId?: string; // Feriado o fecha comercial vinculada
+  scheduledStartDate?: string; // YYYY-MM-DD opcional
+  scheduledEndDate?: string; // YYYY-MM-DD opcional
 }
 
 export interface RegisteredUser {
@@ -204,9 +222,13 @@ export interface RegisteredUser {
   address?: string;
   city?: string;
   branch?: string;
+  nearestBranch?: string;
+  companyLocation?: string;
+  locationUrl?: string;
   sellerRole?: 'admin' | 'local' | 'vendedor';
   allowedTabs?: string[];
-  crmTabs?: ('visits' | 'board' | 'tasks' | 'suppliers' | 'costs')[];
+  crmTabs?: CRMTabKey[];
+  canControlTasks?: boolean;
   createdAt: string;
   updatedAt?: string;
   status: 'active' | 'pending' | 'suspended';
@@ -565,7 +587,9 @@ export type CRMOrderStatus = 'cotizacion' | 'sena_50' | 'produccion' | 'listo' |
 
 export interface CRMOrder {
   id: string;
-  orderNumber?: string; // Correlative integer order #1, #2, #3...
+  orderNumber?: string; // Structured tracking code [E|C][M|C|L][DDMM][00000] or legacy #N
+  trackingCode?: string; // Persistent tracking ID across Visitas & Seguimiento
+  originVisitId?: string;
   date: string;
   createdAt?: string;
   quoteId?: string;
@@ -573,6 +597,8 @@ export interface CRMOrder {
   clientType: 'consumidor_final' | 'empresa';
   clientPhone?: string;
   clientEmail?: string;
+  companyLocation?: string;
+  locationUrl?: string;
   channel?: 'WhatsApp' | 'Excel' | 'Web';
   status: CRMOrderStatus;
   columnId?: string;
@@ -583,6 +609,11 @@ export interface CRMOrder {
   totalEstimated: number;
   delayDays?: number;
   observations?: string;
+  observationDate?: string; // YYYY-MM-DD fecha de la observación
+  reminderDate?: string; // YYYY-MM-DD fecha para recordatorio/calendario
+  reminderTime?: string; // HH:mm opcional
+  reminderNote?: string;
+  observationHistory?: ObservationHistoryEntry[];
   blockReason?: string;
   items?: any[];
   updatedAt: string;
@@ -598,14 +629,27 @@ export interface CRMOrder {
 
 export type LeadVisitStatus = 'programada' | 'realizada' | 'presupuesto_enviado' | 'cerrada' | 'cancelada';
 
+export interface ObservationHistoryEntry {
+  id: string;
+  observationDate: string; // YYYY-MM-DD
+  text: string;
+  reminderDate?: string; // YYYY-MM-DD
+  reminderTime?: string; // HH:mm
+  author: string;
+  createdAt: string;
+}
+
 export interface LeadVisit {
   id: string;
+  trackingCode?: string; // Structured tracking ID [E|C][M|C|L][DDMM][00000]
   date: string;
   companyName: string;
   contactName: string;
   phone: string;
   email: string;
-  seller: string; // 'Itatí' | 'Guada' | 'Carolina' | 'Gustavo'
+  companyLocation?: string;
+  locationUrl?: string;
+  seller: string; // Nombre libre del vendedor asignado
   branch: string;
   status: LeadVisitStatus;
   columnId?: string;
@@ -616,6 +660,11 @@ export interface LeadVisit {
   nextStepDate?: string;
   estimatedUnits?: number;
   notes?: string;
+  observationDate?: string; // YYYY-MM-DD fecha de la observación
+  reminderDate?: string; // YYYY-MM-DD fecha para recordatorio/calendario
+  reminderTime?: string; // HH:mm opcional
+  reminderNote?: string;
+  observationHistory?: ObservationHistoryEntry[];
   createdAt: string;
   updatedAt: string;
 }
@@ -728,6 +777,7 @@ export interface CRMSale {
 
 // --- CRM TASKS KANBAN (3. TAREAS DEL EQUIPO) ---
 export type CRMTaskImportance = 'urgente' | 'alta' | 'media' | 'baja';
+export type CRMTaskScheduleType = 'immediate' | 'specific_date' | 'periodic' | 'monthly';
 
 export interface CRMTaskAdvanceLog {
   id: string;
@@ -738,6 +788,41 @@ export interface CRMTaskAdvanceLog {
   createdAt: string;
 }
 
+export interface CRMTaskComment {
+  id: string;
+  author: string;
+  authorEmail?: string;
+  authorRole?: 'admin' | 'local' | 'vendedor';
+  text: string;
+  createdAt: string;
+}
+
+export interface CRMTaskEvidencePhoto {
+  id: string;
+  url: string;
+  caption?: string;
+  uploadedBy: string;
+  uploadedByEmail?: string;
+  createdAt: string;
+}
+
+export interface CRMTaskTag {
+  id: string;
+  name: string;
+  color: string;
+}
+
+export interface CRMTaskTemplate {
+  id: string;
+  title: string;
+  description?: string;
+  defaultImportance: CRMTaskImportance;
+  defaultTags?: string[];
+  defaultRequiredAdvance?: string;
+  defaultTargetProgressPercent?: number;
+  defaultBranch?: string;
+}
+
 export interface CRMTask {
   id: string;
   title: string;
@@ -745,6 +830,7 @@ export interface CRMTask {
   columnId: string;
   importance: CRMTaskImportance;
   assignedTo: string;
+  assignedToList?: string[]; // Múltiples responsables
   assignedToEmail?: string;
   createdBy: string;
   createdByEmail?: string;
@@ -754,7 +840,61 @@ export interface CRMTask {
   requiredAdvance?: string; // Qué se necesita de avance (definido/editable por Encargado del Local o Admin)
   targetProgressPercent?: number; // % mínimo requerido por Encargado del Local (default 100)
   progressPercent: number; // 0 - 100
+  tags?: string[]; // Etiquetas (Stock, Control de pedidos, Salón, etc.)
+  templateId?: string;
   advanceLogs?: CRMTaskAdvanceLog[];
+  comments?: CRMTaskComment[]; // Historial inmutable de comentarios (no se pueden borrar)
+  evidencePhotos?: CRMTaskEvidencePhoto[]; // Fotos de respaldo subidas por controladores
+  scheduleType?: CRMTaskScheduleType;
+  activationDate?: string; // YYYY-MM-DD
+  recurrenceDays?: number;
+  activationMonths?: number[]; // 1..12
+  isActivated?: boolean;
+  lastActivatedAt?: string;
   createdAt: string;
   updatedAt: string;
 }
+
+export type CRMCalendarEventType = 'vencimiento' | 'tarea' | 'seguimiento' | 'visita' | 'reunion' | 'otro';
+
+export interface CRMCalendarEvent {
+  id: string;
+  title: string;
+  description?: string;
+  date: string; // YYYY-MM-DD
+  time?: string; // HH:mm
+  eventType: CRMCalendarEventType;
+  branch?: string;
+  visibilityType: 'all' | 'branch' | 'custom';
+  visibleToUsers?: string[]; // Nombres o emails autorizados cuando visibilityType === 'custom'
+  createdBy: string;
+  createdByEmail?: string;
+  completed?: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type CalendarHolidayScope = 'argentina' | 'mendoza' | 'ciudad' | 'maipu' | 'lujan' | 'comercial';
+
+export interface CalendarHolidayItem {
+  id: string;
+  title: string;
+  date: string; // YYYY-MM-DD
+  recurringAnnual: boolean;
+  scope: CalendarHolidayScope;
+  category: 'feriado_nacional' | 'feriado_provincial' | 'aniversario_local' | 'campana_comercial' | 'fecha_importante';
+  description?: string;
+  marketingIdea?: string;
+  linkedPromotionId?: string;
+  active: boolean;
+}
+
+export interface CalendarModuleConfig {
+  showArgentinaHolidays: boolean;
+  showMendozaHolidays: boolean;
+  showLocalHolidays: boolean;
+  showCommercialDates: boolean;
+  allowStaffCreateEvents: boolean;
+  defaultVisibilityType: 'all' | 'branch';
+}
+

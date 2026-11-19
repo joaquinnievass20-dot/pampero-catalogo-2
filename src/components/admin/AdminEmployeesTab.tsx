@@ -124,6 +124,7 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
   const [sellerName, setSellerName] = useState('');
   const [sellerRole, setSellerRole] = useState<'local' | 'vendedor'>('vendedor');
   const [crmScope, setCrmScope] = useState<'all' | 'branch_only' | 'own_only'>('branch_only');
+  const [canControlTasks, setCanControlTasks] = useState(false);
   const [allowedTabs, setAllowedTabs] = useState<string[]>([
     'products',
     'variants',
@@ -147,6 +148,13 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
     setAllowedTabs([]);
   };
 
+  const handleApplyLocalPreset = () => {
+    setSellerRole('vendedor');
+    setCrmScope('branch_only');
+    setCanControlTasks(false);
+    setAllowedTabs(['crm', 'products', 'variants', 'prices', 'quotes']);
+  };
+
   const handleOpenCreate = () => {
     setIsEditing(null);
     setModalError(null);
@@ -157,7 +165,8 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
     setSellerName('');
     setSellerRole('vendedor');
     setCrmScope('branch_only');
-    setAllowedTabs(['products', 'variants', 'prices', 'mass_images', 'quotes', 'crm']);
+    setCanControlTasks(false);
+    setAllowedTabs(['crm', 'products', 'variants', 'prices', 'quotes']);
     setShowCreateModal(true);
   };
 
@@ -171,6 +180,7 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
     setSellerName(emp.sellerName || '');
     setSellerRole(emp.sellerRole === 'local' ? 'local' : 'vendedor');
     setCrmScope(emp.crmScope || 'branch_only');
+    setCanControlTasks(Boolean(emp.canControlTasks));
     setAllowedTabs(emp.allowedTabs || []);
     setShowCreateModal(true);
   };
@@ -202,6 +212,7 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
           branch,
           sellerName: sellerName.trim() || name.trim(),
           crmScope,
+          canControlTasks,
           allowedTabs,
           createdAt: existing?.createdAt || new Date().toISOString().split('T')[0],
           active: existing ? existing.active : true,
@@ -219,9 +230,10 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
           type: 'empleado' as const,
           branch,
           sellerRole,
+          canControlTasks,
           status: 'active' as const,
           allowedTabs,
-          crmTabs: ['visits', 'board', 'tasks', 'suppliers', 'costs'],
+          crmTabs: ['visits', 'board', 'tasks', 'calendar', 'suppliers', 'costs'],
         };
 
         const authResult = await createFirebaseAuthAndFirestoreUser(newUserPayload, passClean);
@@ -242,6 +254,8 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
           branch,
           sellerName: sellerName.trim() || name.trim(),
           crmScope,
+          canControlTasks,
+          crmTabs: ['visits', 'board', 'tasks', 'calendar', 'suppliers', 'costs'],
           allowedTabs,
           createdAt: new Date().toISOString().split('T')[0],
           active: true,
@@ -572,6 +586,20 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
                 </div>
               </div>
 
+              <div className="p-3 bg-emerald-50/80 border border-emerald-300 rounded-xs flex flex-wrap items-center justify-between gap-2">
+                <div className="text-[11px] text-emerald-950">
+                  <strong className="block uppercase tracking-wide">Perfil Rápido: Usuario por Local</strong>
+                  <span>Ve todo lo de su sucursal asignada (sin ver otros locales ni privilegios admin).</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleApplyLocalPreset}
+                  className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white text-[10px] font-bold uppercase rounded-xs cursor-pointer shrink-0"
+                >
+                  Aplicar Usuario de Local
+                </button>
+              </div>
+
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-[#18231C] mb-1">
                   Alcance de Privacidad en Gestión / CRM *
@@ -582,7 +610,7 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
                   className="w-full px-3 py-2 text-xs bg-[#FAF8F5] rounded-xs border border-[#DCD4C9] outline-none cursor-pointer font-medium"
                 >
                   <option value="branch_only">
-                    Solo su Local y sus vendedores (Recomendado para locales)
+                    Solo su Local y los empleados de su sucursal (Recomendado para locales)
                   </option>
                   <option value="own_only">
                     Solo sus propios clientes y cotizaciones asignadas (Vendedor individual)
@@ -595,6 +623,21 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
                   Garantiza que una sucursal no acceda a los pedidos ni clientes privados de las demás sucursales.
                 </span>
               </div>
+
+              <label className="flex items-start gap-2.5 p-3 rounded-xs border border-amber-300 bg-amber-50/60 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={canControlTasks}
+                  onChange={(e) => setCanControlTasks(e.target.checked)}
+                  className="mt-0.5 rounded-xs accent-[#B9522F]"
+                />
+                <div className="text-xs text-[#18231C]">
+                  <span className="font-bold block">Permiso Controlador de Tareas (Auditoría y Fotos)</span>
+                  <span className="text-[11px] text-[#6F6860]">
+                    Permite controlar el avance del equipo, ajustar plazos y subir fotos de respaldo en las tareas completadas.
+                  </span>
+                </div>
+              </label>
 
               {/* Granular permissions checklist */}
               <div className="border-t border-[#DCD4C9] pt-4 space-y-2">

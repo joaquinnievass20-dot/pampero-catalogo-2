@@ -276,6 +276,8 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
   const [newAccountCuit, setNewAccountCuit] = useState('');
   const [newAccountAddress, setNewAccountAddress] = useState('');
   const [newAccountCity, setNewAccountCity] = useState('Gran Mendoza');
+  const [newAccountLocation, setNewAccountLocation] = useState('');
+  const [newAccountLocationUrl, setNewAccountLocationUrl] = useState('');
   const [newAccountBranch, setNewAccountBranch] = useState(branches?.[0]?.name || 'Maipú');
   const [newAccountPassword, setNewAccountPassword] = useState('Pampero2026');
   const [showPassword, setShowPassword] = useState(false);
@@ -489,7 +491,10 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
       cuitOrDni: newAccountCuit.trim() || 'Sin registrar',
       address: newAccountAddress.trim() || 'Gran Mendoza',
       city: newAccountCity.trim() || 'Gran Mendoza',
-      branch: newAccountType === 'empleado' ? newAccountBranch : (newAccountType === 'admin' ? 'Administración Central' : undefined),
+      nearestBranch: newAccountBranch || 'Maipú',
+      companyLocation: newAccountLocation.trim() || undefined,
+      locationUrl: newAccountLocationUrl.trim() || undefined,
+      branch: newAccountType === 'empleado' ? newAccountBranch : (newAccountType === 'admin' ? 'Administración Central' : newAccountBranch),
       sellerRole: newAccountType === 'empleado' ? 'vendedor' : undefined,
       pricingTier: newAccountType === 'empresa' ? 'Corporativo / Mayorista' : (newAccountType === 'admin' ? 'Administrador' : 'Consumidor Final'),
       status: 'active',
@@ -1019,9 +1024,24 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
                           {u.cuitOrDni || 'Sin CUIT/DNI'}
                         </div>
                         {u.address && (
-                          <div className="text-[10px] text-[#6F6860] flex items-center gap-1 mt-1 truncate max-w-[150px]">
+                          <div className="text-[10px] text-[#6F6860] flex items-center gap-1 mt-1 truncate max-w-[180px]" title={u.address}>
                             <MapPin className="w-3 h-3 text-[#B9522F] shrink-0" />
                             <span>{u.address}</span>
+                          </div>
+                        )}
+                        {(u.companyLocation || u.locationUrl) && (
+                          <div className="text-[10px] text-emerald-800 flex items-center gap-1 mt-0.5 truncate max-w-[180px]">
+                            <span>{u.companyLocation || 'Ubicación Maps'}</span>
+                            {u.locationUrl && (
+                              <a
+                                href={u.locationUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="underline font-bold text-[#B9522F] shrink-0"
+                              >
+                                [Mapa]
+                              </a>
+                            )}
                           </div>
                         )}
                       </td>
@@ -1384,6 +1404,49 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
                       />
                     </div>
                   </div>
+
+                  {(newAccountType === 'empresa' || newAccountType === 'consumidor') && (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-bold uppercase tracking-wider text-[#18231C] mb-1">
+                          Sucursal Cercana
+                        </label>
+                        <select
+                          value={newAccountBranch}
+                          onChange={(e) => setNewAccountBranch(e.target.value)}
+                          className="w-full px-3 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs text-[#18231C] outline-none focus:border-[#B9522F]"
+                        >
+                          <option value="Maipú">Maipú</option>
+                          <option value="Ciudad">Ciudad</option>
+                          <option value="Luján">Luján</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold uppercase tracking-wider text-[#18231C] mb-1">
+                          Ubicación / Referencia
+                        </label>
+                        <input
+                          type="text"
+                          value={newAccountLocation}
+                          onChange={(e) => setNewAccountLocation(e.target.value)}
+                          placeholder="Parque Ind. / Zona"
+                          className="w-full px-3 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs text-[#18231C] outline-none focus:border-[#B9522F]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold uppercase tracking-wider text-[#18231C] mb-1">
+                          Link Google Maps
+                        </label>
+                        <input
+                          type="url"
+                          value={newAccountLocationUrl}
+                          onChange={(e) => setNewAccountLocationUrl(e.target.value)}
+                          placeholder="https://maps.google.com/..."
+                          className="w-full px-3 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs text-[#18231C] outline-none focus:border-[#B9522F]"
+                        />
+                      </div>
+                    </div>
+                  )}
 
                   {/* 3. CONFIGURACIÓN SEGURA DE CONTRASEÑA VÍA FIREBASE AUTH */}
                   <div className="p-3.5 bg-emerald-50 border border-emerald-300 rounded-xs space-y-2.5 mt-2">

@@ -99,6 +99,9 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   const [street, setStreet] = useState(initialStreet);
   const [streetNumber, setStreetNumber] = useState(initialNumber);
   const [city, setCity] = useState(initialCity);
+  const [nearestBranch, setNearestBranch] = useState(d.nearestBranch || userSession?.branch || 'Maipú');
+  const [companyLocation, setCompanyLocation] = useState(d.companyLocation || '');
+  const [locationUrl, setLocationUrl] = useState(d.locationUrl || '');
   const [savedSuccess, setSavedSuccess] = useState(false);
 
   // Avatar and password states
@@ -147,6 +150,9 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
     setStreet(nextStreet);
     setStreetNumber(nextNumber);
     setCity(nextCity);
+    setNearestBranch(data.nearestBranch || userSession.branch || 'Maipú');
+    setCompanyLocation(data.companyLocation || '');
+    setLocationUrl(data.locationUrl || '');
     setAvatarUrl(userSession.avatarUrl || '');
     setSavedSuccess(false);
   }, [isOpen, userSession?.id, userSession?.email, initialTab]);
@@ -430,11 +436,15 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
         city: city.trim(),
       },
       addressString: formattedAddressStr,
+      nearestBranch: nearestBranch || 'Maipú',
+      companyLocation: companyLocation.trim() || undefined,
+      locationUrl: locationUrl.trim() || undefined,
     };
 
     const updatedSession: UserSession = {
       ...userSession,
       email: email.trim(),
+      branch: nearestBranch || userSession.branch,
       clientData: updatedData,
       avatarUrl: avatarUrl.trim() || undefined,
     };
@@ -455,6 +465,9 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
       cuitOrDni: cuit.trim(),
       address: formattedAddressStr,
       city: city.trim(),
+      nearestBranch: nearestBranch || 'Maipú',
+      companyLocation: companyLocation.trim() || undefined,
+      locationUrl: locationUrl.trim() || undefined,
       type: isCompany ? 'empresa' : 'consumidor',
       role: userSession.role || 'client',
       status: 'active',
@@ -805,17 +818,60 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
               </div>
             </div>
 
-            <div className="mt-2">
-              <label className="block text-[10px] text-[#6F6860] uppercase font-bold mb-1">
-                Ciudad / Departamento / Provincia
-              </label>
-              <input
-                type="text"
-                value={city}
-                onChange={(e) => setCity(e.target.value)}
-                placeholder="Localidad / Departamento"
-                className="w-full px-3 py-2 text-xs bg-white rounded-xs border border-[#DCD4C9] outline-none focus:border-[#FDB813]"
-              />
+            <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[10px] text-[#6F6860] uppercase font-bold mb-1">
+                  Ciudad / Departamento / Provincia
+                </label>
+                <input
+                  type="text"
+                  value={city}
+                  onChange={(e) => setCity(e.target.value)}
+                  placeholder="Localidad / Departamento"
+                  className="w-full px-3 py-2 text-xs bg-white rounded-xs border border-[#DCD4C9] outline-none focus:border-[#FDB813]"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] text-[#6F6860] uppercase font-bold mb-1">
+                  Sucursal Pampero Más Cercana
+                </label>
+                <select
+                  value={nearestBranch}
+                  onChange={(e) => setNearestBranch(e.target.value)}
+                  className="w-full px-3 py-2 text-xs bg-white rounded-xs border border-[#DCD4C9] outline-none focus:border-[#FDB813]"
+                >
+                  <option value="Maipú">Maipú</option>
+                  <option value="Ciudad">Ciudad (Mendoza)</option>
+                  <option value="Luján">Luján de Cuyo</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[10px] text-[#6F6860] uppercase font-bold mb-1">
+                  Ubicación / Referencia (p/ envíos)
+                </label>
+                <input
+                  type="text"
+                  value={companyLocation}
+                  onChange={(e) => setCompanyLocation(e.target.value)}
+                  placeholder="Ej: Parque Industrial, Portón 3, horario..."
+                  className="w-full px-3 py-2 text-xs bg-white rounded-xs border border-[#DCD4C9] outline-none focus:border-[#FDB813]"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] text-[#6F6860] uppercase font-bold mb-1">
+                  Link Google Maps (Opcional)
+                </label>
+                <input
+                  type="url"
+                  value={locationUrl}
+                  onChange={(e) => setLocationUrl(e.target.value)}
+                  placeholder="https://maps.google.com/..."
+                  className="w-full px-3 py-2 text-xs bg-white rounded-xs border border-[#DCD4C9] outline-none focus:border-[#FDB813]"
+                />
+              </div>
             </div>
           </div>
 

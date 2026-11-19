@@ -7,14 +7,9 @@ import {
 } from '../../services/firebase';
 import { 
   ShieldCheck, 
-  Users, 
-  Building2, 
   Check, 
   X, 
-  AlertCircle,
-  Sparkles,
-  Lock,
-  Unlock,
+  Camera,
   CheckCircle2
 } from 'lucide-react';
 
@@ -22,7 +17,7 @@ interface AdminPermissionsTabProps {
   triggerSaveNotice?: () => void;
 }
 
-export type CRMTabPermissionKey = 'visits' | 'board' | 'tasks' | 'suppliers' | 'costs';
+export type CRMTabPermissionKey = 'visits' | 'board' | 'tasks' | 'calendar' | 'suppliers' | 'costs';
 
 export const CRM_TAB_DEFINITIONS: { key: CRMTabPermissionKey; label: string; description: string; badge: string }[] = [
   { 
@@ -42,6 +37,12 @@ export const CRM_TAB_DEFINITIONS: { key: CRMTabPermissionKey; label: string; des
     label: '3. Tareas', 
     description: 'Tareas operativas, importancia, tiempos límites y avances',
     badge: 'Kanban Tareas'
+  },
+  { 
+    key: 'calendar', 
+    label: '4. Calendario', 
+    description: 'Agenda compartida de vencimientos, tareas y eventos',
+    badge: 'Calendario'
   },
   { 
     key: 'suppliers', 
@@ -67,7 +68,8 @@ const INITIAL_FALLBACK_EMPLOYEES: EmployeeAccount[] = [
     branch: 'Maipú',
     sellerName: 'Itatí',
     allowedTabs: ['crm', 'products', 'variants', 'prices', 'quotes'],
-    crmTabs: ['visits', 'board', 'tasks', 'suppliers'],
+    crmTabs: ['visits', 'board', 'tasks', 'calendar', 'suppliers'],
+    canControlTasks: true,
     crmScope: 'branch_only',
     createdAt: '2026-01-10',
     active: true,
@@ -81,7 +83,8 @@ const INITIAL_FALLBACK_EMPLOYEES: EmployeeAccount[] = [
     branch: 'Ciudad',
     sellerName: 'Guada',
     allowedTabs: ['crm', 'products', 'variants', 'prices', 'quotes'],
-    crmTabs: ['visits', 'board', 'tasks', 'suppliers'],
+    crmTabs: ['visits', 'board', 'tasks', 'calendar', 'suppliers'],
+    canControlTasks: true,
     crmScope: 'branch_only',
     createdAt: '2026-01-12',
     active: true,
@@ -95,7 +98,8 @@ const INITIAL_FALLBACK_EMPLOYEES: EmployeeAccount[] = [
     branch: 'Luján',
     sellerName: 'Carolina',
     allowedTabs: ['crm', 'products', 'variants', 'prices', 'quotes'],
-    crmTabs: ['visits', 'board', 'tasks', 'suppliers', 'costs'],
+    crmTabs: ['visits', 'board', 'tasks', 'calendar', 'suppliers', 'costs'],
+    canControlTasks: true,
     crmScope: 'branch_only',
     createdAt: '2026-01-15',
     active: true,
@@ -125,13 +129,23 @@ export const AdminPermissionsTab: React.FC<AdminPermissionsTabProps> = ({ trigge
     return () => unsub();
   }, []);
 
+  const getResolvedTabs = (target: EmployeeAccount): CRMTabPermissionKey[] => {
+    if (!target.crmTabs) return ['visits', 'board', 'tasks', 'calendar', 'suppliers'];
+    let list = [...target.crmTabs] as CRMTabPermissionKey[];
+    if (list.length > 0 && !target.crmTasksConfigured && !list.includes('tasks')) {
+      list.push('tasks');
+    }
+    if (list.length > 0 && !target.crmCalendarConfigured && !list.includes('calendar')) {
+      list.push('calendar');
+    }
+    return list;
+  };
+
   const handleToggleTab = async (empId: string, tabKey: CRMTabPermissionKey) => {
     const target = employees.find((e) => e.id === empId);
     if (!target) return;
 
-    const currentTabs: CRMTabPermissionKey[] = target.crmTabs
-      ? (target.crmTasksConfigured ? target.crmTabs : Array.from(new Set([...target.crmTabs, 'tasks'])))
-      : ['visits', 'board', 'tasks', 'suppliers'];
+    const currentTabs = getResolvedTabs(target);
     const hasTab = currentTabs.includes(tabKey);
     const updatedTabs: CRMTabPermissionKey[] = hasTab
       ? currentTabs.filter((t) => t !== tabKey)
@@ -141,12 +155,12 @@ export const AdminPermissionsTab: React.FC<AdminPermissionsTabProps> = ({ trigge
       ...target,
       crmTabs: updatedTabs,
       crmTasksConfigured: true,
+      crmCalendarConfigured: true,
       allowedTabs: updatedTabs.length > 0
         ? Array.from(new Set([...(target.allowedTabs || []), 'crm']))
         : (target.allowedTabs || []).filter((t) => t !== 'crm'),
     };
 
-    // Optimistic local update
     const nextList = employees.map((e) => (e.id === empId ? updatedEmp : e));
     setEmployees(nextList);
     localStorage.setItem('pampero_employees', JSON.stringify(nextList));
@@ -164,15 +178,47 @@ export const AdminPermissionsTab: React.FC<AdminPermissionsTabProps> = ({ trigge
     }
   };
 
+  const handleToggleTaskControl = async (empId: string) => {
+    const target = employees.find((e) => e.id === empId);
+    if (!target) return;
+
+    const nextCanControl = !Boolean(target.canControlTasks || target.sellerRole === 'local');
+    const updatedEmp: EmployeeAccount = {
+      ...target,
+      canControlTasks: nextCanControl,
+    };
+
+    const nextList = employees.map((e) => (e.id === empId ? updatedEmp : e));
+    setEmployees(nextList);
+    localStorage.setItem('pampero_employees', JSON.stringify(nextList));
+
+    setSavingId(empId);
+    try {
+      await saveFirestoreEmployee(updatedEmp);
+      if (triggerSaveNotice) triggerSaveNotice();
+      setSuccessMsg(
+        nextCanControl
+          ? `${updatedEmp.name} ahora puede controlar tareas y subir fotos de respaldo`
+          : `Permiso de controlador removido para ${updatedEmp.name}`
+      );
+      setTimeout(() => setSuccessMsg(null), 2500);
+    } catch (err) {
+      console.error('[PERMISOS] Error guardando controlador:', err);
+    } finally {
+      setSavingId(null);
+    }
+  };
+
   const handleGrantAll = async (empId: string) => {
     const target = employees.find((e) => e.id === empId);
     if (!target) return;
 
-    const allTabs: CRMTabPermissionKey[] = ['visits', 'board', 'tasks', 'suppliers', 'costs'];
+    const allTabs: CRMTabPermissionKey[] = ['visits', 'board', 'tasks', 'calendar', 'suppliers', 'costs'];
     const updatedEmp: EmployeeAccount = {
       ...target,
       crmTabs: allTabs,
       crmTasksConfigured: true,
+      crmCalendarConfigured: true,
       allowedTabs: Array.from(new Set([...(target.allowedTabs || []), 'crm'])),
     };
 
@@ -201,6 +247,8 @@ export const AdminPermissionsTab: React.FC<AdminPermissionsTabProps> = ({ trigge
       ...target,
       crmTabs: [],
       crmTasksConfigured: true,
+      crmCalendarConfigured: true,
+      canControlTasks: false,
       allowedTabs: (target.allowedTabs || []).filter((t) => t !== 'crm'),
     };
 
@@ -232,10 +280,10 @@ export const AdminPermissionsTab: React.FC<AdminPermissionsTabProps> = ({ trigge
             </div>
             <div>
               <h3 className="font-bold text-base text-[#18231C] uppercase tracking-wider">
-                Permisos del CRM · Control de Acceso por Empleado
+                Permisos del CRM · Control de Acceso y Controladores
               </h3>
               <p className="text-xs text-[#6F6860]">
-                Tildá qué pestañas de Gestión puede visualizar y operar cada vendedor o encargado de sucursal.
+                Tildá qué pestañas de Gestión puede operar cada usuario y asigná el permiso especial de Controlador de Tareas (para auditar y subir fotos de respaldo).
               </p>
             </div>
           </div>
@@ -257,23 +305,26 @@ export const AdminPermissionsTab: React.FC<AdminPermissionsTabProps> = ({ trigge
               <tr>
                 <th className="py-3.5 px-4">Colaborador / Sucursal</th>
                 {CRM_TAB_DEFINITIONS.map((tab) => (
-                  <th key={tab.key} className="py-3.5 px-4 text-center">
+                  <th key={tab.key} className="py-3.5 px-3 text-center">
                     <div>{tab.label}</div>
                     <span className="text-[9px] font-normal text-[#6F6860] lowercase">
                       {tab.badge}
                     </span>
                   </th>
                 ))}
+                <th className="py-3.5 px-3 text-center">
+                  <div className="text-[#B9522F]">Controlador Tareas</div>
+                  <span className="text-[9px] font-normal text-[#6F6860] lowercase">
+                    fotos y control
+                  </span>
+                </th>
                 <th className="py-3.5 px-4 text-right">Acciones Rápidas</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#DCD4C9]">
               {employees.map((emp) => {
-                const baseTabs = emp.crmTabs || ['visits', 'board', 'tasks', 'suppliers'];
-                const assignedTabs =
-                  emp.crmTabs && !emp.crmTasksConfigured && emp.crmTabs.length > 0
-                    ? Array.from(new Set([...emp.crmTabs, 'tasks']))
-                    : baseTabs;
+                const assignedTabs = getResolvedTabs(emp);
+                const isController = Boolean(emp.canControlTasks || emp.sellerRole === 'local');
                 const isSaving = savingId === emp.id;
 
                 return (
@@ -298,11 +349,11 @@ export const AdminPermissionsTab: React.FC<AdminPermissionsTabProps> = ({ trigge
                       </div>
                     </td>
 
-                    {/* Checkboxes for 4 CRM Tabs */}
+                    {/* Checkboxes for CRM Tabs */}
                     {CRM_TAB_DEFINITIONS.map((tab) => {
                       const isGranted = assignedTabs.includes(tab.key);
                       return (
-                        <td key={tab.key} className="py-3.5 px-4 text-center">
+                        <td key={tab.key} className="py-3.5 px-3 text-center">
                           <button
                             type="button"
                             disabled={isSaving}
@@ -324,6 +375,27 @@ export const AdminPermissionsTab: React.FC<AdminPermissionsTabProps> = ({ trigge
                       );
                     })}
 
+                    {/* Task Controller Toggle */}
+                    <td className="py-3.5 px-3 text-center">
+                      <button
+                        type="button"
+                        disabled={isSaving}
+                        onClick={() => handleToggleTaskControl(emp.id)}
+                        className={`p-2 rounded-xs border transition-all cursor-pointer inline-flex items-center justify-center ${
+                          isController
+                            ? 'bg-[#B9522F] border-[#9E3E1E] text-white shadow-xs hover:bg-[#9E3E1E]'
+                            : 'bg-neutral-100 border-[#DCD4C9] text-neutral-400 hover:bg-neutral-200'
+                        }`}
+                        title={
+                          isController
+                            ? 'Puede controlar tareas y subir fotos de respaldo'
+                            : 'Sin permiso de controlador'
+                        }
+                      >
+                        <Camera className="w-4 h-4" />
+                      </button>
+                    </td>
+
                     {/* Quick bulk actions */}
                     <td className="py-3.5 px-4 text-right">
                       <div className="flex items-center justify-end gap-1.5">
@@ -332,7 +404,7 @@ export const AdminPermissionsTab: React.FC<AdminPermissionsTabProps> = ({ trigge
                           disabled={isSaving}
                           onClick={() => handleGrantAll(emp.id)}
                           className="px-2.5 py-1 bg-white hover:bg-emerald-50 border border-emerald-400 text-emerald-800 rounded-xs text-[10px] font-bold uppercase transition-colors cursor-pointer"
-                          title="Habilitar las 4 pestañas del CRM"
+                          title="Habilitar todas las pestañas del CRM"
                         >
                           Todas
                         </button>
@@ -356,10 +428,14 @@ export const AdminPermissionsTab: React.FC<AdminPermissionsTabProps> = ({ trigge
 
         {/* Legend Footer */}
         <div className="p-4 bg-[#FAF8F5] border-t border-[#DCD4C9] flex flex-wrap items-center justify-between gap-3 text-xs text-[#6F6860]">
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center gap-4">
             <span className="flex items-center gap-1.5">
               <span className="size-3 bg-emerald-600 rounded-xs inline-block" />
               <span>Pestaña Habilitada</span>
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="size-3 bg-[#B9522F] rounded-xs inline-block" />
+              <span>Controlador de Tareas (Fotos de Respaldo y Metas)</span>
             </span>
             <span className="flex items-center gap-1.5">
               <span className="size-3 bg-neutral-200 rounded-xs inline-block" />

@@ -18,7 +18,7 @@ import {
   Copy
 } from 'lucide-react';
 import { trackWhatsAppQuote } from '../utils/analytics';
-import { saveCRMOrder, getNextCorrelativeOrderNumber } from '../services/firebase';
+import { saveCRMOrder, getNextCorrelativeOrderNumber, getNextStructuredTrackingCode } from '../services/firebase';
 import { findSpecialRangeForSize, resolveSpecialRangeSizes, normalizeSpecialSuffix } from '../utils/sizeUtils';
 
 interface QuoteDrawerProps {
@@ -152,20 +152,60 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
       setCouponError(null);
     };
 
+    // Resolver datos de ubicación y sucursal del cliente registrado (si existen)
+    const resolveClientLogistics = () => {
+      const d = (userSession?.clientData || {}) as any;
+      let nearestBranch = d.nearestBranch || (userSession as any)?.branch || '';
+      let companyLocation = d.companyLocation || '';
+      let locationUrl = d.locationUrl || '';
+
+      if ((!nearestBranch || !companyLocation) && userSession?.email) {
+        try {
+          const users: any[] = JSON.parse(localStorage.getItem('pampero_registered_users') || '[]');
+          const match = users.find((u) => (u.email || '').toLowerCase() === userSession.email.toLowerCase());
+          if (match) {
+            if (!nearestBranch) nearestBranch = match.nearestBranch || match.branch || '';
+            if (!companyLocation) companyLocation = match.companyLocation || match.address || '';
+            if (!locationUrl) locationUrl = match.locationUrl || '';
+          }
+        } catch {}
+      }
+
+      if (!companyLocation && d.address) {
+        companyLocation = typeof d.address === 'string'
+          ? d.address
+          : [d.address.street, d.address.number, d.address.city].filter(Boolean).join(' ');
+      }
+
+      return {
+        resolvedBranch: nearestBranch || 'Maipú',
+        companyLocation: companyLocation || undefined,
+        locationUrl: locationUrl || undefined,
+      };
+    };
+
     // Text format for WhatsApp
     const buildQuoteText = (orderNumberStr?: string) => {
       const d = (userSession?.clientData || {}) as any;
+      const { resolvedBranch, companyLocation, locationUrl } = resolveClientLogistics();
       const empresa = d.companyName || (userSession?.clientType === 'empresa' ? (d.fullName || 'Empresa') : (d.fullName || 'Consumidor Final'));
       const contacto = d.fullName || (userSession?.email ? userSession.email.split('@')[0] : 'Cliente');
       const telefono = d.phone || '-';
 
       let text = `*SOLICITUD DE COTIZACIÓN / PEDIDO - PAMPERO GRAN MENDOZA*\n`;
       if (orderNumberStr) {
-        text += `*N° DE PEDIDO:* ${orderNumberStr}\n`;
+        text += `*CÓDIGO DE SEGUIMIENTO:* ${orderNumberStr}\n`;
       }
       text += `\n*Cliente / Empresa:* ${empresa}\n`;
       text += `*Contacto:* ${contacto}\n`;
       text += `*Teléfono:* ${telefono}\n`;
+      text += `*Sucursal / Local Asignado:* ${resolvedBranch}\n`;
+      if (companyLocation) {
+        text += `*Ubicación / Entrega:* ${companyLocation}\n`;
+      }
+      if (locationUrl) {
+        text += `*Mapa:* ${locationUrl}\n`;
+      }
       text += `*Total de Prendas:* ${totalUnits} unidades\n\n`;
       text += `*DETALLE DE ARTÍCULOS:*\n`;
 
@@ -241,30 +281,35 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
       });
     };
 
-    // 1. Export to Excel (.xlsx) con numeración progresiva y sincronización automática a Kanban
+    // 1. Export to Excel (.xlsx) con código estructurado [E|C][M|C|L][DDMM][00000] y sincronización automática a Kanban
     const handleExportToExcel = async () => {
       if (safeItems.length === 0 || isSubmittingOrder) return;
       setIsSubmittingOrder(true);
       try {
-        // Obtener número correlativo de pedido (#1, #2, #3...)
-        const { number: orderNum, formatted: formattedOrderNum } = await getNextCorrelativeOrderNumber();
+        const { resolvedBranch, companyLocation, locationUrl } = resolveClientLogistics();
+        const clientTypeResolved = userSession?.clientType === 'empresa' ? 'empresa' : 'consumidor_final';
+        const { number: orderNum } = await getNextCorrelativeOrderNumber();
+        const structuredCode = await getNextStructuredTrackingCode(clientTypeResolved, resolvedBranch);
         const orderDocId = `PED-${orderNum}`;
         const firstColId = getFirstKanbanColId();
 
         // Sincronizar automáticamente con el Tablero Kanban (primera columna del tablero)
         await saveCRMOrder({
           id: orderDocId,
-          orderNumber: formattedOrderNum,
+          orderNumber: structuredCode,
+          trackingCode: structuredCode,
           date: new Date().toISOString(),
-          quoteId: formattedOrderNum,
-          clientName: userSession?.clientData?.fullName || (userSession?.clientData as any)?.companyName || 'Cliente Catálogo',
+          quoteId: structuredCode,
+          clientName: (userSession?.clientData as any)?.companyName || userSession?.clientData?.fullName || 'Cliente Catálogo',
           clientPhone: (userSession?.clientData as any)?.phone || '',
           clientEmail: userSession?.email || '',
-          clientType: userSession?.clientType === 'empresa' ? 'empresa' : 'consumidor_final',
+          clientType: clientTypeResolved,
+          companyLocation,
+          locationUrl,
           channel: 'Excel',
           status: firstColId,
-          seller: 'Sin Asignar',
-          branch: 'Maipú',
+          seller: 'Sin asignar',
+          branch: resolvedBranch,
           totalUnits,
           totalEstimated: finalTotal,
           observations: observations.trim(),
@@ -277,7 +322,7 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
           const price = calculateItemPrice(it);
           const sub = price * it.quantity;
           return {
-            'N° Pedido': formattedOrderNum,
+            'N° Seguimiento': structuredCode,
             'Código': code,
             'Artículo': prod.name,
             'Color Seleccionado': it.selectedColor || 'Estándar',
@@ -291,7 +336,7 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
 
         // Add summary row
         dataRows.push({
-          'N° Pedido': formattedOrderNum,
+          'N° Seguimiento': structuredCode,
           'Código': 'TOTAL',
           'Artículo': 'Total General Estimado',
           'Color Seleccionado': '-',
@@ -304,11 +349,11 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
 
         const worksheet = XLSX.utils.json_to_sheet(dataRows);
         const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, `Pedido ${formattedOrderNum}`);
+        XLSX.utils.book_append_sheet(workbook, worksheet, `Pedido ${structuredCode}`);
 
         // Column widths
         worksheet['!cols'] = [
-          { wch: 14 },
+          { wch: 16 },
           { wch: 15 },
           { wch: 35 },
           { wch: 20 },
@@ -320,10 +365,9 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
         ];
 
         const dateStr = new Date().toISOString().split('T')[0];
-        const cleanNum = formattedOrderNum.replace(/[^0-9]/g, '');
-        XLSX.writeFile(workbook, `Pedido_Pampero_${cleanNum}_${dateStr}.xlsx`);
+        XLSX.writeFile(workbook, `Pedido_Pampero_${structuredCode}_${dateStr}.xlsx`);
 
-        setOrderNotice(`¡Pedido ${formattedOrderNum} generado en Excel y sincronizado en el tablero de Gestión!`);
+        setOrderNotice(`¡Pedido ${structuredCode} generado en Excel y sincronizado en el tablero de Gestión!`);
         setToastNotification('¡Nuevo pedido de cotización enviado y registrado con éxito!');
         setTimeout(() => {
           setOrderNotice(null);
@@ -338,7 +382,7 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
       }
     };
 
-    // 2. Send via WhatsApp con numeración progresiva y sincronización automática a Kanban
+    // 2. Send via WhatsApp con código estructurado [E|C][M|C|L][DDMM][00000] y sincronización automática a Kanban
     const handleSendWhatsApp = async () => {
       if (safeItems.length === 0 || isSubmittingOrder) return;
       setIsSubmittingOrder(true);
@@ -352,37 +396,42 @@ export const QuoteDrawer: React.FC<QuoteDrawerProps> = ({
           hasCoupon: Boolean(appliedCoupon),
         });
 
-        // Obtener número correlativo progresivo (#1, #2, #3...)
-        const { number: orderNum, formatted: formattedOrderNum } = await getNextCorrelativeOrderNumber();
+        const { resolvedBranch, companyLocation, locationUrl } = resolveClientLogistics();
+        const clientTypeResolved = userSession?.clientType === 'empresa' ? 'empresa' : 'consumidor_final';
+        const { number: orderNum } = await getNextCorrelativeOrderNumber();
+        const structuredCode = await getNextStructuredTrackingCode(clientTypeResolved, resolvedBranch);
         const orderDocId = `PED-${orderNum}`;
         const firstColId = getFirstKanbanColId();
 
         // Sincronizar automáticamente con el Tablero Kanban (primera columna del tablero)
         await saveCRMOrder({
           id: orderDocId,
-          orderNumber: formattedOrderNum,
+          orderNumber: structuredCode,
+          trackingCode: structuredCode,
           date: new Date().toISOString(),
-          quoteId: formattedOrderNum,
-          clientName: userSession?.clientData?.fullName || (userSession?.clientData as any)?.companyName || 'Cliente Catálogo',
+          quoteId: structuredCode,
+          clientName: (userSession?.clientData as any)?.companyName || userSession?.clientData?.fullName || 'Cliente Catálogo',
           clientPhone: (userSession?.clientData as any)?.phone || '',
           clientEmail: userSession?.email || '',
-          clientType: userSession?.clientType === 'empresa' ? 'empresa' : 'consumidor_final',
+          clientType: clientTypeResolved,
+          companyLocation,
+          locationUrl,
           channel: 'WhatsApp',
           status: firstColId,
-          seller: 'Sin Asignar',
-          branch: 'Maipú',
+          seller: 'Sin asignar',
+          branch: resolvedBranch,
           totalUnits,
           totalEstimated: finalTotal,
           observations: observations.trim(),
           items: safeItems,
         });
 
-        const text = buildQuoteText(formattedOrderNum);
+        const text = buildQuoteText(structuredCode);
         const rawPhone = theme?.whatsappNumber || '5492615276713';
         const cleanPhone = rawPhone.replace(/\D/g, '');
         const whatsappUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(text)}`;
 
-        setOrderNotice(`¡Pedido ${formattedOrderNum} vinculado al Tablero Kanban de Gestión!`);
+        setOrderNotice(`¡Pedido ${structuredCode} vinculado al Tablero Kanban de Gestión!`);
         setToastNotification('¡Nuevo pedido de cotización enviado y registrado con éxito!');
         setTimeout(() => {
           setOrderNotice(null);

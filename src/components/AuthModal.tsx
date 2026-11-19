@@ -37,6 +37,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     fullName: '',
     email: '',
     phone: '',
+    nearestBranch: 'Maipú',
+    companyLocation: '',
+    locationUrl: '',
     address: {
       street: '',
       number: '',
@@ -52,6 +55,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     cuit: '',
     institutionalEmail: '',
     institutionalPhone: '',
+    nearestBranch: 'Maipú',
+    companyLocation: '',
+    locationUrl: '',
     address: {
       street: '',
       number: '',
@@ -492,6 +498,25 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                         className="w-full px-3 py-2 rounded-lg border border-neutral-300 focus:border-[#E52421] text-xs font-medium"
                       />
                     </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+                      <select
+                        value={consumerData.nearestBranch || 'Maipú'}
+                        onChange={(e) => setConsumerData({ ...consumerData, nearestBranch: e.target.value })}
+                        className="w-full px-3 py-2 rounded-lg border border-neutral-300 focus:border-[#E52421] text-xs font-medium bg-white"
+                      >
+                        <option value="Maipú">Local más cercano: Maipú</option>
+                        <option value="Ciudad">Local más cercano: Ciudad</option>
+                        <option value="Luján">Local más cercano: Luján de Cuyo</option>
+                      </select>
+                      <input
+                        type="text"
+                        placeholder="Ubicación / Referencia de entrega"
+                        value={consumerData.companyLocation || ''}
+                        onChange={(e) => setConsumerData({ ...consumerData, companyLocation: e.target.value })}
+                        className="w-full px-3 py-2 rounded-lg border border-neutral-300 focus:border-[#E52421] text-xs font-medium"
+                      />
+                    </div>
                   </div>
 
                   <button
@@ -666,6 +691,32 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                             address: { ...companyData.address, city: e.target.value },
                           })
                         }
+                        className="w-full px-3 py-2 rounded-lg border border-neutral-300 focus:border-[#E52421] text-xs font-medium"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2">
+                      <select
+                        value={companyData.nearestBranch || 'Maipú'}
+                        onChange={(e) => setCompanyData({ ...companyData, nearestBranch: e.target.value })}
+                        className="w-full px-3 py-2 rounded-lg border border-neutral-300 focus:border-[#E52421] text-xs font-medium bg-white"
+                      >
+                        <option value="Maipú">Local cercano: Maipú</option>
+                        <option value="Ciudad">Local cercano: Ciudad</option>
+                        <option value="Luján">Local cercano: Luján de Cuyo</option>
+                      </select>
+                      <input
+                        type="text"
+                        placeholder="Ubicación / Zona empresa"
+                        value={companyData.companyLocation || ''}
+                        onChange={(e) => setCompanyData({ ...companyData, companyLocation: e.target.value })}
+                        className="w-full px-3 py-2 rounded-lg border border-neutral-300 focus:border-[#E52421] text-xs font-medium"
+                      />
+                      <input
+                        type="url"
+                        placeholder="Link Google Maps (opcional)"
+                        value={companyData.locationUrl || ''}
+                        onChange={(e) => setCompanyData({ ...companyData, locationUrl: e.target.value })}
                         className="w-full px-3 py-2 rounded-lg border border-neutral-300 focus:border-[#E52421] text-xs font-medium"
                       />
                     </div>

@@ -143,14 +143,15 @@ export const ClientOrderStatusView: React.FC<ClientOrderStatusViewProps> = ({
     });
   }, [allOrders, clientCompany, clientName, clientEmail, userId, userSession]);
 
-  // 4. If search query is entered, search across all orders by orderNumber or client name
+  // 4. If search query is entered, search across all orders by trackingCode, orderNumber or client name
   const searchedOrders = useMemo(() => {
     const q = searchOrderNumber.trim().toLowerCase();
     if (!q) return clientOrders;
     return allOrders.filter((o) => {
+      const trk = (o.trackingCode || '').toLowerCase();
       const num = (o.orderNumber || o.id || '').toLowerCase();
       const name = (o.clientName || '').toLowerCase();
-      return num.includes(q) || name.includes(q);
+      return trk.includes(q) || num.includes(q) || name.includes(q);
     });
   }, [allOrders, searchOrderNumber, clientOrders]);
 
@@ -332,7 +333,7 @@ export const ClientOrderStatusView: React.FC<ClientOrderStatusViewProps> = ({
                         : 'bg-[#FAF8F5] text-[#6F6860] hover:bg-white hover:text-[#18231C] border border-[#DCD4C9]'
                     }`}
                   >
-                    <span>{o.orderNumber || o.id}</span>
+                    <span>{o.trackingCode || o.orderNumber || o.id}</span>
                     <span className="text-[10px] opacity-75">({o.clientName})</span>
                   </button>
                 );
@@ -351,7 +352,7 @@ export const ClientOrderStatusView: React.FC<ClientOrderStatusViewProps> = ({
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="px-2.5 py-1 bg-amber-100 text-amber-950 border border-amber-300 rounded-xs font-mono text-sm font-black">
-                      {activeOrder.orderNumber || activeOrder.id}
+                      {activeOrder.trackingCode || activeOrder.orderNumber || activeOrder.id}
                     </span>
                     <span className="text-xs text-[#6F6860] font-medium flex items-center gap-1">
                       <Calendar className="w-3.5 h-3.5 text-[#B9522F]" />

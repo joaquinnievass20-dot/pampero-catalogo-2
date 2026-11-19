@@ -9,7 +9,8 @@ import {
   SizingCampaign, 
   EmployeeSizeEntry,
   Seller,
-  EmployeeAccount
+  EmployeeAccount,
+  ObservationHistoryEntry
 } from '../../types';
 import { 
   subscribeToCRMOrders, 
@@ -27,6 +28,8 @@ import {
   DEFAULT_COMPANY_COLUMNS,
   KanbanColumnConfig,
   getNextCorrelativeOrderNumber,
+  getNextStructuredTrackingCode,
+  upsertObservationReminderCalendarEvent,
   recordAuditLog,
 } from '../../services/firebase';
 import { fixUtf8Encoding, sanitizeObjectEncoding } from '../../utils/encodingUtils';
@@ -59,13 +62,18 @@ import {
   Upload,
   FileSpreadsheet,
   FileText,
-  CheckSquare
+  CheckSquare,
+  MapPin,
+  ExternalLink,
+  Eye,
+  Edit3
 } from 'lucide-react';
 import { exportOrdersToExcel, importOrdersFromExcel } from '../../utils/kanbanExcelUtils';
 import { normalizeCRMOrder, normalizeLeadVisit, normalizeSupplierOrder } from '../../utils/crmNormalizers';
 import { CRMNotificationsModal } from './CRMNotificationsModal';
 import { CRMVisitsTab } from './CRMVisitsTab';
 import { CRMTasksTab } from './CRMTasksTab';
+import { CRMCalendarTab } from './CRMCalendarTab';
 import { CRMSupplierOrdersTab } from './CRMSupplierOrdersTab';
 import { CRMCostsTab } from './CRMCostsTab';
 
@@ -247,18 +255,30 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
   // Allowed CRM tabs based on Admin or Employee Permissions
   const crmTabsStr = currentEmployee?.crmTabs?.join(',') || '';
   const crmTasksConfigured = Boolean(currentEmployee?.crmTasksConfigured);
-  const allowedCrmTabs: ('visits' | 'board' | 'tasks' | 'suppliers' | 'costs')[] = React.useMemo(() => {
-    if (userSession?.role === 'admin') return ['visits', 'board', 'tasks', 'suppliers', 'costs'];
+  const crmCalendarConfigured = Boolean(currentEmployee?.crmCalendarConfigured);
+  const allowedCrmTabs: ('visits' | 'board' | 'tasks' | 'calendar' | 'suppliers' | 'costs')[] = React.useMemo(() => {
+    if (userSession?.role === 'admin') return ['visits', 'board', 'tasks', 'calendar', 'suppliers', 'costs'];
     if (currentEmployee?.crmTabs && Array.isArray(currentEmployee.crmTabs) && currentEmployee.crmTabs.length > 0) {
-      if (!crmTasksConfigured && !currentEmployee.crmTabs.includes('tasks')) {
-        return [...currentEmployee.crmTabs, 'tasks'] as ('visits' | 'board' | 'tasks' | 'suppliers' | 'costs')[];
+      const nextTabs = [...currentEmployee.crmTabs];
+      if (!crmTasksConfigured && !nextTabs.includes('tasks')) {
+        nextTabs.push('tasks');
       }
-      return currentEmployee.crmTabs as ('visits' | 'board' | 'tasks' | 'suppliers' | 'costs')[];
+      if (!crmCalendarConfigured && !nextTabs.includes('calendar')) {
+        nextTabs.push('calendar');
+      }
+      return nextTabs as ('visits' | 'board' | 'tasks' | 'calendar' | 'suppliers' | 'costs')[];
     }
-    return ['visits', 'board', 'tasks', 'suppliers'];
-  }, [userSession?.role, crmTabsStr, crmTasksConfigured]);
+    return ['visits', 'board', 'tasks', 'calendar', 'suppliers'];
+  }, [userSession?.role, crmTabsStr, crmTasksConfigured, crmCalendarConfigured]);
 
-  const [activeTab, setActiveTab] = useState<'visits' | 'board' | 'tasks' | 'suppliers' | 'costs'>('visits');
+  const canControlTasks = Boolean(
+    userSession?.role === 'admin' ||
+    isManager ||
+    userSession?.canControlTasks ||
+    currentEmployee?.canControlTasks
+  );
+
+  const [activeTab, setActiveTab] = useState<'visits' | 'board' | 'tasks' | 'calendar' | 'suppliers' | 'costs'>('visits');
 
   useEffect(() => {
     if (allowedCrmTabs.length > 0 && !allowedCrmTabs.includes(activeTab)) {
@@ -275,22 +295,42 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
   const handlePromoteVisitToCompanyOrder = async (visit: LeadVisit) => {
     try {
       const firstColId = companyColumns[0]?.id || 'cotizacion';
-      const { number: orderNum, formatted: formattedOrderNum } = await getNextCorrelativeOrderNumber();
+      const { number: orderNum } = await getNextCorrelativeOrderNumber();
+      const trackingCode =
+        visit.trackingCode || (await getNextStructuredTrackingCode('empresa', visit.branch || 'Maipú'));
+
+      if (!visit.trackingCode) {
+        const updatedVisit = sanitizeObjectEncoding({ ...visit, trackingCode });
+        setVisits((prev) => [updatedVisit, ...prev.filter((v) => v.id !== visit.id)]);
+        saveLeadVisit(updatedVisit).catch(() => {});
+      }
+
       const orderId = `PED-${orderNum}`;
       const newOrder: CRMOrder = sanitizeObjectEncoding({
         id: orderId,
         date: new Date().toISOString(),
-        quoteId: formattedOrderNum,
-        orderNumber: formattedOrderNum,
+        quoteId: trackingCode,
+        orderNumber: trackingCode,
+        trackingCode,
+        originVisitId: visit.id,
         clientName: visit.companyName,
         clientType: 'empresa',
+        clientPhone: visit.phone || '',
+        clientEmail: visit.email || '',
+        companyLocation: visit.companyLocation || undefined,
+        locationUrl: visit.locationUrl || undefined,
         status: firstColId as CRMOrderStatus,
         columnId: firstColId,
-        seller: visit.seller || 'Itatí',
+        seller: visit.seller || 'Sin asignar',
         branch: visit.branch || 'Maipú',
         totalUnits: visit.estimatedUnits || 1,
         totalEstimated: 0,
-        observations: `[Avanzado desde Visitas Comerciales] Contacto: ${visit.contactName || '-'} · Tel: ${visit.phone || '-'} · Objetivo: ${visit.objective || '-'} · Notas: ${visit.notes || '-'}`,
+        observations: `[Avanzado desde Visitas Comerciales] Contacto: ${visit.contactName || '-'} · Tel: ${visit.phone || '-'} · Ubicación: ${visit.companyLocation || '-'} · Objetivo: ${visit.objective || '-'} · Notas: ${visit.notes || '-'}`,
+        observationDate: visit.observationDate,
+        reminderDate: visit.reminderDate,
+        reminderTime: visit.reminderTime,
+        reminderNote: visit.reminderNote,
+        observationHistory: visit.observationHistory,
         updatedAt: new Date().toISOString(),
       });
 
@@ -308,9 +348,11 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
   });
   const [searchQuery, setSearchQuery] = useState('');
   const [filterDelayedOnly, setFilterDelayedOnly] = useState(false);
+  const [compactView, setCompactView] = useState(false);
   const [showNewOrderModal, setShowNewOrderModal] = useState(false);
   const [showNotificationsModal, setShowNotificationsModal] = useState(false);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
+  const [viewingOrder, setViewingOrder] = useState<CRMOrder | null>(null);
   const [selectedOrderForDetail, setSelectedOrderForDetail] = useState<CRMOrder | null>(null);
   const [excelNotice, setExcelNotice] = useState<string | null>(null);
   const [isExcelProcessing, setIsExcelProcessing] = useState(false);
@@ -430,7 +472,11 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
   }).length;
 
   const blockedOrdersCount = orders.filter((o) => Boolean(o.blockReason)).length;
-  const totalAlertsCount = delayedOrdersCount + blockedOrdersCount;
+  const todayIsoStr = new Date().toISOString().split('T')[0];
+  const dueRemindersCount =
+    orders.filter((o) => o.reminderDate && o.reminderDate <= todayIsoStr && o.status !== 'entregado' && o.status !== 'cancelado').length +
+    visits.filter((v) => v.reminderDate && v.reminderDate <= todayIsoStr && v.status !== 'cerrada' && v.status !== 'cancelada').length;
+  const totalAlertsCount = delayedOrdersCount + blockedOrdersCount + dueRemindersCount;
 
   // Filtered orders with strict multi-role and local permissions enforcement
   const filteredOrders = orders.filter((o) => {
@@ -451,6 +497,9 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
     const matchesSearch =
       !searchQuery ||
       (o.clientName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (o.trackingCode || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (o.orderNumber || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (o.companyLocation || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       (o.id || '').toLowerCase().includes(searchQuery.toLowerCase());
 
     const daysOld = Math.floor((Date.now() - new Date(o.date).getTime()) / (1000 * 60 * 60 * 24));
@@ -461,26 +510,65 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
     return matchesSeller && matchesBranch && matchesSearch;
   });
 
-  // Create manual order with guaranteed columnId and immediate local React update
+  // Lista combinada de vendedores para filtros & selects (incluye nombres libres de Excel)
+  const allOrderSellerNames = React.useMemo(() => {
+    const map = new Map<string, string>();
+    sellersList.forEach((s) => {
+      if (s?.name) map.set(s.name.toLowerCase(), fixUtf8Encoding(s.name));
+    });
+    orders.forEach((o) => {
+      const nm = String(o.seller || '').trim();
+      if (nm && nm.toLowerCase() !== 'sin asignar') {
+        map.set(nm.toLowerCase(), fixUtf8Encoding(nm));
+      }
+    });
+    return Array.from(map.values());
+  }, [sellersList, orders]);
+
+  // Create manual order with guaranteed columnId, structured tracking code, and immediate local React update
   const handleCreateManualOrder = async (formData: any) => {
     try {
       const firstColId = companyColumns[0]?.id || 'cotizacion';
-      const { number: orderNum, formatted: formattedOrderNum } = await getNextCorrelativeOrderNumber();
+      const { number: orderNum } = await getNextCorrelativeOrderNumber();
+      const targetBranch = formData.branch || assignedBranch || 'Maipú';
+      const targetClientType = formData.clientType || 'empresa';
+      const trackingCode = await getNextStructuredTrackingCode(targetClientType, targetBranch);
       const orderId = `PED-${orderNum}`;
       const newOrder: CRMOrder = sanitizeObjectEncoding({
         id: orderId,
         date: new Date().toISOString(),
-        quoteId: formattedOrderNum,
-        orderNumber: formattedOrderNum,
+        quoteId: trackingCode,
+        orderNumber: trackingCode,
+        trackingCode,
         clientName: formData.clientName,
-        clientType: formData.clientType || 'empresa',
+        clientType: targetClientType,
+        companyLocation: formData.companyLocation?.trim() || undefined,
+        locationUrl: formData.locationUrl?.trim() || undefined,
         status: (formData.status || firstColId) as CRMOrderStatus,
         columnId: formData.columnId || formData.status || firstColId,
-        seller: formData.seller || assignedSellerName || 'Sin Asignar',
-        branch: formData.branch || assignedBranch || 'Ciudad',
+        seller: String(formData.seller || assignedSellerName || 'Sin asignar').trim(),
+        branch: targetBranch,
         totalUnits: Number(formData.totalUnits) || 0,
         totalEstimated: Number(formData.totalEstimated) || 0,
         observations: formData.observations || '',
+        observationDate: formData.observations?.trim() || formData.reminderDate ? (formData.observationDate || new Date().toISOString().split('T')[0]) : undefined,
+        reminderDate: formData.reminderDate || undefined,
+        reminderTime: formData.reminderTime || undefined,
+        reminderNote: formData.reminderNote || undefined,
+        observationHistory:
+          formData.observations?.trim() || formData.reminderDate
+            ? [
+                {
+                  id: `obs-${Date.now()}`,
+                  observationDate: formData.observationDate || new Date().toISOString().split('T')[0],
+                  text: formData.observations?.trim() || formData.reminderNote || 'Recordatorio programado',
+                  reminderDate: formData.reminderDate || undefined,
+                  reminderTime: formData.reminderTime || undefined,
+                  author: String(formData.seller || assignedSellerName || activeStaffUser).trim(),
+                  createdAt: new Date().toISOString(),
+                },
+              ]
+            : undefined,
         updatedAt: new Date().toISOString(),
       });
 
@@ -488,10 +576,23 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
       setOrders((prev) => [newOrder, ...prev.filter((o) => o.id !== newOrder.id)]);
 
       await saveCRMOrder(newOrder);
+      if (newOrder.reminderDate) {
+        await upsertObservationReminderCalendarEvent('order', {
+          sourceId: newOrder.id,
+          title: `${newOrder.clientName} (${newOrder.trackingCode || newOrder.orderNumber})`,
+          reminderDate: newOrder.reminderDate,
+          reminderTime: newOrder.reminderTime,
+          reminderNote: newOrder.reminderNote || newOrder.observations,
+          branch: newOrder.branch,
+          seller: newOrder.seller,
+          createdBy: activeStaffUser,
+          createdByEmail: userSession?.email,
+        });
+      }
       recordAuditLog({
         module: 'CRM / Kanban',
         action: 'Crear Pedido',
-        details: `Nuevo pedido #${newOrder.orderNumber || newOrder.id} (${newOrder.clientName}) creado en etapa "${newOrder.status}"`,
+        details: `Nuevo pedido ${newOrder.trackingCode || newOrder.orderNumber || newOrder.id} (${newOrder.clientName}) creado en etapa "${newOrder.status}"`,
         metadata: { orderId: newOrder.id }
       });
       setShowNewOrderModal(false);
@@ -620,6 +721,7 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
               { key: 'visits' as const, label: '1. Visitas Comerciales', icon: Building2 },
               { key: 'board' as const, label: '2. Seguimiento Empresas', icon: LayoutDashboard },
               { key: 'tasks' as const, label: '3. Tareas', icon: CheckSquare },
+              { key: 'calendar' as const, label: '4. Calendario', icon: Calendar },
               { key: 'suppliers' as const, label: 'Pedidos Proveedor', icon: Truck },
               { key: 'costs' as const, label: 'Control de Costos', icon: DollarSign },
             ]
@@ -809,9 +911,9 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
                   title={crmScope === 'own_only' ? 'Restringido a tus pedidos asignados' : 'Filtrar por vendedor'}
                 >
                   {crmScope !== 'own_only' && <option value="todos">Vendedor: Todos</option>}
-                  {sellersList.map((s) => (
-                    <option key={s.id} value={s.name.toLowerCase()}>
-                      {s.name} ({s.branch})
+                  {allOrderSellerNames.map((name) => (
+                    <option key={name} value={name.toLowerCase()}>
+                      {name}
                     </option>
                   ))}
                 </select>
@@ -867,6 +969,23 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
                   className="w-full pl-8 pr-3 py-1.5 text-xs border border-[#DCD4C9] rounded-xs outline-none bg-white font-medium"
                 />
               </div>
+
+              <label
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-xs border text-xs font-bold cursor-pointer select-none transition-colors ${
+                  compactView
+                    ? 'bg-[#18231C] text-white border-[#18231C]'
+                    : 'bg-[#FAF8F5] text-[#18231C] border-[#DCD4C9] hover:bg-[#ECE5DC]'
+                }`}
+                title="Achicar tarjetas para ver solo los nombres de las empresas"
+              >
+                <input
+                  type="checkbox"
+                  checked={compactView}
+                  onChange={(e) => setCompactView(e.target.checked)}
+                  className="accent-[#FDB813] w-3.5 h-3.5 cursor-pointer"
+                />
+                <span>Solo nombres de empresas</span>
+              </label>
 
               {/* Excel Bulk Export & Import Tools */}
               <div className="flex items-center gap-2">
@@ -974,12 +1093,49 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
                           const isDelayed =
                             daysOld > 7 && (order.status === 'cotizacion' || order.status === 'sena_50');
 
+                          if (compactView) {
+                            return (
+                              <div
+                                key={order.id}
+                                draggable
+                                onDragStart={(e) => handleDragStart(e, order.id)}
+                                onClick={() => setViewingOrder(order)}
+                                style={{
+                                  backgroundColor: theme.crmCardBgColor || '#FFFFFF',
+                                  borderColor: isDelayed ? '#FCA5A5' : (theme.crmCardBorderColor || '#DCD4C9'),
+                                  color: theme.crmCardTextColor || '#18231C',
+                                }}
+                                className="rounded-xs px-3 py-2 border hover:border-[#18231C] shadow-2xs transition-all cursor-pointer flex items-center justify-between gap-2 select-none"
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <span className="font-bold text-xs text-[#18231C] block truncate uppercase">
+                                    {fixUtf8Encoding(order.clientName)}
+                                  </span>
+                                  <span className="text-[9px] font-mono text-[#6F6860] block truncate">
+                                    {order.trackingCode || order.orderNumber || `#${order.id.slice(-6)}`}
+                                  </span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setViewingOrder(order);
+                                  }}
+                                  className="p-1.5 hover:bg-amber-50 rounded-xs text-[#18231C] border border-transparent hover:border-amber-300 cursor-pointer shrink-0"
+                                  title="Ver ficha completa"
+                                >
+                                  <Eye className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            );
+                          }
+
                           return (
                             <div
                               key={order.id}
                               draggable
                               onDragStart={(e) => handleDragStart(e, order.id)}
-                              onClick={() => setSelectedOrderForDetail(order)}
+                              onClick={() => setViewingOrder(order)}
                               style={{
                                 backgroundColor: theme.crmCardBgColor || '#FFFFFF',
                                 borderColor: isDelayed ? '#FCA5A5' : (theme.crmCardBorderColor || '#DCD4C9'),
@@ -1000,7 +1156,7 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
                                     <User className="w-3 h-3 text-emerald-600" />
                                   )}
                                   <span className="text-[11px] font-black font-mono">
-                                    {order.orderNumber || `#${order.id.slice(-6)}`}
+                                    {order.trackingCode || order.orderNumber || `#${order.id.slice(-6)}`}
                                   </span>
                                 </div>
                                 <div className="flex items-center gap-1">
@@ -1039,6 +1195,28 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
                                 {order.totalUnits} prendas
                               </p>
 
+                              {/* Ubicación de entrega / empresa */}
+                              {(order.companyLocation || order.locationUrl) && (
+                                <div className="mt-1.5 text-[10px] bg-blue-50/80 text-blue-950 px-2 py-1 rounded-xs border border-blue-200 flex items-center justify-between gap-1.5">
+                                  <span className="truncate flex items-center gap-1">
+                                    <MapPin className="w-3 h-3 text-blue-700 shrink-0" />
+                                    <span>{fixUtf8Encoding(order.companyLocation || 'Ubicación cargada')}</span>
+                                  </span>
+                                  {order.locationUrl && (
+                                    <a
+                                      href={order.locationUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="text-blue-700 hover:underline font-bold shrink-0 flex items-center gap-0.5"
+                                    >
+                                      <span>Mapa</span>
+                                      <ExternalLink className="w-2.5 h-2.5" />
+                                    </a>
+                                  )}
+                                </div>
+                              )}
+
                               {/* Block Reason */}
                               {order.blockReason && (
                                 <div className="mt-2 text-[10px] bg-red-50 text-red-700 p-1.5 rounded-xs font-medium border border-red-200">
@@ -1049,8 +1227,19 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
                               {/* Observations */}
                               {order.observations && !order.blockReason && (
                                 <div className="mt-2 text-[10px] bg-amber-50 text-amber-800 p-1.5 rounded-xs">
+                                  {order.observationDate ? `[${order.observationDate}] ` : ''}
                                   {fixUtf8Encoding(order.observations.slice(0, 80))}
                                   {order.observations.length > 80 ? '...' : ''}
+                                </div>
+                              )}
+
+                              {/* Reminder Badge */}
+                              {order.reminderDate && (
+                                <div className="mt-1.5 text-[10px] text-amber-950 bg-amber-100/80 px-2 py-1 rounded-xs border border-amber-300 flex items-center gap-1 font-bold">
+                                  <Bell className="w-3 h-3 text-[#B9522F] shrink-0" />
+                                  <span className="truncate">
+                                    Recordatorio: {order.reminderDate}{order.reminderTime ? ` ${order.reminderTime}hs` : ''}
+                                  </span>
                                 </div>
                               )}
 
@@ -1074,17 +1263,31 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
 
                               {/* Card Action Shortcuts */}
                               <div className="mt-2 pt-1.5 border-t border-dashed border-[#ECE5DC] flex items-center justify-between gap-1">
-                                <a
-                                  href={`https://wa.me/?text=${encodeURIComponent(`Hola ${order.clientName}, te escribimos de Pampero Gran Mendoza para actualizarte sobre tu pedido ${order.orderNumber || `#${order.id.slice(-6)}`} (Estado: ${col.label}). Total: $${(order.totalEstimated || 0).toLocaleString('es-AR')}. ¿Tenés alguna consulta?`)}`}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xs text-[10px] font-bold flex items-center gap-1 transition-colors"
-                                  title="Avisar al cliente por WhatsApp"
-                                >
-                                  <MessageCircle className="w-3 h-3 text-emerald-600" />
-                                  <span>WhatsApp</span>
-                                </a>
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setViewingOrder(order);
+                                    }}
+                                    className="px-1.5 py-1 hover:bg-amber-50 rounded-xs text-[#18231C] border border-transparent hover:border-amber-300 cursor-pointer flex items-center gap-1 text-[10px] font-bold"
+                                    title="Ver ficha completa"
+                                  >
+                                    <Eye className="w-3.5 h-3.5" />
+                                    <span>Ficha</span>
+                                  </button>
+                                  <a
+                                    href={`https://wa.me/?text=${encodeURIComponent(`Hola ${order.clientName}, te escribimos de Pampero Gran Mendoza para actualizarte sobre tu pedido ${order.trackingCode || order.orderNumber || `#${order.id.slice(-6)}`} (Estado: ${col.label}). Total: $${(order.totalEstimated || 0).toLocaleString('es-AR')}. ¿Tenés alguna consulta?`)}`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xs text-[10px] font-bold flex items-center gap-1 transition-colors"
+                                    title="Avisar al cliente por WhatsApp"
+                                  >
+                                    <MessageCircle className="w-3 h-3 text-emerald-600" />
+                                    <span>WhatsApp</span>
+                                  </a>
+                                </div>
 
                                 {(() => {
                                   const currentOrderCol = (order as any).columnId || order.status;
@@ -1170,17 +1373,34 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
             assignedSellerName={assignedSellerName}
             activeStaffUser={activeStaffUser}
             isManager={isManager}
+            canControlTasks={canControlTasks}
             crmScope={crmScope}
             theme={theme}
           />
         )}
 
-        {/* === TAB 4: PEDIDOS A PROVEEDOR === */}
+        {/* === TAB 4: CALENDARIO DE GESTIÓN === */}
+        {activeTab === 'calendar' && (
+          <CRMCalendarTab
+            userSession={userSession}
+            sellersList={sellersList}
+            assignedBranch={assignedBranch}
+            assignedSellerName={assignedSellerName}
+            activeStaffUser={activeStaffUser}
+            isManager={isManager}
+            crmScope={crmScope}
+            orders={orders}
+            visits={visits}
+            theme={theme}
+          />
+        )}
+
+        {/* === TAB 5: PEDIDOS A PROVEEDOR === */}
         {activeTab === 'suppliers' && (
           <CRMSupplierOrdersTab orders={supplierOrders} accentColor={accent} />
         )}
 
-        {/* === TAB 4: CONTROL DE COSTOS === */}
+        {/* === TAB 6: CONTROL DE COSTOS === */}
         {activeTab === 'costs' && (
           <CRMCostsTab 
             accentColor={accent} 
@@ -1197,8 +1417,179 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
         onClose={() => setShowNotificationsModal(false)}
         orders={orders}
         visits={visits}
-        onSelectOrder={(ord) => setSelectedOrderForDetail(ord)}
+        onSelectOrder={(ord) => setViewingOrder(ord)}
       />
+
+      {/* Read-Only Order Ficha Modal (with internal Editar Ficha button) */}
+      {viewingOrder && (
+        <div className="fixed inset-0 z-50 bg-black/55 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white rounded-xs border border-[#DCD4C9] max-w-lg w-full overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="bg-[#18231C] px-5 py-4 flex items-center justify-between text-white">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[10px] font-mono font-black px-2 py-0.5 rounded-xs bg-[#FDB813] text-[#18231C]">
+                    {viewingOrder.trackingCode || viewingOrder.orderNumber || `#${viewingOrder.id.slice(-6)}`}
+                  </span>
+                  <span className="text-[10px] uppercase font-bold text-[#DCD4C9]">
+                    {fixUtf8Encoding(viewingOrder.branch || 'Maipú')}
+                  </span>
+                </div>
+                <h4 className="font-bold text-base uppercase tracking-wider truncate mt-1">
+                  {fixUtf8Encoding(viewingOrder.clientName)}
+                </h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewingOrder(null)}
+                className="text-white/70 hover:text-white cursor-pointer p-1"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-3.5 text-xs overflow-y-auto">
+              <div className="grid grid-cols-2 gap-3 bg-[#FAF8F5] p-3 rounded-xs border border-[#DCD4C9]">
+                <div>
+                  <span className="text-[10px] font-bold uppercase text-[#8C827A] block">Etapa / Estado</span>
+                  <span className="font-bold text-[#18231C]">
+                    {fixUtf8Encoding(
+                      companyColumns.find((c) => c.id === ((viewingOrder as any).columnId || viewingOrder.status))?.label ||
+                        viewingOrder.status
+                    )}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold uppercase text-[#8C827A] block">Vendedor Asignado</span>
+                  <span className="font-bold text-[#18231C]">{fixUtf8Encoding(viewingOrder.seller || 'Sin asignar')}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold uppercase text-[#8C827A] block">Prendas</span>
+                  <span className="font-bold text-[#18231C]">{viewingOrder.totalUnits || 0} unidades</span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold uppercase text-[#8C827A] block">Monto Estimado</span>
+                  <span className="font-bold text-emerald-700">$ {(viewingOrder.totalEstimated || 0).toLocaleString('es-AR')}</span>
+                </div>
+              </div>
+
+              {(viewingOrder.companyLocation || viewingOrder.locationUrl) && (
+                <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-xs space-y-1.5">
+                  <span className="text-[10px] font-black uppercase text-blue-900 flex items-center gap-1">
+                    <MapPin className="w-3.5 h-3.5 text-blue-700" />
+                    <span>Ubicación de la Empresa (Entrega / Logística)</span>
+                  </span>
+                  <p className="text-xs font-semibold text-blue-950">
+                    {fixUtf8Encoding(viewingOrder.companyLocation || 'Ubicación registrada')}
+                  </p>
+                  {viewingOrder.locationUrl && (
+                    <a
+                      href={viewingOrder.locationUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-700 hover:bg-blue-800 text-white rounded-xs text-[11px] font-bold"
+                    >
+                      <ExternalLink className="w-3 h-3" />
+                      <span>Abrir Ubicación en Google Maps</span>
+                    </a>
+                  )}
+                </div>
+              )}
+
+              {viewingOrder.blockReason && (
+                <div className="p-2.5 bg-red-50 border border-red-200 rounded-xs text-red-900 font-semibold">
+                  ⚠ Bloqueado: {fixUtf8Encoding(viewingOrder.blockReason)}
+                </div>
+              )}
+
+              {(viewingOrder.observations || viewingOrder.reminderDate || (viewingOrder.observationHistory && viewingOrder.observationHistory.length > 0)) && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold uppercase text-[#8C827A]">
+                      Observaciones {viewingOrder.observationDate ? `(${viewingOrder.observationDate})` : ''}
+                    </span>
+                    {viewingOrder.reminderDate && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 bg-amber-100 text-amber-950 border border-amber-300 rounded-xs flex items-center gap-1">
+                        <Bell className="w-3 h-3 text-[#B9522F]" />
+                        Recordatorio: {viewingOrder.reminderDate} {viewingOrder.reminderTime || ''}
+                      </span>
+                    )}
+                  </div>
+                  {viewingOrder.observations && (
+                    <p className="p-2.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-[#18231C] whitespace-pre-wrap">
+                      {fixUtf8Encoding(viewingOrder.observations)}
+                    </p>
+                  )}
+                  {Array.isArray(viewingOrder.observationHistory) && viewingOrder.observationHistory.length > 1 && (
+                    <div className="space-y-1 max-h-28 overflow-y-auto pt-1">
+                      <span className="text-[9px] font-bold uppercase text-[#8C827A] block">Historial de observaciones:</span>
+                      {viewingOrder.observationHistory.map((h) => (
+                        <div key={h.id} className="text-[10px] p-1.5 bg-white border border-[#ECE5DC] rounded-xs">
+                          <span className="font-bold text-[#18231C]">{h.observationDate} · {fixUtf8Encoding(h.author)}:</span>{' '}
+                          <span className="text-[#4A453F]">{fixUtf8Encoding(h.text)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {viewingOrder.quotePdfUrl && (
+                <div className="p-2.5 bg-purple-50 border border-purple-200 rounded-xs flex items-center justify-between">
+                  <span className="font-bold text-purple-950 truncate">{viewingOrder.quotePdfName || 'Cotizacion_Oficial.pdf'}</span>
+                  <a
+                    href={viewingOrder.quotePdfUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    download={viewingOrder.quotePdfName || 'Cotizacion_Oficial.pdf'}
+                    className="px-2.5 py-1 bg-white border border-purple-300 rounded-xs font-bold text-purple-900 shrink-0"
+                  >
+                    Ver PDF
+                  </a>
+                </div>
+              )}
+
+              {Array.isArray(viewingOrder.items) && viewingOrder.items.length > 0 && (
+                <div>
+                  <span className="text-[10px] font-bold uppercase text-[#8C827A] block mb-1">
+                    Artículos ({viewingOrder.items.length})
+                  </span>
+                  <div className="bg-[#FAF8F5] p-2.5 rounded-xs border border-[#DCD4C9] space-y-1 max-h-32 overflow-y-auto">
+                    {viewingOrder.items.map((it: any, idx: number) => (
+                      <div key={idx} className="flex justify-between text-[11px] border-b border-neutral-200/60 pb-0.5 last:border-none">
+                        <span>{it.quantity}x {it.product?.name || it.name || 'Artículo'} ({it.selectedSize || it.size || 'U'})</span>
+                        <span className="font-semibold">${(it.unitPrice || it.product?.price || 0) * it.quantity}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 border-t border-[#DCD4C9] bg-[#FAF8F5] flex items-center justify-between gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={() => {
+                  const target = viewingOrder;
+                  setViewingOrder(null);
+                  setSelectedOrderForDetail(target);
+                }}
+                className="px-4 py-2 bg-[#18231C] hover:bg-black text-white text-xs font-bold uppercase rounded-xs flex items-center gap-1.5 cursor-pointer"
+              >
+                <Edit3 className="w-3.5 h-3.5 text-[#FDB813]" />
+                <span>Editar Ficha</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setViewingOrder(null)}
+                className="px-3 py-2 border border-[#DCD4C9] bg-white hover:bg-neutral-100 text-xs font-bold rounded-xs cursor-pointer"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Detail & Edit Order Modal */}
       {selectedOrderForDetail && (
@@ -1213,6 +1604,17 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
             setOrders((prev) => [cleanUpdated, ...prev.filter((o) => o.id !== cleanUpdated.id)]);
             try {
               await saveCRMOrder(cleanUpdated);
+              await upsertObservationReminderCalendarEvent('order', {
+                sourceId: cleanUpdated.id,
+                title: `${cleanUpdated.clientName} (${cleanUpdated.trackingCode || cleanUpdated.orderNumber || cleanUpdated.id})`,
+                reminderDate: cleanUpdated.reminderDate || '',
+                reminderTime: cleanUpdated.reminderTime,
+                reminderNote: cleanUpdated.reminderNote || cleanUpdated.observations,
+                branch: cleanUpdated.branch,
+                seller: cleanUpdated.seller,
+                createdBy: activeStaffUser,
+                createdByEmail: userSession?.email,
+              });
               recordAuditLog({
                 userEmail: userSession?.email || 'operador@pampero.com.ar',
                 userName: activeStaffUser,
@@ -1274,9 +1676,16 @@ const OrderDetailModal: React.FC<{
   const [status, setStatus] = useState<CRMOrderStatus>(order.status);
   const [seller, setSeller] = useState(order.seller || 'Sin asignar');
   const [branch, setBranch] = useState(order.branch || 'Ciudad');
+  const [companyLocation, setCompanyLocation] = useState(order.companyLocation || '');
+  const [locationUrl, setLocationUrl] = useState(order.locationUrl || '');
   const [totalEstimated, setTotalEstimated] = useState(String(order.totalEstimated || ''));
   const [blockReason, setBlockReason] = useState(order.blockReason || '');
   const [observations, setObservations] = useState(order.observations || '');
+  const [observationDate, setObservationDate] = useState(order.observationDate || new Date().toISOString().split('T')[0]);
+  const [reminderDate, setReminderDate] = useState(order.reminderDate || '');
+  const [reminderTime, setReminderTime] = useState(order.reminderTime || '');
+  const [reminderNote, setReminderNote] = useState(order.reminderNote || '');
+  const [generateReminder, setGenerateReminder] = useState(Boolean(order.reminderDate));
   const [quotePdfUrl, setQuotePdfUrl] = useState<string | undefined>(order.quotePdfUrl);
   const [quotePdfName, setQuotePdfName] = useState<string | undefined>(order.quotePdfName);
   const [clientApprovalStatus, setClientApprovalStatus] = useState<'pendiente' | 'aprobada' | 'rechazada'>(order.clientApprovalStatus || 'pendiente');
@@ -1304,14 +1713,48 @@ const OrderDetailModal: React.FC<{
 
   const handleUpdate = (e: React.FormEvent) => {
     e.preventDefault();
+    const activeReminderDate = generateReminder && reminderDate.trim() ? reminderDate.trim() : undefined;
+    const activeReminderTime = generateReminder && reminderTime.trim() ? reminderTime.trim() : undefined;
+    const cleanObs = observations.trim();
+    const activeReminderNote =
+      generateReminder && (reminderNote.trim() || cleanObs) ? (reminderNote.trim() || cleanObs) : undefined;
+
+    const prevHistory: ObservationHistoryEntry[] = Array.isArray(order.observationHistory)
+      ? order.observationHistory
+      : [];
+    const obsChanged = cleanObs && cleanObs !== (order.observations || '').trim();
+    const remChanged = activeReminderDate && activeReminderDate !== (order.reminderDate || '');
+    const nextHistory: ObservationHistoryEntry[] =
+      obsChanged || remChanged
+        ? [
+            {
+              id: `obs-${Date.now()}`,
+              observationDate: observationDate || new Date().toISOString().split('T')[0],
+              text: cleanObs || activeReminderNote || 'Recordatorio programado',
+              reminderDate: activeReminderDate,
+              reminderTime: activeReminderTime,
+              author: activeStaffUser || seller.trim() || 'Equipo Pampero',
+              createdAt: new Date().toISOString(),
+            },
+            ...prevHistory,
+          ]
+        : prevHistory;
+
     onSave({
       ...order,
       status,
-      seller,
+      seller: seller.trim() || 'Sin asignar',
       branch,
+      companyLocation: companyLocation.trim() || undefined,
+      locationUrl: locationUrl.trim() || undefined,
       totalEstimated: Number(totalEstimated) || order.totalEstimated,
       blockReason: blockReason.trim() || undefined,
-      observations: observations.trim() || undefined,
+      observations: cleanObs || undefined,
+      observationDate: cleanObs || activeReminderDate ? (observationDate || new Date().toISOString().split('T')[0]) : undefined,
+      reminderDate: activeReminderDate,
+      reminderTime: activeReminderTime,
+      reminderNote: activeReminderNote,
+      observationHistory: nextHistory.length > 0 ? nextHistory : undefined,
       quotePdfUrl,
       quotePdfName,
       quotePdfUploadedAt: quotePdfUrl ? (order.quotePdfUploadedAt || new Date().toISOString()) : undefined,
@@ -1324,7 +1767,7 @@ const OrderDetailModal: React.FC<{
 
   const handleContactWhatsApp = () => {
     const text = encodeURIComponent(
-      `Hola ${order.clientName}, nos comunicamos de Pampero Mendoza respecto a la cotización / pedido ${order.orderNumber || `#${order.id.slice(-6)}`}. ¿Cómo podemos ayudarte?`
+      `Hola ${order.clientName}, nos comunicamos de Pampero Mendoza respecto a la cotización / pedido ${order.trackingCode || order.orderNumber || `#${order.id.slice(-6)}`}. ¿Cómo podemos ayudarte?`
     );
     window.open(`https://wa.me/?text=${text}`, '_blank');
   };
@@ -1345,7 +1788,7 @@ const OrderDetailModal: React.FC<{
         >
           <div>
             <h3 className="font-bold text-sm uppercase tracking-wider flex items-center gap-2">
-              <span>{order.orderNumber || `#${order.id.slice(-6)}`}</span>
+              <span className="font-mono text-[#FDB813]">{order.trackingCode || order.orderNumber || `#${order.id.slice(-6)}`}</span>
               <span>·</span>
               <span className="truncate max-w-[200px]">{order.clientName}</span>
             </h3>
@@ -1390,31 +1833,42 @@ const OrderDetailModal: React.FC<{
             </div>
           </div>
 
-          {/* Asesor y Sucursal como selectores interactivos y autoasignables */}
+          {/* Asesor (texto libre con sugerencias) y Sucursal */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-[10px] text-[#6F6860] uppercase font-bold mb-1">
-                Asesor Comercial (Editable)
-              </label>
-              <select
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-[10px] text-[#6F6860] uppercase font-bold">
+                  Asesor Comercial (Libre / Editable)
+                </label>
+                {activeStaffUser && (
+                  <button
+                    type="button"
+                    onClick={() => setSeller(activeStaffUser)}
+                    className="text-[9px] text-[#B9522F] hover:underline font-bold cursor-pointer"
+                  >
+                    Asignarme
+                  </button>
+                )}
+              </div>
+              <input
+                type="text"
+                list="order-detail-sellers-datalist"
                 value={seller}
                 onChange={(e) => setSeller(e.target.value)}
+                placeholder="Nombre del vendedor"
                 className="w-full px-2.5 py-1.5 text-xs border border-[#DCD4C9] rounded-xs bg-white text-[#18231C] font-semibold outline-none focus:border-[#FDB813]"
-              >
-                {activeStaffUser && (
-                  <option value={activeStaffUser}>👤 Asignarme a mí ({activeStaffUser})</option>
-                )}
+              />
+              <datalist id="order-detail-sellers-datalist">
+                {activeStaffUser && <option value={activeStaffUser} />}
                 {sellersList.map((s) => (
-                  <option key={s.id} value={s.name}>
-                    {s.name} ({s.branch})
-                  </option>
+                  <option key={s.id} value={s.name} />
                 ))}
-                <option value="Itatí">Itatí</option>
-                <option value="Guada">Guada</option>
-                <option value="Carolina">Carolina</option>
-                <option value="Gustavo">Gustavo</option>
-                <option value="Sin asignar">Sin asignar</option>
-              </select>
+                <option value="Itatí" />
+                <option value="Guada" />
+                <option value="Carolina" />
+                <option value="Gustavo" />
+                <option value="Sin asignar" />
+              </datalist>
             </div>
             <div>
               <label className="block text-[10px] text-[#6F6860] uppercase font-bold mb-1">
@@ -1427,9 +1881,47 @@ const OrderDetailModal: React.FC<{
               >
                 <option value="Ciudad">Ciudad (San Martín 1500)</option>
                 <option value="Maipú">Maipú (Pescara 149)</option>
-                <option value="Luján de Cuyo">Luján de Cuyo (Sáenz Peña)</option>
+                <option value="Luján">Luján de Cuyo (Sáenz Peña)</option>
+                <option value="Luján de Cuyo">Luján de Cuyo</option>
                 <option value="Todas">Todas las sucursales</option>
               </select>
+            </div>
+          </div>
+
+          {/* Ubicación de la empresa para entregas / cadetería */}
+          <div className="p-2.5 bg-blue-50/60 border border-blue-200 rounded-xs space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="block text-[10px] text-blue-950 uppercase font-bold flex items-center gap-1">
+                <MapPin className="w-3 h-3 text-blue-700" />
+                <span>Ubicación de la Empresa (Entrega / Logística)</span>
+              </label>
+              {locationUrl && (
+                <a
+                  href={locationUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[10px] font-bold text-blue-700 hover:underline flex items-center gap-0.5"
+                >
+                  <span>Abrir Mapa</span>
+                  <ExternalLink className="w-2.5 h-2.5" />
+                </a>
+              )}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <input
+                type="text"
+                value={companyLocation}
+                onChange={(e) => setCompanyLocation(e.target.value)}
+                placeholder="Dirección o referencia"
+                className="w-full px-2.5 py-1.5 text-xs border border-blue-200 rounded-xs bg-white outline-none focus:border-blue-500"
+              />
+              <input
+                type="url"
+                value={locationUrl}
+                onChange={(e) => setLocationUrl(e.target.value)}
+                placeholder="Link Google Maps (opcional)"
+                className="w-full px-2.5 py-1.5 text-xs border border-blue-200 rounded-xs bg-white outline-none focus:border-blue-500"
+              />
             </div>
           </div>
 
@@ -1565,17 +2057,87 @@ const OrderDetailModal: React.FC<{
             />
           </div>
 
-          <div>
-            <label className="block text-[10px] text-[#6F6860] uppercase font-bold mb-1">
-              Notas y Observaciones
-            </label>
+          <div className="p-3 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs space-y-2.5">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <label className="block text-[10px] text-[#6F6860] uppercase font-bold">
+                Notas y Observaciones
+              </label>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] font-bold uppercase text-[#6F6860]">Fecha Obs.:</span>
+                <input
+                  type="date"
+                  value={observationDate}
+                  onChange={(e) => setObservationDate(e.target.value)}
+                  className="px-2 py-1 border border-[#DCD4C9] rounded-xs bg-white text-[11px] outline-none focus:border-[#B9522F]"
+                />
+              </div>
+            </div>
             <textarea
               value={observations}
               onChange={(e) => setObservations(e.target.value)}
               rows={2}
               placeholder="Observaciones de entrega, bordados especiales..."
-              className="w-full px-2.5 py-1.5 text-xs border border-[#DCD4C9] rounded-xs outline-none resize-none"
+              className="w-full px-2.5 py-1.5 text-xs border border-[#DCD4C9] rounded-xs bg-white outline-none resize-none"
             />
+
+            <div className="pt-2 border-t border-[#DCD4C9]/80 space-y-2">
+              <label className="flex items-center gap-2 cursor-pointer font-bold text-[#18231C] text-[11px]">
+                <input
+                  type="checkbox"
+                  checked={generateReminder}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setGenerateReminder(checked);
+                    if (checked && !reminderDate) {
+                      setReminderDate(new Date().toISOString().split('T')[0]);
+                    }
+                  }}
+                  className="accent-[#B9522F] w-3.5 h-3.5 cursor-pointer"
+                />
+                <Bell className="w-3.5 h-3.5 text-[#B9522F]" />
+                <span>Generar notificación y evento recordatorio en Calendario</span>
+              </label>
+
+              {generateReminder && (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+                  <div>
+                    <label className="block text-[9px] font-bold uppercase text-[#6F6860] mb-0.5">
+                      Fecha Recordatorio *
+                    </label>
+                    <input
+                      type="date"
+                      required={generateReminder}
+                      value={reminderDate}
+                      onChange={(e) => setReminderDate(e.target.value)}
+                      className="w-full px-2 py-1.5 border border-[#DCD4C9] rounded-xs bg-white text-[11px] outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[9px] font-bold uppercase text-[#6F6860] mb-0.5">
+                      Hora (opcional)
+                    </label>
+                    <input
+                      type="time"
+                      value={reminderTime}
+                      onChange={(e) => setReminderTime(e.target.value)}
+                      className="w-full px-2 py-1.5 border border-[#DCD4C9] rounded-xs bg-white text-[11px] outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[9px] font-bold uppercase text-[#6F6860] mb-0.5">
+                      Texto de Aviso
+                    </label>
+                    <input
+                      type="text"
+                      value={reminderNote}
+                      onChange={(e) => setReminderNote(e.target.value)}
+                      placeholder="Ej: Confirmar seña o entrega"
+                      className="w-full px-2 py-1.5 border border-[#DCD4C9] rounded-xs bg-white text-[11px] outline-none"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Items breakdown if present */}
@@ -1642,20 +2204,41 @@ const NewOrderModal: React.FC<{
   const [clientName, setClientName] = useState('');
   const [clientType, setClientType] = useState<'empresa' | 'consumidor_final'>('empresa');
   const [seller, setSeller] = useState('Itatí');
-  const [branch, setBranch] = useState('Ciudad');
+  const [branch, setBranch] = useState('Maipú');
+  const [companyLocation, setCompanyLocation] = useState('');
+  const [locationUrl, setLocationUrl] = useState('');
   const [totalUnits, setTotalUnits] = useState('');
   const [totalEstimated, setTotalEstimated] = useState('');
   const [observations, setObservations] = useState('');
+  const [observationDate, setObservationDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [generateReminder, setGenerateReminder] = useState(false);
+  const [reminderDate, setReminderDate] = useState('');
+  const [reminderTime, setReminderTime] = useState('');
+  const [reminderNote, setReminderNote] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!clientName.trim()) return;
-    onSave({ clientName, clientType, seller, branch, totalUnits, totalEstimated, observations });
+    onSave({
+      clientName,
+      clientType,
+      seller,
+      branch,
+      companyLocation,
+      locationUrl,
+      totalUnits,
+      totalEstimated,
+      observations,
+      observationDate,
+      reminderDate: generateReminder && reminderDate ? reminderDate : undefined,
+      reminderTime: generateReminder && reminderTime ? reminderTime : undefined,
+      reminderNote: generateReminder && (reminderNote || observations) ? (reminderNote || observations) : undefined,
+    });
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fadeIn">
-      <div className="bg-white rounded-xs border border-[#DCD4C9] shadow-2xl max-w-lg w-full overflow-hidden">
+      <div className="bg-white rounded-xs border border-[#DCD4C9] shadow-2xl max-w-lg w-full overflow-hidden max-h-[92vh] flex flex-col">
         <div className="bg-[#18231C] px-6 py-4 flex items-center justify-between text-white">
           <h3 className="font-bold text-sm uppercase tracking-wider">Nuevo Pedido Manual</h3>
           <button onClick={onClose} className="text-white/60 hover:text-white cursor-pointer">
@@ -1663,7 +2246,7 @@ const NewOrderModal: React.FC<{
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto">
           <div>
             <label className="block text-[10px] text-[#6F6860] uppercase font-bold mb-1">
               Empresa / Cliente *
@@ -1692,18 +2275,49 @@ const NewOrderModal: React.FC<{
             </div>
             <div>
               <label className="block text-[10px] text-[#6F6860] uppercase font-bold mb-1">
-                Vendedora
+                Vendedor Asignado
               </label>
-              <select
+              <input
+                type="text"
+                list="new-order-sellers-datalist"
                 value={seller}
                 onChange={(e) => setSeller(e.target.value)}
+                placeholder="Nombre del vendedor"
                 className="w-full px-3 py-2 text-xs border border-[#DCD4C9] rounded-xs outline-none bg-white"
-              >
-                <option value="Itatí">Itatí</option>
-                <option value="Guada">Guada</option>
-                <option value="Carolina">Carolina</option>
-                <option value="Gustavo">Gustavo</option>
-              </select>
+              />
+              <datalist id="new-order-sellers-datalist">
+                <option value="Itatí" />
+                <option value="Guada" />
+                <option value="Carolina" />
+                <option value="Gustavo" />
+              </datalist>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-[#FAF8F5] p-2.5 rounded-xs border border-[#DCD4C9]">
+            <div>
+              <label className="block text-[10px] text-[#6F6860] uppercase font-bold mb-1">
+                Ubicación / Dirección (opcional)
+              </label>
+              <input
+                type="text"
+                value={companyLocation}
+                onChange={(e) => setCompanyLocation(e.target.value)}
+                placeholder="Ej: Parque Industrial Las Heras"
+                className="w-full px-2.5 py-1.5 text-xs border border-[#DCD4C9] rounded-xs outline-none bg-white"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] text-[#6F6860] uppercase font-bold mb-1">
+                Link Google Maps (opcional)
+              </label>
+              <input
+                type="url"
+                value={locationUrl}
+                onChange={(e) => setLocationUrl(e.target.value)}
+                placeholder="https://maps.app.goo.gl/..."
+                className="w-full px-2.5 py-1.5 text-xs border border-[#DCD4C9] rounded-xs outline-none bg-white"
+              />
             </div>
           </div>
 
@@ -1748,17 +2362,67 @@ const NewOrderModal: React.FC<{
             </div>
           </div>
 
-          <div>
-            <label className="block text-[10px] text-[#6F6860] uppercase font-bold mb-1">
-              Observaciones
-            </label>
+          <div className="p-3 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <label className="block text-[10px] text-[#6F6860] uppercase font-bold">
+                Observaciones
+              </label>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] font-bold uppercase text-[#6F6860]">Fecha Obs.:</span>
+                <input
+                  type="date"
+                  value={observationDate}
+                  onChange={(e) => setObservationDate(e.target.value)}
+                  className="px-2 py-1 border border-[#DCD4C9] rounded-xs bg-white text-[11px] outline-none"
+                />
+              </div>
+            </div>
             <textarea
               value={observations}
               onChange={(e) => setObservations(e.target.value)}
               rows={2}
               placeholder="Notas del pedido o detalles de bordado..."
-              className="w-full px-3 py-2 text-xs border border-[#DCD4C9] rounded-xs outline-none resize-none"
+              className="w-full px-3 py-2 text-xs border border-[#DCD4C9] rounded-xs bg-white outline-none resize-none"
             />
+            <label className="flex items-center gap-2 cursor-pointer font-bold text-[#18231C] text-[11px] pt-1">
+              <input
+                type="checkbox"
+                checked={generateReminder}
+                onChange={(e) => {
+                  setGenerateReminder(e.target.checked);
+                  if (e.target.checked && !reminderDate) {
+                    setReminderDate(new Date().toISOString().split('T')[0]);
+                  }
+                }}
+                className="accent-[#B9522F] w-3.5 h-3.5 cursor-pointer"
+              />
+              <Bell className="w-3.5 h-3.5 text-[#B9522F]" />
+              <span>Generar notificación y evento recordatorio en Calendario</span>
+            </label>
+            {generateReminder && (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+                <input
+                  type="date"
+                  required={generateReminder}
+                  value={reminderDate}
+                  onChange={(e) => setReminderDate(e.target.value)}
+                  className="px-2 py-1.5 border border-[#DCD4C9] rounded-xs bg-white text-[11px] outline-none"
+                />
+                <input
+                  type="time"
+                  value={reminderTime}
+                  onChange={(e) => setReminderTime(e.target.value)}
+                  className="px-2 py-1.5 border border-[#DCD4C9] rounded-xs bg-white text-[11px] outline-none"
+                />
+                <input
+                  type="text"
+                  value={reminderNote}
+                  onChange={(e) => setReminderNote(e.target.value)}
+                  placeholder="Nota del recordatorio..."
+                  className="px-2 py-1.5 border border-[#DCD4C9] rounded-xs bg-white text-[11px] outline-none"
+                />
+              </div>
+            )}
           </div>
 
           <div className="flex items-center justify-end gap-3 pt-2 border-t border-[#DCD4C9]">

@@ -34,6 +34,7 @@ import { AdminPermissionsTab } from './admin/AdminPermissionsTab';
 import { AdminKanbanConfigTab } from './admin/AdminKanbanConfigTab';
 import { AdminCostCategoriesTab } from './admin/AdminCostCategoriesTab';
 import { AdminAuditLogsTab } from './admin/AdminAuditLogsTab';
+import { AdminCalendarTab } from './admin/AdminCalendarTab';
 import { ProductImageBgModal } from './admin/ProductImageBgModal';
 import { compressImage } from '../utils/imageCompressor';
 import { parseImageFileName } from '../utils/imageNamingParser';
@@ -107,11 +108,13 @@ import {
   Menu,
   FileText,
   Type,
-  Loader2
+  Loader2,
+  Calendar
 } from 'lucide-react';
 
 export type AdminTabKey = 
   | 'promos' 
+  | 'calendar'
   | 'mass_images' 
   | 'prices' 
   | 'categories'
@@ -203,6 +206,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const isTabVisible = React.useCallback((tabKey: AdminTabKey) => {
     if (!isEmployee) return true;
     if (tabKey === 'security' || tabKey === 'permissions' || tabKey === 'kanban_config' || tabKey === 'audit_logs') return false;
+    if (tabKey === 'calendar' && employeePermissions.includes('promos')) return true;
     return employeePermissions.includes(tabKey);
   }, [isEmployee, employeePermissions]);
 
@@ -867,6 +871,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       title: 'Ventas & Operaciones',
       tabs: [
         { key: 'promos', label: 'Promociones & Banners', icon: Tag },
+        { key: 'calendar', label: 'Calendario, Feriados & Banners', icon: Calendar },
         { key: 'coupons', label: 'Cupones de Descuento', icon: Ticket },
         { key: 'quotes', label: 'Solicitudes y Cotizaciones', icon: Receipt },
         { key: 'kanban_config', label: 'CRM & Etapas Kanban', icon: Sliders },
@@ -2800,6 +2805,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           {/* TAB: EDITAR GESTIÓN (COLUMNAS KANBAN) */}
           {activeTab === 'kanban_config' && (
             <AdminKanbanConfigTab
+              triggerSaveNotice={triggerSaveNotice}
+            />
+          )}
+
+          {/* TAB: CALENDARIO, FERIADOS Y ACTIVACIÓN CENTRAL DE BANNERS */}
+          {activeTab === 'calendar' && (
+            <AdminCalendarTab
+              promotions={promotions}
+              onUpdatePromotions={onUpdatePromotions}
+              setPromotions={setPromotions}
               triggerSaveNotice={triggerSaveNotice}
             />
           )}

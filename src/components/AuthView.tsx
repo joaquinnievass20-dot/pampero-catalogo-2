@@ -70,6 +70,9 @@ export const AuthView: React.FC<AuthViewProps> = ({
   const [street, setStreet] = useState('');
   const [streetNumber, setStreetNumber] = useState('');
   const [postalCode, setPostalCode] = useState('');
+  const [nearestBranch, setNearestBranch] = useState('Maipú');
+  const [companyLocation, setCompanyLocation] = useState('');
+  const [locationUrl, setLocationUrl] = useState('');
 
   // Admin Login Fields
   const [adminUser, setAdminUser] = useState('');
@@ -186,6 +189,9 @@ export const AuthView: React.FC<AuthViewProps> = ({
       cuitOrDni: cuit.trim(),
       address: `${street.trim()} ${streetNumber.trim()}`.trim(),
       city: 'Gran Mendoza',
+      nearestBranch: nearestBranch || 'Maipú',
+      companyLocation: companyLocation.trim() || undefined,
+      locationUrl: locationUrl.trim() || undefined,
       createdAt: new Date().toISOString().split('T')[0],
       status: 'active' as const,
       pricingTier: accountType === 'empresa' ? 'Corporativo / Mayorista' : 'Consumidor Final',
@@ -201,6 +207,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
         email: cleanEmail,
         role: 'client',
         clientType: accountType,
+        branch: nearestBranch || 'Maipú',
         clientData: {
           fullName: fullName.trim() || cleanEmail.split('@')[0],
           companyName: companyName.trim(),
@@ -208,6 +215,9 @@ export const AuthView: React.FC<AuthViewProps> = ({
           phone: phone.trim(),
           address: `${street.trim()} ${streetNumber.trim()}`.trim(),
           postalCode: postalCode.trim(),
+          nearestBranch: nearestBranch || 'Maipú',
+          companyLocation: companyLocation.trim() || undefined,
+          locationUrl: locationUrl.trim() || undefined,
         },
       };
 
@@ -224,6 +234,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
         email: cleanEmail,
         role: 'client',
         clientType: accountType,
+        branch: nearestBranch || 'Maipú',
         clientData: {
           fullName: fullName.trim() || cleanEmail.split('@')[0],
           companyName: companyName.trim(),
@@ -231,6 +242,9 @@ export const AuthView: React.FC<AuthViewProps> = ({
           phone: phone.trim(),
           address: `${street.trim()} ${streetNumber.trim()}`.trim(),
           postalCode: postalCode.trim(),
+          nearestBranch: nearestBranch || 'Maipú',
+          companyLocation: companyLocation.trim() || undefined,
+          locationUrl: locationUrl.trim() || undefined,
         },
       };
       setSuccessMessage('¡Cuenta registrada exitosamente! Ingresando al catálogo...');
@@ -939,18 +953,62 @@ export const AuthView: React.FC<AuthViewProps> = ({
                         </div>
                       </div>
 
-                      {/* CÓDIGO POSTAL */}
-                      <div>
-                        <label className="block text-[10px] uppercase tracking-[0.25em] font-bold text-[#4A453F] mb-1.5">
-                          CÓDIGO POSTAL
-                        </label>
-                        <input
-                          type="text"
-                          value={postalCode}
-                          onChange={(e) => setPostalCode(e.target.value)}
-                          placeholder="5500"
-                          className="w-full px-3.5 py-2.5 bg-white border border-[#DCD4C9] rounded-xs text-sm text-[#18231C] focus:outline-none focus:border-[#FDB813]"
-                        />
+                      {/* CÓDIGO POSTAL & SUCURSAL CERCANA */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[10px] uppercase tracking-[0.25em] font-bold text-[#4A453F] mb-1.5">
+                            CÓDIGO POSTAL
+                          </label>
+                          <input
+                            type="text"
+                            value={postalCode}
+                            onChange={(e) => setPostalCode(e.target.value)}
+                            placeholder="5500"
+                            className="w-full px-3.5 py-2.5 bg-white border border-[#DCD4C9] rounded-xs text-sm text-[#18231C] focus:outline-none focus:border-[#FDB813]"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] uppercase tracking-[0.25em] font-bold text-[#4A453F] mb-1.5">
+                            LOCAL PAMPERO MÁS CERCANO
+                          </label>
+                          <select
+                            value={nearestBranch}
+                            onChange={(e) => setNearestBranch(e.target.value)}
+                            className="w-full px-3.5 py-2.5 bg-white border border-[#DCD4C9] rounded-xs text-sm text-[#18231C] focus:outline-none focus:border-[#FDB813]"
+                          >
+                            <option value="Maipú">Maipú</option>
+                            <option value="Ciudad">Ciudad (Mendoza)</option>
+                            <option value="Luján">Luján de Cuyo</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* UBICACIÓN DE LA EMPRESA / ENTREGA */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[10px] uppercase tracking-[0.25em] font-bold text-[#4A453F] mb-1.5">
+                            UBICACIÓN / ZONA DE ENTREGA
+                          </label>
+                          <input
+                            type="text"
+                            value={companyLocation}
+                            onChange={(e) => setCompanyLocation(e.target.value)}
+                            placeholder="Ej: Parque Industrial Rodríguez Peña, Portón 2"
+                            className="w-full px-3.5 py-2.5 bg-white border border-[#DCD4C9] rounded-xs text-sm text-[#18231C] focus:outline-none focus:border-[#FDB813]"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] uppercase tracking-[0.25em] font-bold text-[#4A453F] mb-1.5">
+                            LINK GOOGLE MAPS (OPCIONAL)
+                          </label>
+                          <input
+                            type="url"
+                            value={locationUrl}
+                            onChange={(e) => setLocationUrl(e.target.value)}
+                            placeholder="https://maps.google.com/..."
+                            className="w-full px-3.5 py-2.5 bg-white border border-[#DCD4C9] rounded-xs text-sm text-[#18231C] focus:outline-none focus:border-[#FDB813]"
+                          />
+                        </div>
                       </div>
 
                       {/* Submit Button from Screenshot 1 */}

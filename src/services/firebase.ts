@@ -49,10 +49,20 @@ import {
   CostCategoryConfig,
   CRMSale,
   CRMTask,
+  CRMTaskTag,
+  CRMTaskTemplate,
+  CRMCalendarEvent,
   UserSession,
   AuditLogEntry,
   SiteTextsConfig,
+  LeadVisit,
+  CalendarHolidayItem,
+  CalendarModuleConfig,
 } from '../types';
+import {
+  DEFAULT_ARGENTINA_MENDOZA_DATES,
+  DEFAULT_CALENDAR_MODULE_CONFIG,
+} from '../data/calendarDatesData';
 import { MASTER_ADMIN_EMAIL } from '../utils/authInit';
 import {
   normalizeCRMOrder,
@@ -892,6 +902,9 @@ export async function saveFirestorePromotion(promo: Promotion): Promise<boolean>
       subtitleColor: promo.subtitleColor || '#DCD4C9',
       subtitleFontSize: promo.subtitleFontSize || '16px',
       primaryBtnText: promo.primaryBtnText || 'VER CATÁLOGO',
+      linkedHolidayId: promo.linkedHolidayId || '',
+      scheduledStartDate: promo.scheduledStartDate || '',
+      scheduledEndDate: promo.scheduledEndDate || '',
       buttons: Array.isArray(promo.buttons)
         ? promo.buttons.map((b) => ({
             id: b.id,
@@ -975,6 +988,9 @@ export async function saveFirestorePromotionsBatch(promos: Promotion[]): Promise
         subtitleColor: promo.subtitleColor || '#DCD4C9',
         subtitleFontSize: promo.subtitleFontSize || '16px',
         primaryBtnText: promo.primaryBtnText || 'VER CATÁLOGO',
+        linkedHolidayId: promo.linkedHolidayId || '',
+        scheduledStartDate: promo.scheduledStartDate || '',
+        scheduledEndDate: promo.scheduledEndDate || '',
         buttons: Array.isArray(promo.buttons)
           ? promo.buttons.map((b) => ({
               id: b.id,
@@ -1034,6 +1050,9 @@ export function subscribeToFirestorePromotions(
               subtitleColor: data.subtitleColor || '#DCD4C9',
               subtitleFontSize: data.subtitleFontSize || '16px',
               primaryBtnText: data.primaryBtnText || 'VER CATÁLOGO',
+              linkedHolidayId: data.linkedHolidayId || undefined,
+              scheduledStartDate: data.scheduledStartDate || undefined,
+              scheduledEndDate: data.scheduledEndDate || undefined,
               buttons: Array.isArray(data.buttons) ? data.buttons : [],
             });
           });
@@ -1540,7 +1559,9 @@ export const saveFirestoreUser = async (user: RegisteredUser): Promise<{ success
         sellerRole: sanitizedUser.sellerRole || 'vendedor',
         branch: sanitizedUser.branch || 'Maipú',
         allowedTabs: sanitizedUser.allowedTabs || ['products', 'variants', 'prices', 'mass_images', 'promos', 'quotes', 'crm'],
-        crmTabs: sanitizedUser.crmTabs || ['visits', 'board', 'tasks', 'suppliers', 'costs'],
+        crmTabs: sanitizedUser.crmTabs || ['visits', 'board', 'tasks', 'calendar', 'suppliers', 'costs'],
+        canControlTasks: Boolean(sanitizedUser.canControlTasks),
+        crmCalendarConfigured: Boolean(sanitizedUser.crmTabs?.length),
         active: sanitizedUser.status === 'active',
         createdAt: sanitizedUser.createdAt || new Date().toISOString(),
       };
@@ -1773,7 +1794,9 @@ export async function createFirebaseAuthAndFirestoreUser(
           sellerRole: user.sellerRole || 'vendedor',
           branch: user.branch || 'Maipú',
           allowedTabs: user.allowedTabs || ['products', 'variants', 'prices', 'mass_images', 'promos', 'quotes', 'crm'],
-          crmTabs: user.crmTabs || ['visits', 'board', 'tasks', 'suppliers', 'costs'],
+          crmTabs: user.crmTabs || ['visits', 'board', 'tasks', 'calendar', 'suppliers', 'costs'],
+          canControlTasks: Boolean(user.canControlTasks),
+          crmCalendarConfigured: Boolean(user.crmTabs?.length),
           active: user.status === 'active',
           createdAt: user.createdAt || new Date().toISOString(),
         },
@@ -2695,6 +2718,10 @@ export async function authenticateDualUser(
       email: matchedUserDoc.email,
       role: determinedRole,
       clientType: matchedUserDoc.type === 'empresa' ? 'empresa' : (determinedRole === 'admin' || determinedRole === 'employee' ? 'empresa' : 'consumidor'),
+      branch: matchedUserDoc.branch || matchedUserDoc.nearestBranch,
+      sellerName: matchedUserDoc.name || matchedUserDoc.repName,
+      sellerRole: matchedUserDoc.sellerRole,
+      canControlTasks: Boolean(matchedUserDoc.canControlTasks || isAdminRole || matchedUserDoc.sellerRole === 'local'),
       clientData: {
         fullName: matchedUserDoc.repName || matchedUserDoc.name,
         companyName: matchedUserDoc.type === 'empresa' ? matchedUserDoc.name : undefined,
@@ -2702,6 +2729,9 @@ export async function authenticateDualUser(
         phone: matchedUserDoc.phone,
         address: matchedUserDoc.address,
         pricingTier: matchedUserDoc.pricingTier,
+        nearestBranch: matchedUserDoc.nearestBranch || matchedUserDoc.branch,
+        companyLocation: matchedUserDoc.companyLocation,
+        locationUrl: matchedUserDoc.locationUrl,
       },
       loggedAt: new Date().toISOString(),
     };
@@ -2754,9 +2784,14 @@ export async function authenticateDualUser(
             email: matchedEmp.email,
             role: 'employee',
             clientType: 'empresa',
+            branch: matchedEmp.branch,
+            sellerName: matchedEmp.name,
+            sellerRole: matchedEmp.sellerRole,
+            canControlTasks: Boolean(matchedEmp.canControlTasks || matchedEmp.sellerRole === 'local'),
             clientData: {
               fullName: matchedEmp.name,
-              companyName: 'Pampero Maipú - Empleado',
+              companyName: `Pampero ${matchedEmp.branch || 'Maipú'} - Empleado`,
+              nearestBranch: matchedEmp.branch,
             },
             loggedAt: new Date().toISOString(),
           },
@@ -2792,6 +2827,11 @@ export async function authenticateDualUser(
           let clientDataObj: any = { fullName: cred.user.displayName || idClean };
           let clientTypeVal: 'consumidor' | 'empresa' = 'consumidor';
 
+          let userBranch: string | undefined;
+          let userSellerName: string | undefined;
+          let userSellerRole: 'admin' | 'local' | 'vendedor' | undefined;
+          let userCanControlTasks = false;
+
           if (firestoreDb) {
             try {
               const uSnap = await getDoc(doc(firestoreDb, 'users', cred.user.uid)).catch(() => null);
@@ -2799,6 +2839,10 @@ export async function authenticateDualUser(
               if (uData) {
                 userRole = uData.role === 'admin' || uData.type === 'admin' ? 'admin' : (uData.role === 'employee' || uData.type === 'empleado' ? 'employee' : 'client');
                 clientTypeVal = uData.type === 'empresa' ? 'empresa' : (userRole === 'admin' || userRole === 'employee' ? 'empresa' : 'consumidor');
+                userBranch = uData.branch || uData.nearestBranch;
+                userSellerName = uData.name || uData.repName;
+                userSellerRole = uData.sellerRole;
+                userCanControlTasks = Boolean(uData.canControlTasks || userRole === 'admin' || uData.sellerRole === 'local');
                 clientDataObj = {
                   fullName: uData.repName || uData.name || cred.user.displayName || idClean,
                   companyName: uData.type === 'empresa' ? uData.name : undefined,
@@ -2806,6 +2850,9 @@ export async function authenticateDualUser(
                   phone: uData.phone,
                   address: uData.address,
                   pricingTier: uData.pricingTier,
+                  nearestBranch: uData.nearestBranch || uData.branch,
+                  companyLocation: uData.companyLocation,
+                  locationUrl: uData.locationUrl,
                 };
               }
             } catch {}
@@ -2818,6 +2865,10 @@ export async function authenticateDualUser(
               email: cred.user.email || idClean,
               role: userRole,
               clientType: clientTypeVal,
+              branch: userBranch,
+              sellerName: userSellerName,
+              sellerRole: userSellerRole,
+              canControlTasks: userCanControlTasks,
               clientData: clientDataObj,
               loggedAt: new Date().toISOString(),
             },
@@ -3776,9 +3827,30 @@ export function subscribeToKanbanColumns(
 
 export async function saveCRMTask(task: CRMTask): Promise<{ success: boolean; id: string; error?: string }> {
   const taskId = task.id || `TSK-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+  const normalizedAssignees = Array.from(
+    new Set(
+      [
+        ...(Array.isArray(task.assignedToList) ? task.assignedToList : []),
+        task.assignedTo,
+      ]
+        .map((v) => String(v || '').trim())
+        .filter(Boolean)
+    )
+  );
+  const primaryAssignee = normalizedAssignees[0] || String(task.assignedTo || '').trim();
+
   const cleanTask: CRMTask = sanitizeObjectEncoding({
     ...task,
     id: taskId,
+    assignedTo: primaryAssignee,
+    assignedToList: normalizedAssignees,
+    tags: Array.isArray(task.tags) ? Array.from(new Set(task.tags.map((t) => String(t).trim()).filter(Boolean))) : [],
+    advanceLogs: Array.isArray(task.advanceLogs) ? task.advanceLogs : [],
+    comments: Array.isArray(task.comments) ? task.comments : [],
+    evidencePhotos: Array.isArray(task.evidencePhotos) ? task.evidencePhotos : [],
+    scheduleType: task.scheduleType || 'immediate',
+    activationMonths: Array.isArray(task.activationMonths) ? task.activationMonths : [],
+    isActivated: task.isActivated !== undefined ? Boolean(task.isActivated) : true,
     progressPercent: Math.max(0, Math.min(100, Number(task.progressPercent) || 0)),
     targetProgressPercent:
       task.targetProgressPercent !== undefined
@@ -3835,12 +3907,39 @@ export function subscribeToCRMTasks(
   onUpdate: (tasks: CRMTask[]) => void,
   onError?: (err: Error) => void
 ): () => void {
+  const normalizeTaskItem = (raw: any, fallbackId?: string): CRMTask => {
+    const assignees = Array.from(
+      new Set(
+        [
+          ...(Array.isArray(raw?.assignedToList) ? raw.assignedToList : []),
+          raw?.assignedTo,
+        ]
+          .map((v: any) => String(v || '').trim())
+          .filter(Boolean)
+      )
+    );
+    return sanitizeObjectEncoding({
+      ...raw,
+      id: fallbackId || raw?.id,
+      assignedTo: assignees[0] || String(raw?.assignedTo || ''),
+      assignedToList: assignees,
+      tags: Array.isArray(raw?.tags) ? raw.tags : [],
+      advanceLogs: Array.isArray(raw?.advanceLogs) ? raw.advanceLogs : [],
+      comments: Array.isArray(raw?.comments) ? raw.comments : [],
+      evidencePhotos: Array.isArray(raw?.evidencePhotos) ? raw.evidencePhotos : [],
+      scheduleType: raw?.scheduleType || 'immediate',
+      activationMonths: Array.isArray(raw?.activationMonths) ? raw.activationMonths : [],
+      isActivated: raw?.isActivated !== undefined ? Boolean(raw.isActivated) : true,
+      progressPercent: Math.max(0, Math.min(100, Number(raw?.progressPercent) || 0)),
+    }) as CRMTask;
+  };
+
   try {
     const local = localStorage.getItem('pampero_crm_tasks');
     if (local) {
       const parsed = JSON.parse(local);
       if (Array.isArray(parsed)) {
-        onUpdate(parsed.map(sanitizeObjectEncoding));
+        onUpdate(parsed.map((t) => normalizeTaskItem(t)));
       }
     }
   } catch {}
@@ -3855,14 +3954,7 @@ export function subscribeToCRMTasks(
       (snapshot) => {
         const list: CRMTask[] = [];
         snapshot.forEach((d) => {
-          const data = d.data() as CRMTask;
-          list.push(
-            sanitizeObjectEncoding({
-              ...data,
-              id: d.id,
-              progressPercent: Math.max(0, Math.min(100, Number(data.progressPercent) || 0)),
-            })
-          );
+          list.push(normalizeTaskItem(d.data(), d.id));
         });
         try {
           localStorage.setItem('pampero_crm_tasks', JSON.stringify(list));
@@ -3876,6 +3968,517 @@ export function subscribeToCRMTasks(
     );
   } catch (err) {
     console.warn('[FIREBASE] Error subscribing to crm_tareas:', err);
+    return () => {};
+  }
+}
+
+// ==========================================
+// CRM TASK TEMPLATES & TAGS CONFIG (store_config/crm_task_config)
+// ==========================================
+
+export const DEFAULT_TASK_TAGS: CRMTaskTag[] = [
+  { id: 'tag-stock', name: 'Stock', color: '#2563EB' },
+  { id: 'tag-pedidos', name: 'Control de pedidos', color: '#D97706' },
+  { id: 'tag-salon', name: 'Salón', color: '#059669' },
+  { id: 'tag-logistica', name: 'Logística', color: '#7C3AED' },
+  { id: 'tag-admin', name: 'Administración', color: '#475569' },
+];
+
+export const DEFAULT_TASK_TEMPLATES: CRMTaskTemplate[] = [
+  {
+    id: 'tpl-stock-talles',
+    title: 'Control semanal de stock y curva de talles',
+    description: 'Revisar faltantes de talles especiales y reposición de prendas de alta rotación.',
+    defaultImportance: 'alta',
+    defaultTags: ['Stock'],
+    defaultRequiredAdvance: 'Listado de reposición cargado y verificado',
+    defaultTargetProgressPercent: 100,
+    defaultBranch: 'Todas',
+  },
+  {
+    id: 'tpl-control-pedidos',
+    title: 'Control de pedidos pendientes de entrega',
+    description: 'Verificar estado de bordado/estampado, embalaje y coordinar despacho o retiro.',
+    defaultImportance: 'urgente',
+    defaultTags: ['Control de pedidos'],
+    defaultRequiredAdvance: 'Pedidos confirmados con cliente y fecha asignada',
+    defaultTargetProgressPercent: 100,
+    defaultBranch: 'Todas',
+  },
+  {
+    id: 'tpl-salon-vidriera',
+    title: 'Orden y reposición de salón / vidriera',
+    description: 'Limpieza, reposición de maniquíes y verificación de precios visibles en salón.',
+    defaultImportance: 'media',
+    defaultTags: ['Salón'],
+    defaultRequiredAdvance: 'Salón ordenado con respaldo fotográfico',
+    defaultTargetProgressPercent: 100,
+    defaultBranch: 'Todas',
+  },
+];
+
+export async function saveCRMTaskConfig(
+  tags: CRMTaskTag[],
+  templates: CRMTaskTemplate[]
+): Promise<{ success: boolean; error?: string }> {
+  const cleanTags = (Array.isArray(tags) ? tags : DEFAULT_TASK_TAGS).map((t, i) =>
+    sanitizeObjectEncoding({
+      id: t.id || `tag-${Date.now()}-${i}`,
+      name: String(t.name || '').trim(),
+      color: t.color || '#2563EB',
+    })
+  ).filter((t) => Boolean(t.name));
+
+  const cleanTemplates = (Array.isArray(templates) ? templates : DEFAULT_TASK_TEMPLATES).map((tpl, i) =>
+    sanitizeObjectEncoding({
+      ...tpl,
+      id: tpl.id || `tpl-${Date.now()}-${i}`,
+      title: String(tpl.title || '').trim(),
+      defaultImportance: tpl.defaultImportance || 'media',
+      defaultTags: Array.isArray(tpl.defaultTags) ? tpl.defaultTags : [],
+      defaultTargetProgressPercent: Math.max(10, Math.min(100, Number(tpl.defaultTargetProgressPercent) || 100)),
+    })
+  ).filter((tpl) => Boolean(tpl.title));
+
+  try {
+    localStorage.setItem('pampero_crm_task_tags', JSON.stringify(cleanTags));
+    localStorage.setItem('pampero_crm_task_templates', JSON.stringify(cleanTemplates));
+  } catch {}
+
+  const firestoreDb = db || getFirebaseDb();
+  if (firestoreDb) {
+    try {
+      const refDoc = doc(firestoreDb, 'store_config', 'crm_task_config');
+      const cleaned = JSON.parse(
+        JSON.stringify({ tags: cleanTags, templates: cleanTemplates, updatedAt: new Date().toISOString() }, (_k, v) =>
+          v === undefined ? null : v
+        )
+      );
+      await setDoc(refDoc, cleaned, { merge: true });
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Error guardando configuración de tareas' };
+    }
+  }
+  return { success: true };
+}
+
+export function subscribeToCRMTaskConfig(
+  onUpdate: (config: { tags: CRMTaskTag[]; templates: CRMTaskTemplate[] }) => void
+): () => void {
+  const getInitial = () => {
+    try {
+      const savedTags = localStorage.getItem('pampero_crm_task_tags');
+      const savedTpls = localStorage.getItem('pampero_crm_task_templates');
+      return {
+        tags: savedTags ? (JSON.parse(savedTags) as CRMTaskTag[]) : DEFAULT_TASK_TAGS,
+        templates: savedTpls ? (JSON.parse(savedTpls) as CRMTaskTemplate[]) : DEFAULT_TASK_TEMPLATES,
+      };
+    } catch {
+      return { tags: DEFAULT_TASK_TAGS, templates: DEFAULT_TASK_TEMPLATES };
+    }
+  };
+
+  onUpdate(getInitial());
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return () => {};
+
+  try {
+    return onSnapshot(
+      doc(firestoreDb, 'store_config', 'crm_task_config'),
+      (snap) => {
+        if (snap.exists()) {
+          const data = snap.data();
+          const tags = Array.isArray(data?.tags) && data.tags.length > 0 ? data.tags.map(sanitizeObjectEncoding) : DEFAULT_TASK_TAGS;
+          const templates = Array.isArray(data?.templates) ? data.templates.map(sanitizeObjectEncoding) : DEFAULT_TASK_TEMPLATES;
+          try {
+            localStorage.setItem('pampero_crm_task_tags', JSON.stringify(tags));
+            localStorage.setItem('pampero_crm_task_templates', JSON.stringify(templates));
+          } catch {}
+          onUpdate({ tags, templates });
+        } else {
+          onUpdate(getInitial());
+        }
+      },
+      () => onUpdate(getInitial())
+    );
+  } catch {
+    return () => {};
+  }
+}
+
+// ==========================================
+// CRM CALENDAR EVENTS PERSISTENCE (crm_calendar_events)
+// ==========================================
+
+export async function saveCRMCalendarEvent(eventItem: CRMCalendarEvent): Promise<{ success: boolean; id: string; error?: string }> {
+  const eventId = eventItem.id || `EVT-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+  const cleanEvent: CRMCalendarEvent = sanitizeObjectEncoding({
+    ...eventItem,
+    id: eventId,
+    visibilityType: eventItem.visibilityType || 'all',
+    visibleToUsers: Array.isArray(eventItem.visibleToUsers) ? eventItem.visibleToUsers : [],
+    updatedAt: new Date().toISOString(),
+    createdAt: eventItem.createdAt || new Date().toISOString(),
+  });
+
+  try {
+    const local: CRMCalendarEvent[] = JSON.parse(localStorage.getItem('pampero_crm_calendar_events') || '[]');
+    const updated = [cleanEvent, ...local.filter((e) => e.id !== cleanEvent.id)];
+    localStorage.setItem('pampero_crm_calendar_events', JSON.stringify(updated));
+  } catch {}
+
+  const firestoreDb = db || getFirebaseDb();
+  if (firestoreDb) {
+    try {
+      const docRef = doc(firestoreDb, 'crm_calendar_events', cleanEvent.id);
+      const cleaned = JSON.parse(JSON.stringify(cleanEvent, (_k, v) => (v === undefined ? null : v)));
+      await setDoc(docRef, cleaned, { merge: true });
+      return { success: true, id: cleanEvent.id };
+    } catch (err: any) {
+      return { success: false, id: cleanEvent.id, error: err?.message || 'Error guardando evento de calendario' };
+    }
+  }
+  return { success: true, id: cleanEvent.id };
+}
+
+export async function deleteCRMCalendarEvent(eventId: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const local: CRMCalendarEvent[] = JSON.parse(localStorage.getItem('pampero_crm_calendar_events') || '[]');
+    localStorage.setItem('pampero_crm_calendar_events', JSON.stringify(local.filter((e) => e.id !== eventId)));
+  } catch {}
+
+  const firestoreDb = db || getFirebaseDb();
+  if (firestoreDb) {
+    try {
+      await deleteDoc(doc(firestoreDb, 'crm_calendar_events', eventId));
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Error eliminando evento de calendario' };
+    }
+  }
+  return { success: true };
+}
+
+export function subscribeToCRMCalendarEvents(
+  onUpdate: (events: CRMCalendarEvent[]) => void
+): () => void {
+  try {
+    const local = localStorage.getItem('pampero_crm_calendar_events');
+    if (local) {
+      const parsed = JSON.parse(local);
+      if (Array.isArray(parsed)) onUpdate(parsed.map(sanitizeObjectEncoding));
+    }
+  } catch {}
+
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return () => {};
+
+  try {
+    return onSnapshot(
+      collection(firestoreDb, 'crm_calendar_events'),
+      (snapshot) => {
+        const list: CRMCalendarEvent[] = [];
+        snapshot.forEach((d) => {
+          list.push(sanitizeObjectEncoding({ ...(d.data() as CRMCalendarEvent), id: d.id }));
+        });
+        try {
+          localStorage.setItem('pampero_crm_calendar_events', JSON.stringify(list));
+        } catch {}
+        onUpdate(list);
+      },
+      (err) => {
+        console.warn('[FIREBASE] crm_calendar_events warning:', err.message);
+      }
+    );
+  } catch {
+    return () => {};
+  }
+}
+
+// ==========================================
+// CÓDIGO DE SEGUIMIENTO ESTRUCTURADO: [E|C][M|C|L][DDMM][00000]
+// ==========================================
+
+export function resolveTrackingLocationChar(branchOrLocation?: string): 'M' | 'C' | 'L' {
+  const norm = String(branchOrLocation || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+  if (norm.includes('maip')) return 'M';
+  if (norm.includes('luj') || norm.includes('chacras')) return 'L';
+  if (norm.includes('ciud') || norm.includes('centro') || norm.includes('mendoza') || norm.includes('capital') || norm.includes('godoy')) {
+    return 'C';
+  }
+  return 'M';
+}
+
+export function buildTrackingSeriesPrefix(
+  clientType?: string,
+  branchOrLocation?: string,
+  dateObj: Date = new Date()
+): string {
+  const typeNorm = String(clientType || '').toLowerCase();
+  const typeChar: 'E' | 'C' = typeNorm.includes('empr') || typeNorm.includes('corp') || typeNorm.includes('mayor') ? 'E' : 'C';
+  const locChar = resolveTrackingLocationChar(branchOrLocation);
+  const validDate = dateObj instanceof Date && !Number.isNaN(dateObj.getTime()) ? dateObj : new Date();
+  const dd = String(validDate.getDate()).padStart(2, '0');
+  const mm = String(validDate.getMonth() + 1).padStart(2, '0');
+  return `${typeChar}${locChar}${dd}${mm}`;
+}
+
+function scanLocalSeriesMaxSequence(prefix: string): number {
+  if (typeof window === 'undefined') return 0;
+  let maxSeq = 0;
+  const regex = new RegExp(`^${prefix}(\\d{5})$`, 'i');
+
+  const inspectCodes = (items: any[]) => {
+    items.forEach((item) => {
+      if (!item || typeof item !== 'object') return;
+      [item.trackingCode, item.orderNumber, item.quoteId].forEach((code) => {
+        if (!code) return;
+        const m = regex.exec(String(code).trim());
+        if (m) {
+          const n = Number(m[1]) || 0;
+          if (n > maxSeq) maxSeq = n;
+        }
+      });
+    });
+  };
+
+  try {
+    const orders = JSON.parse(localStorage.getItem('pampero_crm_orders') || '[]');
+    if (Array.isArray(orders)) inspectCodes(orders);
+  } catch {}
+
+  try {
+    const visits = JSON.parse(localStorage.getItem('pampero_lead_visits') || '[]');
+    if (Array.isArray(visits)) inspectCodes(visits);
+  } catch {}
+
+  return maxSeq;
+}
+
+export async function getNextStructuredTrackingCode(
+  clientType?: string,
+  branchOrLocation?: string,
+  dateObj: Date = new Date()
+): Promise<string> {
+  const prefix = buildTrackingSeriesPrefix(clientType, branchOrLocation, dateObj);
+  const storageKey = `pampero_tracking_series_${prefix}`;
+
+  let localCurrent = 0;
+  try {
+    localCurrent = Math.max(0, Number(localStorage.getItem(storageKey) || '0') || 0);
+  } catch {}
+
+  const scannedLocalMax = scanLocalSeriesMaxSequence(prefix);
+  const localFloor = Math.max(localCurrent, scannedLocalMax);
+
+  const firestoreDb = db || getFirebaseDb();
+  if (firestoreDb) {
+    try {
+      const counterRef = doc(firestoreDb, 'counters', `tracking_series_${prefix}`);
+      const nextSeq = await runTransaction(firestoreDb, async (tx) => {
+        const snap = await tx.get(counterRef);
+        const currentRemote = snap.exists() ? Number(snap.data()?.seq || 0) || 0 : 0;
+        const baseSeq = Math.max(currentRemote, localFloor);
+        const nextVal = baseSeq + 1;
+        tx.set(counterRef, { prefix, seq: nextVal, updatedAt: new Date().toISOString() }, { merge: true });
+        return nextVal;
+      });
+      try {
+        localStorage.setItem(storageKey, String(nextSeq));
+      } catch {}
+      return `${prefix}${String(nextSeq).padStart(5, '0')}`;
+    } catch (err) {
+      console.warn('[TRACKING] Fallback local counter para serie', prefix, err);
+    }
+  }
+
+  const nextLocal = localFloor + 1;
+  try {
+    localStorage.setItem(storageKey, String(nextLocal));
+  } catch {}
+  return `${prefix}${String(nextLocal).padStart(5, '0')}`;
+}
+
+export function isValidStructuredTrackingCode(code?: string): boolean {
+  if (!code) return false;
+  return /^[EC][MCL]\d{4}\d{5}$/i.test(String(code).trim());
+}
+
+/**
+ * Centraliza TODAS las visitas comerciales / generales asignando un código estructurado
+ * [E][M|C|L][DDMM][00000] persistente a aquellas fichas que aún no lo tengan.
+ */
+export async function ensureVisitsHaveStructuredTrackingCodes(visits: LeadVisit[]): Promise<LeadVisit[]> {
+  if (!Array.isArray(visits) || visits.length === 0) return visits;
+  const missing = visits.filter((v) => v && !isValidStructuredTrackingCode(v.trackingCode));
+  if (missing.length === 0) return visits;
+
+  const updatedMap = new Map<string, LeadVisit>();
+  for (const v of missing) {
+    const rawDate = String(v.date || '').trim();
+    const visitDate = /^\d{4}-\d{2}-\d{2}$/.test(rawDate)
+      ? new Date(`${rawDate}T12:00:00`)
+      : rawDate
+      ? new Date(rawDate)
+      : new Date();
+    const code = await getNextStructuredTrackingCode('empresa', v.branch || 'Maipú', visitDate);
+    const enriched: LeadVisit = sanitizeObjectEncoding({
+      ...v,
+      trackingCode: code,
+      updatedAt: v.updatedAt || new Date().toISOString(),
+    });
+    updatedMap.set(v.id, enriched);
+    saveLeadVisit(enriched).catch(() => {});
+  }
+
+  return visits.map((v) => updatedMap.get(v.id) || v);
+}
+
+/**
+ * Sincroniza un recordatorio de observación (desde Visitas Comerciales o Seguimiento Empresas)
+ * hacia el Calendario de Gestión (`crm_calendar_events`).
+ */
+export async function upsertObservationReminderCalendarEvent(
+  sourceType: 'visit' | 'order',
+  payload: {
+    sourceId: string;
+    title: string;
+    reminderDate: string;
+    reminderTime?: string;
+    reminderNote?: string;
+    branch?: string;
+    seller?: string;
+    createdBy: string;
+    createdByEmail?: string;
+  }
+): Promise<void> {
+  const eventId = `REM-${sourceType === 'visit' ? 'VIS' : 'ORD'}-${payload.sourceId}`;
+  if (!payload.reminderDate || !payload.reminderDate.trim()) {
+    await deleteCRMCalendarEvent(eventId);
+    return;
+  }
+  const cleanEvent: CRMCalendarEvent = sanitizeObjectEncoding({
+    id: eventId,
+    title: `[Recordatorio ${sourceType === 'visit' ? 'Visita' : 'Seguimiento'}] ${payload.title}`,
+    description: payload.reminderNote || 'Recordatorio generado desde observación comercial.',
+    date: payload.reminderDate.trim(),
+    time: payload.reminderTime?.trim() || undefined,
+    eventType: sourceType === 'visit' ? 'visita' : 'seguimiento',
+    branch: payload.branch || 'Maipú',
+    visibilityType: 'all',
+    visibleToUsers: [],
+    createdBy: payload.createdBy || payload.seller || 'Equipo Pampero',
+    createdByEmail: payload.createdByEmail || '',
+    completed: false,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
+  await saveCRMCalendarEvent(cleanEvent);
+}
+
+// ==========================================
+// FERIADOS, FECHAS CLAVE Y CONFIGURACIÓN DEL CALENDARIO
+// ==========================================
+
+export async function saveCalendarHolidaysAndConfig(
+  holidays: CalendarHolidayItem[],
+  config: CalendarModuleConfig
+): Promise<boolean> {
+  const cleanHolidays = Array.isArray(holidays) ? holidays.map(sanitizeObjectEncoding) : DEFAULT_ARGENTINA_MENDOZA_DATES;
+  const cleanConfig: CalendarModuleConfig = {
+    ...DEFAULT_CALENDAR_MODULE_CONFIG,
+    ...(config || {}),
+  };
+
+  try {
+    localStorage.setItem('pampero_calendar_holidays', JSON.stringify(cleanHolidays));
+    localStorage.setItem('pampero_calendar_config', JSON.stringify(cleanConfig));
+  } catch {}
+
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return true;
+  try {
+    const docRef = doc(firestoreDb, 'store_config', 'calendar_config');
+    const cleanedPayload = JSON.parse(
+      JSON.stringify(
+        {
+          holidays: cleanHolidays,
+          config: cleanConfig,
+          updatedAt: new Date().toISOString(),
+        },
+        (_k, v) => (v === undefined ? null : v)
+      )
+    );
+    await setDoc(docRef, cleanedPayload, { merge: true });
+    return true;
+  } catch (err) {
+    console.warn('[CALENDAR CONFIG] Error guardando configuración en Firestore:', err);
+    return false;
+  }
+}
+
+export function subscribeToCalendarConfig(
+  onUpdate: (data: { holidays: CalendarHolidayItem[]; config: CalendarModuleConfig }) => void
+): () => void {
+  const readLocal = (): { holidays: CalendarHolidayItem[]; config: CalendarModuleConfig } => {
+    let holidays = DEFAULT_ARGENTINA_MENDOZA_DATES;
+    let config = DEFAULT_CALENDAR_MODULE_CONFIG;
+    try {
+      const hRaw = localStorage.getItem('pampero_calendar_holidays');
+      if (hRaw) {
+        const parsed = JSON.parse(hRaw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          holidays = parsed.map(sanitizeObjectEncoding);
+        }
+      }
+      const cRaw = localStorage.getItem('pampero_calendar_config');
+      if (cRaw) {
+        const parsedC = JSON.parse(cRaw);
+        if (parsedC && typeof parsedC === 'object') {
+          config = { ...DEFAULT_CALENDAR_MODULE_CONFIG, ...parsedC };
+        }
+      }
+    } catch {}
+    return { holidays, config };
+  };
+
+  onUpdate(readLocal());
+
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return () => {};
+
+  try {
+    const docRef = doc(firestoreDb, 'store_config', 'calendar_config');
+    return onSnapshot(
+      docRef,
+      (snap) => {
+        if (snap.exists()) {
+          const data = snap.data() as any;
+          const holidays =
+            Array.isArray(data?.holidays) && data.holidays.length > 0
+              ? data.holidays.map(sanitizeObjectEncoding)
+              : DEFAULT_ARGENTINA_MENDOZA_DATES;
+          const config: CalendarModuleConfig = {
+            ...DEFAULT_CALENDAR_MODULE_CONFIG,
+            ...(data?.config || {}),
+          };
+          try {
+            localStorage.setItem('pampero_calendar_holidays', JSON.stringify(holidays));
+            localStorage.setItem('pampero_calendar_config', JSON.stringify(config));
+          } catch {}
+          onUpdate({ holidays, config });
+        }
+      },
+      (err) => {
+        console.warn('[CALENDAR CONFIG] Listener warning:', err.message);
+      }
+    );
+  } catch {
     return () => {};
   }
 }
@@ -4189,12 +4792,19 @@ export async function fetchUserProfileByUidOrEmail(uid: string, email?: string |
               role,
               clientType: data.type === 'empresa' ? 'empresa' : 'consumidor_final',
               email: data.email || cleanEmail,
+              branch: data.branch || data.nearestBranch,
+              sellerName: data.name || data.repName,
+              sellerRole: data.sellerRole,
+              canControlTasks: Boolean(data.canControlTasks || role === 'admin' || data.sellerRole === 'local'),
               clientData: {
                 fullName: data.name || data.fullName || data.repName || cleanEmail.split('@')[0],
-                companyName: data.companyName,
+                companyName: data.companyName || (data.type === 'empresa' ? data.name : undefined),
                 cuit: data.cuitOrDni,
                 email: data.email || cleanEmail,
                 phone: data.phone || '',
+                nearestBranch: data.nearestBranch || data.branch,
+                companyLocation: data.companyLocation,
+                locationUrl: data.locationUrl,
                 address: typeof data.address === 'object' ? data.address : {
                   street: data.address || '',
                   number: '',
@@ -4233,12 +4843,19 @@ export async function fetchUserProfileByUidOrEmail(uid: string, email?: string |
               role,
               clientType: data.type === 'empresa' ? 'empresa' : 'consumidor_final',
               email: data.email || cleanEmail,
+              branch: data.branch || data.nearestBranch,
+              sellerName: data.name || data.repName,
+              sellerRole: data.sellerRole,
+              canControlTasks: Boolean(data.canControlTasks || role === 'admin' || data.sellerRole === 'local'),
               clientData: {
                 fullName: data.name || data.fullName || data.repName || cleanEmail.split('@')[0],
-                companyName: data.companyName,
+                companyName: data.companyName || (data.type === 'empresa' ? data.name : undefined),
                 cuit: data.cuitOrDni,
                 email: data.email || cleanEmail,
                 phone: data.phone || '',
+                nearestBranch: data.nearestBranch || data.branch,
+                companyLocation: data.companyLocation,
+                locationUrl: data.locationUrl,
                 address: typeof data.address === 'object' ? data.address : {
                   street: data.address || '',
                   number: '',
@@ -4270,12 +4887,19 @@ export async function fetchUserProfileByUidOrEmail(uid: string, email?: string |
           role,
           clientType: match.type === 'empresa' ? 'empresa' : 'consumidor_final',
           email: match.email || cleanEmail,
+          branch: match.branch || match.nearestBranch,
+          sellerName: match.name || match.repName,
+          sellerRole: match.sellerRole,
+          canControlTasks: Boolean(match.canControlTasks || role === 'admin' || match.sellerRole === 'local'),
           clientData: {
             fullName: match.name || match.fullName || match.repName || cleanEmail.split('@')[0],
-            companyName: match.companyName,
+            companyName: match.companyName || (match.type === 'empresa' ? match.name : undefined),
             cuit: match.cuitOrDni,
             email: match.email || cleanEmail,
             phone: match.phone || '',
+            nearestBranch: match.nearestBranch || match.branch,
+            companyLocation: match.companyLocation,
+            locationUrl: match.locationUrl,
             address: typeof match.address === 'object' ? match.address : {
               street: match.address || '',
               number: '',
