@@ -41,218 +41,52 @@ interface AdminUsersTabProps {
   userSession?: UserSession | null;
 }
 
+export const FICTIONAL_SEED_USER_IDS = new Set<string>([
+  'sel-1',
+  'sel-2',
+  'sel-3',
+  'sel-4',
+  'sel-5',
+  'emp-ventas',
+  'user-edemsa',
+  'user-ypf',
+  'user-catena',
+  'user-construcciones-cuyo',
+  'user-rossi',
+  'user-morales',
+]);
+
+export const FICTIONAL_SEED_EMAILS = new Set<string>([
+  'itati@pamperomaipu.com.ar',
+  'guada@pampero.com.ar',
+  'carolina@pampero.com.ar',
+  'gustavo@pampero.com.ar',
+  'martin@pampero.com.ar',
+  'ventas@pamperomaipu.com.ar',
+  'compras.operativas@edemsa.com.ar',
+  'licitaciones.pampero@ypf.com',
+  'abastecimiento.cosecha@catenazapata.com',
+  'administracion@construccionescuyo.com.ar',
+  'jmrossi.mza@gmail.com',
+  'laura.morales@hotmail.com',
+]);
+
 export const INITIAL_REGISTERED_USERS: RegisteredUser[] = [
   {
     ...MASTER_ADMIN_USER,
     password: 'Pampero2026',
     initialPassword: 'Pampero2026',
   },
-  // Vendedores & Equipo Comercial
-  {
-    id: 'sel-1',
-    type: 'empleado',
-    role: 'employee',
-    sellerRole: 'local',
-    name: 'Itatí',
-    branch: 'Maipú',
-    phone: '261 527-6713',
-    email: 'itati@pamperomaipu.com.ar',
-    password: 'Pampero2026',
-    initialPassword: 'Pampero2026',
-    status: 'active',
-    createdAt: '2026-02-01',
-    notes: 'Encargada de sucursal Maipú.',
-  },
-  {
-    id: 'sel-2',
-    type: 'empleado',
-    role: 'employee',
-    sellerRole: 'local',
-    name: 'Guada',
-    branch: 'Ciudad',
-    phone: '261 423-1122',
-    email: 'guada@pampero.com.ar',
-    password: 'Pampero2026',
-    initialPassword: 'Pampero2026',
-    status: 'active',
-    createdAt: '2026-02-01',
-    notes: 'Encargada de sucursal Ciudad.',
-  },
-  {
-    id: 'sel-3',
-    type: 'empleado',
-    role: 'employee',
-    sellerRole: 'local',
-    name: 'Carolina',
-    branch: 'Luján',
-    phone: '261 498-5544',
-    email: 'carolina@pampero.com.ar',
-    password: 'Pampero2026',
-    initialPassword: 'Pampero2026',
-    status: 'active',
-    createdAt: '2026-02-01',
-    notes: 'Encargada de sucursal Luján de Cuyo.',
-  },
-  {
-    id: 'sel-4',
-    type: 'empleado',
-    role: 'employee',
-    sellerRole: 'vendedor',
-    name: 'Gustavo',
-    branch: 'Maipú',
-    phone: '261 527-6713',
-    email: 'gustavo@pampero.com.ar',
-    password: 'Pampero2026',
-    initialPassword: 'Pampero2026',
-    status: 'active',
-    createdAt: '2026-02-05',
-    notes: 'Vendedor corporativo en calle y visitas técnicas.',
-  },
-  {
-    id: 'sel-5',
-    type: 'empleado',
-    role: 'employee',
-    sellerRole: 'vendedor',
-    name: 'Martín',
-    branch: 'Ciudad',
-    phone: '261 423-1122',
-    email: 'martin@pampero.com.ar',
-    password: 'Pampero2026',
-    initialPassword: 'Pampero2026',
-    status: 'active',
-    createdAt: '2026-02-05',
-    notes: 'Vendedor comercial mostrador y convenios.',
-  },
-  {
-    id: 'emp-ventas',
-    type: 'empleado',
-    role: 'employee',
-    name: 'Ventas Pampero Maipú',
-    branch: 'Maipú',
-    phone: '261 527-6713',
-    email: 'ventas@pamperomaipu.com.ar',
-    password: 'Pampero2026',
-    initialPassword: 'Pampero2026',
-    status: 'active',
-    createdAt: '2026-02-10',
-    notes: 'Acceso general ventas salón y pedidos.',
-  },
-  // Clientes Empresas
-  {
-    id: 'user-edemsa',
-    type: 'empresa',
-    role: 'client',
-    name: 'EDEMSA S.A. (Empresa Distribuidora de Electricidad de Mendoza)',
-    repName: 'Ing. Martín Carrizo',
-    email: 'compras.operativas@edemsa.com.ar',
-    password: 'Pampero2026',
-    initialPassword: 'Pampero2026',
-    phone: '2614298100',
-    cuitOrDni: '30-69278912-4',
-    address: 'Av. Belgrano 847',
-    city: 'Ciudad de Mendoza',
-    createdAt: '2026-02-14',
-    status: 'active',
-    pricingTier: 'Corporativo / Mayorista',
-    notes: 'Cuenta corporativa con cupón especial asignado EDEMSA12026.',
-  },
-  {
-    id: 'user-ypf',
-    type: 'empresa',
-    role: 'client',
-    name: 'YPF Refinería Luján de Cuyo',
-    repName: 'Lic. Pablo Godoy',
-    email: 'licitaciones.pampero@ypf.com',
-    password: 'Pampero2026',
-    initialPassword: 'Pampero2026',
-    phone: '2614980111',
-    cuitOrDni: '30-54668997-9',
-    address: 'Ruta Provincial 82 Km 27',
-    city: 'Luján de Cuyo',
-    createdAt: '2026-02-18',
-    status: 'active',
-    pricingTier: 'Corporativo / Mayorista',
-    notes: 'Línea de calzado de seguridad dieléctrico y mamelucos ignífugos.',
-  },
-  {
-    id: 'user-catena',
-    type: 'empresa',
-    role: 'client',
-    name: 'Bodegas & Viñedos Catena Zapata',
-    repName: 'Arq. Florencia Morán',
-    email: 'abastecimiento.cosecha@catenazapata.com',
-    password: 'Pampero2026',
-    initialPassword: 'Pampero2026',
-    phone: '2614900210',
-    cuitOrDni: '30-70891234-1',
-    address: 'Cobos s/n, Agrelo',
-    city: 'Luján de Cuyo',
-    createdAt: '2026-02-25',
-    status: 'active',
-    pricingTier: 'Corporativo / Mayorista',
-    notes: 'Equipamiento temporada Vendimia 2026 para cuadrillas de campo.',
-  },
-  {
-    id: 'user-construcciones-cuyo',
-    type: 'empresa',
-    role: 'client',
-    name: 'Construcciones Cuyo S.R.L.',
-    repName: 'Carlos Benítez',
-    email: 'administracion@construccionescuyo.com.ar',
-    password: 'Pampero2026',
-    initialPassword: 'Pampero2026',
-    phone: '2615112233',
-    cuitOrDni: '30-71234567-8',
-    address: 'Rodríguez Peña 1420',
-    city: 'Godoy Cruz',
-    createdAt: '2026-03-01',
-    status: 'active',
-    pricingTier: 'Corporativo / Mayorista',
-    notes: 'Equipamiento temporada Vendimia 2026 para cuadrillas de campo.',
-  },
-  // Clientes Consumidores Finales
-  {
-    id: 'user-rossi',
-    type: 'consumidor',
-    role: 'client',
-    name: 'Juan Manuel Rossi',
-    email: 'jmrossi.mza@gmail.com',
-    password: 'Pampero2026',
-    initialPassword: 'Pampero2026',
-    phone: '2616890123',
-    cuitOrDni: '34.891.220',
-    address: 'San Martín 520, 2do B',
-    city: 'Godoy Cruz',
-    createdAt: '2026-03-03',
-    status: 'active',
-    pricingTier: 'Consumidor Final',
-  },
-  {
-    id: 'user-morales',
-    type: 'consumidor',
-    role: 'client',
-    name: 'María Laura Morales',
-    email: 'laura.morales@hotmail.com',
-    password: 'Pampero2026',
-    initialPassword: 'Pampero2026',
-    phone: '2615438899',
-    cuitOrDni: '36.452.190',
-    address: 'Bandera de los Andes 1840',
-    city: 'Guaymallén',
-    createdAt: '2026-03-05',
-    status: 'active',
-    pricingTier: 'Consumidor Final',
-  },
 ];
 
 export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice, branches }) => {
-  // Sincronización completa con Firestore y Local Storage
+  // Sincronización completa con Firestore y Local Storage (sin regenerar cuentas ficticias)
   const [users, setUsers] = useState<RegisteredUser[]>(() => {
     try {
       const stored = localStorage.getItem('pampero_registered_users');
       if (stored) {
         const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) {
+        if (Array.isArray(parsed)) {
           return parsed;
         }
       }
@@ -350,8 +184,8 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
 
   // 1. Suscripción en tiempo real a Cloud Firestore usando onSnapshot
   useEffect(() => {
-    // Sembrar usuarios iniciales a Firestore SOLO si está absolutamente vacío
-    seedInitialFirestoreUsersIfEmpty(INITIAL_REGISTERED_USERS).catch(() => {});
+    // Asegurar únicamente la cuenta administradora maestra si faltara, sin regenerar cuentas ficticias
+    seedInitialFirestoreUsersIfEmpty([MASTER_ADMIN_USER]).catch(() => {});
 
     // SDK onSnapshot Listener directo sin retener usuarios eliminados
     const unsubscribe = subscribeToFirestoreUsers((remoteUsers) => {
@@ -366,6 +200,39 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
     };
   }, []);
 
+  const fictionalUsersRemaining = useMemo(() => {
+    return users.filter((u) => {
+      const em = (u.email || '').toLowerCase().trim();
+      return FICTIONAL_SEED_USER_IDS.has(u.id) || FICTIONAL_SEED_EMAILS.has(em);
+    });
+  }, [users]);
+
+  const [isPurgingFictional, setIsPurgingFictional] = useState(false);
+
+  const handlePurgeFictionalUsers = async () => {
+    if (fictionalUsersRemaining.length === 0 || isPurgingFictional) return;
+    if (!confirm(`¿Eliminar permanentemente las ${fictionalUsersRemaining.length} cuentas ficticias de ejemplo? No volverán a generarse.`)) {
+      return;
+    }
+    setIsPurgingFictional(true);
+    try {
+      const targets = [...fictionalUsersRemaining];
+      const targetIds = new Set(targets.map((t) => t.id));
+      const targetEmails = new Set(targets.map((t) => (t.email || '').toLowerCase().trim()).filter(Boolean));
+      setUsers((prev) => {
+        const updated = prev.filter((u) => !targetIds.has(u.id) && !targetEmails.has((u.email || '').toLowerCase().trim()));
+        try {
+          localStorage.setItem('pampero_registered_users', JSON.stringify(updated));
+        } catch {}
+        return updated;
+      });
+      await Promise.all(targets.map((t) => deleteFirestoreUser(t.id, t.email)));
+      triggerSaveNotice();
+    } finally {
+      setIsPurgingFictional(false);
+    }
+  };
+
   // Copiar mensaje oficial de acceso para enviar por WhatsApp
   const handleCopyCredentialsMessage = (u: RegisteredUser) => {
     const msg = `¡Hola ${u.name}! Ya tenés habilitada tu cuenta en el Catálogo Oficial Pampero Gran Mendoza.\n\n👤 Usuario / Email: ${u.email}\nTe enviamos un correo oficial para que configures tu contraseña de acceso directamente en Firebase Authentication de forma segura.\n🔗 Ingresá a la tienda: ${window.location.origin}`;
@@ -374,7 +241,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
     setTimeout(() => setCopiedId(null), 2500);
   };
 
-  // Real-time Delete from Cloud Firestore
+  // Real-time Delete from Cloud Firestore + Revocación definitiva de acceso
   const handleDeleteUser = async (id: string, name: string) => {
     const targetUser = users.find((u) => u.id === id);
     const targetEmail = (targetUser?.email || '').toLowerCase().trim();
@@ -387,15 +254,15 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
       alert('La cuenta administradora maestra (joaquinnievass20@gmail.com) y su documento están blindados por seguridad y no pueden ser eliminados bajo ningún concepto.');
       return;
     }
-    if (confirm(`¿Estás seguro de eliminar permanentemente la cuenta de "${name}"?`)) {
+    if (confirm(`¿Estás seguro de eliminar permanentemente la cuenta de "${name}"? Se revocará su acceso y no podrá volver a ingresar.`)) {
       setUsers((prev) => {
-        const updated = prev.filter((u) => u.id !== id);
+        const updated = prev.filter((u) => u.id !== id && (!targetEmail || (u.email || '').toLowerCase().trim() !== targetEmail));
         try {
           localStorage.setItem('pampero_registered_users', JSON.stringify(updated));
         } catch {}
         return updated;
       });
-      await deleteFirestoreUser(id);
+      await deleteFirestoreUser(id, targetEmail || undefined);
       triggerSaveNotice();
     }
   };
@@ -523,8 +390,11 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
       sellerRole: isEncargado ? 'encargado' : (newAccountType === 'empleado' ? 'vendedor' : undefined),
       crmScope: isEncargado ? 'all' : (newAccountType === 'empleado' ? 'branch_only' : undefined),
       canControlTasks: isEncargado ? true : undefined,
-      allowedTabs: isStaffNew ? ['products', 'variants', 'prices', 'mass_images', 'promos', 'quotes', 'crm'] : undefined,
+      allowedTabs: isStaffNew ? ['crm'] : undefined,
       crmTabs: isStaffNew ? ['visits', 'board', 'tasks', 'calendar', 'suppliers', 'costs'] : undefined,
+      panelTabsConfigured: isStaffNew ? true : undefined,
+      rrhhConfigured: isStaffNew ? true : undefined,
+      canManageRRHH: undefined,
       pricingTier: newAccountType === 'empresa' ? 'Corporativo / Mayorista' : (newAccountType === 'admin' ? 'Administrador' : 'Consumidor Final'),
       status: 'active',
       createdAt: new Date().toISOString().split('T')[0],
@@ -537,7 +407,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
 
     try {
       // 1. Crear en Firebase Authentication y Cloud Firestore con UID sincronizado y contraseña exacta
-      const authResult = await createFirebaseAuthAndFirestoreUser(newUser, passTrimmed);
+      const authResult = await createFirebaseAuthAndFirestoreUser(newUser, passTrimmed, { allowRestoreRevoked: true });
       if (!authResult.success) {
         setCreateError(authResult.error || 'Error al crear la cuenta en Firebase Authentication.');
         return;
@@ -679,6 +549,23 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {fictionalUsersRemaining.length > 0 && (
+              <button
+                type="button"
+                onClick={handlePurgeFictionalUsers}
+                disabled={isPurgingFictional}
+                className="px-3.5 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white text-xs font-bold uppercase tracking-wider rounded-xs flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+                title="Elimina de forma definitiva las cuentas de ejemplo pre-cargadas"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>
+                  {isPurgingFictional
+                    ? 'Eliminando...'
+                    : `Eliminar ${fictionalUsersRemaining.length} ficticias`}
+                </span>
+              </button>
+            )}
+
             {/* Botón Sincronizar Padrón con Firebase (Auth & Firestore) */}
             <button
               type="button"

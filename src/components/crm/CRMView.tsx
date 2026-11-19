@@ -33,6 +33,8 @@ import {
   isValidStructuredTrackingCode,
   upsertObservationReminderCalendarEvent,
   recordAuditLog,
+  subscribeToReadNotifications,
+  saveReadNotifications,
 } from '../../services/firebase';
 import { fixUtf8Encoding, sanitizeObjectEncoding } from '../../utils/encodingUtils';
 import { formatDateTime } from '../../utils/dateUtils';
@@ -72,7 +74,7 @@ import {
 } from 'lucide-react';
 import { exportOrdersToExcel, importOrdersFromExcel } from '../../utils/kanbanExcelUtils';
 import { normalizeCRMOrder, normalizeLeadVisit, normalizeSupplierOrder } from '../../utils/crmNormalizers';
-import { CRMNotificationsModal } from './CRMNotificationsModal';
+import { CRMNotificationsModal, CRMNotificationItem } from './CRMNotificationsModal';
 import { CRMVisitsTab } from './CRMVisitsTab';
 import { CRMTasksTab } from './CRMTasksTab';
 import { CRMCalendarTab } from './CRMCalendarTab';
@@ -372,6 +374,16 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
   const [isExcelProcessing, setIsExcelProcessing] = useState(false);
   const fileInputOrdersRef = React.useRef<HTMLInputElement>(null);
 
+  const notifUserKey = (userSession?.email || userSession?.id || 'admin').toLowerCase().trim();
+  const [readNotifIds, setReadNotifIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    const unsubReads = subscribeToReadNotifications(notifUserKey, (ids) => {
+      setReadNotifIds(ids);
+    });
+    return () => unsubReads();
+  }, [notifUserKey]);
+
   const handleExportOrders = () => {
     exportOrdersToExcel(filteredOrders.length > 0 ? filteredOrders : orders);
   };
@@ -508,18 +520,184 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
     setDragOverColumn(null);
   };
 
-  // Delayed orders calculation (> 7 days)
-  const delayedOrdersCount = orders.filter((o) => {
-    const daysOld = Math.floor((Date.now() - new Date(o.date).getTime()) / (1000 * 60 * 60 * 24));
-    return daysOld > 7 && (o.status === 'cotizacion' || o.status === 'sena_50');
-  }).length;
+  // Scoped Orders & Visits for Notifications matching active user RBAC
+  const notifSettings = React.useMemo(() => {
+    const defaults = {
+      staleQuoteDays: 7,
+      notifyNewQuotes: true,
+      notifyStaleOrders: true,
+      notifyBlockedOrders: true,
+      notifyPendingVisits: true,
+    };
+    try {
+      const saved = localStorage.getItem('pampero_notification_settings');
+      if (saved) return { ...defaults, ...JSON.parse(saved) };
+    } catch {}
+    return defaults;
+  }, []);
 
-  const blockedOrdersCount = orders.filter((o) => Boolean(o.blockReason)).length;
-  const todayIsoStr = new Date().toISOString().split('T')[0];
-  const dueRemindersCount =
-    orders.filter((o) => o.reminderDate && o.reminderDate <= todayIsoStr && o.status !== 'entregado' && o.status !== 'cancelado').length +
-    visits.filter((v) => v.reminderDate && v.reminderDate <= todayIsoStr && v.status !== 'cerrada' && v.status !== 'cancelada').length;
-  const totalAlertsCount = delayedOrdersCount + blockedOrdersCount + dueRemindersCount;
+  const scopedOrdersForNotif = React.useMemo(() => {
+    return orders.filter((o) => {
+      if (crmScope === 'branch_only' && assignedBranch) {
+        return (o.branch || '').toLowerCase() === assignedBranch.toLowerCase();
+      }
+      if (crmScope === 'own_only' && assignedSellerName) {
+        return (o.seller || '').toLowerCase() === assignedSellerName.toLowerCase();
+      }
+      return true;
+    });
+  }, [orders, crmScope, assignedBranch, assignedSellerName]);
+
+  const scopedVisitsForNotif = React.useMemo(() => {
+    return visits.filter((v) => {
+      if (crmScope === 'branch_only' && assignedBranch) {
+        return (v.branch || '').toLowerCase() === assignedBranch.toLowerCase();
+      }
+      if (crmScope === 'own_only' && assignedSellerName) {
+        return (v.seller || '').toLowerCase() === assignedSellerName.toLowerCase();
+      }
+      return true;
+    });
+  }, [visits, crmScope, assignedBranch, assignedSellerName]);
+
+  const delayedOrdersCount = React.useMemo(() => {
+    if (!notifSettings.notifyStaleOrders) return 0;
+    return scopedOrdersForNotif.filter((o) => {
+      const daysOld = Math.floor((Date.now() - new Date(o.date).getTime()) / (1000 * 60 * 60 * 24));
+      return daysOld >= notifSettings.staleQuoteDays && (o.status === 'cotizacion' || o.status === 'sena_50');
+    }).length;
+  }, [scopedOrdersForNotif, notifSettings]);
+
+  const blockedOrdersCount = React.useMemo(() => {
+    if (!notifSettings.notifyBlockedOrders) return 0;
+    return scopedOrdersForNotif.filter((o) => Boolean(o.blockReason)).length;
+  }, [scopedOrdersForNotif, notifSettings]);
+
+  const crmNotifications: CRMNotificationItem[] = React.useMemo(() => {
+    const todayIso = new Date().toISOString().split('T')[0];
+    const items: CRMNotificationItem[] = [];
+
+    // 1. Recordatorios de observaciones (Seguimiento Empresas)
+    scopedOrdersForNotif
+      .filter((o) => Boolean(o.reminderDate) && (o.reminderDate || '') <= todayIso && o.status !== 'entregado' && o.status !== 'cancelado')
+      .forEach((o) => {
+        const code = o.trackingCode || o.orderNumber || `#${o.id.slice(-6)}`;
+        items.push({
+          id: `rem-ord-${o.id}-${o.reminderDate}`,
+          category: 'reminder',
+          title: `${fixUtf8Encoding(o.clientName)} (${code})`,
+          subtitle: fixUtf8Encoding(o.reminderNote || o.observations || 'Recordatorio de seguimiento programado'),
+          meta: `Aviso: ${o.reminderDate}${o.reminderTime ? ` ${o.reminderTime}hs` : ''} · ${o.seller || 'Sin asignar'}`,
+          badgeText: 'Recordatorio',
+          badgeClass: 'bg-amber-50 border-amber-300 text-amber-900',
+          order: o,
+        });
+      });
+
+    // 2. Recordatorios de observaciones (Visitas Comerciales)
+    scopedVisitsForNotif
+      .filter((v) => Boolean(v.reminderDate) && (v.reminderDate || '') <= todayIso && v.status !== 'cerrada' && v.status !== 'cancelada')
+      .forEach((v) => {
+        items.push({
+          id: `rem-vis-${v.id}-${v.reminderDate}`,
+          category: 'reminder',
+          title: `${fixUtf8Encoding(v.companyName)}${v.trackingCode ? ` (${v.trackingCode})` : ''}`,
+          subtitle: fixUtf8Encoding(v.reminderNote || v.notes || 'Recordatorio de visita comercial'),
+          meta: `Aviso: ${v.reminderDate}${v.reminderTime ? ` ${v.reminderTime}hs` : ''} · ${v.seller || 'Sin asignar'}`,
+          badgeText: 'Recordatorio Visita',
+          badgeClass: 'bg-purple-50 border-purple-300 text-purple-900',
+          visit: v,
+          whatsappPhone: v.phone,
+          whatsappText: v.phone ? `Hola ${v.contactName || ''}, te escribimos de Pampero Mendoza.` : undefined,
+        });
+      });
+
+    // 3. Pedidos Bloqueados
+    if (notifSettings.notifyBlockedOrders) {
+      scopedOrdersForNotif
+        .filter((o) => Boolean(o.blockReason))
+        .forEach((o) => {
+          const code = o.trackingCode || o.orderNumber || `#${o.id.slice(-6)}`;
+          items.push({
+            id: `blocked-${o.id}-${String(o.blockReason).slice(0, 24)}`,
+            category: 'blocked',
+            title: `${fixUtf8Encoding(o.clientName)} (${code})`,
+            subtitle: `Motivo de bloqueo: ${fixUtf8Encoding(String(o.blockReason))}`,
+            meta: `Vendedor: ${o.seller || 'Sin asignar'} · Sucursal: ${o.branch || 'Mendoza'}`,
+            badgeText: 'Bloqueado',
+            badgeClass: 'bg-red-50 border-red-300 text-red-800',
+            order: o,
+          });
+        });
+    }
+
+    // 4. Pedidos Demorados
+    if (notifSettings.notifyStaleOrders) {
+      scopedOrdersForNotif
+        .filter((o) => {
+          const daysOld = Math.floor((Date.now() - new Date(o.date).getTime()) / (1000 * 60 * 60 * 24));
+          return daysOld >= notifSettings.staleQuoteDays && (o.status === 'cotizacion' || o.status === 'sena_50');
+        })
+        .forEach((o) => {
+          const daysOld = Math.floor((Date.now() - new Date(o.date).getTime()) / (1000 * 60 * 60 * 24));
+          const code = o.trackingCode || o.orderNumber || `#${o.id.slice(-6)}`;
+          items.push({
+            id: `delayed-${o.id}`,
+            category: 'delayed',
+            title: `${fixUtf8Encoding(o.clientName)} (${code})`,
+            subtitle: `Lleva ${daysOld} días sin avanzar de "${o.status === 'cotizacion' ? 'Cotización' : 'Seña 50%'}"`,
+            meta: `${o.totalUnits || 0} prendas · Vendedor: ${o.seller || 'Sin asignar'}`,
+            badgeText: `${daysOld}d demora`,
+            badgeClass: 'bg-amber-50 border-amber-300 text-amber-800',
+            order: o,
+            whatsappPhone: o.clientPhone,
+            whatsappText: `Hola ${o.clientName}, te escribimos de Pampero Gran Mendoza por la cotización ${code}. ¿Pudiste revisarla?`,
+          });
+        });
+    }
+
+    // 5. Visitas pendientes de seguimiento
+    if (notifSettings.notifyPendingVisits) {
+      scopedVisitsForNotif
+        .filter((v) => v.status === 'programada' || v.status === 'presupuesto_enviado')
+        .forEach((v) => {
+          items.push({
+            id: `visit-pending-${v.id}-${v.status}`,
+            category: 'visit',
+            title: `${fixUtf8Encoding(v.companyName)} (${fixUtf8Encoding(v.contactName || 'Contacto')})`,
+            subtitle: fixUtf8Encoding(v.objective || v.nextStep || 'Seguimiento comercial pendiente'),
+            meta: `Vendedor: ${v.seller || 'Sin asignar'} · Próx. paso: ${fixUtf8Encoding(v.nextStep || '-')}`,
+            badgeText: v.status === 'presupuesto_enviado' ? 'Presupuesto enviado' : 'Visita programada',
+            badgeClass: 'bg-blue-50 border-blue-200 text-blue-800',
+            visit: v,
+            whatsappPhone: v.phone,
+            whatsappText: v.phone ? `Hola ${v.contactName || ''}, te escribimos de Pampero Mendoza.` : undefined,
+          });
+        });
+    }
+
+    return items;
+  }, [scopedOrdersForNotif, scopedVisitsForNotif, notifSettings]);
+
+  const readNotifSet = React.useMemo(() => new Set(readNotifIds), [readNotifIds]);
+  const unreadNotificationsCount = React.useMemo(
+    () => crmNotifications.filter((n) => !readNotifSet.has(n.id)).length,
+    [crmNotifications, readNotifSet]
+  );
+
+  const handleMarkNotifAsRead = async (id: string) => {
+    const next = Array.from(new Set([...readNotifIds, id]));
+    setReadNotifIds(next);
+    await saveReadNotifications(notifUserKey, next);
+  };
+
+  const handleMarkAllNotifsAsRead = async () => {
+    const next = Array.from(new Set([...readNotifIds, ...crmNotifications.map((n) => n.id)]));
+    setReadNotifIds(next);
+    await saveReadNotifications(notifUserKey, next);
+  };
+
+  const totalAlertsCount = unreadNotificationsCount;
 
   // Filtered orders with strict multi-role and local permissions enforcement
   const filteredOrders = orders.filter((o) => {
@@ -740,136 +918,181 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
 
   return (
     <div className="flex flex-col min-h-[calc(100vh-80px)] bg-[#FAF8F5]">
-      {/* Top Bar Navigation */}
-      <div 
-        className="border-b w-full shrink-0 shadow-xs transition-colors"
+      {/* Top Bar Navigation (Two-tier professional SaaS header + single-row underline sub-tabs) */}
+      <header
+        className="border-b w-full shrink-0 transition-colors"
         style={{
           backgroundColor: theme?.crmHeaderBgColor || '#FFFFFF',
           borderColor: theme?.crmHeaderBorderColor || '#DCD4C9',
-          color: theme?.crmHeaderTextColor || '#18231C'
+          color: theme?.crmHeaderTextColor || '#18231C',
         }}
       >
-        <div className="w-full max-w-[1700px] mx-auto px-4 sm:px-6 py-3 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3">
-        <div className="flex items-center gap-4 sm:gap-6 flex-wrap">
-          <h2 
-            className="font-display font-bold text-lg sm:text-xl uppercase tracking-wider flex items-center gap-2"
-            style={{ color: theme?.crmHeaderTextColor || '#18231C' }}
-          >
-            <LayoutDashboard className="w-5 h-5 text-[#B9522F]" />
-            {theme?.siteTexts?.crmTitle || 'Gestión Pampero'}
-          </h2>
+        {/* Row 1: Brand Title + Operator + Notification Bell + Primary CTA + Back */}
+        <div className="w-full max-w-[1700px] mx-auto px-4 sm:px-6 pt-3 pb-2.5 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="p-1.5 rounded-xs bg-[#18231C] text-[#FDB813] shrink-0">
+              <LayoutDashboard className="w-4 h-4" />
+            </div>
+            <div>
+              <h2
+                className="font-display font-bold text-lg sm:text-xl uppercase tracking-wider leading-none"
+                style={{ color: theme?.crmHeaderTextColor || '#18231C' }}
+              >
+                {theme?.siteTexts?.crmTitle || 'Gestión Pampero'}
+              </h2>
+              <span className="text-[10px] font-semibold uppercase tracking-widest text-[#6F6860] hidden sm:block mt-0.5">
+                Centro Operativo Comercial
+              </span>
+            </div>
+          </div>
 
-          <div className="flex bg-[#ECE5DC] rounded-xs p-1 flex-wrap gap-0.5">
+          <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap">
+            {/* Active staff switcher / identity badge */}
+            {userSession?.role === 'admin' && onSetSession ? (
+              <div className="flex items-center gap-1.5 text-xs bg-[#FAF8F5] border border-[#DCD4C9] px-2.5 py-1.5 rounded-xs">
+                <span className="text-[10px] text-[#8C827A] uppercase font-bold">Operador:</span>
+                <select
+                  value={activeStaffUser}
+                  onChange={(e) => {
+                    const name = e.target.value;
+                    const role = name.includes('Admin') ? 'admin' : 'employee';
+                    handleSwitchStaffRole(role, name);
+                  }}
+                  className="font-bold text-[#18231C] bg-transparent outline-none cursor-pointer text-xs"
+                  title="Simular vista de operador (Exclusivo Administrador)"
+                >
+                  <option value="Administrador General">Administrador General (Todo)</option>
+                  {sellersList.map((s) => (
+                    <option key={s.id} value={`${s.name} (${s.branch})`}>
+                      {s.name} ({s.branch})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5 text-xs bg-[#FAF8F5] border border-[#DCD4C9] px-2.5 py-1.5 rounded-xs">
+                <span className="text-[10px] text-[#8C827A] uppercase font-bold">Operador:</span>
+                <span className="font-bold text-[#18231C] text-xs">{activeStaffUser}</span>
+                {effectiveSellerRole === 'encargado' ? (
+                  <span className="text-[10px] bg-purple-50 text-purple-900 border border-purple-200 px-1.5 py-0.2 rounded-xs font-bold">
+                    Encargado · Todos los Locales
+                  </span>
+                ) : (
+                  assignedBranch && (
+                    <span className="text-[10px] bg-blue-50 text-blue-900 border border-blue-200 px-1.5 py-0.2 rounded-xs font-semibold">
+                      {assignedBranch}
+                    </span>
+                  )
+                )}
+              </div>
+            )}
+
+            {/* Notifications Bell (Unread counter only) */}
+            <button
+              type="button"
+              onClick={() => setShowNotificationsModal(true)}
+              className="relative p-2 bg-[#FAF8F5] hover:bg-[#ECE5DC] border border-[#DCD4C9] rounded-xs text-[#18231C] transition-colors cursor-pointer"
+              title="Notificaciones del Equipo"
+            >
+              <Bell className="w-4 h-4 text-[#18231C]" />
+              {unreadNotificationsCount > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 bg-red-600 text-white rounded-full text-[10px] font-black tabular-nums flex items-center justify-center border border-white">
+                  {unreadNotificationsCount}
+                </span>
+              )}
+            </button>
+
+            {/* New Company / Order button */}
+            {(activeTab === 'visits' || activeTab === 'board') && (
+              <button
+                type="button"
+                onClick={() => setShowNewOrderModal(true)}
+                style={{
+                  backgroundColor: theme?.crmButtonBg || theme?.primaryColor || '#18231C',
+                  color: theme?.crmButtonTextColor || '#FFFFFF',
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xs text-xs font-bold hover:brightness-110 transition-colors cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>{theme?.siteTexts?.crmNewOrderBtnText || 'Nueva Empresa / Pedido'}</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-3 py-1.5 rounded-xs border border-[#DCD4C9] bg-white hover:bg-[#FAF8F5] text-[#18231C] text-xs font-bold transition-colors cursor-pointer"
+            >
+              {theme?.siteTexts?.crmBackBtnText || 'Volver al menú principal'}
+            </button>
+          </div>
+        </div>
+
+        {/* Row 2: Clean Single-Row Horizontal Underline Tab Bar */}
+        <nav
+          aria-label="Módulos de Gestión CRM"
+          className="w-full border-t border-[#DCD4C9]/70 bg-[#FAF8F5]/75"
+        >
+          <div className="w-full max-w-[1700px] mx-auto px-4 sm:px-6 flex items-center gap-1 sm:gap-2 overflow-x-auto no-scrollbar">
             {[
-              { key: 'visits' as const, label: '1. Visitas Comerciales', icon: Building2 },
-              { key: 'board' as const, label: '2. Seguimiento Empresas', icon: LayoutDashboard },
-              { key: 'tasks' as const, label: '3. Tareas', icon: CheckSquare },
-              { key: 'calendar' as const, label: '4. Calendario', icon: Calendar },
-              { key: 'suppliers' as const, label: 'Pedidos Proveedor', icon: Truck },
-              { key: 'costs' as const, label: 'Control de Costos', icon: DollarSign },
+              {
+                key: 'visits' as const,
+                label: theme?.siteTexts?.crmTabVisitsText || '1. Visitas Comerciales',
+                icon: Building2,
+              },
+              {
+                key: 'board' as const,
+                label: theme?.siteTexts?.crmTabBoardText || '2. Seguimiento Empresas',
+                icon: LayoutDashboard,
+              },
+              {
+                key: 'tasks' as const,
+                label: theme?.siteTexts?.crmTabTasksText || '3. Tareas',
+                icon: CheckSquare,
+              },
+              {
+                key: 'calendar' as const,
+                label: theme?.siteTexts?.crmTabCalendarText || '4. Calendario',
+                icon: Calendar,
+              },
+              {
+                key: 'suppliers' as const,
+                label: theme?.siteTexts?.crmTabSuppliersText || 'Pedidos Proveedor',
+                icon: Truck,
+              },
+              {
+                key: 'costs' as const,
+                label: theme?.siteTexts?.crmTabCostsText || 'Control de Costos',
+                icon: DollarSign,
+              },
             ]
               .filter((tab) => allowedCrmTabs.includes(tab.key))
               .map((tab) => {
                 const Icon = tab.icon;
+                const isActive = activeTab === tab.key;
                 return (
                   <button
                     key={tab.key}
+                    type="button"
                     onClick={() => setActiveTab(tab.key)}
-                    className={`px-3 py-1.5 text-xs font-bold uppercase rounded-xs transition-colors cursor-pointer flex items-center gap-1.5 ${
-                      activeTab === tab.key
-                        ? 'bg-white shadow-xs text-[#18231C]'
-                        : 'text-[#6F6860] hover:text-[#18231C]'
+                    className={`px-3 sm:px-3.5 py-2.5 text-xs font-bold uppercase tracking-wider border-b-2 transition-colors cursor-pointer flex items-center gap-2 whitespace-nowrap shrink-0 ${
+                      isActive
+                        ? 'border-[#B9522F] text-[#18231C] bg-white'
+                        : 'border-transparent text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
                     }`}
                   >
-                    <Icon className="w-3.5 h-3.5 text-[#B9522F]" />
+                    <Icon
+                      className={`w-3.5 h-3.5 shrink-0 ${
+                        isActive ? 'text-[#B9522F]' : 'text-[#8C827A]'
+                      }`}
+                    />
                     <span>{tab.label}</span>
                   </button>
                 );
               })}
           </div>
-        </div>
-
-        <div className="flex items-center gap-2.5 sm:gap-3 flex-wrap w-full lg:w-auto justify-between lg:justify-end">
-          {/* Active staff switcher / identity badge */}
-          {userSession?.role === 'admin' && onSetSession ? (
-            <div className="flex items-center gap-1.5 text-xs bg-[#FAF8F5] border border-[#DCD4C9] px-2.5 py-1 rounded-xs">
-              <span className="text-[10px] text-[#8C827A] uppercase font-bold">Operador:</span>
-              <select
-                value={activeStaffUser}
-                onChange={(e) => {
-                  const name = e.target.value;
-                  const role = name.includes('Admin') ? 'admin' : 'employee';
-                  handleSwitchStaffRole(role, name);
-                }}
-                className="font-bold text-[#18231C] bg-transparent outline-none cursor-pointer text-xs"
-                title="Simular vista de operador (Exclusivo Administrador)"
-              >
-                <option value="Administrador General">Administrador General (Todo)</option>
-                {sellersList.map((s) => (
-                  <option key={s.id} value={`${s.name} (${s.branch})`}>
-                    {s.name} ({s.branch})
-                  </option>
-                ))}
-              </select>
-            </div>
-          ) : (
-            <div className="flex items-center gap-1.5 text-xs bg-[#FAF8F5] border border-[#DCD4C9] px-2.5 py-1 rounded-xs">
-              <span className="text-[10px] text-[#8C827A] uppercase font-bold">Operador:</span>
-              <span className="font-bold text-[#18231C] text-xs">
-                {activeStaffUser}
-              </span>
-              {effectiveSellerRole === 'encargado' ? (
-                <span className="text-[10px] bg-purple-100 text-purple-900 border border-purple-300 px-1.5 py-0.5 rounded-xs font-bold">
-                  Encargado · Todos los Locales
-                </span>
-              ) : (
-                assignedBranch && (
-                  <span className="text-[10px] bg-blue-50 text-blue-900 border border-blue-200 px-1 py-0.2 rounded-xs font-semibold">
-                    {assignedBranch}
-                  </span>
-                )
-              )}
-            </div>
-          )}
-
-          {/* Notifications Bell */}
-          <button
-            onClick={() => setShowNotificationsModal(true)}
-            className="relative p-2 bg-[#FAF8F5] hover:bg-[#ECE5DC] border border-[#DCD4C9] rounded-xs text-[#18231C] transition-colors cursor-pointer"
-            title="Centro de Alertas & Notificaciones"
-          >
-            <Bell className="w-4 h-4 text-[#18231C]" />
-            {totalAlertsCount > 0 && (
-              <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-600 text-white rounded-full text-[9px] font-black flex items-center justify-center animate-pulse">
-                {totalAlertsCount}
-              </span>
-            )}
-          </button>
-
-          {/* Botón Nuevo Pedido: Renderizado condicional exclusivo en Visitas Comerciales y Seguimiento Empresas */}
-          {(activeTab === 'visits' || activeTab === 'board') && (
-            <button
-              onClick={() => setShowNewOrderModal(true)}
-              style={{
-                backgroundColor: theme?.crmButtonBg || theme?.primaryColor || '#18231C',
-                color: theme?.crmButtonTextColor || '#FFFFFF',
-              }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xs text-xs font-bold hover:brightness-110 transition-colors cursor-pointer shadow-xs"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>{theme?.siteTexts?.crmNewOrderBtnText || 'Nueva Empresa / Pedido'}</span>
-            </button>
-          )}
-
-          <button
-            onClick={onClose}
-            className="text-[#6F6860] hover:text-[#18231C] text-xs font-bold underline cursor-pointer"
-          >
-            Volver al menú principal
-          </button>
-        </div>
-        </div>
-      </div>
+        </nav>
+      </header>
 
       {/* Main Content Area */}
       <div className="flex-1 overflow-auto">
@@ -909,19 +1132,19 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
               </div>
             )}
 
-            {/* Phase 3: High-visibility Urgent Alerts Banner */}
+            {/* Urgent Alerts Banner */}
             {(delayedOrdersCount > 0 || blockedOrdersCount > 0) && (
-              <div className="bg-red-50 border-l-4 border-red-600 p-3.5 rounded-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-red-950 shadow-2xs">
+              <div className="bg-red-50/70 border border-red-200 p-3.5 rounded-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-red-950">
                 <div className="flex items-center gap-2.5">
-                  <div className="p-1.5 bg-red-600 text-white rounded-xs animate-pulse">
+                  <div className="p-1.5 bg-red-600 text-white rounded-xs shrink-0">
                     <AlertTriangle className="w-4 h-4" />
                   </div>
                   <div>
                     <h5 className="font-bold text-xs uppercase tracking-wider text-red-900">
-                      Atención Requerida · Pedidos con Alerta ({totalAlertsCount})
+                      Atención Requerida · Pedidos con Alerta ({delayedOrdersCount + blockedOrdersCount})
                     </h5>
                     <p className="text-[11px] text-red-800">
-                      Hay <strong>{delayedOrdersCount} pedidos demorados</strong> (&gt;7 días en cotización/seña) y <strong>{blockedOrdersCount} bloqueados</strong> que requieren resolución hoy.
+                      Hay <strong>{delayedOrdersCount} pedidos demorados</strong> (&gt;{notifSettings.staleQuoteDays} días en cotización/seña) y <strong>{blockedOrdersCount} bloqueados</strong> que requieren resolución hoy.
                     </p>
                   </div>
                 </div>
@@ -937,9 +1160,9 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
                   <button
                     type="button"
                     onClick={() => setShowNotificationsModal(true)}
-                    className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-xs text-xs font-bold uppercase transition-colors cursor-pointer shadow-2xs"
+                    className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-xs text-xs font-bold uppercase transition-colors cursor-pointer"
                   >
-                    Ver Alertas ({totalAlertsCount})
+                    Ver Notificaciones ({totalAlertsCount})
                   </button>
                 </div>
               </div>
@@ -1473,13 +1696,16 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
         </div>
       </div>
 
-      {/* Notifications Drawer Modal */}
+      {/* Notifications Popover / Panel */}
       <CRMNotificationsModal
         isOpen={showNotificationsModal}
         onClose={() => setShowNotificationsModal(false)}
-        orders={orders}
-        visits={visits}
+        notifications={crmNotifications}
+        readIds={readNotifIds}
+        onMarkAsRead={handleMarkNotifAsRead}
+        onMarkAllAsRead={handleMarkAllNotifsAsRead}
         onSelectOrder={(ord) => setViewingOrder(ord)}
+        onGoToVisits={() => setActiveTab('visits')}
       />
 
       {/* Read-Only Order Ficha Modal (with internal Editar Ficha button) */}

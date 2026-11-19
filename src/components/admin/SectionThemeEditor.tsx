@@ -327,6 +327,8 @@ export const SectionThemeEditor: React.FC<SectionThemeEditorProps> = ({
         delete updatedTexts.authLoginBtnText;
         delete updatedTexts.authRegisterTitle;
         delete updatedTexts.authRegisterSubtitle;
+        delete updatedTexts.authStaffTitle;
+        delete updatedTexts.authStaffSubtitle;
         delete updatedTexts.authToRegisterLinkText;
         delete updatedTexts.authToStaffLinkText;
         break;
@@ -340,11 +342,22 @@ export const SectionThemeEditor: React.FC<SectionThemeEditorProps> = ({
         delete updated.hubButtonBg;
         delete updated.hubButtonTextColor;
         delete updated.hubButtonHoverBg;
+        delete updatedTexts.hubHeaderTag;
+        delete updatedTexts.hubHeaderSub;
         delete updatedTexts.hubTitle;
         delete updatedTexts.hubSubtitle;
         delete updatedTexts.hubCrmCardText;
+        delete updatedTexts.hubCrmCardDesc;
+        delete updatedTexts.hubCrmBtnText;
+        delete updatedTexts.hubRrhhCardText;
+        delete updatedTexts.hubRrhhCardDesc;
+        delete updatedTexts.hubRrhhBtnText;
         delete updatedTexts.hubAdminCardText;
+        delete updatedTexts.hubAdminCardDesc;
+        delete updatedTexts.hubAdminBtnText;
         delete updatedTexts.hubCatalogCardText;
+        delete updatedTexts.hubCatalogCardDesc;
+        delete updatedTexts.hubCatalogBtnText;
         delete updatedTexts.hubLogoutBtnText;
         break;
       case 'crm':
@@ -361,10 +374,17 @@ export const SectionThemeEditor: React.FC<SectionThemeEditorProps> = ({
         delete updated.crmButtonHoverBg;
         delete updatedTexts.crmTitle;
         delete updatedTexts.crmSubtitle;
+        delete updatedTexts.crmBackBtnText;
         delete updatedTexts.crmColCotizacionText;
         delete updatedTexts.crmColProduccionText;
         delete updatedTexts.crmColListoText;
         delete updatedTexts.crmNewOrderBtnText;
+        delete updatedTexts.crmTabVisitsText;
+        delete updatedTexts.crmTabBoardText;
+        delete updatedTexts.crmTabTasksText;
+        delete updatedTexts.crmTabCalendarText;
+        delete updatedTexts.crmTabSuppliersText;
+        delete updatedTexts.crmTabCostsText;
         break;
       case 'corporate_services':
         delete updated.corporateServicesBgColor;
@@ -389,11 +409,15 @@ export const SectionThemeEditor: React.FC<SectionThemeEditorProps> = ({
         delete updated.footerButtonBg;
         delete updated.footerButtonTextColor;
         delete updated.footerButtonHoverBg;
+        delete updatedTexts.footerContactTitle;
+        delete updatedTexts.footerBranchesTitle;
         delete updatedTexts.footerTagline;
         delete updatedTexts.footerAbout;
         delete updatedTexts.footerPhone;
         delete updatedTexts.footerEmail;
         delete updatedTexts.footerAddress;
+        delete updatedTexts.footerWhatsappBtnText;
+        delete updatedTexts.footerAdminLinkText;
         break;
     }
 
@@ -726,36 +750,56 @@ export const SectionThemeEditor: React.FC<SectionThemeEditorProps> = ({
             {selectedSection === 'auth' && (
               <>
                 {renderTextField('Título de Formulario de Ingreso', 'authLoginTitle', siteTexts.authLoginTitle, 'ACCESO AL CATÁLOGO')}
-                {renderTextField('Bajada de Formulario de Ingreso', 'authLoginSubtitle', siteTexts.authLoginSubtitle, 'Ingresá con tu cuenta para armar pedidos y consultar precios', true)}
+                {renderTextField('Bajada de Formulario de Ingreso', 'authLoginSubtitle', siteTexts.authLoginSubtitle, 'Elegí el tipo de cuenta según cómo comprás: consumidor final o empresa.', true)}
                 {renderTextField('Texto de Botón Principal "Ingresar"', 'authLoginBtnText', siteTexts.authLoginBtnText, 'INGRESAR')}
-                {renderTextField('Título de Formulario de Registro', 'authRegisterTitle', siteTexts.authRegisterTitle, 'CREAR CUENTA NUEVA')}
+                {renderTextField('Título de Formulario de Registro', 'authRegisterTitle', siteTexts.authRegisterTitle, 'ACCESO AL CATÁLOGO')}
                 {renderTextField('Bajada de Formulario de Registro', 'authRegisterSubtitle', siteTexts.authRegisterSubtitle, 'Registrate para solicitar presupuestos y seguimiento comercial', true)}
-                {renderTextField('Enlace para Ir a Registro', 'authToRegisterLinkText', siteTexts.authToRegisterLinkText, '¿No tenés cuenta todavía? Registrate')}
-                {renderTextField('Enlace para Acceso Empleados / Admin', 'authToStaffLinkText', siteTexts.authToStaffLinkText, 'Acceso para Empleados / Administradores')}
+                {renderTextField('Título Acceso Empleados / Admin', 'authStaffTitle', siteTexts.authStaffTitle, 'ADMINISTRACIÓN Y EMPLEADOS')}
+                {renderTextField('Bajada Acceso Empleados / Admin', 'authStaffSubtitle', siteTexts.authStaffSubtitle, 'Ingresá con tu usuario o email y contraseña autorizada.', true)}
+                {renderTextField('Enlace para Ir a Registro', 'authToRegisterLinkText', siteTexts.authToRegisterLinkText, 'Regístrate')}
+                {renderTextField('Enlace para Acceso Empleados / Admin', 'authToStaffLinkText', siteTexts.authToStaffLinkText, 'Acceso para Empleados/Admin')}
               </>
             )}
 
             {/* 6. HUB TEXTS */}
             {selectedSection === 'hub' && (
               <>
-                {renderTextField('Título Principal del Hub', 'hubTitle', siteTexts.hubTitle, 'HUB DE TRABAJO INTERNO')}
-                {renderTextField('Subtítulo del Hub', 'hubSubtitle', siteTexts.hubSubtitle, 'Pampero Gran Mendoza · Sistema Operativo')}
-                {renderTextField('Título de Tarjeta Gestión / CRM', 'hubCrmCardText', siteTexts.hubCrmCardText, 'GESTIÓN / CRM')}
-                {renderTextField('Título de Tarjeta Panel de Control', 'hubAdminCardText', siteTexts.hubAdminCardText, 'PANEL DE CONTROL')}
-                {renderTextField('Título de Tarjeta Catálogo Público', 'hubCatalogCardText', siteTexts.hubCatalogCardText, 'CATÁLOGO PÚBLICO')}
-                {renderTextField('Texto de Botón "Cerrar Sesión / Salir"', 'hubLogoutBtnText', siteTexts.hubLogoutBtnText, 'SALIR')}
+                {renderTextField('Etiqueta Superior del Hub', 'hubHeaderTag', siteTexts.hubHeaderTag, 'HUB DE TRABAJO INTERNO')}
+                {renderTextField('Subtítulo Barra del Hub', 'hubHeaderSub', siteTexts.hubHeaderSub, 'Pampero Gran Mendoza · Sistema Operativo')}
+                {renderTextField('Título Principal del Hub', 'hubTitle', siteTexts.hubTitle, 'Hub de Trabajo Interno')}
+                {renderTextField('Subtítulo del Hub (opcional)', 'hubSubtitle', siteTexts.hubSubtitle, '')}
+                {renderTextField('Título Tarjeta Gestión / CRM', 'hubCrmCardText', siteTexts.hubCrmCardText, 'Gestión / CRM')}
+                {renderTextField('Descripción Tarjeta CRM', 'hubCrmCardDesc', siteTexts.hubCrmCardDesc, 'Tablero Kanban con cotizaciones, pedidos, visitas y seguimiento.', true)}
+                {renderTextField('Botón Tarjeta CRM', 'hubCrmBtnText', siteTexts.hubCrmBtnText, 'Ir a Gestión / CRM')}
+                {renderTextField('Título Tarjeta RRHH', 'hubRrhhCardText', siteTexts.hubRrhhCardText, 'RRHH')}
+                {renderTextField('Descripción Tarjeta RRHH', 'hubRrhhCardDesc', siteTexts.hubRrhhCardDesc, 'Legajos de personal, fichaje GPS por local, horarios y vacaciones.', true)}
+                {renderTextField('Botón Tarjeta RRHH', 'hubRrhhBtnText', siteTexts.hubRrhhBtnText, 'Ir a RRHH')}
+                {renderTextField('Título Tarjeta Panel de Control', 'hubAdminCardText', siteTexts.hubAdminCardText, 'Panel de Control')}
+                {renderTextField('Descripción Tarjeta Panel', 'hubAdminCardDesc', siteTexts.hubAdminCardDesc, 'Administración de catálogo, precios, promociones y locales.', true)}
+                {renderTextField('Botón Tarjeta Panel', 'hubAdminBtnText', siteTexts.hubAdminBtnText, 'Panel de Control')}
+                {renderTextField('Título Tarjeta Catálogo Público', 'hubCatalogCardText', siteTexts.hubCatalogCardText, 'Catálogo Público')}
+                {renderTextField('Descripción Tarjeta Catálogo', 'hubCatalogCardDesc', siteTexts.hubCatalogCardDesc, 'Acceso directo a la tienda y catálogo de productos.', true)}
+                {renderTextField('Botón Tarjeta Catálogo', 'hubCatalogBtnText', siteTexts.hubCatalogBtnText, 'Ver Catálogo')}
+                {renderTextField('Texto de Botón "Cerrar Sesión / Salir"', 'hubLogoutBtnText', siteTexts.hubLogoutBtnText, 'Salir')}
               </>
             )}
 
             {/* 7. CRM TEXTS */}
             {selectedSection === 'crm' && (
               <>
-                {renderTextField('Título de la Cabecera CRM', 'crmTitle', siteTexts.crmTitle, 'Gestión Comercial & Pedidos (CRM)')}
+                {renderTextField('Título de la Cabecera CRM', 'crmTitle', siteTexts.crmTitle, 'Gestión Pampero')}
                 {renderTextField('Subtítulo del CRM', 'crmSubtitle', siteTexts.crmSubtitle, 'Pampero Gran Mendoza')}
-                {renderTextField('Título Columna 1 (Cotizaciones)', 'crmColCotizacionText', siteTexts.crmColCotizacionText, 'Cotización Solicitada')}
+                {renderTextField('Botón Volver al Hub', 'crmBackBtnText', siteTexts.crmBackBtnText, 'Volver al Hub')}
+                {renderTextField('Texto de Botón "Nuevo Pedido"', 'crmNewOrderBtnText', siteTexts.crmNewOrderBtnText, 'Nuevo Pedido')}
+                {renderTextField('Pestaña 1: Visitas Comerciales', 'crmTabVisitsText', siteTexts.crmTabVisitsText, '1. Visitas Comerciales')}
+                {renderTextField('Pestaña 2: Seguimiento Empresas', 'crmTabBoardText', siteTexts.crmTabBoardText, '2. Seguimiento Empresas')}
+                {renderTextField('Pestaña 3: Tareas', 'crmTabTasksText', siteTexts.crmTabTasksText, '3. Tareas')}
+                {renderTextField('Pestaña 4: Calendario', 'crmTabCalendarText', siteTexts.crmTabCalendarText, '4. Calendario')}
+                {renderTextField('Pestaña Pedidos Proveedor', 'crmTabSuppliersText', siteTexts.crmTabSuppliersText, 'Pedidos Proveedor')}
+                {renderTextField('Pestaña Control de Costos', 'crmTabCostsText', siteTexts.crmTabCostsText, 'Control de Costos')}
+                {renderTextField('Título Columna 1 (Cotizaciones)', 'crmColCotizacionText', siteTexts.crmColCotizacionText, 'Cotización Recibida')}
                 {renderTextField('Título Columna 2 (Producción)', 'crmColProduccionText', siteTexts.crmColProduccionText, 'En Producción')}
                 {renderTextField('Título Columna 3 (Listo)', 'crmColListoText', siteTexts.crmColListoText, 'Listo para Retiro')}
-                {renderTextField('Texto de Botón "Nuevo Pedido"', 'crmNewOrderBtnText', siteTexts.crmNewOrderBtnText, 'Nuevo Pedido Manual')}
               </>
             )}
 
@@ -764,7 +808,7 @@ export const SectionThemeEditor: React.FC<SectionThemeEditorProps> = ({
               <>
                 {renderTextField('Título Portal de Curva de Talles', 'sizingPortalTitle', siteTexts.sizingPortalTitle, 'Portal de Curva de Talles Corporativos')}
                 {renderTextField('Subtítulo Portal de Talles', 'sizingPortalSubtitle', siteTexts.sizingPortalSubtitle, 'Planilla y relevamiento de indumentaria para personal de empresas', true)}
-                {renderTextField('Título Simulador de Uniformes', 'uniformSimulatorTitle', siteTexts.uniformSimulatorTitle, 'Armador de Uniformes y Conjuntos Pampero')}
+                {renderTextField('Título Simulador de Uniformes', 'uniformSimulatorTitle', siteTexts.uniformSimulatorTitle, 'Armador de Uniformes Virtual · Pampero Mendoza')}
                 {renderTextField('Subtítulo Simulador de Uniformes', 'uniformSimulatorSubtitle', siteTexts.uniformSimulatorSubtitle, 'Diseñá y previsualizá la dotación completa de tu cuadrilla', true)}
                 {renderTextField('Texto de Botón de Cotización B2B', 'corporateQuoteBtnText', siteTexts.corporateQuoteBtnText, 'SOLICITAR COTIZACIÓN DE DOTACIÓN')}
               </>
@@ -773,11 +817,15 @@ export const SectionThemeEditor: React.FC<SectionThemeEditorProps> = ({
             {/* 9. FOOTER TEXTS */}
             {selectedSection === 'footer' && (
               <>
-                {renderTextField('Lema o Bajada Institucional', 'footerTagline', siteTexts.footerTagline, 'Catálogo digital de exhibición oficial · Gran Mendoza')}
-                {renderTextField('Párrafo de Presentación de la Empresa', 'footerAbout', siteTexts.footerAbout, 'Indumentaria y calzado oficial Pampero para trabajo, campo y tiempo libre en la provincia de Mendoza.', true)}
+                {renderTextField('Título Columna Contacto', 'footerContactTitle', siteTexts.footerContactTitle, 'CONTACTO')}
+                {renderTextField('Título Columna Locales', 'footerBranchesTitle', siteTexts.footerBranchesTitle, 'LOCALES')}
+                {renderTextField('Lema o Bajada Institucional', 'footerTagline', siteTexts.footerTagline, 'Atención personalizada a particulares y ventas corporativas.')}
+                {renderTextField('Párrafo de Presentación de la Empresa', 'footerAbout', siteTexts.footerAbout, 'Catálogo digital de exhibición oficial en Gran Mendoza.', true)}
                 {renderTextField('Teléfono de Contacto', 'footerPhone', siteTexts.footerPhone, '261 527-6713')}
                 {renderTextField('Email de Contacto', 'footerEmail', siteTexts.footerEmail, 'pamperogranmendoza@gmail.com')}
                 {renderTextField('Dirección de Sucursales', 'footerAddress', siteTexts.footerAddress, 'Pescara 250 (Maipú) · San Martín 477 (Ciudad) · Patricios 384 (Luján)', true)}
+                {renderTextField('Texto Botón WhatsApp Footer', 'footerWhatsappBtnText', siteTexts.footerWhatsappBtnText, 'WhatsApp 261 527-6713')}
+                {renderTextField('Enlace Acceso Administrador Footer', 'footerAdminLinkText', siteTexts.footerAdminLinkText, 'Acceso Administrador (Panel de Control)')}
               </>
             )}
           </div>

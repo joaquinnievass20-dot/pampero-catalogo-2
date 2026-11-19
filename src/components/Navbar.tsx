@@ -45,6 +45,7 @@ interface NavbarProps {
   onOpenUniformSimulator?: () => void;
   onOpenSizingPortal?: () => void;
   onOpenCRM?: () => void;
+  onOpenRRHH?: () => void;
   onOpenHub?: () => void;
   promotions: Promotion[];
   activePromoFilter: string | null;
@@ -72,6 +73,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenUniformSimulator,
   onOpenSizingPortal,
   onOpenCRM,
+  onOpenRRHH,
   onOpenHub,
   promotions,
   activePromoFilter,
@@ -381,6 +383,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             onLogout={onLogout}
             onOpenAdmin={onOpenAdmin}
             onOpenCRM={onOpenCRM}
+            onOpenRRHH={onOpenRRHH}
             onOpenHub={onOpenHub}
             onOpenProfile={onOpenProfile}
             onOpenUniformSimulator={onOpenUniformSimulator}

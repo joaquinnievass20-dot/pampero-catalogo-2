@@ -778,27 +778,93 @@ export const CRMCalendarTab: React.FC<CRMCalendarTabProps> = ({
         <div className="flex items-center gap-1.5 flex-wrap">
           <Filter className="w-4 h-4 text-[#8C827A] mr-1" />
           {[
-            { key: 'all' as const, label: 'Todos', count: allEntries.length },
-            { key: 'holiday' as const, label: 'Feriados & Comerciales', count: allEntries.filter((e) => e.source === 'holiday').length },
-            { key: 'task' as const, label: 'Tareas / Vencimientos', count: allEntries.filter((e) => e.source === 'task').length },
-            { key: 'visit' as const, label: 'Visitas Comerciales', count: allEntries.filter((e) => e.source === 'visit').length },
-            { key: 'order' as const, label: 'Seguimiento Empresas', count: allEntries.filter((e) => e.source === 'order').length },
-            { key: 'custom' as const, label: 'Mis Eventos / Privados', count: allEntries.filter((e) => e.source === 'custom').length },
-          ].map((pill) => (
-            <button
-              key={pill.key}
-              type="button"
-              onClick={() => setSourceFilter(pill.key)}
-              className={`px-2.5 py-1 text-[11px] font-bold rounded-xs border transition-colors cursor-pointer flex items-center gap-1.5 ${
-                sourceFilter === pill.key
-                  ? 'bg-[#18231C] text-white border-[#18231C]'
-                  : 'bg-[#FAF8F5] text-[#6F6860] border-[#DCD4C9] hover:text-[#18231C]'
-              }`}
-            >
-              <span>{pill.label}</span>
-              <span className="px-1 rounded-xs bg-black/10 text-[10px]">{pill.count}</span>
-            </button>
-          ))}
+            {
+              key: 'all' as const,
+              label: 'Todos',
+              count: allEntries.length,
+              dotClass: 'bg-[#18231C]',
+              activeClass: 'bg-[#18231C] text-white border-[#18231C]',
+              idleClass: 'bg-[#FAF8F5] text-[#18231C] border-[#DCD4C9] hover:bg-neutral-100',
+              badgeActive: 'bg-white/20 text-white',
+              badgeIdle: 'bg-black/10 text-[#18231C]',
+            },
+            {
+              key: 'holiday' as const,
+              label: 'Feriados & Comerciales',
+              count: allEntries.filter((e) => e.source === 'holiday').length,
+              dotClass: 'bg-amber-500',
+              activeClass: 'bg-amber-600 text-white border-amber-700',
+              idleClass: 'bg-amber-50/70 text-amber-900 border-amber-200 hover:bg-amber-100/80',
+              badgeActive: 'bg-white/20 text-white',
+              badgeIdle: 'bg-amber-200/70 text-amber-950',
+            },
+            {
+              key: 'task' as const,
+              label: 'Tareas / Vencimientos',
+              count: allEntries.filter((e) => e.source === 'task').length,
+              dotClass: 'bg-red-600',
+              activeClass: 'bg-red-600 text-white border-red-700',
+              idleClass: 'bg-red-50/70 text-red-900 border-red-200 hover:bg-red-100/80',
+              badgeActive: 'bg-white/20 text-white',
+              badgeIdle: 'bg-red-200/70 text-red-950',
+            },
+            {
+              key: 'visit' as const,
+              label: 'Visitas Comerciales',
+              count: allEntries.filter((e) => e.source === 'visit').length,
+              dotClass: 'bg-purple-600',
+              activeClass: 'bg-purple-600 text-white border-purple-700',
+              idleClass: 'bg-purple-50/70 text-purple-900 border-purple-200 hover:bg-purple-100/80',
+              badgeActive: 'bg-white/20 text-white',
+              badgeIdle: 'bg-purple-200/70 text-purple-950',
+            },
+            {
+              key: 'order' as const,
+              label: 'Seguimiento Empresas',
+              count: allEntries.filter((e) => e.source === 'order').length,
+              dotClass: 'bg-blue-600',
+              activeClass: 'bg-blue-600 text-white border-blue-700',
+              idleClass: 'bg-blue-50/70 text-blue-900 border-blue-200 hover:bg-blue-100/80',
+              badgeActive: 'bg-white/20 text-white',
+              badgeIdle: 'bg-blue-200/70 text-blue-950',
+            },
+            {
+              key: 'custom' as const,
+              label: 'Mis Eventos / Privados',
+              count: allEntries.filter((e) => e.source === 'custom').length,
+              dotClass: 'bg-teal-600',
+              activeClass: 'bg-teal-600 text-white border-teal-700',
+              idleClass: 'bg-teal-50/70 text-teal-900 border-teal-200 hover:bg-teal-100/80',
+              badgeActive: 'bg-white/20 text-white',
+              badgeIdle: 'bg-teal-200/70 text-teal-950',
+            },
+          ].map((pill) => {
+            const isSelected = sourceFilter === pill.key;
+            return (
+              <button
+                key={pill.key}
+                type="button"
+                onClick={() => setSourceFilter(pill.key)}
+                className={`px-2.5 py-1 text-[11px] font-bold rounded-xs border transition-colors cursor-pointer flex items-center gap-1.5 ${
+                  isSelected ? pill.activeClass : pill.idleClass
+                }`}
+              >
+                <span
+                  className={`w-2 h-2 rounded-full shrink-0 ${
+                    isSelected ? 'bg-white' : pill.dotClass
+                  }`}
+                />
+                <span>{pill.label}</span>
+                <span
+                  className={`px-1.5 py-0.2 rounded-xs text-[10px] font-mono tabular-nums ${
+                    isSelected ? pill.badgeActive : pill.badgeIdle
+                  }`}
+                >
+                  {pill.count}
+                </span>
+              </button>
+            );
+          })}
         </div>
 
         <div className="relative min-w-[220px] flex-1 max-w-xs">

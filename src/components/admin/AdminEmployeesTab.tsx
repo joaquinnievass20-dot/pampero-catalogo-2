@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { EmployeeAccount } from '../../types';
+import { ADMIN_PANEL_TAB_DEFINITIONS } from '../../utils/permissions';
 import {
   subscribeToFirestoreEmployees,
   saveFirestoreEmployee,
   deleteFirestoreEmployee,
-  seedInitialFirestoreEmployeesIfEmpty,
   createFirebaseAuthAndFirestoreUser,
 } from '../../services/firebase';
 import { 
@@ -29,17 +29,8 @@ interface AdminEmployeesTabProps {
 
 export const AVAILABLE_TABS_FOR_EMPLOYEE = [
   { id: 'crm', label: 'Tablero de Gestión / CRM (Pedidos y Empresas)' },
-  { id: 'products', label: 'Productos (Crear / Editar / Eliminar)' },
-  { id: 'mass_images', label: 'Carga Masiva y Edición de Fotos' },
-  { id: 'prices', label: 'Precios & Planillas Excel' },
-  { id: 'variants', label: 'Colores y Talles por Artículo' },
-  { id: 'promos', label: 'Promociones & Banners' },
-  { id: 'coupons', label: 'Cupones de Descuento' },
-  { id: 'quotes', label: 'Cotizaciones Recibidas' },
-  { id: 'branches', label: 'Sucursales' },
-  { id: 'theme', label: 'Diseño, Colores & Logo' },
-  { id: 'analytics', label: 'Métricas & Búsquedas' },
-  { id: 'users', label: 'Cuentas Registradas' },
+  { id: 'rrhh', label: 'Módulo RRHH (Fichaje de Llegada, Horarios y Legajo)' },
+  ...ADMIN_PANEL_TAB_DEFINITIONS.map((t) => ({ id: t.key, label: `Panel · ${t.label}` })),
 ];
 
 export const INITIAL_EMPLOYEES: EmployeeAccount[] = [
@@ -88,17 +79,16 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
   const [employees, setEmployees] = useState<EmployeeAccount[]>(() => {
     try {
       const saved = localStorage.getItem('pampero_employees');
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
     } catch {}
-    return INITIAL_EMPLOYEES;
+    return [];
   });
 
   // Subscribe to Cloud Firestore collection 'empleados'
   useEffect(() => {
-    seedInitialFirestoreEmployeesIfEmpty(INITIAL_EMPLOYEES).catch((err) => {
-      console.warn('[FIREBASE] Error sembrando operadores iniciales:', err);
-    });
-
     const unsubscribe = subscribeToFirestoreEmployees((remote) => {
       if (Array.isArray(remote)) {
         setEmployees(remote);
@@ -125,14 +115,7 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
   const [sellerRole, setSellerRole] = useState<'encargado' | 'local' | 'vendedor'>('vendedor');
   const [crmScope, setCrmScope] = useState<'all' | 'branch_only' | 'own_only'>('branch_only');
   const [canControlTasks, setCanControlTasks] = useState(false);
-  const [allowedTabs, setAllowedTabs] = useState<string[]>([
-    'products',
-    'variants',
-    'prices',
-    'mass_images',
-    'quotes',
-    'crm'
-  ]);
+  const [allowedTabs, setAllowedTabs] = useState<string[]>(['crm']);
 
   const handleToggleTab = (tabId: string) => {
     setAllowedTabs((prev) =>
@@ -152,7 +135,7 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
     setSellerRole('vendedor');
     setCrmScope('branch_only');
     setCanControlTasks(false);
-    setAllowedTabs(['crm', 'products', 'variants', 'prices', 'quotes']);
+    setAllowedTabs(['crm']);
   };
 
   const handleOpenCreate = () => {
@@ -166,7 +149,7 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
     setSellerRole('vendedor');
     setCrmScope('branch_only');
     setCanControlTasks(false);
-    setAllowedTabs(['crm', 'products', 'variants', 'prices', 'quotes']);
+    setAllowedTabs(['crm']);
     setShowCreateModal(true);
   };
 
@@ -220,6 +203,9 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
           crmScope,
           canControlTasks,
           allowedTabs,
+          panelTabsConfigured: true,
+          rrhhConfigured: true,
+          canManageRRHH: Boolean(existing?.canManageRRHH || allowedTabs.includes('rrhh_admin')),
           createdAt: existing?.createdAt || new Date().toISOString().split('T')[0],
           active: existing ? existing.active : true,
         };
@@ -240,10 +226,13 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
           canControlTasks,
           status: 'active' as const,
           allowedTabs,
+          panelTabsConfigured: true,
+          rrhhConfigured: true,
+          canManageRRHH: allowedTabs.includes('rrhh_admin'),
           crmTabs: ['visits', 'board', 'tasks', 'calendar', 'suppliers', 'costs'],
         };
 
-        const authResult = await createFirebaseAuthAndFirestoreUser(newUserPayload, passClean);
+        const authResult = await createFirebaseAuthAndFirestoreUser(newUserPayload, passClean, { allowRestoreRevoked: true });
         if (!authResult.success) {
           setModalError(authResult.error || 'Error al crear la cuenta en Firebase Authentication.');
           setIsSaving(false);
@@ -264,6 +253,9 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
           canControlTasks,
           crmTabs: ['visits', 'board', 'tasks', 'calendar', 'suppliers', 'costs'],
           allowedTabs,
+          panelTabsConfigured: true,
+          rrhhConfigured: true,
+          canManageRRHH: allowedTabs.includes('rrhh_admin'),
           createdAt: new Date().toISOString().split('T')[0],
           active: true,
         };
@@ -288,7 +280,8 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
   };
 
   const handleDelete = async (id: string) => {
-    if (confirm('¿Seguro que deseás dar de baja la cuenta de este operador?')) {
+    const targetEmp = employees.find((e) => e.id === id);
+    if (confirm('¿Seguro que deseás dar de baja la cuenta de este operador? No podrá volver a ingresar al sistema.')) {
       setEmployees((prev) => {
         const updated = prev.filter((e) => e.id !== id);
         try {
@@ -296,7 +289,7 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
         } catch {}
         return updated;
       });
-      await deleteFirestoreEmployee(id);
+      await deleteFirestoreEmployee(id, targetEmp?.email);
       triggerSaveNotice();
     }
   };

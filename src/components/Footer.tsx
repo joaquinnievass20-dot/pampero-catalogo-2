@@ -81,7 +81,7 @@ export const Footer: React.FC<FooterProps> = ({
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xs text-[11px] font-bold uppercase tracking-wider transition-all hover:brightness-110 shadow-xs"
               >
                 <MessageCircle className="w-3.5 h-3.5" />
-                WhatsApp {theme.siteTexts?.footerPhone || theme.whatsappNumber || '261 527-6713'}
+                {theme.siteTexts?.footerWhatsappBtnText || `WhatsApp ${theme.siteTexts?.footerPhone || theme.whatsappNumber || '261 527-6713'}`}
               </a>
 
               <a
@@ -99,7 +99,7 @@ export const Footer: React.FC<FooterProps> = ({
           {/* Col 2: Contacto con los textos exactos solicitados */}
           <div className="space-y-3">
             <h4 className="font-display text-xl tracking-[0.08em] text-[#F5F2EC] uppercase font-bold">
-              CONTACTO
+              {theme.siteTexts?.footerContactTitle || 'CONTACTO'}
             </h4>
             <div className="space-y-2.5 text-xs text-neutral-300">
               <p className="flex items-center gap-2">
@@ -119,7 +119,7 @@ export const Footer: React.FC<FooterProps> = ({
           {/* Col 3: Locales */}
           <div className="space-y-3">
             <h4 className="font-display text-xl tracking-[0.08em] text-[#F5F2EC] uppercase font-bold">
-              LOCALES ({branches.length})
+              {theme.siteTexts?.footerBranchesTitle || 'LOCALES'} ({branches.length})
             </h4>
             <div className="space-y-3 text-xs text-neutral-300">
               {branches.map((b) => (
@@ -181,7 +181,7 @@ export const Footer: React.FC<FooterProps> = ({
             className="text-neutral-400 hover:text-white flex items-center gap-1.5 transition-colors cursor-pointer"
           >
             <ShieldCheck className="w-3.5 h-3.5" style={{ color: iconColor }} />
-            <span>Acceso Administrador (Panel de Control)</span>
+            <span>{theme.siteTexts?.footerAdminLinkText || 'Acceso Administrador (Panel de Control)'}</span>
           </button>
         </div>
       </div>

@@ -1,327 +1,296 @@
-import React from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { CRMOrder, LeadVisit } from '../../types';
-import { X, AlertTriangle, Clock, MessageCircle, Building2, User, CheckCircle2, Bell, Calendar } from 'lucide-react';
+import {
+  X,
+  AlertTriangle,
+  Clock,
+  MessageCircle,
+  CheckCircle2,
+  Bell,
+  Calendar,
+  Check,
+  CheckCheck,
+  ArrowRight,
+} from 'lucide-react';
+
+export interface CRMNotificationItem {
+  id: string;
+  category: 'reminder' | 'blocked' | 'delayed' | 'visit';
+  title: string;
+  subtitle: string;
+  meta: string;
+  badgeText: string;
+  badgeClass: string;
+  order?: CRMOrder;
+  visit?: LeadVisit;
+  whatsappPhone?: string;
+  whatsappText?: string;
+}
 
 interface CRMNotificationsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  orders: CRMOrder[];
-  visits: LeadVisit[];
+  notifications: CRMNotificationItem[];
+  readIds: string[];
+  onMarkAsRead: (id: string) => void;
+  onMarkAllAsRead: () => void;
   onSelectOrder?: (order: CRMOrder) => void;
+  onGoToVisits?: () => void;
 }
 
 export const CRMNotificationsModal: React.FC<CRMNotificationsModalProps> = ({
   isOpen,
   onClose,
-  orders,
-  visits,
+  notifications,
+  readIds,
+  onMarkAsRead,
+  onMarkAllAsRead,
   onSelectOrder,
+  onGoToVisits,
 }) => {
+  const readSet = useMemo(() => new Set(readIds), [readIds]);
+  const unreadCount = useMemo(
+    () => notifications.filter((n) => !readSet.has(n.id)).length,
+    [notifications, readSet]
+  );
+
+  const [filterMode, setFilterMode] = useState<'unread' | 'all'>('unread');
+
+  useEffect(() => {
+    if (isOpen) {
+      setFilterMode(unreadCount > 0 ? 'unread' : 'all');
+    }
+  }, [isOpen, unreadCount]);
+
   if (!isOpen) return null;
 
-  const todayIso = new Date().toISOString().split('T')[0];
+  const visibleItems =
+    filterMode === 'unread'
+      ? notifications.filter((n) => !readSet.has(n.id))
+      : notifications;
 
-  // Read configurable notification settings from Admin Panel
-  let settings = {
-    staleQuoteDays: 7,
-    notifyNewQuotes: true,
-    notifyStaleOrders: true,
-    notifyBlockedOrders: true,
-    notifyPendingVisits: true,
-  };
-  try {
-    const saved = localStorage.getItem('pampero_notification_settings');
-    if (saved) settings = { ...settings, ...JSON.parse(saved) };
-  } catch {}
-
-  // 0. Observation Reminders (Visitas Comerciales + Seguimiento Empresas)
-  const orderReminders = orders.filter(
-    (o) => Boolean(o.reminderDate) && o.status !== 'entregado' && o.status !== 'cancelado'
-  );
-  const visitReminders = visits.filter(
-    (v) => Boolean(v.reminderDate) && v.status !== 'cerrada' && v.status !== 'cancelada'
-  );
-  const dueObservationRemindersCount =
-    orderReminders.filter((o) => (o.reminderDate || '') <= todayIso).length +
-    visitReminders.filter((v) => (v.reminderDate || '') <= todayIso).length;
-
-  // 1. Identify delayed orders based on configured staleQuoteDays
-  const delayedOrders = settings.notifyStaleOrders
-    ? orders.filter((o) => {
-        const daysOld = Math.floor((Date.now() - new Date(o.date).getTime()) / (1000 * 60 * 60 * 24));
-        return daysOld >= settings.staleQuoteDays && (o.status === 'cotizacion' || o.status === 'sena_50');
-      })
-    : [];
-
-  // 2. Identify blocked orders
-  const blockedOrders = settings.notifyBlockedOrders
-    ? orders.filter((o) => Boolean(o.blockReason))
-    : [];
-
-  // 3. Identify visits requiring follow-up
-  const pendingVisits = settings.notifyPendingVisits
-    ? visits.filter((v) => v.status === 'programada' || v.status === 'presupuesto_enviado')
-    : [];
-
-  const totalAlerts = delayedOrders.length + blockedOrders.length + pendingVisits.length + dueObservationRemindersCount;
-
-  const handleWhatsAppFollowUp = (clientName: string, id: string) => {
-    const text = encodeURIComponent(
-      `Hola ${clientName}, te escribimos de Pampero Gran Mendoza por la cotización #${id.slice(-6)}. ¿Pudiste revisarla o te gustaría que coordinemos una muestra de talles?`
-    );
-    window.open(`https://wa.me/?text=${text}`, '_blank');
+  const getIcon = (cat: CRMNotificationItem['category']) => {
+    switch (cat) {
+      case 'blocked':
+        return <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />;
+      case 'delayed':
+        return <Clock className="w-4 h-4 text-amber-600 shrink-0" />;
+      case 'reminder':
+        return <Calendar className="w-4 h-4 text-[#B9522F] shrink-0" />;
+      case 'visit':
+        return <CheckCircle2 className="w-4 h-4 text-purple-600 shrink-0" />;
+    }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fadeIn">
-      <div className="bg-white rounded-xs border border-[#DCD4C9] shadow-2xl max-w-xl w-full overflow-hidden flex flex-col max-h-[85vh]">
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-end bg-black/45 p-3 sm:p-5 animate-fadeIn"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="bg-white rounded-xs border border-[#DCD4C9] shadow-2xl max-w-lg w-full overflow-hidden flex flex-col max-h-[88vh] mt-10 sm:mt-12"
+      >
         {/* Header */}
-        <div className="bg-[#18231C] px-6 py-4 flex items-center justify-between text-white">
+        <div className="bg-[#18231C] px-5 py-3.5 flex items-center justify-between text-white">
           <div className="flex items-center gap-2.5">
-            <div className="p-1.5 bg-amber-500/20 text-amber-400 rounded-xs">
-              <AlertTriangle className="w-5 h-5" />
+            <div className="p-1.5 bg-white/10 text-[#FDB813] rounded-xs">
+              <Bell className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="font-bold text-sm uppercase tracking-wider">Centro de Notificaciones & Alertas</h3>
-              <p className="text-[11px] text-[#DCD4C9]/70">
-                {totalAlerts} alertas requieren atención del equipo comercial
+              <h3 className="font-bold text-sm uppercase tracking-wider">
+                Notificaciones del Equipo
+              </h3>
+              <p className="text-[11px] text-[#DCD4C9]/80 tabular-nums">
+                {unreadCount > 0
+                  ? `${unreadCount} sin leer · ${notifications.length} totales`
+                  : 'Todo al día · Sin notificaciones pendientes'}
               </p>
             </div>
           </div>
-          <button onClick={onClose} className="text-white/60 hover:text-white cursor-pointer" aria-label="Cerrar">
-            <X className="w-5 h-5" />
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-white/70 hover:text-white cursor-pointer p-1"
+            aria-label="Cerrar notificaciones"
+          >
+            <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Content list */}
-        <div className="p-6 overflow-y-auto space-y-6">
-          {/* Section 0: Recordatorios de Observaciones y Eventos */}
-          {(orderReminders.length > 0 || visitReminders.length > 0) && (
-            <div>
-              <h4 className="text-xs font-bold uppercase tracking-wider text-[#B9522F] flex items-center gap-1.5 mb-2.5">
-                <Bell className="w-3.5 h-3.5" />
-                Recordatorios de Observaciones ({orderReminders.length + visitReminders.length})
-              </h4>
-              <div className="space-y-2">
-                {orderReminders.map((o) => {
-                  const isDue = (o.reminderDate || '') <= todayIso;
-                  return (
-                    <div
-                      key={`rem-ord-${o.id}`}
-                      className={`p-3 rounded-xs border flex items-start justify-between gap-3 ${
-                        isDue ? 'bg-amber-50 border-amber-300' : 'bg-[#FAF8F5] border-[#DCD4C9]'
-                      }`}
-                    >
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5 font-bold text-xs text-[#18231C] flex-wrap">
-                          <Calendar className="w-3.5 h-3.5 text-[#B9522F]" />
-                          <span>Seguimiento · {o.clientName}</span>
-                          <span className="text-[10px] font-mono text-[#6F6860]">
-                            {o.trackingCode || o.orderNumber || `#${o.id.slice(-6)}`}
-                          </span>
-                          {isDue && (
-                            <span className="text-[9px] font-black uppercase px-1.5 py-0.2 bg-red-600 text-white rounded-xs">
-                              Vence Hoy / Atrasado
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-[11px] text-[#18231C] mt-1 font-medium">
-                          {o.reminderNote || o.observations || 'Recordatorio programado'}
-                        </p>
-                        <p className="text-[10px] text-[#6F6860] mt-0.5">
-                          Fecha aviso: <strong>{o.reminderDate}</strong> {o.reminderTime ? `${o.reminderTime}hs` : ''} · Vendedor: {o.seller || 'Sin asignar'}
-                        </p>
-                      </div>
-                      {onSelectOrder && (
-                        <button
-                          onClick={() => {
-                            onSelectOrder(o);
-                            onClose();
-                          }}
-                          className="px-2.5 py-1 bg-[#18231C] hover:bg-black text-white text-[10px] font-bold rounded-xs cursor-pointer shrink-0"
-                        >
-                          Ver Ficha
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
-                {visitReminders.map((v) => {
-                  const isDue = (v.reminderDate || '') <= todayIso;
-                  return (
-                    <div
-                      key={`rem-vis-${v.id}`}
-                      className={`p-3 rounded-xs border flex items-start justify-between gap-3 ${
-                        isDue ? 'bg-amber-50 border-amber-300' : 'bg-[#FAF8F5] border-[#DCD4C9]'
-                      }`}
-                    >
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5 font-bold text-xs text-[#18231C] flex-wrap">
-                          <Calendar className="w-3.5 h-3.5 text-purple-700" />
-                          <span>Visita · {v.companyName}</span>
-                          {v.trackingCode && (
-                            <span className="text-[10px] font-mono text-[#6F6860]">{v.trackingCode}</span>
-                          )}
-                          {isDue && (
-                            <span className="text-[9px] font-black uppercase px-1.5 py-0.2 bg-red-600 text-white rounded-xs">
-                              Vence Hoy / Atrasado
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-[11px] text-[#18231C] mt-1 font-medium">
-                          {v.reminderNote || v.notes || 'Recordatorio de visita comercial'}
-                        </p>
-                        <p className="text-[10px] text-[#6F6860] mt-0.5">
-                          Fecha aviso: <strong>{v.reminderDate}</strong> {v.reminderTime ? `${v.reminderTime}hs` : ''} · Vendedor: {v.seller}
-                        </p>
-                      </div>
-                      {Boolean(v.phone && String(v.phone).trim()) && (
-                        <a
-                          href={`https://wa.me/${String(v.phone).replace(/\D/g, '')}?text=Hola%20${encodeURIComponent(String(v.contactName || ''))},%20te%20escribimos%20de%20Pampero%20Mendoza.`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="px-2.5 py-1 bg-[#25D366] text-white text-[10px] font-bold rounded-xs flex items-center gap-1 shrink-0"
-                        >
-                          <MessageCircle className="w-3 h-3" />
-                          WhatsApp
-                        </a>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+        {/* Filter Tabs + Mark All Read */}
+        <div className="px-4 py-2.5 bg-[#FAF8F5] border-b border-[#DCD4C9] flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setFilterMode('unread')}
+              className={`px-3 py-1 rounded-xs text-[11px] font-bold uppercase tracking-wider border transition-colors cursor-pointer ${
+                filterMode === 'unread'
+                  ? 'bg-[#18231C] border-[#18231C] text-white'
+                  : 'bg-white border-[#DCD4C9] text-[#6F6860] hover:text-[#18231C]'
+              }`}
+            >
+              No leídas ({unreadCount})
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilterMode('all')}
+              className={`px-3 py-1 rounded-xs text-[11px] font-bold uppercase tracking-wider border transition-colors cursor-pointer ${
+                filterMode === 'all'
+                  ? 'bg-[#18231C] border-[#18231C] text-white'
+                  : 'bg-white border-[#DCD4C9] text-[#6F6860] hover:text-[#18231C]'
+              }`}
+            >
+              Todas ({notifications.length})
+            </button>
+          </div>
 
-          {/* Section A: Pedidos Bloqueados */}
-          {blockedOrders.length > 0 && (
-            <div>
-              <h4 className="text-xs font-bold uppercase tracking-wider text-red-700 flex items-center gap-1.5 mb-2.5">
-                <AlertTriangle className="w-3.5 h-3.5" />
-                Pedidos con Bloqueo ({blockedOrders.length})
-              </h4>
-              <div className="space-y-2">
-                {blockedOrders.map((o) => (
-                  <div key={o.id} className="p-3 bg-red-50/70 border border-red-200 rounded-xs flex items-start justify-between gap-3">
-                    <div>
-                      <div className="flex items-center gap-1.5 font-bold text-xs text-[#18231C]">
-                        {o.clientType === 'empresa' ? <Building2 className="w-3.5 h-3.5 text-amber-600" /> : <User className="w-3.5 h-3.5 text-emerald-600" />}
-                        <span>{o.clientName}</span>
-                        <span className="text-[10px] text-[#6F6860] font-mono">#{o.id.slice(-6)}</span>
+          {unreadCount > 0 && (
+            <button
+              type="button"
+              onClick={onMarkAllAsRead}
+              className="inline-flex items-center gap-1 px-2.5 py-1 bg-white hover:bg-emerald-50 border border-emerald-400 text-emerald-800 rounded-xs text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-colors"
+            >
+              <CheckCheck className="w-3.5 h-3.5" />
+              <span>Marcar todas leídas</span>
+            </button>
+          )}
+        </div>
+
+        {/* Notification List */}
+        <div className="p-4 overflow-y-auto space-y-2.5 flex-1 bg-white">
+          {visibleItems.length === 0 ? (
+            <div className="py-12 px-4 text-center space-y-2">
+              <div className="w-10 h-10 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 flex items-center justify-center mx-auto">
+                <CheckCircle2 className="w-5 h-5" />
+              </div>
+              <p className="text-xs font-bold text-[#18231C] uppercase tracking-wider">
+                {filterMode === 'unread'
+                  ? 'No tenés notificaciones sin leer'
+                  : 'No hay alertas activas en este momento'}
+              </p>
+              <p className="text-[11px] text-[#6F6860]">
+                Cuando ingresen recordatorios, demoras o avisos comerciales aparecerán aquí.
+              </p>
+              {filterMode === 'unread' && notifications.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setFilterMode('all')}
+                  className="mt-2 px-3 py-1 text-[11px] font-bold text-[#B9522F] hover:underline cursor-pointer"
+                >
+                  Ver historial ({notifications.length})
+                </button>
+              )}
+            </div>
+          ) : (
+            visibleItems.map((item) => {
+              const isRead = readSet.has(item.id);
+              return (
+                <div
+                  key={item.id}
+                  className={`p-3 rounded-xs border transition-colors ${
+                    isRead
+                      ? 'bg-[#FAF8F5]/60 border-[#DCD4C9] opacity-80'
+                      : 'bg-white border-[#18231C]/25'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2.5">
+                    <div className="flex items-start gap-2.5 min-w-0">
+                      <div className="mt-0.5">{getIcon(item.category)}</div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span
+                            className={`px-1.5 py-0.2 rounded-xs text-[9px] font-black uppercase border ${item.badgeClass}`}
+                          >
+                            {item.badgeText}
+                          </span>
+                          <span className="font-bold text-xs text-[#18231C] truncate">
+                            {item.title}
+                          </span>
+                          {!isRead && (
+                            <span className="w-2 h-2 rounded-full bg-[#B9522F] shrink-0" title="No leída" />
+                          )}
+                        </div>
+                        <p className="text-[11px] text-[#4A453F] mt-1 leading-snug">
+                          {item.subtitle}
+                        </p>
+                        <p className="text-[10px] text-[#6F6860] mt-1 font-mono">
+                          {item.meta}
+                        </p>
                       </div>
-                      <p className="text-[11px] text-red-800 font-medium mt-1">
-                        Motivo: {o.blockReason}
-                      </p>
-                      <p className="text-[10px] text-[#6F6860] mt-0.5">
-                        Vendedor: {o.seller || 'Sin asignar'} · Sucursal: {o.branch || 'Mendoza'}
-                      </p>
                     </div>
-                    {onSelectOrder && (
+
+                    {!isRead && (
                       <button
-                        onClick={() => {
-                          onSelectOrder(o);
-                          onClose();
-                        }}
-                        className="px-2.5 py-1 bg-white hover:bg-neutral-100 border border-red-300 text-red-800 text-[10px] font-bold rounded-xs cursor-pointer shrink-0"
+                        type="button"
+                        onClick={() => onMarkAsRead(item.id)}
+                        className="p-1.5 bg-[#FAF8F5] hover:bg-emerald-50 border border-[#DCD4C9] hover:border-emerald-400 text-[#6F6860] hover:text-emerald-800 rounded-xs cursor-pointer shrink-0 transition-colors"
+                        title="Marcar como leída"
                       >
-                        Ver Ficha
+                        <Check className="w-3.5 h-3.5" />
                       </button>
                     )}
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
 
-          {/* Section B: Pedidos Demorados */}
-          <div>
-            <h4 className="text-xs font-bold uppercase tracking-wider text-amber-800 flex items-center gap-1.5 mb-2.5">
-              <Clock className="w-3.5 h-3.5" />
-              Cotizaciones Demoradas (&gt; 7 días sin avanzar) ({delayedOrders.length})
-            </h4>
-            {delayedOrders.length === 0 ? (
-              <div className="p-4 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-center text-xs text-[#6F6860]">
-                No hay cotizaciones demoradas. ¡El flujo está al día!
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {delayedOrders.map((o) => {
-                  const daysOld = Math.floor((Date.now() - new Date(o.date).getTime()) / (1000 * 60 * 60 * 24));
-                  return (
-                    <div key={o.id} className="p-3 bg-white border border-amber-300 rounded-xs flex items-center justify-between gap-3 shadow-2xs">
-                      <div>
-                        <div className="flex items-center gap-1.5 font-bold text-xs text-[#18231C]">
-                          <span>{o.clientName}</span>
-                          <span className="text-[10px] text-[#6F6860] font-mono">#{o.id.slice(-6)}</span>
-                          <span className="text-[9px] bg-red-100 text-red-800 font-extrabold px-1.5 py-0.2 rounded-xs">
-                            {daysOld} días
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-[#6F6860] mt-0.5">
-                          {o.totalUnits} prendas · ${o.totalEstimated.toLocaleString('es-AR')} · Vendedor: {o.seller || 'Sin asignar'}
-                        </p>
-                      </div>
+                  {/* Direct Actions */}
+                  <div className="mt-2.5 pt-2 border-t border-[#DCD4C9]/60 flex items-center justify-end gap-2 flex-wrap">
+                    {item.order && onSelectOrder && (
                       <button
-                        onClick={() => handleWhatsAppFollowUp(o.clientName, o.id)}
-                        className="flex items-center gap-1 px-2.5 py-1 bg-[#25D366] hover:bg-[#20ba59] text-white text-[10px] font-bold rounded-xs cursor-pointer shadow-xs"
-                        title="Enviar mensaje de seguimiento por WhatsApp"
+                        type="button"
+                        onClick={() => {
+                          if (!isRead) onMarkAsRead(item.id);
+                          onSelectOrder(item.order!);
+                          onClose();
+                        }}
+                        className="px-2.5 py-1 bg-[#18231C] hover:bg-black text-white text-[10px] font-bold uppercase tracking-wider rounded-xs inline-flex items-center gap-1 cursor-pointer"
                       >
-                        <MessageCircle className="w-3 h-3 fill-current" />
-                        Reactivar
+                        <span>Abrir Ficha</span>
+                        <ArrowRight className="w-3 h-3" />
                       </button>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Section C: Visitas Pendientes */}
-          {pendingVisits.length > 0 && (
-            <div>
-              <h4 className="text-xs font-bold uppercase tracking-wider text-blue-900 flex items-center gap-1.5 mb-2.5">
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                Seguimiento de Visitas Comerciales ({pendingVisits.length})
-              </h4>
-              <div className="space-y-2">
-                {pendingVisits.map((v) => (
-                  <div key={v.id} className="p-3 bg-blue-50/50 border border-blue-200 rounded-xs flex items-center justify-between gap-3">
-                    <div>
-                      <div className="font-bold text-xs text-[#18231C]">
-                        {v.companyName} ({v.contactName})
-                      </div>
-                      <p className="text-[11px] text-blue-950 mt-0.5 font-medium">
-                        Objetivo: {v.objective}
-                      </p>
-                      <p className="text-[10px] text-[#6F6860]">
-                        Vendedor: {v.seller} · Próximo paso: {v.nextStep}
-                      </p>
-                    </div>
-                    {Boolean(v.phone && String(v.phone).trim()) && (
+                    )}
+                    {item.visit && onGoToVisits && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!isRead) onMarkAsRead(item.id);
+                          onGoToVisits();
+                          onClose();
+                        }}
+                        className="px-2.5 py-1 bg-white hover:bg-[#FAF8F5] border border-[#DCD4C9] text-[#18231C] text-[10px] font-bold uppercase tracking-wider rounded-xs inline-flex items-center gap-1 cursor-pointer"
+                      >
+                        <span>Ir a Visitas</span>
+                        <ArrowRight className="w-3 h-3" />
+                      </button>
+                    )}
+                    {item.whatsappText && (
                       <a
-                        href={`https://wa.me/${String(v.phone).replace(/\D/g, '')}?text=Hola%20${encodeURIComponent(String(v.contactName || ''))},%20te%20escribimos%20de%20Pampero%20Mendoza.`}
+                        href={`https://wa.me/${(item.whatsappPhone || '').replace(/\D/g, '')}?text=${encodeURIComponent(item.whatsappText)}`}
                         target="_blank"
                         rel="noreferrer"
-                        className="px-2.5 py-1 bg-white border border-blue-300 text-blue-900 hover:bg-blue-100 text-[10px] font-bold rounded-xs flex items-center gap-1 cursor-pointer"
+                        onClick={() => {
+                          if (!isRead) onMarkAsRead(item.id);
+                        }}
+                        className="px-2.5 py-1 bg-[#25D366] hover:bg-[#20ba59] text-white text-[10px] font-bold uppercase tracking-wider rounded-xs inline-flex items-center gap-1"
                       >
                         <MessageCircle className="w-3 h-3" />
-                        Contactar
+                        <span>WhatsApp</span>
                       </a>
                     )}
                   </div>
-                ))}
-              </div>
-            </div>
+                </div>
+              );
+            })
           )}
         </div>
 
         {/* Footer */}
-        <div className="bg-[#FAF8F5] px-6 py-3 border-t border-[#DCD4C9] flex justify-end">
+        <div className="bg-[#FAF8F5] px-5 py-2.5 border-t border-[#DCD4C9] flex justify-end">
           <button
+            type="button"
             onClick={onClose}
             className="px-4 py-1.5 bg-[#18231C] text-white text-xs font-bold uppercase rounded-xs hover:bg-black cursor-pointer"
           >
-            Cerrar Alertas
+            Cerrar
           </button>
         </div>
       </div>

@@ -644,6 +644,32 @@ export const AdminVisualCatalogEditor: React.FC<AdminVisualCatalogEditorProps> =
                     placeholder="Confeccionada bajo estrictas normas de resistencia..."
                   />
                 </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] font-bold text-[#6F6860] uppercase block mb-0.5">
+                      Botón Primario
+                    </label>
+                    <input
+                      type="text"
+                      value={resolvedTexts.heroPrimaryBtnText || ''}
+                      onChange={(e) => updateSiteText('heroPrimaryBtnText', e.target.value)}
+                      className="w-full px-2 py-1.5 text-xs bg-white border border-[#DCD4C9] rounded-xs"
+                      placeholder="VER CATÁLOGO"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-[#6F6860] uppercase block mb-0.5">
+                      Botón Empresas
+                    </label>
+                    <input
+                      type="text"
+                      value={resolvedTexts.heroCorporateBtnText || ''}
+                      onChange={(e) => updateSiteText('heroCorporateBtnText', e.target.value)}
+                      className="w-full px-2 py-1.5 text-xs bg-white border border-[#DCD4C9] rounded-xs"
+                      placeholder="CUENTA EMPRESA"
+                    />
+                  </div>
+                </div>
               </div>
             </div>
           )}
@@ -669,6 +695,53 @@ export const AdminVisualCatalogEditor: React.FC<AdminVisualCatalogEditorProps> =
                 defaultValue="#DCD4C9"
                 onChange={(c) => updateField('secondaryColor', c)}
               />
+              <div className="p-3 bg-[#FAF8F5] rounded-xs border border-[#DCD4C9] space-y-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[#18231C] block">
+                  Etiquetas del Menú de Categorías
+                </span>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] font-bold text-[#6F6860] uppercase block mb-0.5">Hombre</label>
+                    <input
+                      type="text"
+                      value={resolvedTexts.navHombreText || ''}
+                      onChange={(e) => updateSiteText('navHombreText', e.target.value)}
+                      className="w-full px-2 py-1 text-xs bg-white border border-[#DCD4C9] rounded-xs"
+                      placeholder="Hombre"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-[#6F6860] uppercase block mb-0.5">Mujer</label>
+                    <input
+                      type="text"
+                      value={resolvedTexts.navMujerText || ''}
+                      onChange={(e) => updateSiteText('navMujerText', e.target.value)}
+                      className="w-full px-2 py-1 text-xs bg-white border border-[#DCD4C9] rounded-xs"
+                      placeholder="Mujer"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-[#6F6860] uppercase block mb-0.5">Infantil</label>
+                    <input
+                      type="text"
+                      value={resolvedTexts.navInfantilText || ''}
+                      onChange={(e) => updateSiteText('navInfantilText', e.target.value)}
+                      className="w-full px-2 py-1 text-xs bg-white border border-[#DCD4C9] rounded-xs"
+                      placeholder="Infantil"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-[#6F6860] uppercase block mb-0.5">Venta Corporativa</label>
+                    <input
+                      type="text"
+                      value={resolvedTexts.navCorporativaText || ''}
+                      onChange={(e) => updateSiteText('navCorporativaText', e.target.value)}
+                      className="w-full px-2 py-1 text-xs bg-white border border-[#DCD4C9] rounded-xs"
+                      placeholder="Venta Corporativa"
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
@@ -723,6 +796,41 @@ export const AdminVisualCatalogEditor: React.FC<AdminVisualCatalogEditorProps> =
                 defaultValue="#FDB813"
                 onChange={(c) => updateField('discountBadgeBg', c)}
               />
+              <div className="p-3 bg-[#FAF8F5] rounded-xs border border-[#DCD4C9] space-y-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[#18231C] block">
+                  Textos de Catálogo & Tarjetas
+                </span>
+                <div>
+                  <label className="text-[10px] font-bold text-[#6F6860] uppercase block mb-0.5">Título Catálogo</label>
+                  <input
+                    type="text"
+                    value={resolvedTexts.catalogTitle || ''}
+                    onChange={(e) => updateSiteText('catalogTitle', e.target.value)}
+                    className="w-full px-2.5 py-1.5 text-xs bg-white border border-[#DCD4C9] rounded-xs"
+                    placeholder="CATÁLOGO OFICIAL"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-[#6F6860] uppercase block mb-0.5">Texto Hover ("Ver ficha")</label>
+                  <input
+                    type="text"
+                    value={resolvedTexts.viewProductCardText || ''}
+                    onChange={(e) => updateSiteText('viewProductCardText', e.target.value)}
+                    className="w-full px-2.5 py-1.5 text-xs bg-white border border-[#DCD4C9] rounded-xs"
+                    placeholder="Ver ficha"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-[#6F6860] uppercase block mb-0.5">Botón Tarjeta</label>
+                  <input
+                    type="text"
+                    value={resolvedTexts.addToQuoteBtnText || ''}
+                    onChange={(e) => updateSiteText('addToQuoteBtnText', e.target.value)}
+                    className="w-full px-2.5 py-1.5 text-xs bg-white border border-[#DCD4C9] rounded-xs"
+                    placeholder="AGREGAR A MI PEDIDO"
+                  />
+                </div>
+              </div>
             </div>
           )}
 
@@ -753,6 +861,31 @@ export const AdminVisualCatalogEditor: React.FC<AdminVisualCatalogEditorProps> =
                 defaultValue="#FDB813"
                 onChange={(c) => updateField('accentColor', c)}
               />
+              <div className="p-3 bg-[#FAF8F5] rounded-xs border border-[#DCD4C9] space-y-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[#18231C] block">
+                  Textos de Ficha de Producto
+                </span>
+                <div>
+                  <label className="text-[10px] font-bold text-[#6F6860] uppercase block mb-0.5">Botón Agregar</label>
+                  <input
+                    type="text"
+                    value={resolvedTexts.productDetailAddBtnText || ''}
+                    onChange={(e) => updateSiteText('productDetailAddBtnText', e.target.value)}
+                    className="w-full px-2.5 py-1.5 text-xs bg-white border border-[#DCD4C9] rounded-xs"
+                    placeholder="AGREGAR A MI PEDIDO"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-[#6F6860] uppercase block mb-0.5">Botón WhatsApp</label>
+                  <input
+                    type="text"
+                    value={resolvedTexts.productDetailWhatsappBtnText || ''}
+                    onChange={(e) => updateSiteText('productDetailWhatsappBtnText', e.target.value)}
+                    className="w-full px-2.5 py-1.5 text-xs bg-white border border-[#DCD4C9] rounded-xs"
+                    placeholder="CONSULTAR POR WHATSAPP"
+                  />
+                </div>
+              </div>
             </div>
           )}
 
@@ -789,6 +922,31 @@ export const AdminVisualCatalogEditor: React.FC<AdminVisualCatalogEditorProps> =
                 defaultValue="#FFFFFF"
                 onChange={(c) => updateField('quoteDrawerButtonText', c)}
               />
+              <div className="p-3 bg-[#FAF8F5] rounded-xs border border-[#DCD4C9] space-y-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[#18231C] block">
+                  Textos de "Mi Pedido"
+                </span>
+                <div>
+                  <label className="text-[10px] font-bold text-[#6F6860] uppercase block mb-0.5">Título Ventana</label>
+                  <input
+                    type="text"
+                    value={resolvedTexts.quoteDrawerTitle || ''}
+                    onChange={(e) => updateSiteText('quoteDrawerTitle', e.target.value)}
+                    className="w-full px-2.5 py-1.5 text-xs bg-white border border-[#DCD4C9] rounded-xs"
+                    placeholder="Mi Pedido"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-[#6F6860] uppercase block mb-0.5">Botón Enviar WhatsApp</label>
+                  <input
+                    type="text"
+                    value={resolvedTexts.quoteDrawerSendBtnText || ''}
+                    onChange={(e) => updateSiteText('quoteDrawerSendBtnText', e.target.value)}
+                    className="w-full px-2.5 py-1.5 text-xs bg-white border border-[#DCD4C9] rounded-xs"
+                    placeholder="Pasar a WhatsApp"
+                  />
+                </div>
+              </div>
             </div>
           )}
 
@@ -807,6 +965,31 @@ export const AdminVisualCatalogEditor: React.FC<AdminVisualCatalogEditorProps> =
                 defaultValue="#FAF8F5"
                 onChange={(c) => updateField('cardBgColor', c)}
               />
+              <div className="p-3 bg-[#FAF8F5] rounded-xs border border-[#DCD4C9] space-y-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[#18231C] block">
+                  Textos Corporativos
+                </span>
+                <div>
+                  <label className="text-[10px] font-bold text-[#6F6860] uppercase block mb-0.5">Título Simulador Uniformes</label>
+                  <input
+                    type="text"
+                    value={resolvedTexts.uniformSimulatorTitle || ''}
+                    onChange={(e) => updateSiteText('uniformSimulatorTitle', e.target.value)}
+                    className="w-full px-2.5 py-1.5 text-xs bg-white border border-[#DCD4C9] rounded-xs"
+                    placeholder="Armador de Uniformes Virtual · Pampero Mendoza"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-[#6F6860] uppercase block mb-0.5">Título Portal de Talles</label>
+                  <input
+                    type="text"
+                    value={resolvedTexts.sizingPortalTitle || ''}
+                    onChange={(e) => updateSiteText('sizingPortalTitle', e.target.value)}
+                    className="w-full px-2.5 py-1.5 text-xs bg-white border border-[#DCD4C9] rounded-xs"
+                    placeholder="Portal de Curva de Talles Corporativos"
+                  />
+                </div>
+              </div>
             </div>
           )}
 
@@ -921,6 +1104,31 @@ export const AdminVisualCatalogEditor: React.FC<AdminVisualCatalogEditorProps> =
                 defaultValue="#FFFFFF"
                 onChange={(c) => updateField('loginModalButtonText', c)}
               />
+              <div className="p-3 bg-[#FAF8F5] rounded-xs border border-[#DCD4C9] space-y-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[#18231C] block">
+                  Textos de Acceso
+                </span>
+                <div>
+                  <label className="text-[10px] font-bold text-[#6F6860] uppercase block mb-0.5">Título Login Clientes</label>
+                  <input
+                    type="text"
+                    value={resolvedTexts.authLoginTitle || ''}
+                    onChange={(e) => updateSiteText('authLoginTitle', e.target.value)}
+                    className="w-full px-2.5 py-1.5 text-xs bg-white border border-[#DCD4C9] rounded-xs"
+                    placeholder="ACCESO AL CATÁLOGO"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-[#6F6860] uppercase block mb-0.5">Título Acceso Staff</label>
+                  <input
+                    type="text"
+                    value={resolvedTexts.authStaffTitle || ''}
+                    onChange={(e) => updateSiteText('authStaffTitle', e.target.value)}
+                    className="w-full px-2.5 py-1.5 text-xs bg-white border border-[#DCD4C9] rounded-xs"
+                    placeholder="ADMINISTRACIÓN Y EMPLEADOS"
+                  />
+                </div>
+              </div>
             </div>
           )}
 
@@ -951,6 +1159,43 @@ export const AdminVisualCatalogEditor: React.FC<AdminVisualCatalogEditorProps> =
                 defaultValue="#DCD4C9"
                 onChange={(c) => updateField('hubBorderColor', c)}
               />
+              <div className="p-3 bg-[#FAF8F5] rounded-xs border border-[#DCD4C9] space-y-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[#18231C] block">
+                  Textos del Hub Interno
+                </span>
+                <div>
+                  <label className="text-[10px] font-bold text-[#6F6860] uppercase block mb-0.5">Título Hub</label>
+                  <input
+                    type="text"
+                    value={resolvedTexts.hubTitle || ''}
+                    onChange={(e) => updateSiteText('hubTitle', e.target.value)}
+                    className="w-full px-2.5 py-1.5 text-xs bg-white border border-[#DCD4C9] rounded-xs"
+                    placeholder="Hub de Trabajo Interno"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] font-bold text-[#6F6860] uppercase block mb-0.5">Tarjeta CRM</label>
+                    <input
+                      type="text"
+                      value={resolvedTexts.hubCrmCardText || ''}
+                      onChange={(e) => updateSiteText('hubCrmCardText', e.target.value)}
+                      className="w-full px-2 py-1 text-xs bg-white border border-[#DCD4C9] rounded-xs"
+                      placeholder="Gestión / CRM"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-[#6F6860] uppercase block mb-0.5">Tarjeta RRHH</label>
+                    <input
+                      type="text"
+                      value={resolvedTexts.hubRrhhCardText || ''}
+                      onChange={(e) => updateSiteText('hubRrhhCardText', e.target.value)}
+                      className="w-full px-2 py-1 text-xs bg-white border border-[#DCD4C9] rounded-xs"
+                      placeholder="RRHH"
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
@@ -975,6 +1220,43 @@ export const AdminVisualCatalogEditor: React.FC<AdminVisualCatalogEditorProps> =
                 defaultValue="#DCD4C9"
                 onChange={(c) => updateField('cardBorderColor', c)}
               />
+              <div className="p-3 bg-[#FAF8F5] rounded-xs border border-[#DCD4C9] space-y-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[#18231C] block">
+                  Textos de Cabecera y Pestañas CRM
+                </span>
+                <div>
+                  <label className="text-[10px] font-bold text-[#6F6860] uppercase block mb-0.5">Título CRM</label>
+                  <input
+                    type="text"
+                    value={resolvedTexts.crmTitle || ''}
+                    onChange={(e) => updateSiteText('crmTitle', e.target.value)}
+                    className="w-full px-2.5 py-1.5 text-xs bg-white border border-[#DCD4C9] rounded-xs"
+                    placeholder="Gestión Pampero"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] font-bold text-[#6F6860] uppercase block mb-0.5">Pestaña 1</label>
+                    <input
+                      type="text"
+                      value={resolvedTexts.crmTabVisitsText || ''}
+                      onChange={(e) => updateSiteText('crmTabVisitsText', e.target.value)}
+                      className="w-full px-2 py-1 text-xs bg-white border border-[#DCD4C9] rounded-xs"
+                      placeholder="1. Visitas Comerciales"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-[#6F6860] uppercase block mb-0.5">Pestaña 2</label>
+                    <input
+                      type="text"
+                      value={resolvedTexts.crmTabBoardText || ''}
+                      onChange={(e) => updateSiteText('crmTabBoardText', e.target.value)}
+                      className="w-full px-2 py-1 text-xs bg-white border border-[#DCD4C9] rounded-xs"
+                      placeholder="2. Seguimiento Empresas"
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
@@ -1062,6 +1344,28 @@ export const AdminVisualCatalogEditor: React.FC<AdminVisualCatalogEditorProps> =
                     className="w-full px-2.5 py-1.5 text-xs bg-white border border-[#DCD4C9] rounded-xs"
                     placeholder="pamperogranmendoza@gmail.com"
                   />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] font-bold text-[#6F6860] uppercase block mb-0.5">Columna Contacto</label>
+                    <input
+                      type="text"
+                      value={resolvedTexts.footerContactTitle || ''}
+                      onChange={(e) => updateSiteText('footerContactTitle', e.target.value)}
+                      className="w-full px-2 py-1 text-xs bg-white border border-[#DCD4C9] rounded-xs"
+                      placeholder="CONTACTO"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-[#6F6860] uppercase block mb-0.5">Columna Locales</label>
+                    <input
+                      type="text"
+                      value={resolvedTexts.footerBranchesTitle || ''}
+                      onChange={(e) => updateSiteText('footerBranchesTitle', e.target.value)}
+                      className="w-full px-2 py-1 text-xs bg-white border border-[#DCD4C9] rounded-xs"
+                      placeholder="LOCALES"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
@@ -1620,8 +1924,8 @@ export const AdminVisualCatalogEditor: React.FC<AdminVisualCatalogEditorProps> =
                   <span className="text-xs uppercase font-bold tracking-widest text-amber-300">
                     Campaña Visual Pampero
                   </span>
-                  <div className="absolute top-1/3 left-1/3 w-6 h-6 rounded-full bg-amber-400 text-black font-bold flex items-center justify-center text-xs animate-ping" />
-                  <div className="absolute top-1/3 left-1/3 w-6 h-6 rounded-full bg-amber-400 text-black font-bold flex items-center justify-center text-xs">
+                  <div className="absolute top-1/3 left-1/3 w-8 h-8 -translate-x-1 -translate-y-1 rounded-full border-2 border-amber-400/60" />
+                  <div className="absolute top-1/3 left-1/3 w-6 h-6 rounded-full bg-amber-400 text-black font-bold flex items-center justify-center text-xs shadow-sm">
                     +
                   </div>
                 </div>

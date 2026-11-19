@@ -42,12 +42,14 @@ import {
   saveFirestorePromotionsBatch,
   recordAuditLog,
   subscribeToAuthSession,
+  subscribeToFirestoreEmployees,
   logoutFirebaseAuth,
   db,
   getFirebaseDb,
 } from './services/firebase';
 import { doc, deleteDoc } from 'firebase/firestore';
 import { ensureMasterAdminInitialized } from './utils/authInit';
+import { hasAdminPanelAccess, hasRRHHAccess } from './utils/permissions';
 import { trackAddToCart } from './utils/analytics';
 import { Navbar } from './components/Navbar';
 import { LandingHero } from './components/LandingHero';
@@ -57,6 +59,7 @@ import { LookbookView } from './components/LookbookView';
 import { AuthView } from './components/AuthView';
 import { AdminPanel } from './components/AdminPanel';
 import { CRMView } from './components/crm/CRMView';
+import { RRHHView } from './components/rrhh/RRHHView';
 import { ClientUniformSimulatorView } from './components/client/ClientUniformSimulatorView';
 import { ClientSizingPortalView } from './components/client/ClientSizingPortalView';
 import { ClientOrderStatusView } from './components/client/ClientOrderStatusView';
@@ -497,10 +500,10 @@ export default function App() {
   // 'sizing_portal'     -> Client digital employee sizing portal
   // 'order_tracking'    -> Client live order status view (Kanban phase tracking)
   // 'hub'               -> Internal staff & admin hub with large action cards
-  const [viewMode, setViewMode] = useState<'landing' | 'auth' | 'catalog' | 'product_detail' | 'admin' | 'lookbook' | 'crm' | 'uniform_simulator' | 'sizing_portal' | 'order_tracking' | 'hub'>(() => {
+  const [viewMode, setViewMode] = useState<'landing' | 'auth' | 'catalog' | 'product_detail' | 'admin' | 'lookbook' | 'crm' | 'rrhh' | 'uniform_simulator' | 'sizing_portal' | 'order_tracking' | 'hub'>(() => {
     try {
       const saved = sessionStorage.getItem('pampero_active_view');
-      if (saved && ['landing', 'auth', 'catalog', 'product_detail', 'admin', 'lookbook', 'crm', 'uniform_simulator', 'sizing_portal', 'order_tracking', 'hub'].includes(saved)) {
+      if (saved && ['landing', 'auth', 'catalog', 'product_detail', 'admin', 'lookbook', 'crm', 'rrhh', 'uniform_simulator', 'sizing_portal', 'order_tracking', 'hub'].includes(saved)) {
         return saved as any;
       }
     } catch {}
@@ -686,12 +689,56 @@ export default function App() {
     saveFirestoreStoreConfig({ volumeDiscounts: newDiscounts });
   };
 
+  // Sincronización en tiempo real de permisos para empleados activos
+  useEffect(() => {
+    if (userSession?.role !== 'employee') return;
+    const unsub = subscribeToFirestoreEmployees((list) => {
+      try {
+        localStorage.setItem('pampero_employees', JSON.stringify(list));
+      } catch {}
+      const cleanEmail = (userSession.email || '').toLowerCase().trim();
+      const match = list.find(
+        (e) =>
+          (cleanEmail && (e.email || '').toLowerCase().trim() === cleanEmail) ||
+          (userSession.id && e.id === userSession.id)
+      );
+      if (match) {
+        setUserSession((prev) => {
+          if (!prev) return prev;
+          const changed =
+            JSON.stringify(prev.allowedTabs || []) !== JSON.stringify(match.allowedTabs || []) ||
+            JSON.stringify(prev.crmTabs || []) !== JSON.stringify(match.crmTabs || []) ||
+            Boolean(prev.panelTabsConfigured) !== Boolean(match.panelTabsConfigured) ||
+            Boolean(prev.rrhhConfigured) !== Boolean(match.rrhhConfigured) ||
+            Boolean(prev.canManageRRHH) !== Boolean(match.canManageRRHH) ||
+            Boolean(prev.canControlTasks) !== Boolean(match.canControlTasks) ||
+            prev.sellerRole !== match.sellerRole ||
+            prev.crmScope !== match.crmScope ||
+            prev.branch !== match.branch;
+          if (!changed) return prev;
+          const updated: UserSession = {
+            ...prev,
+            allowedTabs: match.allowedTabs,
+            crmTabs: match.crmTabs,
+            panelTabsConfigured: match.panelTabsConfigured,
+            rrhhConfigured: match.rrhhConfigured,
+            canManageRRHH: match.canManageRRHH,
+            canControlTasks: match.canControlTasks,
+            sellerRole: match.sellerRole,
+            crmScope: match.crmScope,
+            branch: match.branch,
+          };
+          try {
+            localStorage.setItem('pampero_user_session', JSON.stringify(updated));
+          } catch {}
+          return updated;
+        });
+      }
+    });
+    return () => unsub();
+  }, [userSession?.role, userSession?.email, userSession?.id]);
+
   // Control de Rutas Estricto:
-  // - Administrador y Empleado (Staff): pueden acceder al Hub ('hub'), Panel de Control ('admin'),
-  //   CRM ('crm'), y expresamente al Catálogo Público ('catalog', 'landing', 'product_detail', 'lookbook', etc.)
-  //   para consultar prendas, precios y navegar la tienda desde la vista del cliente sin forzar redirección al Hub.
-  //   Si ya tienen sesión activa iniciada, se previene la vista de login ('auth') redirigiéndolos al Hub.
-  // - Usuarios no-staff / no autenticados: no pueden acceder a las vistas internas ('hub', 'admin', 'crm').
   useEffect(() => {
     // ¡CRÍTICO: No expulsar ni alterar la ruta del usuario mientras Firebase Auth resuelve la sesión!
     if (isAuthResolving) return;
@@ -707,11 +754,11 @@ export default function App() {
     );
 
     if (isStaff) {
-      // El guardián permite expresamente al Administrador y Empleado navegar por el Catálogo Público y vistas asociadas
       const allowedViewsForStaff: Array<typeof viewMode> = [
         'hub',
         'admin',
         'crm',
+        'rrhh',
         'catalog',
         'landing',
         'product_detail',
@@ -722,10 +769,11 @@ export default function App() {
       ];
       if (!allowedViewsForStaff.includes(viewMode)) {
         setViewMode('hub');
+      } else if (viewMode === 'admin' && !hasAdminPanelAccess(userSession)) {
+        setViewMode('hub');
       }
     } else {
-      // Si no es staff, se bloquea el acceso a rutas internas
-      const restrictedInternalViews: Array<typeof viewMode> = ['hub', 'admin', 'crm'];
+      const restrictedInternalViews: Array<typeof viewMode> = ['hub', 'admin', 'crm', 'rrhh'];
       if (restrictedInternalViews.includes(viewMode)) {
         setViewMode(userSession ? 'catalog' : 'landing');
       }
@@ -979,6 +1027,7 @@ export default function App() {
           onLogout={handleLogout}
           onOpenAdmin={() => setViewMode('admin')}
           onOpenCRM={() => setViewMode('crm')}
+          onOpenRRHH={() => setViewMode('rrhh')}
           onOpenHub={() => setViewMode('hub')}
           onOpenProfile={() => setIsProfileOpen(true)}
           onOpenLookbook={() => setViewMode('lookbook')}
@@ -1081,8 +1130,8 @@ export default function App() {
           />
         )}
 
-        {/* VIEW 6: ADMIN PANEL (Protected strictly for role 'admin') */}
-        {viewMode === 'admin' && userSession?.role === 'admin' && (
+        {/* VIEW 6: ADMIN PANEL (Protected for admin or employees with granted Panel tabs) */}
+        {viewMode === 'admin' && hasAdminPanelAccess(userSession) && (
           <AdminPanel
             isOpen={true}
             products={products}
@@ -1149,12 +1198,23 @@ export default function App() {
             />
           )}
 
+          {/* VIEW 10B: RRHH (Legajos, Horarios, Vacaciones y Fichajes GPS) */}
+          {viewMode === 'rrhh' && userSession && hasRRHHAccess(userSession) && (
+            <RRHHView
+              userSession={userSession}
+              theme={theme}
+              branches={branches}
+              onClose={() => setViewMode('hub')}
+            />
+          )}
+
           {/* VIEW 11: HUB DE TRABAJO (Admin & Employee Work Hub) */}
           {viewMode === 'hub' && userSession && (
             <HubView
               userSession={userSession}
               theme={theme}
               onOpenCRM={() => setViewMode('crm')}
+              onOpenRRHH={() => setViewMode('rrhh')}
               onOpenAdmin={() => setViewMode('admin')}
               onOpenCatalog={() => setViewMode('catalog')}
               onLogout={handleLogout}
@@ -1168,8 +1228,10 @@ export default function App() {
         theme={theme}
         branches={branches}
         onOpenAdmin={() => {
-          if (userSession?.role === 'admin') {
+          if (hasAdminPanelAccess(userSession)) {
             setViewMode('admin');
+          } else if (userSession?.role === 'employee') {
+            setViewMode('hub');
           } else {
             openAuthScreen('admin', 'empresa');
           }

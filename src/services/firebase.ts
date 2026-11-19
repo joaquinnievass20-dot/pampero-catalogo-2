@@ -59,6 +59,9 @@ import {
   CRMOrder,
   CalendarHolidayItem,
   CalendarModuleConfig,
+  RRHHEmployeeRecord,
+  RRHHCheckInRecord,
+  RRHHModuleConfig,
 } from '../types';
 import {
   DEFAULT_ARGENTINA_MENDOZA_DATES,
@@ -1560,8 +1563,11 @@ export const saveFirestoreUser = async (user: RegisteredUser): Promise<{ success
         sellerRole: sanitizedUser.sellerRole || 'vendedor',
         branch: sanitizedUser.sellerRole === 'encargado' ? 'Todas' : (sanitizedUser.branch || 'Maipú'),
         crmScope: sanitizedUser.crmScope || (sanitizedUser.sellerRole === 'encargado' ? 'all' : 'branch_only'),
-        allowedTabs: sanitizedUser.allowedTabs || ['products', 'variants', 'prices', 'mass_images', 'promos', 'quotes', 'crm'],
+        allowedTabs: sanitizedUser.allowedTabs || ['crm'],
         crmTabs: sanitizedUser.crmTabs || ['visits', 'board', 'tasks', 'calendar', 'suppliers', 'costs'],
+        panelTabsConfigured: Boolean(sanitizedUser.panelTabsConfigured),
+        rrhhConfigured: Boolean(sanitizedUser.rrhhConfigured),
+        canManageRRHH: Boolean(sanitizedUser.canManageRRHH),
         canControlTasks: Boolean(sanitizedUser.canControlTasks || sanitizedUser.sellerRole === 'encargado' || sanitizedUser.sellerRole === 'local'),
         crmCalendarConfigured: Boolean(sanitizedUser.crmTabs?.length),
         active: sanitizedUser.status === 'active',
@@ -1635,7 +1641,8 @@ export const saveFirestoreUser = async (user: RegisteredUser): Promise<{ success
  */
 export async function createFirebaseAuthAndFirestoreUser(
   user: RegisteredUser | any,
-  explicitPassword?: string
+  explicitPassword?: string,
+  options?: { allowRestoreRevoked?: boolean }
 ): Promise<{ success: boolean; uid: string; error?: string }> {
   const cleanEmail = (user.email || '').trim().toLowerCase();
   // Si no se proveyó contraseña manual, se genera una segura automáticamente para aprovisionar Firebase Auth
@@ -1650,6 +1657,19 @@ export async function createFirebaseAuthAndFirestoreUser(
 
   if (!cleanEmail) {
     return { success: false, uid: '', error: 'El email o nombre de usuario es obligatorio.' };
+  }
+
+  if (options?.allowRestoreRevoked) {
+    await clearRevokedUserAccess(cleanEmail, user.id).catch(() => {});
+  } else {
+    const revoked = await isUserRevoked(cleanEmail, user.id);
+    if (revoked) {
+      return {
+        success: false,
+        uid: '',
+        error: 'Esta cuenta fue eliminada por la administración y no puede volver a registrarse. Contactá a un administrador.',
+      };
+    }
   }
 
   // Formato válido de email para Firebase Auth
@@ -1796,8 +1816,11 @@ export async function createFirebaseAuthAndFirestoreUser(
           sellerRole: user.sellerRole || 'vendedor',
           branch: user.sellerRole === 'encargado' ? 'Todas' : (user.branch || 'Maipú'),
           crmScope: user.crmScope || (user.sellerRole === 'encargado' ? 'all' : 'branch_only'),
-          allowedTabs: user.allowedTabs || ['products', 'variants', 'prices', 'mass_images', 'promos', 'quotes', 'crm'],
+          allowedTabs: user.allowedTabs || ['crm'],
           crmTabs: user.crmTabs || ['visits', 'board', 'tasks', 'calendar', 'suppliers', 'costs'],
+          panelTabsConfigured: Boolean(user.panelTabsConfigured),
+          rrhhConfigured: Boolean(user.rrhhConfigured),
+          canManageRRHH: Boolean(user.canManageRRHH),
           canControlTasks: Boolean(user.canControlTasks || user.sellerRole === 'encargado' || user.sellerRole === 'local'),
           crmCalendarConfigured: Boolean(user.crmTabs?.length),
           active: user.status === 'active',
@@ -1811,69 +1834,310 @@ export async function createFirebaseAuthAndFirestoreUser(
   return { success: true, uid: authUid };
 }
 
-export const deleteFirestoreUser = async (userId: string): Promise<{ success: boolean; error?: string }> => {
+// ==========================================
+// REGISTRO DE CUENTAS ELIMINADAS / REVOCADAS
+// ==========================================
+const REVOKED_STORAGE_KEY = 'pampero_revoked_users';
+
+const isMasterProtectedIdentifier = (val?: string | null): boolean => {
+  const clean = String(val || '').trim().toLowerCase();
+  if (!clean) return false;
+  return (
+    clean === 'admin-master' ||
+    clean === MASTER_ADMIN_EMAIL.toLowerCase() ||
+    clean.includes('joaquinnievass20')
+  );
+};
+
+const toRevokedDocKey = (raw: string): string =>
+  raw.trim().toLowerCase().replace(/[^a-zA-Z0-9_-]/g, '_');
+
+const getLocalRevokedSet = (): Set<string> => {
+  const set = new Set<string>();
+  if (typeof window === 'undefined') return set;
+  try {
+    const raw = localStorage.getItem(REVOKED_STORAGE_KEY);
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) {
+        arr.forEach((v) => {
+          const clean = String(v || '').trim().toLowerCase();
+          if (clean && !isMasterProtectedIdentifier(clean)) set.add(clean);
+        });
+      }
+    }
+  } catch {}
+  return set;
+};
+
+const addLocalRevoked = (values: Array<string | null | undefined>) => {
+  if (typeof window === 'undefined') return;
+  try {
+    const set = getLocalRevokedSet();
+    values.forEach((v) => {
+      const clean = String(v || '').trim().toLowerCase();
+      if (clean && !isMasterProtectedIdentifier(clean)) {
+        set.add(clean);
+        set.add(toRevokedDocKey(clean));
+      }
+    });
+    localStorage.setItem(REVOKED_STORAGE_KEY, JSON.stringify(Array.from(set)));
+  } catch {}
+};
+
+const removeLocalRevoked = (values: Array<string | null | undefined>) => {
+  if (typeof window === 'undefined') return;
+  try {
+    const set = getLocalRevokedSet();
+    values.forEach((v) => {
+      const clean = String(v || '').trim().toLowerCase();
+      if (clean) {
+        set.delete(clean);
+        set.delete(toRevokedDocKey(clean));
+      }
+    });
+    localStorage.setItem(REVOKED_STORAGE_KEY, JSON.stringify(Array.from(set)));
+  } catch {}
+};
+
+export const revokeUserAccess = async (userId?: string | null, email?: string | null): Promise<void> => {
+  const cleanId = String(userId || '').trim();
+  const cleanEmail = String(email || '').trim().toLowerCase();
+  if (isMasterProtectedIdentifier(cleanId) || isMasterProtectedIdentifier(cleanEmail)) return;
+
+  addLocalRevoked([cleanId, cleanEmail]);
+
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return;
+
+  const nowIso = new Date().toISOString();
+  const keys = new Set<string>();
+  if (cleanEmail) keys.add(toRevokedDocKey(cleanEmail));
+  if (cleanId) keys.add(toRevokedDocKey(cleanId));
+
+  await Promise.all(
+    Array.from(keys).map((k) =>
+      setDoc(
+        doc(firestoreDb, 'revoked_users', k),
+        {
+          email: cleanEmail || null,
+          uid: cleanId || null,
+          revokedAt: nowIso,
+          reason: 'deleted_by_admin',
+        },
+        { merge: true }
+      ).catch(() => {})
+    )
+  );
+};
+
+export const clearRevokedUserAccess = async (email?: string | null, userId?: string | null): Promise<void> => {
+  const cleanId = String(userId || '').trim();
+  const cleanEmail = String(email || '').trim().toLowerCase();
+  removeLocalRevoked([cleanId, cleanEmail]);
+
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return;
+
+  const keys = new Set<string>();
+  if (cleanEmail) keys.add(toRevokedDocKey(cleanEmail));
+  if (cleanId) keys.add(toRevokedDocKey(cleanId));
+
+  await Promise.all(
+    Array.from(keys).map((k) => deleteDoc(doc(firestoreDb, 'revoked_users', k)).catch(() => {}))
+  );
+
+  if (cleanEmail) {
+    try {
+      const q = query(collection(firestoreDb, 'revoked_users'), where('email', '==', cleanEmail));
+      const snap = await getDocs(q);
+      await Promise.all(snap.docs.map((d) => deleteDoc(d.ref).catch(() => {})));
+    } catch {}
+  }
+};
+
+export const isUserRevoked = async (
+  emailOrId?: string | null,
+  uid?: string | null
+): Promise<boolean> => {
+  const cleanA = String(emailOrId || '').trim().toLowerCase();
+  const cleanB = String(uid || '').trim().toLowerCase();
+  if (isMasterProtectedIdentifier(cleanA) || isMasterProtectedIdentifier(cleanB)) return false;
+  if (!cleanA && !cleanB) return false;
+
+  const localSet = getLocalRevokedSet();
+  if (
+    (cleanA && (localSet.has(cleanA) || localSet.has(toRevokedDocKey(cleanA)))) ||
+    (cleanB && (localSet.has(cleanB) || localSet.has(toRevokedDocKey(cleanB))))
+  ) {
+    return true;
+  }
+
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return false;
+
+  try {
+    const keysToCheck = new Set<string>();
+    if (cleanA) keysToCheck.add(toRevokedDocKey(cleanA));
+    if (cleanB) keysToCheck.add(toRevokedDocKey(cleanB));
+
+    const snaps = await Promise.all(
+      Array.from(keysToCheck).map((k) => getDoc(doc(firestoreDb, 'revoked_users', k)).catch(() => null))
+    );
+    for (const s of snaps) {
+      if (s && s.exists()) {
+        const d = s.data() as any;
+        addLocalRevoked([d?.email, d?.uid, cleanA, cleanB]);
+        return true;
+      }
+    }
+
+    if (cleanA && cleanA.includes('@')) {
+      const q = query(collection(firestoreDb, 'revoked_users'), where('email', '==', cleanA));
+      const qSnap = await getDocs(q).catch(() => null);
+      if (qSnap && !qSnap.empty) {
+        addLocalRevoked([cleanA, cleanB]);
+        return true;
+      }
+    }
+  } catch {}
+
+  return false;
+};
+
+export const deleteFirestoreUser = async (
+  userId: string,
+  explicitEmail?: string
+): Promise<{ success: boolean; error?: string }> => {
   const cleanId = String(userId || '').trim().toLowerCase();
+  const cleanExplicitEmail = String(explicitEmail || '').trim().toLowerCase();
 
   // Regla Intocable: Blindaje de joaquinnievass20@gmail.com
   if (
-    cleanId === 'admin-master' ||
-    cleanId.includes('joaquinnievass20') ||
-    cleanId.includes('joaquinnievass20@gmail.com')
+    isMasterProtectedIdentifier(cleanId) ||
+    isMasterProtectedIdentifier(cleanExplicitEmail)
   ) {
     console.warn('[BLINDAJE DE ADMIN] Intento de eliminar al administrador maestro bloqueado.');
     return { success: false, error: 'La cuenta maestra de administrador (joaquinnievass20@gmail.com) está blindada y no puede ser eliminada bajo ningún concepto.' };
   }
 
-  // 1. Limpieza rigurosa e inmediata de LocalStorage para no restaurar cuentas eliminadas
-  let targetEmail = '';
+  // 1. Descubrir email real desde localStorage y desde Firestore antes de borrar
+  let targetEmail = cleanExplicitEmail;
+  let targetOriginalId = String(userId || '').trim();
+  const discoveredIds = new Set<string>();
+  if (targetOriginalId) discoveredIds.add(targetOriginalId);
+
   try {
     const local: RegisteredUser[] = JSON.parse(localStorage.getItem('pampero_registered_users') || '[]');
-    const targetUser = local.find((u) => u.id === userId);
-    targetEmail = (targetUser?.email || '').toLowerCase().trim();
-
-    const updated = local.filter((u) => u.id !== userId && (!targetEmail || (u.email || '').toLowerCase().trim() !== targetEmail));
-    localStorage.setItem('pampero_registered_users', JSON.stringify(updated));
-
     const empLocal: any[] = JSON.parse(localStorage.getItem('pampero_employees') || '[]');
-    localStorage.setItem(
-      'pampero_employees',
-      JSON.stringify(empLocal.filter((e: any) => e.id !== userId && (!targetEmail || (e.email || '').toLowerCase().trim() !== targetEmail)))
-    );
-
     const sellLocal: any[] = JSON.parse(localStorage.getItem('pampero_sellers') || '[]');
-    localStorage.setItem(
-      'pampero_sellers',
-      JSON.stringify(sellLocal.filter((s: any) => s.id !== userId && (!targetEmail || (s.email || '').toLowerCase().trim() !== targetEmail)))
-    );
+
+    const localMatch =
+      local.find((u) => u.id === userId || (targetEmail && (u.email || '').toLowerCase().trim() === targetEmail)) ||
+      empLocal.find((e) => e.id === userId || (targetEmail && (e.email || '').toLowerCase().trim() === targetEmail)) ||
+      sellLocal.find((s) => s.id === userId || (targetEmail && (s.email || '').toLowerCase().trim() === targetEmail));
+
+    if (!targetEmail && localMatch?.email) {
+      targetEmail = String(localMatch.email).toLowerCase().trim();
+    }
+    if (localMatch?.id) discoveredIds.add(String(localMatch.id));
   } catch {}
 
   const firestoreDb = db || getFirebaseDb();
+  const userCollections = ['usuarios', 'users', 'empleados', 'employees', 'vendedores'];
+
+  if (firestoreDb && targetOriginalId) {
+    try {
+      const preSnaps = await Promise.all(
+        userCollections.map((coll) => getDoc(doc(firestoreDb, coll, targetOriginalId)).catch(() => null))
+      );
+      for (const s of preSnaps) {
+        if (s && s.exists()) {
+          const d = s.data() as any;
+          if (!targetEmail && d?.email) {
+            targetEmail = String(d.email).toLowerCase().trim();
+          }
+          if (d?.uid) discoveredIds.add(String(d.uid));
+          if (d?.id) discoveredIds.add(String(d.id));
+        }
+      }
+    } catch {}
+  }
+
+  if (isMasterProtectedIdentifier(targetEmail)) {
+    return { success: false, error: 'La cuenta maestra de administrador está blindada y no puede ser eliminada.' };
+  }
+
+  // 2. Registrar revocación inmediata (impide login, restauración de sesión y auto-registro futuro)
+  await revokeUserAccess(targetOriginalId, targetEmail).catch(() => {});
+
+  // 3. Limpieza rigurosa e inmediata de LocalStorage
+  try {
+    const matchesTarget = (item: any) => {
+      const itemId = String(item?.id || '').trim();
+      const itemEmail = String(item?.email || '').toLowerCase().trim();
+      if (discoveredIds.has(itemId)) return true;
+      if (targetEmail && itemEmail === targetEmail) return true;
+      return false;
+    };
+
+    const local: RegisteredUser[] = JSON.parse(localStorage.getItem('pampero_registered_users') || '[]');
+    localStorage.setItem('pampero_registered_users', JSON.stringify(local.filter((u) => !matchesTarget(u))));
+
+    const empLocal: any[] = JSON.parse(localStorage.getItem('pampero_employees') || '[]');
+    localStorage.setItem('pampero_employees', JSON.stringify(empLocal.filter((e) => !matchesTarget(e))));
+
+    const sellLocal: any[] = JSON.parse(localStorage.getItem('pampero_sellers') || '[]');
+    localStorage.setItem('pampero_sellers', JSON.stringify(sellLocal.filter((s) => !matchesTarget(s))));
+
+    const activeSessRaw = localStorage.getItem('pampero_user_session');
+    if (activeSessRaw) {
+      const activeSess = JSON.parse(activeSessRaw);
+      const sessEmail = String(activeSess?.email || '').toLowerCase().trim();
+      if (discoveredIds.has(String(activeSess?.id || '')) || (targetEmail && sessEmail === targetEmail)) {
+        localStorage.removeItem('pampero_user_session');
+      }
+    }
+  } catch {}
+
   if (!firestoreDb) return { success: true };
 
   try {
-    // 2. Eliminación garantizada en todas las colecciones de Firestore
-    await Promise.all([
-      deleteDoc(doc(firestoreDb, 'usuarios', userId)).catch(() => {}),
-      deleteDoc(doc(firestoreDb, 'users', userId)).catch(() => {}),
-      deleteDoc(doc(firestoreDb, 'empleados', userId)).catch(() => {}),
-      deleteDoc(doc(firestoreDb, 'employees', userId)).catch(() => {}),
-      deleteDoc(doc(firestoreDb, 'vendedores', userId)).catch(() => {}),
-    ]);
-
-    // Si el usuario tenía un email, intentar también borrar documentos que pudieran haber usado el email formateado como clave
+    // 4. Eliminación garantizada en todas las colecciones por ID y por email
     if (targetEmail) {
-      const emailDocKey = targetEmail.replace(/[^a-zA-Z0-9_-]/g, '_');
-      await Promise.all([
-        deleteDoc(doc(firestoreDb, 'usuarios', emailDocKey)).catch(() => {}),
-        deleteDoc(doc(firestoreDb, 'users', emailDocKey)).catch(() => {}),
-      ]);
+      discoveredIds.add(toRevokedDocKey(targetEmail));
     }
 
-    console.log('[FIREBASE] Cuenta eliminada de Firestore exitosamente:', userId);
+    const deleteTasks: Promise<any>[] = [];
+    for (const coll of userCollections) {
+      for (const docId of discoveredIds) {
+        if (docId) {
+          deleteTasks.push(deleteDoc(doc(firestoreDb, coll, docId)).catch(() => {}));
+        }
+      }
+      if (targetEmail) {
+        deleteTasks.push(
+          getDocs(query(collection(firestoreDb, coll), where('email', '==', targetEmail)))
+            .then((snap) => Promise.all(snap.docs.map((d) => deleteDoc(d.ref).catch(() => {}))))
+            .catch(() => {})
+        );
+      }
+      if (targetOriginalId) {
+        deleteTasks.push(
+          getDocs(query(collection(firestoreDb, coll), where('id', '==', targetOriginalId)))
+            .then((snap) => Promise.all(snap.docs.map((d) => deleteDoc(d.ref).catch(() => {}))))
+            .catch(() => {})
+        );
+      }
+    }
+
+    await Promise.all(deleteTasks);
+
+    console.log('[FIREBASE] Cuenta eliminada y revocada permanentemente:', targetEmail || userId);
     recordAuditLog({
       module: 'Usuarios',
       action: 'Eliminar Usuario',
-      details: `Cuenta eliminada permanentemente del sistema: ${targetEmail || userId} (ID: ${userId}).`,
+      details: `Cuenta eliminada y acceso revocado permanentemente: ${targetEmail || userId} (ID: ${userId}).`,
       targetId: userId,
     }).catch(() => {});
     return { success: true };
@@ -1886,18 +2150,37 @@ export const deleteFirestoreUser = async (userId: string): Promise<{ success: bo
 /**
  * Suscripción en tiempo real a las cuentas registradas en Cloud Firestore.
  * Utiliza mapas independientes por colección con limpieza en cada snapshot
- * para garantizar que las eliminaciones impacten de inmediato y no revivan usuarios borrados.
+ * y sincronización con `revoked_users` para garantizar que eliminaciones impacten
+ * de inmediato y nunca revivan usuarios borrados.
  */
 export const subscribeToFirestoreUsers = (
   onUpdate: (users: RegisteredUser[]) => void
 ): () => void => {
-  // 1. Emisión inicial inmediata desde localStorage
+  const filterRevoked = (items: RegisteredUser[], extraRevoked?: Set<string>): RegisteredUser[] => {
+    const localRevoked = getLocalRevokedSet();
+    return items.filter((u) => {
+      const email = (u.email || '').toLowerCase().trim();
+      const id = (u.id || '').toLowerCase().trim();
+      if (isMasterProtectedIdentifier(email) || isMasterProtectedIdentifier(id)) return true;
+      const eKey = email ? toRevokedDocKey(email) : '';
+      const iKey = id ? toRevokedDocKey(id) : '';
+      if (localRevoked.has(email) || localRevoked.has(id) || (eKey && localRevoked.has(eKey)) || (iKey && localRevoked.has(iKey))) {
+        return false;
+      }
+      if (extraRevoked && (extraRevoked.has(email) || extraRevoked.has(id) || (eKey && extraRevoked.has(eKey)) || (iKey && extraRevoked.has(iKey)))) {
+        return false;
+      }
+      return true;
+    });
+  };
+
+  // 1. Emisión inicial inmediata desde localStorage (filtrando revocados)
   try {
     const localRaw = localStorage.getItem('pampero_registered_users');
     if (localRaw) {
       const parsed = JSON.parse(localRaw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        onUpdate(parsed);
+      if (Array.isArray(parsed)) {
+        onUpdate(filterRevoked(parsed));
       }
     }
   } catch {}
@@ -1908,10 +2191,12 @@ export const subscribeToFirestoreUsers = (
   try {
     const colRefUsuarios = collection(firestoreDb, 'usuarios');
     const colRefUsers = collection(firestoreDb, 'users');
+    const colRefRevoked = collection(firestoreDb, 'revoked_users');
 
     // Mapas independientes para cada colección
     const usuariosMap = new Map<string, RegisteredUser>();
     const usersMap = new Map<string, RegisteredUser>();
+    const revokedSet = new Set<string>();
 
     const emitMerged = () => {
       const combined = new Map<string, RegisteredUser>();
@@ -1920,7 +2205,7 @@ export const subscribeToFirestoreUsers = (
       // 2. Sobrescribir / complementar con usuarios
       usuariosMap.forEach((u, key) => combined.set(key, u));
 
-      const list = Array.from(combined.values());
+      const list = filterRevoked(Array.from(combined.values()), revokedSet);
       // BLINDAJE DE ADMIN: Asegurar presencia intocable del administrador maestro
       const hasMaster = list.some((u) => (u.email || '').toLowerCase().trim() === 'joaquinnievass20@gmail.com');
       const masterAdminEntry: RegisteredUser = {
@@ -1981,9 +2266,36 @@ export const subscribeToFirestoreUsers = (
       }
     );
 
+    const unsubRevoked = onSnapshot(
+      colRefRevoked,
+      (snapshot) => {
+        revokedSet.clear();
+        const toCache: string[] = [];
+        snapshot.docs.forEach((d) => {
+          const data = d.data() as any;
+          revokedSet.add(d.id.toLowerCase());
+          toCache.push(d.id);
+          if (data?.email) {
+            const em = String(data.email).toLowerCase().trim();
+            revokedSet.add(em);
+            toCache.push(em);
+          }
+          if (data?.uid) {
+            const uidStr = String(data.uid).toLowerCase().trim();
+            revokedSet.add(uidStr);
+            toCache.push(uidStr);
+          }
+        });
+        addLocalRevoked(toCache);
+        emitMerged();
+      },
+      () => {}
+    );
+
     return () => {
       unsubUsuarios();
       unsubUsers();
+      unsubRevoked();
     };
   } catch (err: any) {
     console.warn('[FIREBASE] subscribeToFirestoreUsers error:', err);
@@ -2529,6 +2841,18 @@ export async function authenticateDualUser(
     }
   }
 
+  // 1b. Bloqueo inmediato de cuentas eliminadas/revocadas antes de consultar pools o Firebase Auth
+  if (await isUserRevoked(idClean)) {
+    const fbAuth = auth || getFirebaseAuth();
+    if (fbAuth?.currentUser) {
+      await signOut(fbAuth).catch(() => {});
+    }
+    return {
+      success: false,
+      error: 'Esta cuenta fue eliminada por la administración y ya no tiene acceso al sistema.',
+    };
+  }
+
   // 2. Query Cloud Firestore ('users', 'usuarios', 'empleados', 'employees')
   let matchedUserDoc: any = null;
   let matchedDocId: string | null = null;
@@ -2629,9 +2953,15 @@ export async function authenticateDualUser(
     } catch {}
   }
 
-  // Si se encontró documento de usuario, verificar según método elegido
+  // Si se encontró documento de usuario, verificar que no haya sido revocado/suspendido
   if (matchedUserDoc) {
-    if (matchedUserDoc.status === 'suspended') {
+    if (await isUserRevoked(matchedUserDoc.email || idClean, matchedDocId)) {
+      return {
+        success: false,
+        error: 'Esta cuenta fue eliminada por la administración y ya no tiene acceso al sistema.',
+      };
+    }
+    if (matchedUserDoc.status === 'suspended' || matchedUserDoc.active === false) {
       return { success: false, error: 'Esta cuenta se encuentra suspendida por la administración.' };
     }
 
@@ -2766,6 +3096,12 @@ export async function authenticateDualUser(
       });
 
       if (matchedEmp) {
+        if (await isUserRevoked(matchedEmp.email || idClean, matchedEmp.id)) {
+          return {
+            success: false,
+            error: 'Esta cuenta de empleado fue eliminada por la administración y ya no tiene acceso al sistema.',
+          };
+        }
         if (!matchedEmp.active) {
           return { success: false, error: 'Esta cuenta de empleado se encuentra desactivada.' };
         }
@@ -2826,8 +3162,23 @@ export async function authenticateDualUser(
 
     for (const em of emailsToAttempt) {
       try {
+        if (await isUserRevoked(em)) {
+          return {
+            success: false,
+            error: 'Esta cuenta fue eliminada por la administración y ya no tiene acceso al sistema.',
+          };
+        }
+
         const cred = await signInWithEmailAndPassword(fbAuth, em, credClean);
         if (cred && cred.user) {
+          if (await isUserRevoked(em, cred.user.uid)) {
+            await signOut(fbAuth).catch(() => {});
+            return {
+              success: false,
+              error: 'Esta cuenta fue eliminada por la administración y ya no tiene acceso al sistema.',
+            };
+          }
+
           let userRole: 'admin' | 'employee' | 'client' = 'client';
           let clientDataObj: any = { fullName: cred.user.displayName || idClean };
           let clientTypeVal: 'consumidor' | 'empresa' = 'consumidor';
@@ -2837,40 +3188,82 @@ export async function authenticateDualUser(
           let userSellerRole: 'admin' | 'encargado' | 'local' | 'vendedor' | undefined;
           let userCrmScope: 'all' | 'branch_only' | 'own_only' | undefined;
           let userCanControlTasks = false;
+          let uData: any = null;
+          let resolvedUid = cred.user.uid;
 
           if (firestoreDb) {
             try {
-              const uSnap = await getDoc(doc(firestoreDb, 'users', cred.user.uid)).catch(() => null);
-              const uData = uSnap?.exists() ? uSnap.data() : null;
-              if (uData) {
-                userRole = uData.role === 'admin' || uData.type === 'admin' ? 'admin' : (uData.role === 'employee' || uData.type === 'empleado' ? 'employee' : 'client');
-                clientTypeVal = uData.type === 'empresa' ? 'empresa' : (userRole === 'admin' || userRole === 'employee' ? 'empresa' : 'consumidor');
-                userBranch = uData.branch || uData.nearestBranch;
-                userSellerName = uData.name || uData.repName;
-                userSellerRole = uData.sellerRole;
-                userCrmScope = uData.crmScope || (uData.sellerRole === 'encargado' ? 'all' : undefined);
-                userCanControlTasks = Boolean(uData.canControlTasks || userRole === 'admin' || uData.sellerRole === 'local' || uData.sellerRole === 'encargado');
-                clientDataObj = {
-                  fullName: uData.repName || uData.name || cred.user.displayName || idClean,
-                  companyName: uData.type === 'empresa' ? uData.name : undefined,
-                  cuit: uData.cuitOrDni,
-                  phone: uData.phone,
-                  address: uData.address,
-                  pricingTier: uData.pricingTier,
-                  nearestBranch: uData.nearestBranch || uData.branch,
-                  companyLocation: uData.companyLocation,
-                  locationUrl: uData.locationUrl,
-                };
+              const collections = ['users', 'usuarios', 'empleados', 'employees'];
+              for (const collName of collections) {
+                const uSnap = await getDoc(doc(firestoreDb, collName, cred.user.uid)).catch(() => null);
+                if (uSnap?.exists()) {
+                  uData = uSnap.data();
+                  resolvedUid = uSnap.id;
+                  break;
+                }
+              }
+              if (!uData) {
+                for (const collName of collections) {
+                  const qSnap = await getDocs(
+                    query(collection(firestoreDb, collName), where('email', '==', em))
+                  ).catch(() => null);
+                  if (qSnap && !qSnap.empty) {
+                    uData = qSnap.docs[0].data();
+                    resolvedUid = qSnap.docs[0].id;
+                    break;
+                  }
+                }
               }
             } catch {}
+          }
+
+          const isMasterEmail = em === MASTER_ADMIN_EMAIL.toLowerCase();
+
+          // CRÍTICO: Si la cuenta fue eliminada de Firestore (no existe documento en users/usuarios/empleados),
+          // NO permitir el ingreso aunque sus credenciales sigan existiendo en Firebase Authentication.
+          if (!uData && !isMasterEmail) {
+            await signOut(fbAuth).catch(() => {});
+            return {
+              success: false,
+              error: 'Esta cuenta fue eliminada o no se encuentra habilitada en el sistema.',
+            };
+          }
+
+          if (uData && (uData.status === 'suspended' || uData.active === false)) {
+            await signOut(fbAuth).catch(() => {});
+            return {
+              success: false,
+              error: 'Esta cuenta se encuentra suspendida por la administración.',
+            };
+          }
+
+          if (uData) {
+            userRole = uData.role === 'admin' || uData.type === 'admin' ? 'admin' : (uData.role === 'employee' || uData.type === 'empleado' || uData.type === 'vendedor' ? 'employee' : 'client');
+            clientTypeVal = uData.type === 'empresa' ? 'empresa' : (userRole === 'admin' || userRole === 'employee' ? 'empresa' : 'consumidor');
+            userBranch = uData.branch || uData.nearestBranch;
+            userSellerName = uData.name || uData.repName;
+            userSellerRole = uData.sellerRole;
+            userCrmScope = uData.crmScope || (uData.sellerRole === 'encargado' ? 'all' : undefined);
+            userCanControlTasks = Boolean(uData.canControlTasks || userRole === 'admin' || uData.sellerRole === 'local' || uData.sellerRole === 'encargado');
+            clientDataObj = {
+              fullName: uData.repName || uData.name || cred.user.displayName || idClean,
+              companyName: uData.type === 'empresa' ? uData.name : undefined,
+              cuit: uData.cuitOrDni,
+              phone: uData.phone,
+              address: uData.address,
+              pricingTier: uData.pricingTier,
+              nearestBranch: uData.nearestBranch || uData.branch,
+              companyLocation: uData.companyLocation,
+              locationUrl: uData.locationUrl,
+            };
           }
 
           const sessionObj = {
             success: true,
             session: {
-              id: cred.user.uid,
+              id: resolvedUid,
               email: cred.user.email || idClean,
-              role: userRole,
+              role: isMasterEmail ? 'admin' : userRole,
               clientType: clientTypeVal,
               branch: userBranch,
               sellerName: userSellerName,
@@ -2927,24 +3320,22 @@ export const seedInitialFirestoreUsersIfEmpty = async (initialUsers: RegisteredU
   if (!firestoreDb || !Array.isArray(initialUsers) || initialUsers.length === 0) return;
 
   try {
-    const snap = await getDocs(collection(firestoreDb, 'usuarios')).catch(() => null);
-    if (!snap || snap.size < initialUsers.length) {
-      console.log('[FIREBASE] Seeding/Updating registered users to Cloud Firestore...');
-      const batch = writeBatch(firestoreDb);
-      initialUsers.forEach((u) => {
-        const uId = u.id || (u.email ? u.email.replace(/[^a-zA-Z0-9_-]/g, '_') : `user-${Math.random().toString(36).slice(2)}`);
-        const docRefUsuarios = doc(firestoreDb, 'usuarios', uId);
-        const docRefUsers = doc(firestoreDb, 'users', uId);
-        const pass = u.password || u.initialPassword || 'Pampero2026';
-        const cleaned = JSON.parse(JSON.stringify({ ...u, password: pass, initialPassword: pass }, (k, v) => (v === undefined ? null : v)));
-        batch.set(docRefUsuarios, { ...cleaned, createdAt: u.createdAt || new Date().toISOString() }, { merge: true });
-        batch.set(docRefUsers, { ...cleaned, createdAt: u.createdAt || new Date().toISOString() }, { merge: true });
-      });
-      await batch.commit();
-      console.log('[FIREBASE] Initial registered users seeded successfully in users and usuarios.');
+    // Asegurar ÚNICAMENTE la cuenta maestra de administración si no existe en Firestore,
+    // sin volver a generar cuentas ficticias o de ejemplo que hayan sido eliminadas.
+    const masterOnly = initialUsers.filter((u) => isMasterProtectedIdentifier(u.email) || u.id === 'admin-master');
+    if (masterOnly.length === 0) return;
+
+    const masterSnap = await getDoc(doc(firestoreDb, 'usuarios', 'admin-master')).catch(() => null);
+    if (!masterSnap || !masterSnap.exists()) {
+      const u = masterOnly[0];
+      const cleaned = JSON.parse(JSON.stringify(u, (_, v) => (v === undefined ? null : v)));
+      await Promise.all([
+        setDoc(doc(firestoreDb, 'usuarios', 'admin-master'), { ...cleaned, createdAt: u.createdAt || new Date().toISOString() }, { merge: true }).catch(() => {}),
+        setDoc(doc(firestoreDb, 'users', 'admin-master'), { ...cleaned, createdAt: u.createdAt || new Date().toISOString() }, { merge: true }).catch(() => {}),
+      ]);
     }
   } catch (err) {
-    console.warn('[FIREBASE] Error checking or seeding registered users:', err);
+    console.warn('[FIREBASE] Error checking master admin user:', err);
   }
 };
 
@@ -3042,9 +3433,25 @@ export const saveFirestoreEmployee = async (employee: EmployeeAccount): Promise<
     const cleaned = JSON.parse(JSON.stringify(sanitized, (k, v) => (v === undefined ? null : v)));
     await setDoc(docRef, { ...cleaned, updatedAt: new Date().toISOString() }, { merge: true });
 
-    // Mirror to 'employees' collection
+    // Mirror to 'employees', 'usuarios', 'users' so permissions stay synced everywhere
     const docRefMirror = doc(firestoreDb, 'employees', empId);
     await setDoc(docRefMirror, { ...cleaned, updatedAt: new Date().toISOString() }, { merge: true }).catch(() => {});
+    const permPatch = {
+      allowedTabs: cleaned.allowedTabs ?? null,
+      crmTabs: cleaned.crmTabs ?? null,
+      crmTasksConfigured: Boolean(cleaned.crmTasksConfigured),
+      crmCalendarConfigured: Boolean(cleaned.crmCalendarConfigured),
+      panelTabsConfigured: Boolean(cleaned.panelTabsConfigured),
+      rrhhConfigured: Boolean(cleaned.rrhhConfigured),
+      canManageRRHH: Boolean(cleaned.canManageRRHH),
+      canControlTasks: Boolean(cleaned.canControlTasks),
+      sellerRole: cleaned.sellerRole ?? null,
+      crmScope: cleaned.crmScope ?? null,
+      branch: cleaned.branch ?? null,
+      updatedAt: new Date().toISOString(),
+    };
+    await setDoc(doc(firestoreDb, 'usuarios', empId), permPatch, { merge: true }).catch(() => {});
+    await setDoc(doc(firestoreDb, 'users', empId), permPatch, { merge: true }).catch(() => {});
 
     console.log('[FIREBASE] Employee / Operator saved in Firestore:', sanitized.name);
     return { success: true };
@@ -3054,25 +3461,11 @@ export const saveFirestoreEmployee = async (employee: EmployeeAccount): Promise<
   }
 };
 
-export const deleteFirestoreEmployee = async (empId: string): Promise<{ success: boolean; error?: string }> => {
-  try {
-    const local: EmployeeAccount[] = JSON.parse(localStorage.getItem('pampero_employees') || '[]');
-    const updated = local.filter((e) => e.id !== empId);
-    localStorage.setItem('pampero_employees', JSON.stringify(updated));
-  } catch {}
-
-  const firestoreDb = db || getFirebaseDb();
-  if (!firestoreDb) return { success: true };
-
-  try {
-    await deleteDoc(doc(firestoreDb, 'empleados', empId));
-    await deleteDoc(doc(firestoreDb, 'employees', empId)).catch(() => {});
-    console.log('[FIREBASE] Employee / Operator deleted from Firestore:', empId);
-    return { success: true };
-  } catch (err: any) {
-    console.error('[FIREBASE ERROR] Could not delete employee from Firestore:', err);
-    return { success: false, error: err?.message || String(err) };
-  }
+export const deleteFirestoreEmployee = async (
+  empId: string,
+  explicitEmail?: string
+): Promise<{ success: boolean; error?: string }> => {
+  return deleteFirestoreUser(empId, explicitEmail);
 };
 
 export const subscribeToFirestoreEmployees = (
@@ -3086,25 +3479,35 @@ export const subscribeToFirestoreEmployees = (
     const unsubscribe = onSnapshot(
       colRef,
       (snapshot) => {
-        if (!snapshot.empty) {
-          const list: EmployeeAccount[] = [];
-          const seen = new Set<string>();
-          snapshot.docs.forEach((d) => {
-            const data = d.data() as EmployeeAccount;
-            const empId = d.id || data.id;
-            if (!seen.has(empId)) {
-              seen.add(empId);
-              list.push({
-                ...data,
-                id: empId,
-              });
-            }
-          });
-          try {
-            localStorage.setItem('pampero_employees', JSON.stringify(list));
-          } catch {}
-          onUpdate(list);
-        }
+        const localRevoked = getLocalRevokedSet();
+        const list: EmployeeAccount[] = [];
+        const seen = new Set<string>();
+        snapshot.docs.forEach((d) => {
+          const data = d.data() as EmployeeAccount;
+          const empId = d.id || data.id;
+          const empEmail = String(data.email || '').toLowerCase().trim();
+          const eKey = empEmail ? toRevokedDocKey(empEmail) : '';
+          const iKey = empId ? toRevokedDocKey(empId) : '';
+          if (
+            localRevoked.has(empEmail) ||
+            localRevoked.has(empId.toLowerCase()) ||
+            (eKey && localRevoked.has(eKey)) ||
+            (iKey && localRevoked.has(iKey))
+          ) {
+            return;
+          }
+          if (!seen.has(empId)) {
+            seen.add(empId);
+            list.push({
+              ...data,
+              id: empId,
+            });
+          }
+        });
+        try {
+          localStorage.setItem('pampero_employees', JSON.stringify(list));
+        } catch {}
+        onUpdate(list);
       },
       (error) => {
         console.warn('[FIREBASE] Real-time employees listener offline notice:', error.message);
@@ -3117,26 +3520,9 @@ export const subscribeToFirestoreEmployees = (
   }
 };
 
-export const seedInitialFirestoreEmployeesIfEmpty = async (initialEmployees: EmployeeAccount[]): Promise<void> => {
-  const firestoreDb = db || getFirebaseDb();
-  if (!firestoreDb || !Array.isArray(initialEmployees) || initialEmployees.length === 0) return;
-
-  try {
-    const snap = await getDocs(collection(firestoreDb, 'empleados'));
-    if (snap.empty) {
-      console.log('[FIREBASE] Seeding initial employees to Cloud Firestore...');
-      const batch = writeBatch(firestoreDb);
-      initialEmployees.forEach((emp) => {
-        const docRef = doc(firestoreDb, 'empleados', emp.id);
-        const cleaned = JSON.parse(JSON.stringify(emp, (k, v) => (v === undefined ? null : v)));
-        batch.set(docRef, { ...cleaned, createdAt: emp.createdAt || new Date().toISOString() }, { merge: true });
-      });
-      await batch.commit();
-      console.log('[FIREBASE] Initial employees seeded successfully.');
-    }
-  } catch (err) {
-    console.warn('[FIREBASE] Error seeding employees to Firestore:', err);
-  }
+export const seedInitialFirestoreEmployeesIfEmpty = async (_initialEmployees: EmployeeAccount[]): Promise<void> => {
+  // Desactivado el re-sembrado automático de empleados ficticios para que las cuentas borradas nunca reaparezcan.
+  return;
 };
 
 // ==========================================
@@ -4833,6 +5219,11 @@ export async function fetchUserProfileByUidOrEmail(uid: string, email?: string |
     };
   }
 
+  // 1b. Bloqueo estricto si la cuenta fue eliminada/revocada
+  if (await isUserRevoked(cleanEmail, uid)) {
+    return null;
+  }
+
   const firestoreDb = db || getFirebaseDb();
 
   // 2. Consulta directa por ID de documento (UID) en colecciones
@@ -4844,6 +5235,9 @@ export async function fetchUserProfileByUidOrEmail(uid: string, email?: string |
           const snap = await getDoc(doc(firestoreDb, collName, uid));
           if (snap.exists()) {
             const data = snap.data();
+            if (data.status === 'suspended' || data.active === false) {
+              return null;
+            }
             const role: 'admin' | 'employee' | 'client' = 
               data.role === 'admin' ? 'admin' :
               data.role === 'employee' || data.type === 'empleado' || data.type === 'vendedor' ? 'employee' :
@@ -4859,6 +5253,11 @@ export async function fetchUserProfileByUidOrEmail(uid: string, email?: string |
               sellerRole: data.sellerRole,
               crmScope: data.crmScope || (data.sellerRole === 'encargado' ? 'all' : undefined),
               canControlTasks: Boolean(data.canControlTasks || role === 'admin' || data.sellerRole === 'local' || data.sellerRole === 'encargado'),
+              allowedTabs: Array.isArray(data.allowedTabs) ? data.allowedTabs : undefined,
+              crmTabs: Array.isArray(data.crmTabs) ? data.crmTabs : undefined,
+              panelTabsConfigured: Boolean(data.panelTabsConfigured),
+              rrhhConfigured: Boolean(data.rrhhConfigured),
+              canManageRRHH: Boolean(data.canManageRRHH || role === 'admin'),
               clientData: {
                 fullName: data.name || data.fullName || data.repName || cleanEmail.split('@')[0],
                 companyName: data.companyName || (data.type === 'empresa' ? data.name : undefined),
@@ -4896,6 +5295,9 @@ export async function fetchUserProfileByUidOrEmail(uid: string, email?: string |
           if (!querySnap.empty) {
             const docSnap = querySnap.docs[0];
             const data = docSnap.data();
+            if (data.status === 'suspended' || data.active === false) {
+              return null;
+            }
             const role: 'admin' | 'employee' | 'client' = 
               data.role === 'admin' ? 'admin' :
               data.role === 'employee' || data.type === 'empleado' || data.type === 'vendedor' ? 'employee' :
@@ -4911,6 +5313,11 @@ export async function fetchUserProfileByUidOrEmail(uid: string, email?: string |
               sellerRole: data.sellerRole,
               crmScope: data.crmScope || (data.sellerRole === 'encargado' ? 'all' : undefined),
               canControlTasks: Boolean(data.canControlTasks || role === 'admin' || data.sellerRole === 'local' || data.sellerRole === 'encargado'),
+              allowedTabs: Array.isArray(data.allowedTabs) ? data.allowedTabs : undefined,
+              crmTabs: Array.isArray(data.crmTabs) ? data.crmTabs : undefined,
+              panelTabsConfigured: Boolean(data.panelTabsConfigured),
+              rrhhConfigured: Boolean(data.rrhhConfigured),
+              canManageRRHH: Boolean(data.canManageRRHH || role === 'admin'),
               clientData: {
                 fullName: data.name || data.fullName || data.repName || cleanEmail.split('@')[0],
                 companyName: data.companyName || (data.type === 'empresa' ? data.name : undefined),
@@ -4937,14 +5344,14 @@ export async function fetchUserProfileByUidOrEmail(uid: string, email?: string |
     }
   }
 
-  // 4. Fallback en memoria local de usuarios registrados
-  if (typeof window !== 'undefined' && cleanEmail) {
+  // 4. Fallback en memoria local SOLO si no hay Firestore disponible (para evitar restaurar cuentas borradas en Firestore)
+  if (!firestoreDb && typeof window !== 'undefined' && cleanEmail) {
     try {
       const localUsers: any[] = JSON.parse(localStorage.getItem('pampero_registered_users') || '[]');
       const localEmployees: any[] = JSON.parse(localStorage.getItem('pampero_employees') || '[]');
       const pool = [...localEmployees, ...localUsers];
       const match = pool.find((u) => (u.email || '').toLowerCase().trim() === cleanEmail);
-      if (match) {
+      if (match && match.status !== 'suspended' && match.active !== false) {
         const role = match.role === 'admin' ? 'admin' : (match.role === 'employee' || match.type === 'empleado' ? 'employee' : 'client');
         return {
           id: match.id || uid,
@@ -4956,6 +5363,11 @@ export async function fetchUserProfileByUidOrEmail(uid: string, email?: string |
           sellerRole: match.sellerRole,
           crmScope: match.crmScope || (match.sellerRole === 'encargado' ? 'all' : undefined),
           canControlTasks: Boolean(match.canControlTasks || role === 'admin' || match.sellerRole === 'local' || match.sellerRole === 'encargado'),
+          allowedTabs: Array.isArray(match.allowedTabs) ? match.allowedTabs : undefined,
+          crmTabs: Array.isArray(match.crmTabs) ? match.crmTabs : undefined,
+          panelTabsConfigured: Boolean(match.panelTabsConfigured),
+          rrhhConfigured: Boolean(match.rrhhConfigured),
+          canManageRRHH: Boolean(match.canManageRRHH || role === 'admin'),
           clientData: {
             fullName: match.name || match.fullName || match.repName || cleanEmail.split('@')[0],
             companyName: match.companyName || (match.type === 'empresa' ? match.name : undefined),
@@ -4978,23 +5390,7 @@ export async function fetchUserProfileByUidOrEmail(uid: string, email?: string |
     } catch {}
   }
 
-  // 5. Sesión mínima garantizada si está autenticado en Firebase Auth
-  if (cleanEmail) {
-    return {
-      id: uid,
-      role: 'client',
-      clientType: 'consumidor_final',
-      email: cleanEmail,
-      clientData: {
-        fullName: cleanEmail.split('@')[0],
-        email: cleanEmail,
-        phone: '',
-        address: { street: '', number: '', postalCode: '', city: 'Gran Mendoza' },
-      },
-      loggedAt: new Date().toISOString(),
-    };
-  }
-
+  // Si la cuenta no existe en Firestore ni es Master Admin, NO restaurar sesión huérfana
   return null;
 }
 
@@ -5024,12 +5420,24 @@ export async function logoutFirebaseAuth(): Promise<void> {
 /**
  * Listener global de persistencia de sesión:
  * Escucha el estado de Firebase Authentication y sincroniza el perfil desde Firestore.
- * Si el usuario recarga la página (F5), restaura la sesión activa.
- * Si el usuario cerró sesión explícitamente, garantiza el deslogueo total e impide revivir cuentas fantasmas.
+ * Si la cuenta fue eliminada o revocada por un administrador, cierra la sesión inmediatamente.
  */
 export function subscribeToAuthSession(onSessionResolved: (session: UserSession | null) => void): () => void {
   const fbAuth = auth || getFirebaseAuth();
-  return onAuthStateChanged(fbAuth, async (firebaseUser) => {
+  const firestoreDb = db || getFirebaseDb();
+  let unsubRevokeWatch: (() => void) | null = null;
+
+  const stopRevokeWatch = () => {
+    if (unsubRevokeWatch) {
+      try {
+        unsubRevokeWatch();
+      } catch {}
+      unsubRevokeWatch = null;
+    }
+  };
+
+  const unsubAuth = onAuthStateChanged(fbAuth, async (firebaseUser) => {
+    stopRevokeWatch();
     const isExplicitLogout = typeof window !== 'undefined' && localStorage.getItem('pampero_explicit_logout') === 'true';
 
     // Si el usuario realizó un cierre de sesión explícito, forzar signOut de Firebase Auth y no revivir la cuenta
@@ -5054,8 +5462,36 @@ export function subscribeToAuthSession(onSessionResolved: (session: UserSession 
           localStorage.setItem('pampero_user_session', JSON.stringify(session));
         } catch {}
         onSessionResolved(session);
+
+        // Vigilar en tiempo real si un administrador elimina/revoca esta cuenta mientras está logueada
+        const cleanMail = String(firebaseUser.email || '').toLowerCase().trim();
+        if (firestoreDb && cleanMail && !isMasterProtectedIdentifier(cleanMail)) {
+          try {
+            const revRef = doc(firestoreDb, 'revoked_users', toRevokedDocKey(cleanMail));
+            unsubRevokeWatch = onSnapshot(revRef, async (snap) => {
+              if (snap.exists()) {
+                addLocalRevoked([cleanMail, firebaseUser.uid]);
+                if (fbAuth) await signOut(fbAuth).catch(() => {});
+                try {
+                  localStorage.removeItem('pampero_user_session');
+                } catch {}
+                onSessionResolved(null);
+              }
+            });
+          } catch {}
+        }
         return;
       }
+
+      // La cuenta fue eliminada/suspendida en Firestore: cerrar sesión de Firebase Auth inmediatamente
+      if (fbAuth) {
+        await signOut(fbAuth).catch(() => {});
+      }
+      try {
+        localStorage.removeItem('pampero_user_session');
+      } catch {}
+      onSessionResolved(null);
+      return;
     }
 
     // Si Firebase Auth aún no tiene credenciales en memoria, verificar si existe sesión guardada válida del master admin
@@ -5073,6 +5509,398 @@ export function subscribeToAuthSession(onSessionResolved: (session: UserSession 
 
     onSessionResolved(null);
   });
+
+  return () => {
+    stopRevokeWatch();
+    unsubAuth();
+  };
 }
+
+// ==========================================
+// RRHH: LEGAJOS, HORARIOS, VACACIONES Y FICHAJES GPS
+// ==========================================
+
+const RRHH_LEGAJOS_LS_KEY = 'pampero_rrhh_legajos';
+const RRHH_FICHAJES_LS_KEY = 'pampero_rrhh_fichajes';
+
+export function subscribeToRRHHLegajos(onUpdate: (records: RRHHEmployeeRecord[]) => void): () => void {
+  try {
+    const localRaw = localStorage.getItem(RRHH_LEGAJOS_LS_KEY);
+    if (localRaw) {
+      const parsed = JSON.parse(localRaw);
+      if (Array.isArray(parsed)) onUpdate(parsed);
+    }
+  } catch {}
+
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return () => {};
+
+  try {
+    const colRef = collection(firestoreDb, 'rrhh_legajos');
+    return onSnapshot(
+      colRef,
+      (snapshot) => {
+        const list: RRHHEmployeeRecord[] = snapshot.docs.map((d) => ({
+          ...(d.data() as RRHHEmployeeRecord),
+          id: d.id,
+        }));
+        try {
+          localStorage.setItem(RRHH_LEGAJOS_LS_KEY, JSON.stringify(list));
+        } catch {}
+        onUpdate(list);
+      },
+      (err) => console.warn('[FIREBASE RRHH] Legajos listener notice:', err?.message || err)
+    );
+  } catch {
+    return () => {};
+  }
+}
+
+export async function saveRRHHLegajo(record: RRHHEmployeeRecord): Promise<{ success: boolean; error?: string }> {
+  const docId = record.id || `legajo-${Date.now()}`;
+  const payload: RRHHEmployeeRecord = {
+    ...record,
+    id: docId,
+    vacations: Array.isArray(record.vacations) ? record.vacations : [],
+    updatedAt: new Date().toISOString(),
+  };
+
+  try {
+    const local: RRHHEmployeeRecord[] = JSON.parse(localStorage.getItem(RRHH_LEGAJOS_LS_KEY) || '[]');
+    const updated = [payload, ...local.filter((r) => r.id !== docId)];
+    localStorage.setItem(RRHH_LEGAJOS_LS_KEY, JSON.stringify(updated));
+  } catch {}
+
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return { success: true };
+
+  try {
+    const cleaned = JSON.parse(JSON.stringify(payload, (_k, v) => (v === undefined ? null : v)));
+    await setDoc(doc(firestoreDb, 'rrhh_legajos', docId), cleaned, { merge: true });
+    return { success: true };
+  } catch (err: any) {
+    console.warn('[FIREBASE RRHH] Error guardando legajo:', err?.message || err);
+    return { success: false, error: err?.message || String(err) };
+  }
+}
+
+export async function deleteRRHHLegajo(id: string): Promise<void> {
+  try {
+    const local: RRHHEmployeeRecord[] = JSON.parse(localStorage.getItem(RRHH_LEGAJOS_LS_KEY) || '[]');
+    localStorage.setItem(RRHH_LEGAJOS_LS_KEY, JSON.stringify(local.filter((r) => r.id !== id)));
+  } catch {}
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return;
+  try {
+    await deleteDoc(doc(firestoreDb, 'rrhh_legajos', id));
+  } catch {}
+}
+
+export function subscribeToRRHHCheckIns(onUpdate: (records: RRHHCheckInRecord[]) => void): () => void {
+  try {
+    const localRaw = localStorage.getItem(RRHH_FICHAJES_LS_KEY);
+    if (localRaw) {
+      const parsed = JSON.parse(localRaw);
+      if (Array.isArray(parsed)) onUpdate(parsed);
+    }
+  } catch {}
+
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return () => {};
+
+  try {
+    const colRef = collection(firestoreDb, 'rrhh_fichajes');
+    return onSnapshot(
+      colRef,
+      (snapshot) => {
+        const list: RRHHCheckInRecord[] = snapshot.docs
+          .map((d) => ({
+            ...(d.data() as RRHHCheckInRecord),
+            id: d.id,
+          }))
+          .sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
+        try {
+          localStorage.setItem(RRHH_FICHAJES_LS_KEY, JSON.stringify(list));
+        } catch {}
+        onUpdate(list);
+      },
+      (err) => console.warn('[FIREBASE RRHH] Fichajes listener notice:', err?.message || err)
+    );
+  } catch {
+    return () => {};
+  }
+}
+
+export async function saveRRHHCheckIn(record: RRHHCheckInRecord): Promise<{ success: boolean; error?: string }> {
+  const docId = record.id || `chk-${Date.now()}`;
+  const payload: RRHHCheckInRecord = {
+    ...record,
+    id: docId,
+  };
+
+  try {
+    const local: RRHHCheckInRecord[] = JSON.parse(localStorage.getItem(RRHH_FICHAJES_LS_KEY) || '[]');
+    const updated = [payload, ...local.filter((r) => r.id !== docId)].sort((a, b) =>
+      (b.timestamp || '').localeCompare(a.timestamp || '')
+    );
+    localStorage.setItem(RRHH_FICHAJES_LS_KEY, JSON.stringify(updated));
+  } catch {}
+
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return { success: true };
+
+  try {
+    const cleaned = JSON.parse(JSON.stringify(payload, (_k, v) => (v === undefined ? null : v)));
+    await setDoc(doc(firestoreDb, 'rrhh_fichajes', docId), cleaned, { merge: true });
+    return { success: true };
+  } catch (err: any) {
+    console.warn('[FIREBASE RRHH] Error guardando fichaje:', err?.message || err);
+    return { success: false, error: err?.message || String(err) };
+  }
+}
+
+export async function deleteRRHHCheckIn(id: string): Promise<void> {
+  try {
+    const local: RRHHCheckInRecord[] = JSON.parse(localStorage.getItem(RRHH_FICHAJES_LS_KEY) || '[]');
+    localStorage.setItem(RRHH_FICHAJES_LS_KEY, JSON.stringify(local.filter((r) => r.id !== id)));
+  } catch {}
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return;
+  try {
+    await deleteDoc(doc(firestoreDb, 'rrhh_fichajes', id));
+  } catch {}
+}
+
+const RRHH_CONFIG_LS_KEY = 'pampero_rrhh_config';
+
+export const DEFAULT_RRHH_CONFIG: RRHHModuleConfig = {
+  branchColors: {
+    Maipú: '#10B981',
+    Ciudad: '#2563EB',
+    Luján: '#D97706',
+    Todas: '#7C3AED',
+    Franco: '#6B7280',
+  },
+  lateToleranceMinutes: 10,
+  allowEmployeeSelfEditLegajo: true,
+  customFields: [
+    {
+      id: 'fld-cuil',
+      key: 'cuil_dni',
+      label: 'DNI / CUIL',
+      type: 'text',
+      placeholder: 'Ej: 20-38451234-9',
+      required: true,
+      employeeEditable: true,
+      active: true,
+      order: 1,
+    },
+    {
+      id: 'fld-phone',
+      key: 'telefono_personal',
+      label: 'Teléfono / WhatsApp',
+      type: 'tel',
+      placeholder: 'Ej: 261 555-1234',
+      required: true,
+      employeeEditable: true,
+      active: true,
+      order: 2,
+    },
+    {
+      id: 'fld-address',
+      key: 'domicilio_real',
+      label: 'Domicilio Real',
+      type: 'text',
+      placeholder: 'Calle, número y departamento',
+      required: false,
+      employeeEditable: true,
+      active: true,
+      order: 3,
+    },
+    {
+      id: 'fld-birthdate',
+      key: 'fecha_nacimiento',
+      label: 'Fecha de Nacimiento',
+      type: 'date',
+      required: false,
+      employeeEditable: true,
+      active: true,
+      order: 4,
+    },
+    {
+      id: 'fld-uniform',
+      key: 'talle_uniforme',
+      label: 'Talle Uniforme (Camisa / Pantalón / Calzado)',
+      type: 'text',
+      placeholder: 'Ej: L / 44 / 42',
+      required: false,
+      employeeEditable: true,
+      active: true,
+      order: 5,
+    },
+    {
+      id: 'fld-emergency',
+      key: 'contacto_emergencia',
+      label: 'Contacto de Emergencia',
+      type: 'text',
+      placeholder: 'Nombre, vínculo y teléfono',
+      required: false,
+      employeeEditable: true,
+      active: true,
+      order: 6,
+    },
+    {
+      id: 'fld-obra-social',
+      key: 'obra_social',
+      label: 'Obra Social / ART',
+      type: 'text',
+      placeholder: 'Ej: OSECAC / Prevención ART',
+      required: false,
+      employeeEditable: false,
+      active: true,
+      order: 7,
+    },
+  ],
+};
+
+function normalizeRRHHConfig(raw?: Partial<RRHHModuleConfig> | null): RRHHModuleConfig {
+  return {
+    branchColors: {
+      ...DEFAULT_RRHH_CONFIG.branchColors,
+      ...(raw?.branchColors || {}),
+    },
+    lateToleranceMinutes:
+      typeof raw?.lateToleranceMinutes === 'number' && !isNaN(raw.lateToleranceMinutes)
+        ? Math.max(0, raw.lateToleranceMinutes)
+        : DEFAULT_RRHH_CONFIG.lateToleranceMinutes,
+    allowEmployeeSelfEditLegajo:
+      typeof raw?.allowEmployeeSelfEditLegajo === 'boolean'
+        ? raw.allowEmployeeSelfEditLegajo
+        : DEFAULT_RRHH_CONFIG.allowEmployeeSelfEditLegajo,
+    customFields:
+      Array.isArray(raw?.customFields)
+        ? [...raw.customFields].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+        : DEFAULT_RRHH_CONFIG.customFields,
+    updatedAt: raw?.updatedAt,
+  };
+}
+
+export function subscribeToRRHHConfig(onUpdate: (config: RRHHModuleConfig) => void): () => void {
+  try {
+    const localRaw = localStorage.getItem(RRHH_CONFIG_LS_KEY);
+    if (localRaw) {
+      onUpdate(normalizeRRHHConfig(JSON.parse(localRaw)));
+    } else {
+      onUpdate(DEFAULT_RRHH_CONFIG);
+    }
+  } catch {
+    onUpdate(DEFAULT_RRHH_CONFIG);
+  }
+
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return () => {};
+
+  try {
+    const docRef = doc(firestoreDb, 'config', 'rrhh_settings');
+    return onSnapshot(
+      docRef,
+      (snap) => {
+        if (snap.exists()) {
+          const normalized = normalizeRRHHConfig(snap.data() as Partial<RRHHModuleConfig>);
+          try {
+            localStorage.setItem(RRHH_CONFIG_LS_KEY, JSON.stringify(normalized));
+          } catch {}
+          onUpdate(normalized);
+        }
+      },
+      (err) => console.warn('[FIREBASE RRHH] Config listener notice:', err?.message || err)
+    );
+  } catch {
+    return () => {};
+  }
+}
+
+export async function saveRRHHConfig(config: RRHHModuleConfig): Promise<{ success: boolean; error?: string }> {
+  const payload = normalizeRRHHConfig({
+    ...config,
+    updatedAt: new Date().toISOString(),
+  });
+
+  try {
+    localStorage.setItem(RRHH_CONFIG_LS_KEY, JSON.stringify(payload));
+  } catch {}
+
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return { success: true };
+
+  try {
+    const cleaned = JSON.parse(JSON.stringify(payload, (_k, v) => (v === undefined ? null : v)));
+    await setDoc(doc(firestoreDb, 'config', 'rrhh_settings'), cleaned, { merge: true });
+    return { success: true };
+  } catch (err: any) {
+    console.warn('[FIREBASE RRHH] Error guardando config RRHH:', err?.message || err);
+    return { success: false, error: err?.message || String(err) };
+  }
+}
+
+// ==========================================
+// NOTIFICACIONES LEÍDAS (PERSISTENCIA POR USUARIO)
+// ==========================================
+const getNotifStorageKey = (userKey: string) =>
+  `pampero_read_notifications_${userKey.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+
+export function subscribeToReadNotifications(
+  userKey: string,
+  onUpdate: (readIds: string[]) => void
+): () => void {
+  const safeKey = userKey.toLowerCase().replace(/[^a-z0-9]/g, '_') || 'default';
+  try {
+    const raw = localStorage.getItem(getNotifStorageKey(userKey));
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) onUpdate(parsed);
+    }
+  } catch {}
+
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return () => {};
+
+  try {
+    return onSnapshot(
+      doc(firestoreDb, 'notification_reads', safeKey),
+      (snap) => {
+        if (snap.exists()) {
+          const ids = Array.isArray(snap.data()?.readIds) ? snap.data().readIds : [];
+          try {
+            localStorage.setItem(getNotifStorageKey(userKey), JSON.stringify(ids));
+          } catch {}
+          onUpdate(ids);
+        }
+      },
+      () => {}
+    );
+  } catch {
+    return () => {};
+  }
+}
+
+export async function saveReadNotifications(userKey: string, readIds: string[]): Promise<void> {
+  const uniqueIds = Array.from(new Set(readIds)).slice(-400);
+  try {
+    localStorage.setItem(getNotifStorageKey(userKey), JSON.stringify(uniqueIds));
+  } catch {}
+
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return;
+  const safeKey = userKey.toLowerCase().replace(/[^a-z0-9]/g, '_') || 'default';
+  try {
+    await setDoc(
+      doc(firestoreDb, 'notification_reads', safeKey),
+      { readIds: uniqueIds, updatedAt: new Date().toISOString() },
+      { merge: true }
+    );
+  } catch {}
+}
+
 
 

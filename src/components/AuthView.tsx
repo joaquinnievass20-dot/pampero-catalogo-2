@@ -200,7 +200,14 @@ export const AuthView: React.FC<AuthViewProps> = ({
     try {
       // 1. Creación atómica en Firebase Authentication y Cloud Firestore
       const authResult = await createFirebaseAuthAndFirestoreUser(newUser);
-      const finalUserId = (authResult.success && authResult.uid) ? authResult.uid : assignedId;
+      if (!authResult.success) {
+        setErrorMessage(
+          authResult.error ||
+          'No se pudo crear la cuenta con ese correo electrónico. Verificá los datos ingresados.'
+        );
+        return;
+      }
+      const finalUserId = authResult.uid || assignedId;
 
       const session: UserSession = {
         id: finalUserId,
@@ -227,30 +234,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
       }, 400);
     } catch (err: any) {
       console.warn('[AUTH] Error en creación de cuenta:', err);
-      // Fallback seguro de guardado
-      await saveFirestoreUser(newUser).catch(() => {});
-      const session: UserSession = {
-        id: assignedId,
-        email: cleanEmail,
-        role: 'client',
-        clientType: accountType,
-        branch: nearestBranch || 'Maipú',
-        clientData: {
-          fullName: fullName.trim() || cleanEmail.split('@')[0],
-          companyName: companyName.trim(),
-          cuit: cuit.trim(),
-          phone: phone.trim(),
-          address: `${street.trim()} ${streetNumber.trim()}`.trim(),
-          postalCode: postalCode.trim(),
-          nearestBranch: nearestBranch || 'Maipú',
-          companyLocation: companyLocation.trim() || undefined,
-          locationUrl: locationUrl.trim() || undefined,
-        },
-      };
-      setSuccessMessage('¡Cuenta registrada exitosamente! Ingresando al catálogo...');
-      setTimeout(() => {
-        onLogin(session);
-      }, 400);
+      setErrorMessage(err?.message || 'Error al registrar la cuenta. Intentá nuevamente.');
     }
   };
 
@@ -408,7 +392,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
         }}
         className="text-[11px] py-1.5 px-4 text-center uppercase tracking-[0.35em] font-medium border-b border-black/20 select-none"
       >
-        CATÁLOGO DIGITAL · EXHIBICIÓN DE PRODUCTO
+        {theme?.siteTexts?.announcementBarText || 'CATÁLOGO DIGITAL · EXHIBICIÓN DE PRODUCTO'}
       </div>
 
       {/* 2. Top Bar matching Screenshot 1 */}
@@ -444,7 +428,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
               }}
               className="hover:brightness-110 px-6 py-2 rounded-xs text-[11px] uppercase tracking-[0.25em] font-semibold transition-all shadow-2xs cursor-pointer"
             >
-              INGRESAR
+              {theme?.siteTexts?.authLoginBtnText || 'INGRESAR'}
             </button>
           </div>
         </div>
@@ -460,7 +444,9 @@ export const AuthView: React.FC<AuthViewProps> = ({
               style={{ color: accent }}
               className="text-[11px] uppercase tracking-[0.3em] font-bold"
             >
-              ACCESO AL CATÁLOGO
+              {tab === 'register'
+                ? (theme?.siteTexts?.authRegisterTitle || 'ACCESO AL CATÁLOGO')
+                : (theme?.siteTexts?.authLoginTitle || 'ACCESO AL CATÁLOGO')}
             </p>
 
             <h1 
@@ -474,7 +460,9 @@ export const AuthView: React.FC<AuthViewProps> = ({
             </h1>
 
             <p className="mt-6 text-sm sm:text-base leading-relaxed text-[#544E47] max-w-lg">
-              Elegí el tipo de cuenta según cómo comprás: consumidor final o empresa. Los datos se usan solo para identificar tu cuenta y para el contacto comercial.
+              {tab === 'register'
+                ? (theme?.siteTexts?.authRegisterSubtitle || 'Elegí el tipo de cuenta según cómo comprás: consumidor final o empresa. Los datos se usan solo para identificar tu cuenta y para el contacto comercial.')
+                : (theme?.siteTexts?.authLoginSubtitle || 'Elegí el tipo de cuenta según cómo comprás: consumidor final o empresa. Los datos se usan solo para identificar tu cuenta y para el contacto comercial.')}
             </p>
 
             {/* Bullets from Screenshot 1 */}
@@ -546,10 +534,10 @@ export const AuthView: React.FC<AuthViewProps> = ({
                     style={{ color: text, fontFamily: theme?.fontFamily || 'Bebas Neue' }}
                     className="text-4xl uppercase tracking-wide font-bold"
                   >
-                    ADMINISTRACIÓN Y EMPLEADOS
+                    {theme?.siteTexts?.authStaffTitle || 'ADMINISTRACIÓN Y EMPLEADOS'}
                   </h2>
                   <p className="text-xs text-[#6F6860] mt-1 mb-6">
-                    Ingresá con tu usuario o email y contraseña autorizada (Administrador o Empleado) para acceder al panel de control.
+                    {theme?.siteTexts?.authStaffSubtitle || 'Ingresá con tu usuario o email y contraseña autorizada (Administrador o Empleado) para acceder al panel de control.'}
                   </p>
 
                   {errorMessage && (
@@ -1041,7 +1029,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
                             onClick={() => switchTab('admin')}
                             className="hover:text-[#18231C] underline font-medium cursor-pointer transition-colors"
                           >
-                            Acceso para Empleados/Admin
+                            {theme?.siteTexts?.authToStaffLinkText || 'Acceso para Empleados/Admin'}
                           </button>
                         </p>
                       </div>
@@ -1205,7 +1193,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
                         }}
                         className="w-full mt-4 py-3.5 hover:brightness-110 font-bold text-[11px] uppercase tracking-[0.3em] rounded-xs transition-all shadow-xs cursor-pointer"
                       >
-                        {loginMethod === 'totp' ? 'INGRESAR CON AUTENTICADOR' : 'INGRESAR'}
+                        {loginMethod === 'totp' ? 'INGRESAR CON AUTENTICADOR' : (theme?.siteTexts?.authLoginBtnText || 'INGRESAR')}
                       </button>
 
                       <div className="mt-5 pt-4 border-t border-[#DCD4C9]/70 space-y-2 text-center">
@@ -1217,7 +1205,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
                             style={{ color: accent }}
                             className="hover:underline font-bold cursor-pointer"
                           >
-                            Regístrate
+                            {theme?.siteTexts?.authToRegisterLinkText || 'Regístrate'}
                           </button>
                         </p>
                         <p className="text-xs text-[#8C847B]">
@@ -1226,7 +1214,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
                             onClick={() => switchTab('admin')}
                             className="hover:text-[#18231C] underline font-medium cursor-pointer transition-colors"
                           >
-                            Acceso para Empleados/Admin
+                            {theme?.siteTexts?.authToStaffLinkText || 'Acceso para Empleados/Admin'}
                           </button>
                         </p>
                       </div>

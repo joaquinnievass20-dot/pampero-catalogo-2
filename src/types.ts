@@ -49,6 +49,11 @@ export interface UserSession {
   sellerRole?: 'admin' | 'encargado' | 'local' | 'vendedor';
   crmScope?: 'all' | 'branch_only' | 'own_only';
   canControlTasks?: boolean;
+  allowedTabs?: string[];
+  crmTabs?: CRMTabKey[];
+  panelTabsConfigured?: boolean;
+  rrhhConfigured?: boolean;
+  canManageRRHH?: boolean;
 }
 
 export interface Seller {
@@ -68,10 +73,13 @@ export interface EmployeeAccount {
   email: string;
   password?: string;
   role: 'employee';
-  allowedTabs: string[]; // e.g. ['promos', 'mass_images', 'prices', 'coupons', 'variants', 'products', 'branches', 'quotes', 'users', 'analytics', 'crm']
+  allowedTabs: string[]; // e.g. ['promos', 'mass_images', 'prices', 'coupons', 'variants', 'products', 'branches', 'quotes', 'users', 'analytics', 'crm', 'rrhh', 'rrhh_admin']
   crmTabs?: CRMTabKey[]; // CRM specific tab permissions
   crmTasksConfigured?: boolean;
   crmCalendarConfigured?: boolean;
+  panelTabsConfigured?: boolean;
+  rrhhConfigured?: boolean;
+  canManageRRHH?: boolean; // Permite ver y editar legajos, horarios y vacaciones de todo el personal
   canControlTasks?: boolean; // Permite auditar tareas y cargar fotos de respaldo
   sellerRole?: 'admin' | 'encargado' | 'local' | 'vendedor';
   branch?: string; // 'Maipú' | 'Ciudad' | 'Luján' | 'Todas'
@@ -230,6 +238,9 @@ export interface RegisteredUser {
   crmScope?: 'all' | 'branch_only' | 'own_only';
   allowedTabs?: string[];
   crmTabs?: CRMTabKey[];
+  panelTabsConfigured?: boolean;
+  rrhhConfigured?: boolean;
+  canManageRRHH?: boolean;
   canControlTasks?: boolean;
   createdAt: string;
   updatedAt?: string;
@@ -340,15 +351,28 @@ export interface SiteTextsConfig {
   authLoginBtnText?: string;
   authRegisterTitle?: string;
   authRegisterSubtitle?: string;
+  authStaffTitle?: string;
+  authStaffSubtitle?: string;
   authToRegisterLinkText?: string;
   authToStaffLinkText?: string;
 
   // 7. Hub de Trabajo / Menú Principal Interno
   hubTitle?: string;
   hubSubtitle?: string;
+  hubHeaderTag?: string;
+  hubHeaderSub?: string;
   hubCrmCardText?: string;
+  hubCrmCardDesc?: string;
+  hubCrmBtnText?: string;
+  hubRrhhCardText?: string;
+  hubRrhhCardDesc?: string;
+  hubRrhhBtnText?: string;
   hubAdminCardText?: string;
+  hubAdminCardDesc?: string;
+  hubAdminBtnText?: string;
   hubCatalogCardText?: string;
+  hubCatalogCardDesc?: string;
+  hubCatalogBtnText?: string;
   hubLogoutBtnText?: string;
 
   // 8. Módulo CRM y Tableros Kanban
@@ -358,6 +382,13 @@ export interface SiteTextsConfig {
   crmColProduccionText?: string;
   crmColListoText?: string;
   crmNewOrderBtnText?: string;
+  crmBackBtnText?: string;
+  crmTabVisitsText?: string;
+  crmTabBoardText?: string;
+  crmTabTasksText?: string;
+  crmTabCalendarText?: string;
+  crmTabSuppliersText?: string;
+  crmTabCostsText?: string;
 
   // 9. Servicios Corporativos (Portal de Talles, Simulador)
   sizingPortalTitle?: string;
@@ -372,6 +403,10 @@ export interface SiteTextsConfig {
   footerPhone?: string;
   footerEmail?: string;
   footerAddress?: string;
+  footerContactTitle?: string;
+  footerBranchesTitle?: string;
+  footerAdminLinkText?: string;
+  footerWhatsappBtnText?: string;
 
   // Compatibilidad con campos previos de screenTexts
   landingTitle1?: string;
@@ -898,5 +933,96 @@ export interface CalendarModuleConfig {
   showCommercialDates: boolean;
   allowStaffCreateEvents: boolean;
   defaultVisibilityType: 'all' | 'branch';
+}
+
+// --- RRHH (LEGAJOS, FICHAJES CON GPS, HORARIOS Y VACACIONES) ---
+export interface RRHHCustomFieldDef {
+  id: string;
+  key: string;
+  label: string;
+  type: 'text' | 'number' | 'date' | 'tel' | 'select' | 'textarea';
+  options?: string[];
+  placeholder?: string;
+  required?: boolean;
+  employeeEditable: boolean;
+  active: boolean;
+  order: number;
+}
+
+export interface RRHHScheduleEntry {
+  date?: string; // YYYY-MM-DD
+  branch: string; // 'Maipú' | 'Ciudad' | 'Luján' | 'Todas' | 'Franco'
+  startTime?: string; // HH:mm
+  endTime?: string; // HH:mm
+  isOffDay?: boolean;
+  note?: string;
+}
+
+export interface RRHHModuleConfig {
+  branchColors: Record<string, string>;
+  lateToleranceMinutes: number;
+  allowEmployeeSelfEditLegajo: boolean;
+  customFields: RRHHCustomFieldDef[];
+  updatedAt?: string;
+}
+
+export interface RRHHVacationEntry {
+  id: string;
+  startDate: string; // YYYY-MM-DD
+  endDate: string; // YYYY-MM-DD
+  daysCount: number;
+  status: 'aprobada' | 'pendiente' | 'finalizada' | 'programada' | 'en_curso' | 'completada' | 'cancelada';
+  notes?: string;
+  createdBy?: string;
+  createdAt?: string;
+}
+
+export interface RRHHEmployeeRecord {
+  id: string; // empId or legajo-email
+  employeeId?: string;
+  fullName: string;
+  name?: string;
+  email: string;
+  dniOrCuil?: string;
+  phone?: string;
+  position?: string; // Puesto / Cargo
+  assignedBranch: string; // Local asignado: 'Maipú' | 'Ciudad' | 'Luján' | 'Todas'
+  scheduledStart: string; // HH:mm ej '08:30'
+  scheduledEnd: string; // HH:mm ej '17:30'
+  workDays?: string[]; // ej ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
+  weeklySchedule?: Record<string, RRHHScheduleEntry>; // Clave: 'Lun'..'Dom'
+  dateSchedules?: Record<string, RRHHScheduleEntry>; // Clave: 'YYYY-MM-DD'
+  hireDate?: string; // YYYY-MM-DD
+  emergencyContact?: string;
+  notes?: string;
+  customFieldValues?: Record<string, string>;
+  vacations: RRHHVacationEntry[];
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
+export interface RRHHCheckInLocation {
+  lat: number;
+  lng: number;
+  accuracyMeters?: number;
+  mapsUrl?: string;
+}
+
+export interface RRHHCheckInRecord {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  employeeEmail: string;
+  branch: string; // Local donde marcó llegada
+  expectedBranch?: string;
+  expectedStart?: string;
+  timestamp: string; // ISO datetime exacto
+  dateStr: string; // YYYY-MM-DD
+  timeStr: string; // HH:mm:ss exacto
+  status: 'on_time' | 'late' | 'wrong_branch';
+  lateMinutes?: number;
+  location?: RRHHCheckInLocation;
+  locationError?: string;
+  note?: string;
 }
 

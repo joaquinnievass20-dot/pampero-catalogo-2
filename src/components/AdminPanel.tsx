@@ -35,7 +35,9 @@ import { AdminKanbanConfigTab } from './admin/AdminKanbanConfigTab';
 import { AdminCostCategoriesTab } from './admin/AdminCostCategoriesTab';
 import { AdminAuditLogsTab } from './admin/AdminAuditLogsTab';
 import { AdminCalendarTab } from './admin/AdminCalendarTab';
+import { AdminRRHHTab } from './admin/AdminRRHHTab';
 import { ProductImageBgModal } from './admin/ProductImageBgModal';
+import { getEmployeePanelTabs } from '../utils/permissions';
 import { compressImage } from '../utils/imageCompressor';
 import { parseImageFileName } from '../utils/imageNamingParser';
 import { fetchImageUrlAsFile } from '../utils/productBackgroundRemover';
@@ -60,6 +62,7 @@ import {
   saveFirestoreBranches,
   deleteFirestoreBranch,
   recordAuditLog,
+  subscribeToFirestoreEmployees,
 } from '../services/firebase';
 import { 
   Palette, 
@@ -125,6 +128,7 @@ export type AdminTabKey =
   | 'products' 
   | 'variants' 
   | 'branches' 
+  | 'rrhh_admin'
   | 'quotes' 
   | 'users' 
   | 'permissions'
@@ -187,26 +191,24 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   onUpdateVolumeDiscounts = () => {},
 }) => {
   const isEmployee = userSession?.role === 'employee';
+  const [liveEmployeesTick, setLiveEmployeesTick] = useState(0);
+
+  useEffect(() => {
+    if (!isEmployee) return;
+    const unsub = subscribeToFirestoreEmployees(() => {
+      setLiveEmployeesTick((t) => t + 1);
+    });
+    return () => unsub();
+  }, [isEmployee]);
 
   const employeePermissions: string[] = React.useMemo(() => {
     if (!isEmployee) return [];
-    try {
-      const saved = localStorage.getItem('pampero_employees');
-      if (saved) {
-        const list = JSON.parse(saved);
-        const emp = list.find((e: any) => 
-          e.email?.toLowerCase() === userSession?.email?.toLowerCase() || e.id === userSession?.id
-        );
-        if (emp && emp.allowedTabs) return emp.allowedTabs;
-      }
-    } catch {}
-    return ['products', 'variants', 'prices', 'mass_images', 'quotes'];
-  }, [isEmployee, userSession?.email, userSession?.id]);
+    void liveEmployeesTick;
+    return getEmployeePanelTabs(userSession);
+  }, [isEmployee, userSession, liveEmployeesTick]);
 
   const isTabVisible = React.useCallback((tabKey: AdminTabKey) => {
     if (!isEmployee) return true;
-    if (tabKey === 'security' || tabKey === 'permissions' || tabKey === 'kanban_config' || tabKey === 'audit_logs') return false;
-    if (tabKey === 'calendar' && employeePermissions.includes('promos')) return true;
     return employeePermissions.includes(tabKey);
   }, [isEmployee, employeePermissions]);
 
@@ -876,6 +878,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         { key: 'quotes', label: 'Solicitudes y Cotizaciones', icon: Receipt },
         { key: 'kanban_config', label: 'CRM & Etapas Kanban', icon: Sliders },
         { key: 'branches', label: 'Sucursales Mendoza', icon: Building2 },
+      ],
+    },
+    {
+      title: 'RRHH & Personal',
+      tabs: [
+        { key: 'rrhh_admin', label: 'RRHH, Legajos y Horarios', icon: Users },
       ],
     },
     {
@@ -2792,6 +2800,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               triggerSaveNotice={triggerSaveNotice}
               branches={branches}
               userSession={userSession}
+            />
+          )}
+
+          {/* TAB: RRHH, LEGAJOS, HORARIOS Y VACACIONES */}
+          {activeTab === 'rrhh_admin' && (
+            <AdminRRHHTab
+              userSession={userSession}
+              branches={branches}
+              triggerSaveNotice={triggerSaveNotice}
             />
           )}
 

@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { UserSession, ThemeConfig } from '../types';
 import { subscribeToCRMOrders } from '../services/firebase';
+import { hasAdminPanelAccess, hasCRMAccess, hasRRHHAccess } from '../utils/permissions';
 import { 
   ShoppingBag, 
   User as UserIcon, 
@@ -9,13 +10,12 @@ import {
   ChevronDown, 
   ShieldCheck, 
   Building2, 
-  FileText,
   Compass,
-  Bell,
   LayoutDashboard,
   Sparkles,
   Shirt,
-  Package
+  Package,
+  Clock
 } from 'lucide-react';
 
 interface UserNavMenuProps {
@@ -26,6 +26,7 @@ interface UserNavMenuProps {
   onLogout: () => void;
   onOpenAdmin?: () => void;
   onOpenCRM?: () => void;
+  onOpenRRHH?: () => void;
   onOpenHub?: () => void;
   onOpenUniformSimulator?: () => void;
   onOpenSizingPortal?: () => void;
@@ -45,6 +46,7 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
   onLogout,
   onOpenAdmin,
   onOpenCRM,
+  onOpenRRHH,
   onOpenHub,
   onOpenUniformSimulator,
   onOpenSizingPortal,
@@ -151,14 +153,14 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
         </button>
       )}
 
-      {/* 2. Botón de acceso directo al Panel / Hub para Empleados y Admin - 100% editable vía ThemeConfig */}
-      {(userSession?.role === 'admin' || userSession?.role === 'employee') && (onOpenHub || onOpenAdmin) && (
+      {/* 2. Botón de acceso directo al Hub / Panel para Empleados y Admin */}
+      {(userSession?.role === 'admin' || userSession?.role === 'employee') && (onOpenHub || (hasAdminPanelAccess(userSession) && onOpenAdmin)) && (
         <button
           id="btn-nav-panel-hub"
           type="button"
           onClick={() => {
             if (onOpenHub) onOpenHub();
-            else if (onOpenAdmin) onOpenAdmin();
+            else if (hasAdminPanelAccess(userSession) && onOpenAdmin) onOpenAdmin();
           }}
           style={{
             backgroundColor: theme?.hubAccentColor || theme?.accentColor || '#FDB813',
@@ -166,8 +168,8 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
             borderColor: theme?.hubBorderColor || 'transparent',
           }}
           className="relative px-3 sm:px-3.5 py-2 rounded-xs border text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 shadow-2xs transition-all hover:brightness-110 shrink-0 cursor-pointer select-none"
-          title={userSession.role === 'admin' ? 'Acceder al Panel de Control (Admin)' : 'Acceder al Hub de Trabajo'}
-          aria-label={userSession.role === 'admin' ? 'Abrir Panel de Control' : 'Abrir Hub de Trabajo'}
+          title={hasAdminPanelAccess(userSession) ? 'Acceder al Panel de Control / Hub' : 'Acceder al Hub de Trabajo'}
+          aria-label={hasAdminPanelAccess(userSession) ? 'Abrir Panel de Control' : 'Abrir Hub de Trabajo'}
         >
           <Compass className="w-4 h-4 shrink-0 text-[#18231C]" />
           <span className="font-sans text-xs">
@@ -319,8 +321,8 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
                   </button>
                 )}
 
-                {/* 2. ADMIN ONLY: Panel de Control General */}
-                {userSession.role === 'admin' && onOpenAdmin && (
+                {/* 2. STAFF AUTORIZADO: Panel de Control General (oculto si el empleado no tiene ventanas habilitadas) */}
+                {hasAdminPanelAccess(userSession) && onOpenAdmin && (
                   <button
                     type="button"
                     onClick={() => {
@@ -331,19 +333,19 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
                   >
                     <div className="flex items-center gap-2">
                       <Settings className="w-4 h-4" style={{ color: accent }} />
-                      <span>Panel de Control (Admin)</span>
+                      <span>Panel de Control</span>
                     </div>
                     <span 
                       style={{ backgroundColor: `${accent}20`, color: primaryBg }}
                       className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded-xs"
                     >
-                      Admin
+                      {userSession.role === 'admin' ? 'Admin' : 'Autorizado'}
                     </span>
                   </button>
                 )}
 
-                {/* 3. STAFF ONLY (admin / employee): Acceso Directo a CRM si disponible */}
-                {(userSession.role === 'admin' || userSession.role === 'employee') && onOpenCRM && (
+                {/* 3. STAFF AUTORIZADO: Acceso Directo a CRM si disponible */}
+                {(userSession.role === 'admin' || userSession.role === 'employee') && hasCRMAccess(userSession) && onOpenCRM && (
                   <button
                     type="button"
                     onClick={() => {
@@ -357,10 +359,30 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
                       <span>CRM Pampero</span>
                     </div>
                     {pendingQuotesCount > 0 && (
-                      <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full bg-red-600 text-white animate-pulse">
+                      <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full bg-red-600 text-white">
                         +{pendingQuotesCount} NUEVOS
                       </span>
                     )}
+                  </button>
+                )}
+
+                {/* 3B. STAFF AUTORIZADO: Acceso Directo a RRHH */}
+                {(userSession.role === 'admin' || userSession.role === 'employee') && hasRRHHAccess(userSession) && onOpenRRHH && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDropdownOpen(false);
+                      onOpenRRHH();
+                    }}
+                    className="w-full flex items-center justify-between px-3 py-2 text-left text-xs font-bold text-[#18231C] hover:bg-[#FAF8F5] rounded-xs transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-emerald-700" />
+                      <span>RRHH · Fichaje</span>
+                    </div>
+                    <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded-xs bg-emerald-50 text-emerald-800 border border-emerald-200">
+                      Local
+                    </span>
                   </button>
                 )}
 
