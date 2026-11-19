@@ -56,6 +56,7 @@ import {
   AuditLogEntry,
   SiteTextsConfig,
   LeadVisit,
+  CRMOrder,
   CalendarHolidayItem,
   CalendarModuleConfig,
 } from '../types';
@@ -1557,10 +1558,11 @@ export const saveFirestoreUser = async (user: RegisteredUser): Promise<{ success
         password: passwordToKeep || undefined,
         role: 'employee',
         sellerRole: sanitizedUser.sellerRole || 'vendedor',
-        branch: sanitizedUser.branch || 'Maipú',
+        branch: sanitizedUser.sellerRole === 'encargado' ? 'Todas' : (sanitizedUser.branch || 'Maipú'),
+        crmScope: sanitizedUser.crmScope || (sanitizedUser.sellerRole === 'encargado' ? 'all' : 'branch_only'),
         allowedTabs: sanitizedUser.allowedTabs || ['products', 'variants', 'prices', 'mass_images', 'promos', 'quotes', 'crm'],
         crmTabs: sanitizedUser.crmTabs || ['visits', 'board', 'tasks', 'calendar', 'suppliers', 'costs'],
-        canControlTasks: Boolean(sanitizedUser.canControlTasks),
+        canControlTasks: Boolean(sanitizedUser.canControlTasks || sanitizedUser.sellerRole === 'encargado' || sanitizedUser.sellerRole === 'local'),
         crmCalendarConfigured: Boolean(sanitizedUser.crmTabs?.length),
         active: sanitizedUser.status === 'active',
         createdAt: sanitizedUser.createdAt || new Date().toISOString(),
@@ -1792,10 +1794,11 @@ export async function createFirebaseAuthAndFirestoreUser(
           username: derivedUsername,
           role: 'employee',
           sellerRole: user.sellerRole || 'vendedor',
-          branch: user.branch || 'Maipú',
+          branch: user.sellerRole === 'encargado' ? 'Todas' : (user.branch || 'Maipú'),
+          crmScope: user.crmScope || (user.sellerRole === 'encargado' ? 'all' : 'branch_only'),
           allowedTabs: user.allowedTabs || ['products', 'variants', 'prices', 'mass_images', 'promos', 'quotes', 'crm'],
           crmTabs: user.crmTabs || ['visits', 'board', 'tasks', 'calendar', 'suppliers', 'costs'],
-          canControlTasks: Boolean(user.canControlTasks),
+          canControlTasks: Boolean(user.canControlTasks || user.sellerRole === 'encargado' || user.sellerRole === 'local'),
           crmCalendarConfigured: Boolean(user.crmTabs?.length),
           active: user.status === 'active',
           createdAt: user.createdAt || new Date().toISOString(),
@@ -2721,7 +2724,8 @@ export async function authenticateDualUser(
       branch: matchedUserDoc.branch || matchedUserDoc.nearestBranch,
       sellerName: matchedUserDoc.name || matchedUserDoc.repName,
       sellerRole: matchedUserDoc.sellerRole,
-      canControlTasks: Boolean(matchedUserDoc.canControlTasks || isAdminRole || matchedUserDoc.sellerRole === 'local'),
+      crmScope: matchedUserDoc.crmScope || (matchedUserDoc.sellerRole === 'encargado' ? 'all' : undefined),
+      canControlTasks: Boolean(matchedUserDoc.canControlTasks || isAdminRole || matchedUserDoc.sellerRole === 'local' || matchedUserDoc.sellerRole === 'encargado'),
       clientData: {
         fullName: matchedUserDoc.repName || matchedUserDoc.name,
         companyName: matchedUserDoc.type === 'empresa' ? matchedUserDoc.name : undefined,
@@ -2787,7 +2791,8 @@ export async function authenticateDualUser(
             branch: matchedEmp.branch,
             sellerName: matchedEmp.name,
             sellerRole: matchedEmp.sellerRole,
-            canControlTasks: Boolean(matchedEmp.canControlTasks || matchedEmp.sellerRole === 'local'),
+            crmScope: matchedEmp.crmScope || (matchedEmp.sellerRole === 'encargado' ? 'all' : undefined),
+            canControlTasks: Boolean(matchedEmp.canControlTasks || matchedEmp.sellerRole === 'local' || matchedEmp.sellerRole === 'encargado'),
             clientData: {
               fullName: matchedEmp.name,
               companyName: `Pampero ${matchedEmp.branch || 'Maipú'} - Empleado`,
@@ -2829,7 +2834,8 @@ export async function authenticateDualUser(
 
           let userBranch: string | undefined;
           let userSellerName: string | undefined;
-          let userSellerRole: 'admin' | 'local' | 'vendedor' | undefined;
+          let userSellerRole: 'admin' | 'encargado' | 'local' | 'vendedor' | undefined;
+          let userCrmScope: 'all' | 'branch_only' | 'own_only' | undefined;
           let userCanControlTasks = false;
 
           if (firestoreDb) {
@@ -2842,7 +2848,8 @@ export async function authenticateDualUser(
                 userBranch = uData.branch || uData.nearestBranch;
                 userSellerName = uData.name || uData.repName;
                 userSellerRole = uData.sellerRole;
-                userCanControlTasks = Boolean(uData.canControlTasks || userRole === 'admin' || uData.sellerRole === 'local');
+                userCrmScope = uData.crmScope || (uData.sellerRole === 'encargado' ? 'all' : undefined);
+                userCanControlTasks = Boolean(uData.canControlTasks || userRole === 'admin' || uData.sellerRole === 'local' || uData.sellerRole === 'encargado');
                 clientDataObj = {
                   fullName: uData.repName || uData.name || cred.user.displayName || idClean,
                   companyName: uData.type === 'empresa' ? uData.name : undefined,
@@ -2868,6 +2875,7 @@ export async function authenticateDualUser(
               branch: userBranch,
               sellerName: userSellerName,
               sellerRole: userSellerRole,
+              crmScope: userCrmScope,
               canControlTasks: userCanControlTasks,
               clientData: clientDataObj,
               loggedAt: new Date().toISOString(),
@@ -4311,7 +4319,7 @@ export function isValidStructuredTrackingCode(code?: string): boolean {
 
 /**
  * Centraliza TODAS las visitas comerciales / generales asignando un código estructurado
- * [E][M|C|L][DDMM][00000] persistente a aquellas fichas que aún no lo tengan.
+ * [E][M|C|L][DDMM][00000] persistente usando la fecha de alta en el sistema (`createdAt` / hoy).
  */
 export async function ensureVisitsHaveStructuredTrackingCodes(visits: LeadVisit[]): Promise<LeadVisit[]> {
   if (!Array.isArray(visits) || visits.length === 0) return visits;
@@ -4320,13 +4328,10 @@ export async function ensureVisitsHaveStructuredTrackingCodes(visits: LeadVisit[
 
   const updatedMap = new Map<string, LeadVisit>();
   for (const v of missing) {
-    const rawDate = String(v.date || '').trim();
-    const visitDate = /^\d{4}-\d{2}-\d{2}$/.test(rawDate)
-      ? new Date(`${rawDate}T12:00:00`)
-      : rawDate
-      ? new Date(rawDate)
-      : new Date();
-    const code = await getNextStructuredTrackingCode('empresa', v.branch || 'Maipú', visitDate);
+    const rawReg = String(v.createdAt || '').trim();
+    const regDate = rawReg ? new Date(rawReg) : new Date();
+    const validRegDate = !Number.isNaN(regDate.getTime()) ? regDate : new Date();
+    const code = await getNextStructuredTrackingCode('empresa', v.branch || 'Maipú', validRegDate);
     const enriched: LeadVisit = sanitizeObjectEncoding({
       ...v,
       trackingCode: code,
@@ -4337,6 +4342,63 @@ export async function ensureVisitsHaveStructuredTrackingCodes(visits: LeadVisit[
   }
 
   return visits.map((v) => updatedMap.get(v.id) || v);
+}
+
+/**
+ * Centraliza los pedidos en Seguimiento Empresas asignando el código estructurado
+ * [E|C][M|C|L][DDMM][00000] a fichas que no lo tengan (ej. COT-VIS-* o pedidos sin código),
+ * preservando intactos los pedidos históricos (#1..#8).
+ */
+export async function ensureOrdersHaveStructuredTrackingCodes(
+  orders: CRMOrder[],
+  visits: LeadVisit[] = []
+): Promise<CRMOrder[]> {
+  if (!Array.isArray(orders) || orders.length === 0) return orders;
+  const isLegacyNumber = (num?: string) => /^#\d{1,4}$/.test(String(num || '').trim());
+
+  const missing = orders.filter(
+    (o) => o && !isValidStructuredTrackingCode(o.trackingCode) && !isLegacyNumber(o.orderNumber)
+  );
+  if (missing.length === 0) return orders;
+
+  const updatedMap = new Map<string, CRMOrder>();
+  for (const o of missing) {
+    let resolvedCode = '';
+    if (o.originVisitId && Array.isArray(visits)) {
+      const originVisit = visits.find((v) => v.id === o.originVisitId);
+      if (originVisit && isValidStructuredTrackingCode(originVisit.trackingCode)) {
+        resolvedCode = originVisit.trackingCode!;
+      }
+    }
+    if (!resolvedCode) {
+      const rawReg = String((o as any).createdAt || o.date || '').trim();
+      const regDate = rawReg ? new Date(rawReg) : new Date();
+      const validRegDate = !Number.isNaN(regDate.getTime()) ? regDate : new Date();
+      resolvedCode = await getNextStructuredTrackingCode(
+        o.clientType === 'consumidor_final' ? 'consumidor_final' : 'empresa',
+        o.branch || 'Maipú',
+        validRegDate
+      );
+    }
+
+    const currentOrderNum = String(o.orderNumber || '').trim();
+    const shouldUpdateOrderNum =
+      !currentOrderNum ||
+      /^COT-VIS-/i.test(currentOrderNum) ||
+      /^PED-/i.test(currentOrderNum);
+
+    const enriched: CRMOrder = sanitizeObjectEncoding({
+      ...o,
+      trackingCode: resolvedCode,
+      orderNumber: shouldUpdateOrderNum ? resolvedCode : o.orderNumber,
+      quoteId: shouldUpdateOrderNum ? resolvedCode : o.quoteId,
+      updatedAt: o.updatedAt || new Date().toISOString(),
+    });
+    updatedMap.set(o.id, enriched);
+    saveCRMOrder(enriched).catch(() => {});
+  }
+
+  return orders.map((o) => updatedMap.get(o.id) || o);
 }
 
 /**
@@ -4795,7 +4857,8 @@ export async function fetchUserProfileByUidOrEmail(uid: string, email?: string |
               branch: data.branch || data.nearestBranch,
               sellerName: data.name || data.repName,
               sellerRole: data.sellerRole,
-              canControlTasks: Boolean(data.canControlTasks || role === 'admin' || data.sellerRole === 'local'),
+              crmScope: data.crmScope || (data.sellerRole === 'encargado' ? 'all' : undefined),
+              canControlTasks: Boolean(data.canControlTasks || role === 'admin' || data.sellerRole === 'local' || data.sellerRole === 'encargado'),
               clientData: {
                 fullName: data.name || data.fullName || data.repName || cleanEmail.split('@')[0],
                 companyName: data.companyName || (data.type === 'empresa' ? data.name : undefined),
@@ -4846,7 +4909,8 @@ export async function fetchUserProfileByUidOrEmail(uid: string, email?: string |
               branch: data.branch || data.nearestBranch,
               sellerName: data.name || data.repName,
               sellerRole: data.sellerRole,
-              canControlTasks: Boolean(data.canControlTasks || role === 'admin' || data.sellerRole === 'local'),
+              crmScope: data.crmScope || (data.sellerRole === 'encargado' ? 'all' : undefined),
+              canControlTasks: Boolean(data.canControlTasks || role === 'admin' || data.sellerRole === 'local' || data.sellerRole === 'encargado'),
               clientData: {
                 fullName: data.name || data.fullName || data.repName || cleanEmail.split('@')[0],
                 companyName: data.companyName || (data.type === 'empresa' ? data.name : undefined),
@@ -4890,7 +4954,8 @@ export async function fetchUserProfileByUidOrEmail(uid: string, email?: string |
           branch: match.branch || match.nearestBranch,
           sellerName: match.name || match.repName,
           sellerRole: match.sellerRole,
-          canControlTasks: Boolean(match.canControlTasks || role === 'admin' || match.sellerRole === 'local'),
+          crmScope: match.crmScope || (match.sellerRole === 'encargado' ? 'all' : undefined),
+          canControlTasks: Boolean(match.canControlTasks || role === 'admin' || match.sellerRole === 'local' || match.sellerRole === 'encargado'),
           clientData: {
             fullName: match.name || match.fullName || match.repName || cleanEmail.split('@')[0],
             companyName: match.companyName || (match.type === 'empresa' ? match.name : undefined),

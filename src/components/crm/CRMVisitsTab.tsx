@@ -47,6 +47,9 @@ import { normalizeLeadVisit } from '../../utils/crmNormalizers';
 interface CRMVisitsTabProps {
   visits: LeadVisit[];
   accentColor: string;
+  crmScope?: 'all' | 'branch_only' | 'own_only';
+  assignedBranch?: string;
+  assignedSellerName?: string;
   onPromoteToCompanies?: (visit: LeadVisit) => void;
   onVisitsUpdated?: (visits: LeadVisit[]) => void;
 }
@@ -84,7 +87,15 @@ export const VISIT_COLUMNS: { id: VisitKanbanStep; label: string; description: s
   },
 ];
 
-export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor, onPromoteToCompanies, onVisitsUpdated }) => {
+export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({
+  visits,
+  accentColor,
+  crmScope = 'all',
+  assignedBranch = '',
+  assignedSellerName = '',
+  onPromoteToCompanies,
+  onVisitsUpdated,
+}) => {
   const [columns, setColumns] = useState<KanbanColumnConfig[]>(() => {
     try {
       const saved = localStorage.getItem('pampero_kanban_visits_cols');
@@ -333,14 +344,13 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
     if (!companyName.trim()) return;
 
     const chosenStep = step || columns[0]?.id || 'primer_contacto';
-    const rawDateStr = String(date || '').trim();
-    const visitDateObj = /^\d{4}-\d{2}-\d{2}$/.test(rawDateStr)
-      ? new Date(`${rawDateStr}T12:00:00`)
-      : new Date();
+    // Los 4 dígitos DDMM corresponden a la fecha de alta en el sistema (createdAt o fecha actual), nunca a la fecha futura de visita
+    const regDateObj = editingVisit?.createdAt ? new Date(editingVisit.createdAt) : new Date();
+    const validRegDate = !Number.isNaN(regDateObj.getTime()) ? regDateObj : new Date();
     const resolvedTracking =
       editingVisit?.trackingCode && isValidStructuredTrackingCode(editingVisit.trackingCode)
         ? editingVisit.trackingCode
-        : await getNextStructuredTrackingCode('empresa', branch || 'Maipú', visitDateObj);
+        : await getNextStructuredTrackingCode('empresa', branch || 'Maipú', validRegDate);
 
     const visitId = editingVisit ? editingVisit.id : `VIS-${Date.now().toString().slice(-6)}`;
     const activeReminderDate = generateReminder && reminderDate.trim() ? reminderDate.trim() : undefined;
@@ -482,8 +492,14 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
     setDragOverCol(null);
   };
 
-  // Filter visits from localVisits (con coerción segura a string)
+  // Filter visits from localVisits (con coerción segura a string y alcance RBAC)
   const filteredVisits = localVisits.filter((v) => {
+    if (crmScope === 'branch_only' && assignedBranch && String(v.branch ?? '').toLowerCase() !== assignedBranch.toLowerCase()) {
+      return false;
+    }
+    if (crmScope === 'own_only' && assignedSellerName && String(v.seller ?? '').toLowerCase() !== assignedSellerName.toLowerCase()) {
+      return false;
+    }
     const q = searchQuery.toLowerCase();
     const matchesSeller = sellerFilter === 'todos' || String(v.seller ?? '').toLowerCase() === sellerFilter.toLowerCase();
     const matchesBranch = branchFilter === 'todos' || String(v.branch ?? '').toLowerCase() === branchFilter.toLowerCase();
@@ -553,7 +569,7 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
             className="px-4 py-2 bg-[#B9522F] hover:bg-[#9E3E1E] text-white text-xs font-bold uppercase tracking-wider rounded-xs transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
           >
             <Plus className="w-4 h-4" />
-            <span>Nueva Visita / Contacto</span>
+            <span>Nueva Empresa / Visita</span>
           </button>
         </div>
       </div>
@@ -747,7 +763,7 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
                           key={visit.id}
                           draggable
                           onDragStart={() => handleDragStart(visit.id)}
-                          className="bg-white rounded-xs p-3 border border-[#DCD4C9] hover:border-[#18231C] shadow-2xs transition-all cursor-grab active:cursor-grabbing group space-y-2"
+                          className="bg-white rounded-xs p-3 border border-[#DCD4C9] hover:border-[#18231C] shadow-2xs transition-all cursor-grab active:cursor-grabbing group space-y-2 overflow-hidden"
                         >
                           <div className="flex items-start justify-between gap-1.5">
                             <div className="min-w-0">
@@ -844,7 +860,7 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
                           )}
 
                           {/* Action controls */}
-                          <div className="pt-2 border-t border-neutral-100 flex items-center justify-between gap-1">
+                          <div className="pt-2 border-t border-neutral-100 flex flex-wrap items-center justify-between gap-1.5 min-w-0">
                             <div className="flex items-center gap-1">
                               <button
                                 type="button"
@@ -1117,7 +1133,7 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({ visits, accentColor,
             <div className="flex items-center justify-between border-b pb-3">
               <div>
                 <h4 className="font-bold text-sm uppercase text-[#18231C]">
-                  {editingVisit ? 'Editar Visita / Contacto Comercial' : 'Nueva Visita / Contacto Comercial'}
+                  {editingVisit ? 'Editar Empresa / Visita Comercial' : 'Nueva Empresa / Visita Comercial'}
                 </h4>
                 {editingVisit?.trackingCode && (
                   <span className="text-[10px] font-mono font-bold text-[#B9522F]">

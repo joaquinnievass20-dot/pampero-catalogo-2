@@ -105,7 +105,11 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
   const getRoleLabel = () => {
     if (!userSession) return '';
     if (userSession.role === 'admin') return 'Administrador';
-    if (userSession.role === 'employee') return 'Personal Pampero';
+    if (userSession.role === 'employee') {
+      return userSession.sellerRole === 'encargado'
+        ? 'Personal · Encargado (Todos Locales)'
+        : 'Personal Pampero';
+    }
     if (userSession.clientType === 'empresa') return 'Cuenta Corporativa';
     return 'Cliente Registrado';
   };

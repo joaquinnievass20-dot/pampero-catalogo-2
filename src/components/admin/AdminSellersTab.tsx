@@ -28,7 +28,7 @@ interface AdminSellersTabProps {
   userSession?: UserSession | null;
 }
 
-export type StaffRole = 'admin' | 'local' | 'vendedor';
+export type StaffRole = 'admin' | 'encargado' | 'local' | 'vendedor';
 
 export interface SellerRecord extends Seller {
   role?: StaffRole;
@@ -56,6 +56,7 @@ export const AdminSellersTab: React.FC<AdminSellersTabProps> = ({ branches, trig
   // Effective Role determination
   const userBaseRole: StaffRole = (() => {
     if (userSession?.role === 'admin') return 'admin';
+    if (userSession?.role === 'employee' && userSession?.sellerRole === 'encargado') return 'encargado';
     const email = userSession?.email?.toLowerCase() || '';
     const match = sellers.find((s) => s.email?.toLowerCase() === email);
     if (match?.role) return match.role;
@@ -265,7 +266,7 @@ export const AdminSellersTab: React.FC<AdminSellersTabProps> = ({ branches, trig
       return (s.branch || '').toLowerCase() === currentBranchContext.toLowerCase();
     }
 
-    // Admin sees all, respect search and branch filter
+    // Admin y Encargado General ven todos los locales y pueden filtrar por sucursal
     if (selectedBranchFilter !== 'todas') {
       if ((s.branch || '').toLowerCase() !== selectedBranchFilter.toLowerCase()) return false;
     }
@@ -319,6 +320,8 @@ export const AdminSellersTab: React.FC<AdminSellersTabProps> = ({ branches, trig
       <div className={`p-4 rounded-xs border flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs ${
         activeRole === 'admin'
           ? 'bg-purple-50 border-purple-200 text-purple-950'
+          : activeRole === 'encargado'
+          ? 'bg-amber-50 border-amber-200 text-amber-950'
           : activeRole === 'local'
           ? 'bg-blue-50 border-blue-200 text-blue-950'
           : 'bg-emerald-50 border-emerald-200 text-emerald-950'
@@ -328,11 +331,13 @@ export const AdminSellersTab: React.FC<AdminSellersTabProps> = ({ branches, trig
           <div>
             <span className="font-bold uppercase tracking-wider block">
               {activeRole === 'admin' && 'Modo Administrador General (Acceso Total a Todos los Locales y Vendedores)'}
+              {activeRole === 'encargado' && 'Modo Encargado General · Rol Empleado (Ve todos los locales sin privilegios de Administrador)'}
               {activeRole === 'local' && `Modo Encargado de Sucursal · Local: ${currentBranchContext} (Solo puede ver y gestionar vendedores de su sucursal)`}
               {activeRole === 'vendedor' && 'Modo Vendedor (Solo podés ver y gestionar tu propio perfil de vendedor)'}
             </span>
             <span className="text-[11px] opacity-80">
               {activeRole === 'admin' && 'Podés crear, editar, reasignar locales y gestionar la totalidad de las sucursales.'}
+              {activeRole === 'encargado' && 'Visualizás las tres sucursales (Maipú, Ciudad y Luján) con permisos de empleado.'}
               {activeRole === 'local' && `Tenés acceso exclusivo a los operadores y vendedores asignados a ${currentBranchContext}.`}
               {activeRole === 'vendedor' && 'Tus permisos están restringidos a tu información de contacto y ventas asignadas.'}
             </span>
@@ -350,6 +355,7 @@ export const AdminSellersTab: React.FC<AdminSellersTabProps> = ({ branches, trig
               className="text-xs bg-white border border-neutral-300 rounded-xs px-2 py-1 font-bold outline-none cursor-pointer"
             >
               <option value="admin">Admin (Total)</option>
+              <option value="encargado">Encargado (Todos Locales)</option>
               <option value="local">Encargado Local</option>
               <option value="vendedor">Vendedor</option>
             </select>
@@ -382,7 +388,7 @@ export const AdminSellersTab: React.FC<AdminSellersTabProps> = ({ branches, trig
           />
         </div>
 
-        {activeRole === 'admin' && (
+        {(activeRole === 'admin' || activeRole === 'encargado') && (
           <div className="flex items-center gap-1.5">
             <span className="text-xs text-neutral-600 font-medium">Filtrar Local:</span>
             <select
@@ -424,7 +430,7 @@ export const AdminSellersTab: React.FC<AdminSellersTabProps> = ({ branches, trig
                   <div>
                     <span className="font-bold text-sm text-[#18231C] block">{s.name}</span>
                     <span className="inline-block text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.2 rounded-xs mt-0.5 bg-neutral-100 text-neutral-800 border border-neutral-200">
-                      Rol: {s.role === 'admin' ? 'Super Admin' : s.role === 'local' ? 'Encargado de Sucursal' : 'Vendedor'}
+                      Rol: {s.role === 'admin' ? 'Super Admin' : s.role === 'encargado' ? 'Encargado (Todos Locales)' : s.role === 'local' ? 'Encargado de Sucursal' : 'Vendedor'}
                     </span>
                   </div>
                   <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-xs bg-amber-100 text-amber-950 border border-amber-300">
@@ -571,6 +577,7 @@ export const AdminSellersTab: React.FC<AdminSellersTabProps> = ({ branches, trig
                   >
                     <option value="vendedor">Vendedor (Solo ve y edita su propio perfil)</option>
                     <option value="local">Encargado de Sucursal (Ve y gestiona todo su local)</option>
+                    <option value="encargado">Encargado General (Ve todos los locales, rol Empleado)</option>
                     <option value="admin">Administrador (Control total de todos los locales)</option>
                   </select>
                 </div>

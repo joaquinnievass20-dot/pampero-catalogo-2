@@ -268,7 +268,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
 
   // Modal para Crear Nueva Cuenta con Asignación de Clave
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [newAccountType, setNewAccountType] = useState<'empresa' | 'consumidor' | 'empleado' | 'admin'>('empresa');
+  const [newAccountType, setNewAccountType] = useState<'empresa' | 'consumidor' | 'empleado' | 'encargado' | 'admin'>('empresa');
   const [newAccountName, setNewAccountName] = useState('');
   const [newAccountRepName, setNewAccountRepName] = useState('');
   const [newAccountEmail, setNewAccountEmail] = useState('');
@@ -421,7 +421,10 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
   };
 
   // Cambiar rol de usuario en tiempo real e impactar en Firestore
-  const handleUpdateRole = async (user: RegisteredUser, newRoleType: 'admin' | 'empleado' | 'empresa' | 'consumidor') => {
+  const handleUpdateRole = async (
+    user: RegisteredUser,
+    newRoleType: 'admin' | 'encargado' | 'empleado' | 'empresa' | 'consumidor'
+  ) => {
     if (
       user.id === 'admin-master' ||
       user.id === MASTER_ADMIN_USER.id ||
@@ -430,14 +433,34 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
     ) {
       return;
     }
-    const determinedRole: 'admin' | 'employee' | 'client' = 
-      newRoleType === 'admin' ? 'admin' : (newRoleType === 'empleado' ? 'employee' : 'client');
+    const isEncargado = newRoleType === 'encargado';
+    const isStaffNew = newRoleType === 'empleado' || isEncargado;
+    const determinedRole: 'admin' | 'employee' | 'client' =
+      newRoleType === 'admin' ? 'admin' : isStaffNew ? 'employee' : 'client';
     const updatedUser: RegisteredUser = {
       ...user,
-      type: newRoleType,
+      type: isEncargado ? 'empleado' : newRoleType,
       role: determinedRole,
-      pricingTier: newRoleType === 'admin' ? 'Administrador' : (newRoleType === 'empresa' ? 'Corporativo / Mayorista' : 'Consumidor Final'),
-      notes: newRoleType === 'admin' ? 'Cuenta con permisos de Administrador' : user.notes,
+      sellerRole: isEncargado
+        ? 'encargado'
+        : newRoleType === 'empleado'
+        ? (user.sellerRole === 'local' ? 'local' : 'vendedor')
+        : undefined,
+      crmScope: isEncargado ? 'all' : newRoleType === 'empleado' ? (user.crmScope === 'all' ? 'branch_only' : user.crmScope || 'branch_only') : undefined,
+      branch: isEncargado ? 'Todas' : user.branch,
+      canControlTasks: isEncargado ? true : user.canControlTasks,
+      pricingTier:
+        newRoleType === 'admin'
+          ? 'Administrador'
+          : newRoleType === 'empresa'
+          ? 'Corporativo / Mayorista'
+          : 'Consumidor Final',
+      notes:
+        newRoleType === 'admin'
+          ? 'Cuenta con permisos de Administrador'
+          : isEncargado
+          ? 'Encargado General (Empleado con visibilidad en todos los locales)'
+          : user.notes,
     };
     setUsers((prev) => prev.map((u) => (u.id === user.id ? updatedUser : u)));
     await saveFirestoreUser(updatedUser);
@@ -475,12 +498,14 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
     }
 
     const userId = `usr-${Date.now()}`;
+    const isEncargado = newAccountType === 'encargado';
+    const isStaffNew = newAccountType === 'empleado' || isEncargado;
     const determinedRole: 'admin' | 'employee' | 'client' = 
-      newAccountType === 'admin' ? 'admin' : (newAccountType === 'empleado' ? 'employee' : 'client');
+      newAccountType === 'admin' ? 'admin' : (isStaffNew ? 'employee' : 'client');
 
     const newUser: RegisteredUser = {
       id: userId,
-      type: newAccountType,
+      type: isEncargado ? 'empleado' : newAccountType,
       role: determinedRole,
       name: nameTrimmed,
       repName: newAccountType === 'empresa' ? newAccountRepName.trim() : undefined,
@@ -491,16 +516,22 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
       cuitOrDni: newAccountCuit.trim() || 'Sin registrar',
       address: newAccountAddress.trim() || 'Gran Mendoza',
       city: newAccountCity.trim() || 'Gran Mendoza',
-      nearestBranch: newAccountBranch || 'Maipú',
+      nearestBranch: isEncargado ? 'Todas' : (newAccountBranch || 'Maipú'),
       companyLocation: newAccountLocation.trim() || undefined,
       locationUrl: newAccountLocationUrl.trim() || undefined,
-      branch: newAccountType === 'empleado' ? newAccountBranch : (newAccountType === 'admin' ? 'Administración Central' : newAccountBranch),
-      sellerRole: newAccountType === 'empleado' ? 'vendedor' : undefined,
+      branch: isEncargado ? 'Todas' : (newAccountType === 'empleado' ? newAccountBranch : (newAccountType === 'admin' ? 'Administración Central' : newAccountBranch)),
+      sellerRole: isEncargado ? 'encargado' : (newAccountType === 'empleado' ? 'vendedor' : undefined),
+      crmScope: isEncargado ? 'all' : (newAccountType === 'empleado' ? 'branch_only' : undefined),
+      canControlTasks: isEncargado ? true : undefined,
+      allowedTabs: isStaffNew ? ['products', 'variants', 'prices', 'mass_images', 'promos', 'quotes', 'crm'] : undefined,
+      crmTabs: isStaffNew ? ['visits', 'board', 'tasks', 'calendar', 'suppliers', 'costs'] : undefined,
       pricingTier: newAccountType === 'empresa' ? 'Corporativo / Mayorista' : (newAccountType === 'admin' ? 'Administrador' : 'Consumidor Final'),
       status: 'active',
       createdAt: new Date().toISOString().split('T')[0],
       notes: newAccountType === 'admin' 
         ? 'Cuenta administradora con acceso y permisos totales' 
+        : isEncargado
+        ? 'Encargado General (Empleado con acceso a todos los locales, sin permisos admin)'
         : (newAccountType === 'empleado' ? `Operador en sucursal ${newAccountBranch}` : 'Cuenta creada por administrador'),
     };
 
@@ -979,6 +1010,8 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
                               ? 'Administrador'
                               : isEmpresa
                               ? 'Cliente Empresa'
+                              : isStaff && u.sellerRole === 'encargado'
+                              ? 'Encargado (Todos los locales)'
                               : isStaff
                               ? `Vendedor (${u.branch || 'Staff'})`
                               : 'Consumidor Final'}
@@ -986,12 +1019,13 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
 
                           {!isMasterAdmin && (
                             <select
-                              value={u.type}
+                              value={isStaff && u.sellerRole === 'encargado' ? 'encargado' : u.type}
                               onChange={(e) => handleUpdateRole(u, e.target.value as any)}
                               className="text-[9px] font-semibold text-[#18231C] bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs px-1 py-0.5 cursor-pointer outline-none hover:bg-white"
                               title="Cambiar rol y permisos en Firebase"
                             >
                               <option value="admin">Cambiar a: Administrador</option>
+                              <option value="encargado">Cambiar a: Encargado (Todos los locales)</option>
                               <option value="empleado">Cambiar a: Empleado/Ventas</option>
                               <option value="empresa">Cambiar a: Cliente Empresa</option>
                               <option value="consumidor">Cambiar a: Consumidor Final</option>
@@ -1243,7 +1277,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
                   <label className="block text-[11px] font-bold uppercase tracking-wider text-[#18231C] mb-1.5">
                     1. Elegir Rol de la Cuenta:
                   </label>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                     <button
                       type="button"
                       onClick={() => setNewAccountType('empresa')}
@@ -1254,7 +1288,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
                       }`}
                     >
                       <Building2 className="w-5 h-5 text-emerald-700" />
-                      <span className="text-xs">Cliente Empresa</span>
+                      <span className="text-[11px] leading-tight">Cliente Empresa</span>
                     </button>
 
                     <button
@@ -1267,7 +1301,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
                       }`}
                     >
                       <User className="w-5 h-5 text-blue-700" />
-                      <span className="text-xs">Consumidor Final</span>
+                      <span className="text-[11px] leading-tight">Consumidor Final</span>
                     </button>
 
                     <button
@@ -1280,7 +1314,20 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
                       }`}
                     >
                       <UserCheck className="w-5 h-5 text-amber-700" />
-                      <span className="text-xs">Empleado / Ventas</span>
+                      <span className="text-[11px] leading-tight">Empleado / Ventas</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setNewAccountType('encargado')}
+                      className={`p-2.5 border rounded-xs flex flex-col items-center justify-center gap-1 text-center cursor-pointer transition-all ${
+                        newAccountType === 'encargado'
+                          ? 'border-[#B9522F] bg-indigo-50 text-indigo-950 font-bold shadow-xs ring-1 ring-indigo-400'
+                          : 'border-[#DCD4C9] bg-[#FAF8F5] text-[#6F6860] hover:bg-white'
+                      }`}
+                    >
+                      <Briefcase className="w-5 h-5 text-indigo-700" />
+                      <span className="text-[11px] leading-tight">Encargado (Todos Locales)</span>
                     </button>
 
                     <button
@@ -1293,9 +1340,14 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
                       }`}
                     >
                       <ShieldCheck className="w-5 h-5 text-purple-700" />
-                      <span className="text-xs">Administrador</span>
+                      <span className="text-[11px] leading-tight">Administrador</span>
                     </button>
                   </div>
+                  {newAccountType === 'encargado' && (
+                    <p className="text-[11px] text-indigo-900 bg-indigo-50 border border-indigo-200 rounded-xs p-2 mt-2">
+                      <strong>Rol Encargado (Empleado):</strong> Ingresa en categoría Empleado con permisos de empleado, pero visualiza y gestiona información de <strong>todos los locales</strong> (sin privilegios de Administrador).
+                    </p>
+                  )}
                 </div>
 
                 {/* 2. Datos Generales de la Cuenta */}

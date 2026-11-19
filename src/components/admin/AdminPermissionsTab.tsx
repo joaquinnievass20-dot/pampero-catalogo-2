@@ -182,7 +182,7 @@ export const AdminPermissionsTab: React.FC<AdminPermissionsTabProps> = ({ trigge
     const target = employees.find((e) => e.id === empId);
     if (!target) return;
 
-    const nextCanControl = !Boolean(target.canControlTasks || target.sellerRole === 'local');
+    const nextCanControl = !Boolean(target.canControlTasks || target.sellerRole === 'local' || target.sellerRole === 'encargado');
     const updatedEmp: EmployeeAccount = {
       ...target,
       canControlTasks: nextCanControl,
@@ -204,6 +204,57 @@ export const AdminPermissionsTab: React.FC<AdminPermissionsTabProps> = ({ trigge
       setTimeout(() => setSuccessMsg(null), 2500);
     } catch (err) {
       console.error('[PERMISOS] Error guardando controlador:', err);
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  const handleChangeEmployeeRole = async (
+    empId: string,
+    nextSellerRole: 'vendedor' | 'local' | 'encargado'
+  ) => {
+    const target = employees.find((e) => e.id === empId);
+    if (!target) return;
+
+    const nextScope: 'all' | 'branch_only' = nextSellerRole === 'encargado' ? 'all' : 'branch_only';
+    const nextBranch =
+      nextSellerRole === 'encargado'
+        ? 'Todas'
+        : target.branch && target.branch !== 'Todas'
+          ? target.branch
+          : 'Maipú';
+    const nextCanControl =
+      nextSellerRole === 'encargado' || nextSellerRole === 'local'
+        ? true
+        : Boolean(target.canControlTasks);
+
+    const updatedEmp: EmployeeAccount = {
+      ...target,
+      role: 'employee',
+      sellerRole: nextSellerRole,
+      crmScope: nextScope,
+      branch: nextBranch,
+      canControlTasks: nextCanControl,
+    };
+
+    const nextList = employees.map((e) => (e.id === empId ? updatedEmp : e));
+    setEmployees(nextList);
+    localStorage.setItem('pampero_employees', JSON.stringify(nextList));
+
+    setSavingId(empId);
+    try {
+      await saveFirestoreEmployee(updatedEmp);
+      if (triggerSaveNotice) triggerSaveNotice();
+      setSuccessMsg(
+        nextSellerRole === 'encargado'
+          ? `${updatedEmp.name} ahora es Encargado General (Rol Empleado · Ve todos los locales)`
+          : nextSellerRole === 'local'
+            ? `${updatedEmp.name} asignado como Encargado de Local (${nextBranch})`
+            : `${updatedEmp.name} asignado como Vendedor (${nextBranch})`
+      );
+      setTimeout(() => setSuccessMsg(null), 2800);
+    } catch (err) {
+      console.error('[PERMISOS] Error cambiando rol de empleado:', err);
     } finally {
       setSavingId(null);
     }
@@ -304,6 +355,7 @@ export const AdminPermissionsTab: React.FC<AdminPermissionsTabProps> = ({ trigge
             <thead className="bg-[#FAF8F5] border-b border-[#DCD4C9] text-[#18231C] font-bold uppercase tracking-wider text-[11px]">
               <tr>
                 <th className="py-3.5 px-4">Colaborador / Sucursal</th>
+                <th className="py-3.5 px-3">Rol / Alcance</th>
                 {CRM_TAB_DEFINITIONS.map((tab) => (
                   <th key={tab.key} className="py-3.5 px-3 text-center">
                     <div>{tab.label}</div>
@@ -324,7 +376,13 @@ export const AdminPermissionsTab: React.FC<AdminPermissionsTabProps> = ({ trigge
             <tbody className="divide-y divide-[#DCD4C9]">
               {employees.map((emp) => {
                 const assignedTabs = getResolvedTabs(emp);
-                const isController = Boolean(emp.canControlTasks || emp.sellerRole === 'local');
+                const resolvedSellerRole: 'vendedor' | 'local' | 'encargado' =
+                  emp.sellerRole === 'encargado'
+                    ? 'encargado'
+                    : emp.sellerRole === 'local'
+                      ? 'local'
+                      : 'vendedor';
+                const isController = Boolean(emp.canControlTasks || resolvedSellerRole === 'local' || resolvedSellerRole === 'encargado');
                 const isSaving = savingId === emp.id;
 
                 return (
@@ -336,10 +394,14 @@ export const AdminPermissionsTab: React.FC<AdminPermissionsTabProps> = ({ trigge
                           {emp.name.charAt(0)}
                         </div>
                         <div>
-                          <div className="font-bold text-[#18231C] text-xs flex items-center gap-1.5">
+                          <div className="font-bold text-[#18231C] text-xs flex items-center gap-1.5 flex-wrap">
                             <span>{emp.name}</span>
-                            <span className="text-[10px] px-1.5 py-0.2 rounded-xs bg-neutral-100 border border-[#DCD4C9] text-neutral-700 font-semibold">
-                              {emp.branch || 'Todas'}
+                            <span className={`text-[10px] px-1.5 py-0.2 rounded-xs border font-semibold ${
+                              resolvedSellerRole === 'encargado'
+                                ? 'bg-purple-50 border-purple-300 text-purple-900'
+                                : 'bg-neutral-100 border-[#DCD4C9] text-neutral-700'
+                            }`}>
+                              {resolvedSellerRole === 'encargado' ? 'Todos los locales' : (emp.branch || 'Todas')}
                             </span>
                           </div>
                           <div className="text-[11px] text-[#6F6860] font-mono">
@@ -347,6 +409,32 @@ export const AdminPermissionsTab: React.FC<AdminPermissionsTabProps> = ({ trigge
                           </div>
                         </div>
                       </div>
+                    </td>
+
+                    {/* Rol / Alcance Selector */}
+                    <td className="py-3.5 px-3">
+                      <select
+                        value={resolvedSellerRole}
+                        disabled={isSaving}
+                        onChange={(e) =>
+                          handleChangeEmployeeRole(
+                            emp.id,
+                            e.target.value as 'vendedor' | 'local' | 'encargado'
+                          )
+                        }
+                        className={`px-2 py-1.5 rounded-xs border text-[11px] font-bold outline-none cursor-pointer ${
+                          resolvedSellerRole === 'encargado'
+                            ? 'bg-purple-50 border-purple-300 text-purple-900'
+                            : resolvedSellerRole === 'local'
+                              ? 'bg-amber-50 border-amber-300 text-amber-900'
+                              : 'bg-white border-[#DCD4C9] text-[#18231C]'
+                        }`}
+                        title="Cambiar alcance de sucursales (sigue siendo rol Empleado)"
+                      >
+                        <option value="vendedor">Vendedor (Su Local)</option>
+                        <option value="local">Encargado de Local</option>
+                        <option value="encargado">Encargado (Todos Locales)</option>
+                      </select>
                     </td>
 
                     {/* Checkboxes for CRM Tabs */}

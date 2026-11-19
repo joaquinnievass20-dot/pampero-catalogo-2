@@ -122,7 +122,7 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
   const [password, setPassword] = useState('');
   const [branch, setBranch] = useState('Maipú');
   const [sellerName, setSellerName] = useState('');
-  const [sellerRole, setSellerRole] = useState<'local' | 'vendedor'>('vendedor');
+  const [sellerRole, setSellerRole] = useState<'encargado' | 'local' | 'vendedor'>('vendedor');
   const [crmScope, setCrmScope] = useState<'all' | 'branch_only' | 'own_only'>('branch_only');
   const [canControlTasks, setCanControlTasks] = useState(false);
   const [allowedTabs, setAllowedTabs] = useState<string[]>([
@@ -178,8 +178,14 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
     setPassword(emp.password || '');
     setBranch(emp.branch || 'Maipú');
     setSellerName(emp.sellerName || '');
-    setSellerRole(emp.sellerRole === 'local' ? 'local' : 'vendedor');
-    setCrmScope(emp.crmScope || 'branch_only');
+    setSellerRole(
+      emp.sellerRole === 'encargado'
+        ? 'encargado'
+        : emp.sellerRole === 'local'
+          ? 'local'
+          : 'vendedor'
+    );
+    setCrmScope(emp.crmScope || (emp.sellerRole === 'encargado' ? 'all' : 'branch_only'));
     setCanControlTasks(Boolean(emp.canControlTasks));
     setAllowedTabs(emp.allowedTabs || []);
     setShowCreateModal(true);
@@ -230,6 +236,7 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
           type: 'empleado' as const,
           branch,
           sellerRole,
+          crmScope,
           canControlTasks,
           status: 'active' as const,
           allowedTabs,
@@ -389,19 +396,19 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
                       <div>{emp.email}</div>
                       <div className="flex items-center gap-1 mt-1 font-sans">
                         <span className="px-1.5 py-0.2 rounded-xs bg-amber-50 text-amber-900 border border-amber-200 text-[10px] font-bold">
-                          {emp.branch || 'Maipú'}
+                          {emp.sellerRole === 'encargado' ? 'Todas' : (emp.branch || 'Maipú')}
                         </span>
-                        {emp.crmScope === 'own_only' ? (
+                        {emp.sellerRole === 'encargado' || emp.crmScope === 'all' ? (
+                          <span className="px-1.5 py-0.2 rounded-xs bg-purple-50 text-purple-800 border border-purple-200 text-[10px] font-semibold">
+                            Encargado (Todos los locales)
+                          </span>
+                        ) : emp.crmScope === 'own_only' ? (
                           <span className="px-1.5 py-0.2 rounded-xs bg-blue-50 text-blue-800 border border-blue-200 text-[10px] font-semibold">
                             Solo sus pedidos
                           </span>
-                        ) : emp.crmScope === 'branch_only' ? (
+                        ) : (
                           <span className="px-1.5 py-0.2 rounded-xs bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-semibold">
                             Solo su local
-                          </span>
-                        ) : (
-                          <span className="px-1.5 py-0.2 rounded-xs bg-purple-50 text-purple-800 border border-purple-200 text-[10px] font-semibold">
-                            Todas las empresas
                           </span>
                         )}
                       </div>
@@ -564,11 +571,27 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
                   </label>
                   <select
                     value={sellerRole}
-                    onChange={(e) => setSellerRole(e.target.value as 'local' | 'vendedor')}
+                    onChange={(e) => {
+                      const next = e.target.value as 'encargado' | 'local' | 'vendedor';
+                      setSellerRole(next);
+                      if (next === 'encargado') {
+                        setCrmScope('all');
+                        setBranch('Todas');
+                        setCanControlTasks(true);
+                      } else if (next === 'local') {
+                        setCrmScope('branch_only');
+                        if (branch === 'Todas') setBranch('Maipú');
+                        setCanControlTasks(true);
+                      } else {
+                        setCrmScope('branch_only');
+                        if (branch === 'Todas') setBranch('Maipú');
+                      }
+                    }}
                     className="w-full px-3 py-2 text-xs bg-[#FAF8F5] rounded-xs border border-[#DCD4C9] outline-none cursor-pointer font-semibold"
                   >
                     <option value="vendedor">Usuario / Vendedor del Local</option>
-                    <option value="local">Encargado del Local (Ve avances, edita plazos y metas)</option>
+                    <option value="local">Encargado del Local (Solo su sucursal)</option>
+                    <option value="encargado">Encargado General (Ve todos los locales, rol Empleado)</option>
                   </select>
                 </div>
 

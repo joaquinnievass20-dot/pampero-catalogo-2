@@ -29,6 +29,8 @@ import {
   KanbanColumnConfig,
   getNextCorrelativeOrderNumber,
   getNextStructuredTrackingCode,
+  ensureOrdersHaveStructuredTrackingCodes,
+  isValidStructuredTrackingCode,
   upsertObservationReminderCalendarEvent,
   recordAuditLog,
 } from '../../services/firebase';
@@ -199,12 +201,19 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
   const hasCrmPermission = userSession?.role === 'admin' || (currentEmployee?.allowedTabs ? currentEmployee.allowedTabs.includes('crm') : true);
   const canAccess = Boolean(isStaff && hasCrmPermission);
 
-  // CRM Visibility Scope
-  const crmScope: 'all' | 'branch_only' | 'own_only' = userSession?.role === 'admin'
-    ? 'all'
-    : (currentEmployee?.crmScope || 'branch_only');
-
   const assignedBranch = (userSession as any)?.branch || currentEmployee?.branch || 'Maipú';
+  const effectiveSellerRole = (userSession as any)?.sellerRole || currentEmployee?.sellerRole;
+
+  // CRM Visibility Scope: 'admin' o empleado con rol 'encargado' o crmScope === 'all' ven todos los locales
+  const crmScope: 'all' | 'branch_only' | 'own_only' =
+    userSession?.role === 'admin' ||
+    effectiveSellerRole === 'encargado' ||
+    (userSession as any)?.crmScope === 'all' ||
+    currentEmployee?.crmScope === 'all' ||
+    String(assignedBranch || '').toLowerCase() === 'todas'
+      ? 'all'
+      : ((userSession as any)?.crmScope || currentEmployee?.crmScope || 'branch_only');
+
   const assignedSellerName =
     (userSession as any)?.sellerName || currentEmployee?.sellerName || userSession?.clientData?.fullName || '';
 
@@ -224,11 +233,10 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
     ];
   }, []);
 
-  // Detectar si el usuario activo es Administrador o Encargado del Local (sellerRole === 'local')
+  // Detectar si el usuario activo es Administrador, Encargado General o Encargado del Local
   const isManager = React.useMemo(() => {
     if (userSession?.role === 'admin') return true;
-    if ((userSession as any)?.sellerRole === 'local') return true;
-    if (currentEmployee?.sellerRole === 'local') return true;
+    if (effectiveSellerRole === 'local' || effectiveSellerRole === 'encargado') return true;
 
     const emailLow = (userSession?.email || '').toLowerCase();
     const nameLow = (assignedSellerName || '').toLowerCase();
@@ -237,18 +245,18 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
         (emailLow && s.email?.toLowerCase() === emailLow) ||
         (nameLow && s.name?.toLowerCase() === nameLow)
     );
-    if (matchedSeller?.role === 'local' || matchedSeller?.role === 'admin') return true;
+    if (matchedSeller?.role === 'local' || matchedSeller?.role === 'encargado' || matchedSeller?.role === 'admin') return true;
 
     try {
       const regUsers: any[] = JSON.parse(localStorage.getItem('pampero_registered_users') || '[]');
       const regMatch = regUsers.find(
         (u) => emailLow && (u.email || '').toLowerCase() === emailLow
       );
-      if (regMatch?.sellerRole === 'local' || regMatch?.role === 'admin') return true;
+      if (regMatch?.sellerRole === 'local' || regMatch?.sellerRole === 'encargado' || regMatch?.role === 'admin') return true;
     } catch {}
 
     return false;
-  }, [userSession, currentEmployee, assignedSellerName, sellersList]);
+  }, [userSession, effectiveSellerRole, assignedSellerName, sellersList]);
 
   const activeStaffUser = userSession?.clientData?.fullName || (userSession?.role === 'admin' ? 'Administrador General' : userSession?.email?.split('@')[0] || 'Personal Pampero');
 
@@ -296,10 +304,16 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
     try {
       const firstColId = companyColumns[0]?.id || 'cotizacion';
       const { number: orderNum } = await getNextCorrelativeOrderNumber();
-      const trackingCode =
-        visit.trackingCode || (await getNextStructuredTrackingCode('empresa', visit.branch || 'Maipú'));
+      const visitRegDate = visit.createdAt ? new Date(visit.createdAt) : new Date();
+      const trackingCode = isValidStructuredTrackingCode(visit.trackingCode)
+        ? visit.trackingCode!
+        : await getNextStructuredTrackingCode(
+            'empresa',
+            visit.branch || 'Maipú',
+            !Number.isNaN(visitRegDate.getTime()) ? visitRegDate : new Date()
+          );
 
-      if (!visit.trackingCode) {
+      if (!isValidStructuredTrackingCode(visit.trackingCode)) {
         const updatedVisit = sanitizeObjectEncoding({ ...visit, trackingCode });
         setVisits((prev) => [updatedVisit, ...prev.filter((v) => v.id !== visit.id)]);
         saveLeadVisit(updatedVisit).catch(() => {});
@@ -417,6 +431,35 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
       unsubSizes();
     };
   }, []);
+
+  // Asignar automáticamente código estructurado a fichas de Seguimiento Empresas sin código (ej. COT-VIS-*)
+  // manteniendo intactos los códigos históricos (#1..#8)
+  const backfilledOrderIdsRef = React.useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const isLegacyNumber = (num?: string) => /^#\d{1,4}$/.test(String(num || '').trim());
+    const missing = orders.filter(
+      (o) =>
+        o &&
+        o.id &&
+        !isValidStructuredTrackingCode(o.trackingCode) &&
+        !isLegacyNumber(o.orderNumber) &&
+        !backfilledOrderIdsRef.current.has(o.id)
+    );
+    if (missing.length === 0) return;
+    missing.forEach((o) => backfilledOrderIdsRef.current.add(o.id));
+
+    let cancelled = false;
+    ensureOrdersHaveStructuredTrackingCodes(orders, visits)
+      .then((enriched) => {
+        if (cancelled) return;
+        setOrders(enriched);
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [orders, visits]);
 
   // Drag & Drop handlers
   const handleDragStart = (e: React.DragEvent, orderId: string) => {
@@ -775,10 +818,16 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
               <span className="font-bold text-[#18231C] text-xs">
                 {activeStaffUser}
               </span>
-              {assignedBranch && (
-                <span className="text-[10px] bg-blue-50 text-blue-900 border border-blue-200 px-1 py-0.2 rounded-xs font-semibold">
-                  {assignedBranch}
+              {effectiveSellerRole === 'encargado' ? (
+                <span className="text-[10px] bg-purple-100 text-purple-900 border border-purple-300 px-1.5 py-0.5 rounded-xs font-bold">
+                  Encargado · Todos los Locales
                 </span>
+              ) : (
+                assignedBranch && (
+                  <span className="text-[10px] bg-blue-50 text-blue-900 border border-blue-200 px-1 py-0.2 rounded-xs font-semibold">
+                    {assignedBranch}
+                  </span>
+                )
               )}
             </div>
           )}
@@ -808,7 +857,7 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xs text-xs font-bold hover:brightness-110 transition-colors cursor-pointer shadow-xs"
             >
               <Plus className="w-3.5 h-3.5" />
-              <span>{theme?.siteTexts?.crmNewOrderBtnText || 'Nuevo Pedido'}</span>
+              <span>{theme?.siteTexts?.crmNewOrderBtnText || 'Nueva Empresa / Pedido'}</span>
             </button>
           )}
 
@@ -1141,23 +1190,32 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
                                 borderColor: isDelayed ? '#FCA5A5' : (theme.crmCardBorderColor || '#DCD4C9'),
                                 color: theme.crmCardTextColor || '#18231C',
                               }}
-                              className={`p-3 rounded-xs border shadow-xs cursor-grab active:cursor-grabbing hover:shadow-md transition-all select-none ${
+                              className={`p-3 rounded-xs border shadow-xs cursor-grab active:cursor-grabbing hover:shadow-md transition-all select-none overflow-hidden ${
                                 isDelayed
                                   ? 'border-l-4 border-l-red-500 bg-red-50/20'
                                   : 'hover:border-[#B9522F]'
                               }`}
                             >
                               {/* Card Top */}
-                              <div className="flex justify-between items-start mb-1.5">
-                                <div className="flex items-center gap-1">
+                              <div className="flex justify-between items-start gap-1.5 mb-1.5">
+                                <div className="flex items-center gap-1 min-w-0">
                                   {order.clientType === 'empresa' ? (
-                                    <Building2 className="w-3 h-3 text-amber-600" />
+                                    <Building2 className="w-3 h-3 text-amber-600 shrink-0" />
                                   ) : (
-                                    <User className="w-3 h-3 text-emerald-600" />
+                                    <User className="w-3 h-3 text-emerald-600 shrink-0" />
                                   )}
-                                  <span className="text-[11px] font-black font-mono">
-                                    {order.trackingCode || order.orderNumber || `#${order.id.slice(-6)}`}
-                                  </span>
+                                  {isValidStructuredTrackingCode(order.trackingCode) ? (
+                                    <span
+                                      className="text-[10px] font-black font-mono px-1.5 py-0.5 rounded-xs bg-[#18231C] text-[#FDB813] truncate"
+                                      title={`Código de Seguimiento: ${order.trackingCode}`}
+                                    >
+                                      {order.trackingCode}
+                                    </span>
+                                  ) : (
+                                    <span className="text-[11px] font-black font-mono truncate">
+                                      {order.trackingCode || order.orderNumber || `#${order.id.slice(-6)}`}
+                                    </span>
+                                  )}
                                 </div>
                                 <div className="flex items-center gap-1">
                                   {order.quotePdfUrl && (
@@ -1262,15 +1320,15 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
                               </div>
 
                               {/* Card Action Shortcuts */}
-                              <div className="mt-2 pt-1.5 border-t border-dashed border-[#ECE5DC] flex items-center justify-between gap-1">
-                                <div className="flex items-center gap-1">
+                              <div className="mt-2 pt-1.5 border-t border-dashed border-[#ECE5DC] flex flex-wrap items-center justify-between gap-1.5 min-w-0">
+                                <div className="flex items-center gap-1 shrink-0">
                                   <button
                                     type="button"
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       setViewingOrder(order);
                                     }}
-                                    className="px-1.5 py-1 hover:bg-amber-50 rounded-xs text-[#18231C] border border-transparent hover:border-amber-300 cursor-pointer flex items-center gap-1 text-[10px] font-bold"
+                                    className="px-1.5 py-1 hover:bg-amber-50 rounded-xs text-[#18231C] border border-transparent hover:border-amber-300 cursor-pointer flex items-center gap-1 text-[10px] font-bold shrink-0"
                                     title="Ver ficha completa"
                                   >
                                     <Eye className="w-3.5 h-3.5" />
@@ -1281,7 +1339,7 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
                                     target="_blank"
                                     rel="noreferrer"
                                     onClick={(e) => e.stopPropagation()}
-                                    className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xs text-[10px] font-bold flex items-center gap-1 transition-colors"
+                                    className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xs text-[10px] font-bold flex items-center gap-1 transition-colors shrink-0"
                                     title="Avisar al cliente por WhatsApp"
                                   >
                                     <MessageCircle className="w-3 h-3 text-emerald-600" />
@@ -1294,6 +1352,7 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
                                   const currentIndex = companyColumns.findIndex((c) => c.id === currentOrderCol);
                                   const nextCol = currentIndex >= 0 && currentIndex < companyColumns.length - 1 ? companyColumns[currentIndex + 1] : null;
                                   if (!nextCol) return null;
+                                  const rawFirst = fixUtf8Encoding(nextCol.label.split('/')[0].replace(/^En\s+/i, '').trim().split(' ')[0]);
                                   return (
                                     <button
                                       type="button"
@@ -1305,15 +1364,15 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
                                         recordAuditLog({
                                           module: 'CRM / Kanban',
                                           action: 'Avanzar Fase',
-                                          details: `Pedido #${order.orderNumber || order.id} (${order.clientName || 'Cliente'}) avanzado a etapa "${nextCol.label}"`,
+                                          details: `Pedido ${order.trackingCode || order.orderNumber || order.id} (${order.clientName || 'Cliente'}) avanzado a etapa "${nextCol.label}"`,
                                           metadata: { orderId: order.id, toStatus: nextCol.id }
                                         });
                                       }}
-                                      className="px-2 py-1 bg-[#18231C] hover:bg-[#B9522F] text-white rounded-xs text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 transition-colors cursor-pointer"
+                                      className="px-2 py-1 bg-[#18231C] hover:bg-[#B9522F] text-white rounded-xs text-[10px] font-bold uppercase tracking-tight flex items-center gap-1 transition-colors cursor-pointer shrink-0 max-w-full ml-auto"
                                       title={`Avanzar a ${fixUtf8Encoding(nextCol.label)}`}
                                     >
-                                      <span>{fixUtf8Encoding(nextCol.label.split('/')[0].split(' ')[0])}</span>
-                                      <ArrowRight className="w-2.5 h-2.5" />
+                                      <span className="truncate">{rawFirst}</span>
+                                      <ArrowRight className="w-2.5 h-2.5 shrink-0" />
                                     </button>
                                   );
                                 })()}
@@ -1358,6 +1417,9 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
             <CRMVisitsTab
               visits={visits}
               accentColor={accent}
+              crmScope={crmScope}
+              assignedBranch={assignedBranch}
+              assignedSellerName={assignedSellerName}
               onPromoteToCompanies={handlePromoteVisitToCompanyOrder}
               onVisitsUpdated={setVisits}
             />
@@ -1448,6 +1510,12 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
             </div>
 
             <div className="p-5 space-y-3.5 text-xs overflow-y-auto">
+              <div className="p-2.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs flex items-center justify-between gap-2">
+                <span className="text-[10px] font-bold uppercase text-[#8C827A]">Código de Seguimiento</span>
+                <span className="font-mono font-black text-xs px-2 py-0.5 rounded-xs bg-[#18231C] text-[#FDB813]">
+                  {viewingOrder.trackingCode || viewingOrder.orderNumber || `#${viewingOrder.id.slice(-6)}`}
+                </span>
+              </div>
               <div className="grid grid-cols-2 gap-3 bg-[#FAF8F5] p-3 rounded-xs border border-[#DCD4C9]">
                 <div>
                   <span className="text-[10px] font-bold uppercase text-[#8C827A] block">Etapa / Estado</span>
@@ -2240,7 +2308,7 @@ const NewOrderModal: React.FC<{
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fadeIn">
       <div className="bg-white rounded-xs border border-[#DCD4C9] shadow-2xl max-w-lg w-full overflow-hidden max-h-[92vh] flex flex-col">
         <div className="bg-[#18231C] px-6 py-4 flex items-center justify-between text-white">
-          <h3 className="font-bold text-sm uppercase tracking-wider">Nuevo Pedido Manual</h3>
+          <h3 className="font-bold text-sm uppercase tracking-wider">Nueva Empresa / Pedido</h3>
           <button onClick={onClose} className="text-white/60 hover:text-white cursor-pointer">
             <X className="w-5 h-5" />
           </button>

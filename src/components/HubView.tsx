@@ -80,7 +80,11 @@ export const HubView: React.FC<HubViewProps> = ({
                   {operatorName}
                 </p>
                 <p className={`text-[10px] ${isHubDark ? 'text-neutral-300' : 'text-[#6F6860]'}`}>
-                  {userSession.role === 'admin' ? 'Super Administrador' : `Sucursal: ${operatorBranch}`}
+                  {userSession.role === 'admin'
+                    ? 'Super Administrador'
+                    : userSession.sellerRole === 'encargado'
+                      ? 'Encargado General · Todos los Locales'
+                      : `Sucursal: ${operatorBranch}`}
                 </p>
               </div>
               <div

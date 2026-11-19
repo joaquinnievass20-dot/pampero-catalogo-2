@@ -46,7 +46,8 @@ export interface UserSession {
   password?: string;
   branch?: string;
   sellerName?: string;
-  sellerRole?: 'admin' | 'local' | 'vendedor';
+  sellerRole?: 'admin' | 'encargado' | 'local' | 'vendedor';
+  crmScope?: 'all' | 'branch_only' | 'own_only';
   canControlTasks?: boolean;
 }
 
@@ -72,10 +73,10 @@ export interface EmployeeAccount {
   crmTasksConfigured?: boolean;
   crmCalendarConfigured?: boolean;
   canControlTasks?: boolean; // Permite auditar tareas y cargar fotos de respaldo
-  sellerRole?: 'admin' | 'local' | 'vendedor';
+  sellerRole?: 'admin' | 'encargado' | 'local' | 'vendedor';
   branch?: string; // 'Maipú' | 'Ciudad' | 'Luján' | 'Todas'
   sellerName?: string;
-  crmScope?: 'all' | 'branch_only' | 'own_only'; // 'all': todas las empresas, 'branch_only': sucursal, 'own_only': solo su cartera
+  crmScope?: 'all' | 'branch_only' | 'own_only'; // 'all': todos los locales/empresas, 'branch_only': sucursal, 'own_only': solo su cartera
   avatarUrl?: string;
   mustChangePassword?: boolean;
   createdAt: string;
@@ -225,7 +226,8 @@ export interface RegisteredUser {
   nearestBranch?: string;
   companyLocation?: string;
   locationUrl?: string;
-  sellerRole?: 'admin' | 'local' | 'vendedor';
+  sellerRole?: 'admin' | 'encargado' | 'local' | 'vendedor';
+  crmScope?: 'all' | 'branch_only' | 'own_only';
   allowedTabs?: string[];
   crmTabs?: CRMTabKey[];
   canControlTasks?: boolean;

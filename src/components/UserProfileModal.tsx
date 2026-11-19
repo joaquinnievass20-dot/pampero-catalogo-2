@@ -1141,7 +1141,11 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                   </h4>
                 </div>
                 <span className="text-[10px] text-[#6F6860] uppercase font-bold bg-[#FAF8F5] px-2 py-0.5 rounded-xs border border-[#DCD4C9]">
-                  {userSession.role === 'admin' ? 'Administrador' : userSession.role === 'employee' ? 'Personal' : 'Cliente'}
+                  {userSession.role === 'admin'
+                    ? 'Administrador'
+                    : userSession.role === 'employee'
+                      ? (userSession.sellerRole === 'encargado' ? 'Encargado (Todos Locales)' : 'Personal')
+                      : 'Cliente'}
                 </span>
               </div>
 
@@ -1182,7 +1186,11 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                     Autenticación en Dos Pasos (2FA)
                   </h4>
                   <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded-xs bg-[#18231C] text-white">
-                    {userSession.role === 'admin' ? 'Super Admin' : userSession.role === 'employee' ? 'Personal / CRM' : 'Cliente'}
+                    {userSession.role === 'admin'
+                      ? 'Super Admin'
+                      : userSession.role === 'employee'
+                        ? (userSession.sellerRole === 'encargado' ? 'Encargado · Todos Locales' : 'Personal / CRM')
+                        : 'Cliente'}
                   </span>
                 </div>
                 <p className="text-xs text-[#544E47] leading-relaxed mt-0.5">
