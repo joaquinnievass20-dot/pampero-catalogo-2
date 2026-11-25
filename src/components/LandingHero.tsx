@@ -153,12 +153,13 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
 
   const [currentSlide, setCurrentSlide] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
-  const [isImageLoading, setIsImageLoading] = useState(true);
+  const [isImageLoading, setIsImageLoading] = useState(false);
 
   // Drag & Swipe gesture state
   const [dragStartX, setDragStartX] = useState<number | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const heroRef = useRef<HTMLDivElement>(null);
+  const heroImgRef = useRef<HTMLImageElement>(null);
 
   // Auto slide interval
   useEffect(() => {
@@ -172,10 +173,23 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
   const activeSlide = slides[currentSlide] || slides[0];
 
   useEffect(() => {
+    const imgUrl = activeSlide?.bannerImage?.trim();
+    if (!imgUrl || isPromotionsLoading) {
+      setIsImageLoading(false);
+      return;
+    }
+    if (heroImgRef.current && heroImgRef.current.complete && heroImgRef.current.naturalWidth > 0) {
+      setIsImageLoading(false);
+      return;
+    }
     setIsImageLoading(true);
-  }, [activeSlide?.id, activeSlide?.bannerImage]);
+    const safetyTimer = window.setTimeout(() => {
+      setIsImageLoading(false);
+    }, 1500);
+    return () => window.clearTimeout(safetyTimer);
+  }, [activeSlide?.id, activeSlide?.bannerImage, isPromotionsLoading]);
 
-  const isLoading = Boolean(isPromotionsLoading || isImageLoading);
+  const isLoading = Boolean(isPromotionsLoading && promotions.length === 0);
 
   const nextSlide = () => {
     setCurrentSlide((prev) => (prev + 1) % slides.length);
@@ -325,21 +339,21 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
             </div>
           )}
 
-          {/* Solo renderiza la imagen cuando onSnapshot entregue los datos y la foto termine de cargar */}
-          {!isPromotionsLoading && Boolean(activeSlide.bannerImage && activeSlide.bannerImage.trim()) && (
+          {/* Renderiza imagen del slide sin bloqueo de carga */}
+          {Boolean(activeSlide.bannerImage && activeSlide.bannerImage.trim()) && (
             <img
+              ref={heroImgRef}
               key={activeSlide.id + '_' + activeSlide.bannerImage}
               src={activeSlide.bannerImage.trim()}
               alt={activeSlide.titleLine1}
-              loading="lazy"
               decoding="async"
               onLoad={() => setIsImageLoading(false)}
               onError={(e) => {
                 setIsImageLoading(false);
                 e.currentTarget.src = '/logo.png';
               }}
-              className={`h-full w-full object-cover transition-opacity duration-700 ${
-                !isImageLoading ? 'opacity-100 animate-fadeIn' : 'opacity-0'
+              className={`h-full w-full object-cover transition-opacity duration-500 ${
+                !isImageLoading ? 'opacity-100' : 'opacity-60'
               }`}
             />
           )}

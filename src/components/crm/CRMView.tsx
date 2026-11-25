@@ -169,7 +169,6 @@ interface CRMViewProps {
   categories?: CategoryHierarchyItem[];
   unreadChatThreads?: InternalChatThread[];
   onOpenChat?: (threadId?: string) => void;
-  onSetSession?: (session: UserSession) => void;
   onOpenAuth?: () => void;
 }
 
@@ -189,7 +188,6 @@ export const CRMView: React.FC<CRMViewProps> = ({
   categories,
   unreadChatThreads = [],
   onOpenChat,
-  onSetSession,
   onOpenAuth,
 }) => {
   const [orders, setOrders] = useState<CRMOrder[]>([]);
@@ -935,54 +933,6 @@ export const CRMView: React.FC<CRMViewProps> = ({
     }
   };
 
-  // Safe operator simulator switcher for Admin only
-  const handleSwitchStaffRole = (newRole: 'admin' | 'employee', operatorName: string) => {
-    if (!onSetSession) return;
-    if (newRole === 'admin') {
-      const adminSession: UserSession = {
-        id: 'admin-1',
-        email: 'admin@pamperogm.com.ar',
-        role: 'admin',
-        clientData: {
-          fullName: 'Administrador General',
-          companyName: 'Pampero Gran Mendoza',
-          cuitDni: '30-71234567-8',
-          phone: '261-5276713',
-          address: 'Av. San Martín 1234',
-          city: 'Mendoza',
-          province: 'Mendoza',
-          clientType: 'empresa',
-          isTaxExempt: false,
-        }
-      };
-      localStorage.setItem('pampero_session', JSON.stringify(adminSession));
-      onSetSession(adminSession);
-    } else {
-      const seller = sellersList.find((s) => operatorName.toLowerCase().includes(s.name.toLowerCase())) || sellersList[0];
-      const empSession: UserSession = {
-        id: `emp-${seller?.id || 'demo'}`,
-        email: `${seller?.name.toLowerCase() || 'empleado'}@pamperogm.com.ar`,
-        role: 'employee',
-        clientData: {
-          fullName: `${seller?.name || 'Empleado'} (${seller?.branch || 'Mendoza'})`,
-          companyName: 'Pampero Gran Mendoza',
-          cuitDni: '20-11223344-5',
-          phone: '261-5550000',
-          address: `Sucursal ${seller?.branch || 'Mendoza'}`,
-          city: 'Mendoza',
-          province: 'Mendoza',
-          clientType: 'consumidor_final',
-          isTaxExempt: false,
-        }
-      };
-      (empSession as any).branch = seller?.branch || 'Maipú';
-      (empSession as any).sellerName = seller?.name || 'Itatí';
-      (empSession as any).sellerRole = (seller as any)?.role || 'vendedor';
-      localStorage.setItem('pampero_session', JSON.stringify(empSession));
-      onSetSession(empSession);
-    }
-  };
-
   if (!canAccess) {
     return (
       <div className="min-h-[80vh] flex items-center justify-center p-4 bg-[#FAF8F5]">
@@ -1202,49 +1152,28 @@ export const CRMView: React.FC<CRMViewProps> = ({
 
         {/* Sidebar Bottom Operator & Hub Return */}
         <div className={`p-3 border-t ${sidebarBorderClass} space-y-2.5 bg-black/15`}>
-          <div className={`px-2.5 py-2 rounded-xs bg-white/5 border ${sidebarBorderClass} space-y-1`}>
+          <div className={`px-2.5 py-2 rounded-xs bg-white/5 border ${sidebarBorderClass} space-y-0.5`}>
             <span
               style={{ color: sidebarMutedText }}
               className="text-[9px] font-bold uppercase tracking-wider block"
             >
-              Operador Activo
+              Usuario Conectado
             </span>
-            {userSession?.role === 'admin' && onSetSession ? (
-              <select
-                value={activeStaffUser}
-                onChange={(e) => {
-                  const name = e.target.value;
-                  const role = name.includes('Admin') ? 'admin' : 'employee';
-                  handleSwitchStaffRole(role, name);
-                }}
+            <div>
+              <span
                 style={{ color: isSidebarDark ? '#FFFFFF' : '#18231C' }}
-                className="w-full font-bold bg-transparent outline-none cursor-pointer text-xs"
-                title="Simular vista de operador (Exclusivo Administrador)"
+                className="text-xs font-bold truncate block"
               >
-                <option value="Administrador General" className="text-[#18231C]">
-                  Administrador General (Todo)
-                </option>
-                {sellersList.map((s) => (
-                  <option key={s.id} value={`${s.name} (${s.branch})`} className="text-[#18231C]">
-                    {s.name} ({s.branch})
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <div>
-                <span
-                  style={{ color: isSidebarDark ? '#FFFFFF' : '#18231C' }}
-                  className="text-xs font-bold truncate block"
-                >
-                  {activeStaffUser}
-                </span>
-                <span style={{ color: sidebarText }} className="text-[10px] opacity-80 block truncate">
-                  {effectiveSellerRole === 'encargado'
+                {activeStaffUser}
+              </span>
+              <span style={{ color: sidebarText }} className="text-[10px] opacity-80 block truncate">
+                {userSession?.role === 'admin'
+                  ? 'Administrador · Todos los Locales'
+                  : effectiveSellerRole === 'encargado'
                     ? 'Encargado · Todos los Locales'
                     : assignedBranch || 'Gran Mendoza'}
-                </span>
-              </div>
-            )}
+              </span>
+            </div>
           </div>
 
           <button

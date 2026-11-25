@@ -91,6 +91,61 @@ import {
   Compass
 } from 'lucide-react';
 
+interface AppErrorBoundaryProps {
+  children: React.ReactNode;
+  onRecover: () => void;
+}
+
+interface AppErrorBoundaryState {
+  hasError: boolean;
+}
+
+class AppErrorBoundary extends React.Component<AppErrorBoundaryProps, AppErrorBoundaryState> {
+  declare props: AppErrorBoundaryProps;
+  declare state: AppErrorBoundaryState;
+  declare setState: (
+    next: Partial<AppErrorBoundaryState> | ((prev: AppErrorBoundaryState) => Partial<AppErrorBoundaryState>)
+  ) => void;
+
+  constructor(props: AppErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError(): AppErrorBoundaryState {
+    return { hasError: true };
+  }
+  componentDidCatch(error: any) {
+    console.error('[APP ERROR BOUNDARY]', error);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-[#F5F2EC] p-6">
+          <div className="max-w-md w-full bg-white border border-[#DCD4C9] rounded-xs p-6 text-center space-y-4 shadow-lg">
+            <h2 className="font-display font-bold text-xl uppercase tracking-wider text-[#18231C]">
+              Se produjo un inconveniente en la vista
+            </h2>
+            <p className="text-xs text-[#6F6860]">
+              Podés volver al inicio de forma segura sin perder tus datos guardados.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                this.setState({ hasError: false });
+                this.props.onRecover();
+              }}
+              className="px-5 py-2.5 bg-[#18231C] hover:bg-black text-white rounded-xs text-xs font-bold uppercase tracking-wider cursor-pointer"
+            >
+              Volver al Inicio
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function App() {
   // Category sanitizer to ensure categories are cleanly mapped without inventing values for empty fields
   const sanitizeCategory = (rawCat: any): MainCategory => {
@@ -854,21 +909,30 @@ export default function App() {
     }
   };
 
-  const handleLogout = async () => {
-    // Aislamiento del Carrito: Vaciar y limpiar caché del carrito del usuario activo y temporal
+  const handleLogout = () => {
     const currentKey = getCartStorageKey(userSession);
     try {
       localStorage.removeItem(currentKey);
       localStorage.removeItem('pampero_cart_guest');
       localStorage.removeItem('pampero_quote_cart');
       localStorage.removeItem('pampero_user_session');
+      localStorage.removeItem('pampero_session');
       localStorage.setItem('pampero_explicit_logout', 'true');
+      sessionStorage.setItem('pampero_active_view', 'landing');
     } catch {}
 
+    setIsChatOpen(false);
+    setIsProfileOpen(false);
+    setIsCartOpen(false);
+    setAdminInitialTab(undefined);
+    setChatInitialThreadId(undefined);
+    setChatThreads([]);
     setCart([]);
     setUserSession(null);
-    await logoutFirebaseAuth();
     setViewMode('landing');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    logoutFirebaseAuth().catch(() => {});
   };
 
   // Cart operations (isolated per active user key)
@@ -1037,6 +1101,12 @@ export default function App() {
   const categoriesList: MainCategory[] = ['Hombre', 'Mujer', 'Infantil', 'Venta Corporativa'];
 
   return (
+    <AppErrorBoundary onRecover={() => {
+      setIsChatOpen(false);
+      setIsProfileOpen(false);
+      setIsCartOpen(false);
+      setViewMode('landing');
+    }}>
     <div className="min-h-screen flex flex-col bg-[#F5F2EC] text-[#22201D] font-sans antialiased selection:bg-[#FDB813] selection:text-black">
       
       {/* Top Header shown on Landing, Catalog and Product Detail */}
@@ -1221,7 +1291,6 @@ export default function App() {
               theme={theme}
               products={products}
               categories={categories}
-              onSetSession={(s) => setUserSession(s)}
               onOpenAuth={() => openAuthScreen('admin', 'empresa')}
               unreadChatThreads={unreadChatThreads}
               onOpenChat={openChatModal}
@@ -1409,6 +1478,7 @@ export default function App() {
       />
 
     </div>
+    </AppErrorBoundary>
   );
 }
 

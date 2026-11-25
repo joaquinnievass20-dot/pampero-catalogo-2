@@ -5407,22 +5407,25 @@ export async function fetchUserProfileByUidOrEmail(uid: string, email?: string |
  * Desvincula las credenciales persistentes de IndexedDB y remueve el estado de sesión.
  */
 export async function logoutFirebaseAuth(): Promise<void> {
+  try {
+    localStorage.setItem('pampero_explicit_logout', 'true');
+    localStorage.removeItem('pampero_user_session');
+    localStorage.removeItem('pampero_session');
+    sessionStorage.removeItem('pampero_active_view');
+  } catch {}
+
   const fbAuth = auth || getFirebaseAuth();
   try {
     if (fbAuth) {
-      await signOut(fbAuth);
-      console.log('[AUTH] signOut exitoso en Firebase Authentication');
+      await Promise.race([
+        signOut(fbAuth),
+        new Promise((resolve) => setTimeout(resolve, 1500)),
+      ]);
+      console.log('[AUTH] signOut completado en Firebase Authentication');
     }
   } catch (err) {
     console.warn('[AUTH] Error en signOut de Firebase Auth:', err);
   }
-
-  try {
-    localStorage.removeItem('pampero_user_session');
-    localStorage.removeItem('pampero_session');
-    localStorage.setItem('pampero_explicit_logout', 'true');
-    sessionStorage.clear();
-  } catch {}
 }
 
 /**
