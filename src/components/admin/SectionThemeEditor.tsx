@@ -17,7 +17,11 @@ import {
   Kanban,
   FileSpreadsheet,
   Globe,
-  ChevronDown
+  ChevronDown,
+  PanelLeft,
+  Users,
+  Wallet,
+  MessageSquare
 } from 'lucide-react';
 import { isColorDark } from '../../context/ThemeContext';
 
@@ -30,7 +34,11 @@ export type SectionKey =
   | 'hub'
   | 'crm'
   | 'corporate_services'
-  | 'footer';
+  | 'footer'
+  | 'sidebar'
+  | 'rrhh'
+  | 'costs'
+  | 'chat';
 
 interface SectionDefinition {
   id: SectionKey;
@@ -113,6 +121,38 @@ export const SYSTEM_SECTIONS: SectionDefinition[] = [
     icon: Globe,
     description: 'Bloque inferior con teléfonos, WhatsApp comercial, redes sociales, direcciones de sucursales y datos institucionales.',
     badge: 'Pie de Página'
+  },
+  {
+    id: 'sidebar',
+    name: '10. Barra Lateral Interna (CRM, Panel, RRHH, Costos)',
+    shortLabel: 'Barra Lateral',
+    icon: PanelLeft,
+    description: 'Personalizá el color de fondo, textos, ítem activo y acento de la barra lateral izquierda en todos los módulos internos.',
+    badge: 'Navegación'
+  },
+  {
+    id: 'rrhh',
+    name: '11. Módulo RRHH (Fichaje GPS & Legajos)',
+    shortLabel: 'RRHH',
+    icon: Users,
+    description: 'Títulos, pestañas, textos de fichaje GPS y botones del módulo de Recursos Humanos.',
+    badge: 'Personal'
+  },
+  {
+    id: 'costs',
+    name: '12. Módulo Costos & Finanzas',
+    shortLabel: 'Costos',
+    icon: Wallet,
+    description: 'Títulos, pestañas de Dashboard, Facturas, Cheques y Caja Chica por local.',
+    badge: 'Finanzas'
+  },
+  {
+    id: 'chat',
+    name: '13. Chat Interno & Mensajería',
+    shortLabel: 'Chat Interno',
+    icon: MessageSquare,
+    description: 'Títulos, botones y placeholders del chat en tiempo real entre administradores, empleados y clientes.',
+    badge: 'Mensajería'
   }
 ];
 
@@ -419,6 +459,42 @@ export const SectionThemeEditor: React.FC<SectionThemeEditorProps> = ({
         delete updatedTexts.footerWhatsappBtnText;
         delete updatedTexts.footerAdminLinkText;
         break;
+      case 'sidebar':
+        delete updated.sidebarBgColor;
+        delete updated.sidebarTextColor;
+        delete updated.sidebarActiveBgColor;
+        delete updated.sidebarAccentColor;
+        break;
+      case 'rrhh':
+        delete updatedTexts.rrhhTitle;
+        delete updatedTexts.rrhhSubtitle;
+        delete updatedTexts.rrhhFichajeTabText;
+        delete updatedTexts.rrhhLegajoTabText;
+        delete updatedTexts.rrhhFichajeCardTitle;
+        delete updatedTexts.rrhhFichajeCardSubtitle;
+        delete updatedTexts.rrhhFichajeBtnText;
+        delete updatedTexts.rrhhAdminBtnText;
+        delete updatedTexts.rrhhBackBtnText;
+        break;
+      case 'costs':
+        delete updatedTexts.costsTitle;
+        delete updatedTexts.costsSubtitle;
+        delete updatedTexts.costsTabDashboardText;
+        delete updatedTexts.costsTabCostsText;
+        delete updatedTexts.costsTabInvoicesText;
+        delete updatedTexts.costsTabChecksText;
+        delete updatedTexts.costsTabPettyCashText;
+        delete updatedTexts.costsDashTitle;
+        delete updatedTexts.costsDashSubtitle;
+        delete updatedTexts.costsBackBtnText;
+        break;
+      case 'chat':
+        delete updatedTexts.chatTitle;
+        delete updatedTexts.chatSubtitle;
+        delete updatedTexts.chatInputPlaceholder;
+        delete updatedTexts.chatSendBtnText;
+        delete updatedTexts.chatNavBtnText;
+        break;
     }
 
     updated.siteTexts = updatedTexts;
@@ -441,7 +517,7 @@ export const SectionThemeEditor: React.FC<SectionThemeEditorProps> = ({
               Aislamiento Activo
             </span>
             <span className="text-xs text-[#6F6860]">
-              9 Ventanas Disponibles
+              {SYSTEM_SECTIONS.length} Ventanas Disponibles
             </span>
           </div>
           <h4 className="font-bold text-sm sm:text-base uppercase tracking-wider text-[#18231C] flex items-center gap-2">
@@ -679,6 +755,24 @@ export const SectionThemeEditor: React.FC<SectionThemeEditorProps> = ({
                 {renderColorField('Color de Botón de Contacto (Hover)', 'footerButtonHoverBg', theme.footerButtonHoverBg, theme.hoverAccentColor || '#E0A310')}
               </>
             )}
+
+            {/* 10. BARRA LATERAL INTERNA (y compartida con RRHH / Costos) */}
+            {(selectedSection === 'sidebar' || selectedSection === 'rrhh' || selectedSection === 'costs') && (
+              <>
+                {renderColorField('Color de Fondo de la Barra Lateral', 'sidebarBgColor', theme.sidebarBgColor, theme.primaryColor || '#18231C')}
+                {renderColorField('Color de Textos en la Barra Lateral', 'sidebarTextColor', theme.sidebarTextColor, '#DCD4C9')}
+                {renderColorField('Color de Fondo del Ítem Activo', 'sidebarActiveBgColor', theme.sidebarActiveBgColor, '#2B3B30')}
+                {renderColorField('Color de Acento / Íconos Activos', 'sidebarAccentColor', theme.sidebarAccentColor, theme.accentColor || '#FDB813')}
+              </>
+            )}
+
+            {/* 13. CHAT INTERNO */}
+            {selectedSection === 'chat' && (
+              <>
+                {renderColorField('Color Principal Cabecera Chat', 'primaryColor', theme.primaryColor, '#18231C')}
+                {renderColorField('Color de Acento Mensajes / Badges', 'accentColor', theme.accentColor, '#FDB813')}
+              </>
+            )}
           </div>
         </div>
 
@@ -768,12 +862,20 @@ export const SectionThemeEditor: React.FC<SectionThemeEditorProps> = ({
                 {renderTextField('Subtítulo Barra del Hub', 'hubHeaderSub', siteTexts.hubHeaderSub, 'Pampero Gran Mendoza · Sistema Operativo')}
                 {renderTextField('Título Principal del Hub', 'hubTitle', siteTexts.hubTitle, 'Hub de Trabajo Interno')}
                 {renderTextField('Subtítulo del Hub (opcional)', 'hubSubtitle', siteTexts.hubSubtitle, '')}
+                {renderTextField('Etiqueta Rol Super Administrador', 'hubRoleAdminText', siteTexts.hubRoleAdminText, 'Super Administrador')}
+                {renderTextField('Etiqueta Rol Encargado General', 'hubRoleEmployeeText', siteTexts.hubRoleEmployeeText, 'Encargado General · Todos los Locales')}
                 {renderTextField('Título Tarjeta Gestión / CRM', 'hubCrmCardText', siteTexts.hubCrmCardText, 'Gestión / CRM')}
                 {renderTextField('Descripción Tarjeta CRM', 'hubCrmCardDesc', siteTexts.hubCrmCardDesc, 'Tablero Kanban con cotizaciones, pedidos, visitas y seguimiento.', true)}
                 {renderTextField('Botón Tarjeta CRM', 'hubCrmBtnText', siteTexts.hubCrmBtnText, 'Ir a Gestión / CRM')}
                 {renderTextField('Título Tarjeta RRHH', 'hubRrhhCardText', siteTexts.hubRrhhCardText, 'RRHH')}
                 {renderTextField('Descripción Tarjeta RRHH', 'hubRrhhCardDesc', siteTexts.hubRrhhCardDesc, 'Legajos de personal, fichaje GPS por local, horarios y vacaciones.', true)}
                 {renderTextField('Botón Tarjeta RRHH', 'hubRrhhBtnText', siteTexts.hubRrhhBtnText, 'Ir a RRHH')}
+                {renderTextField('Título Tarjeta Costos & Finanzas', 'hubCostsCardText', siteTexts.hubCostsCardText, 'Costos & Finanzas')}
+                {renderTextField('Descripción Tarjeta Costos', 'hubCostsCardDesc', siteTexts.hubCostsCardDesc, 'Dashboard financiero y de liquidez, cheques, caja chica por local y costos.', true)}
+                {renderTextField('Botón Tarjeta Costos', 'hubCostsBtnText', siteTexts.hubCostsBtnText, 'Ir a Costos')}
+                {renderTextField('Título Tarjeta Chat Interno', 'hubChatCardText', siteTexts.hubChatCardText, 'Chat Interno')}
+                {renderTextField('Descripción Tarjeta Chat', 'hubChatCardDesc', siteTexts.hubChatCardDesc, 'Mensajería directa en tiempo real con administradores, empleados y clientes.', true)}
+                {renderTextField('Botón Tarjeta Chat', 'hubChatBtnText', siteTexts.hubChatBtnText, 'Abrir Chat')}
                 {renderTextField('Título Tarjeta Panel de Control', 'hubAdminCardText', siteTexts.hubAdminCardText, 'Panel de Control')}
                 {renderTextField('Descripción Tarjeta Panel', 'hubAdminCardDesc', siteTexts.hubAdminCardDesc, 'Administración de catálogo, precios, promociones y locales.', true)}
                 {renderTextField('Botón Tarjeta Panel', 'hubAdminBtnText', siteTexts.hubAdminBtnText, 'Panel de Control')}
@@ -800,6 +902,22 @@ export const SectionThemeEditor: React.FC<SectionThemeEditorProps> = ({
                 {renderTextField('Título Columna 1 (Cotizaciones)', 'crmColCotizacionText', siteTexts.crmColCotizacionText, 'Cotización Recibida')}
                 {renderTextField('Título Columna 2 (Producción)', 'crmColProduccionText', siteTexts.crmColProduccionText, 'En Producción')}
                 {renderTextField('Título Columna 3 (Listo)', 'crmColListoText', siteTexts.crmColListoText, 'Listo para Retiro')}
+                {renderTextField('Botón Notificaciones', 'crmNotifBtnText', siteTexts.crmNotifBtnText, 'Notificaciones')}
+                {renderTextField('Título Ventana Notificaciones', 'crmNotifTitle', siteTexts.crmNotifTitle, 'Centro de Alertas & Notificaciones')}
+                {renderTextField('Botón Faltantes', 'crmShortagesBtnText', siteTexts.crmShortagesBtnText, 'Faltantes')}
+                {renderTextField('Título Ventana Faltantes', 'crmShortagesTitle', siteTexts.crmShortagesTitle, 'Faltantes & Pedido a Proveedor')}
+                {renderTextField('Botón Observaciones', 'crmObservationsBtnText', siteTexts.crmObservationsBtnText, 'Observaciones')}
+                {renderTextField('Visitas — Título', 'crmVisitsTitle', siteTexts.crmVisitsTitle, 'Visitas Comerciales')}
+                {renderTextField('Visitas — Subtítulo', 'crmVisitsSubtitle', siteTexts.crmVisitsSubtitle, 'Registro de visitas en terreno y prospección corporativa.', true)}
+                {renderTextField('Visitas — Botón', 'crmNewVisitBtnText', siteTexts.crmNewVisitBtnText, 'Registrar Visita')}
+                {renderTextField('Tareas — Título', 'crmTasksTitle', siteTexts.crmTasksTitle, 'Tablero de Tareas Operativas')}
+                {renderTextField('Tareas — Subtítulo', 'crmTasksSubtitle', siteTexts.crmTasksSubtitle, 'Organización interna, entregas, cobros y seguimientos.', true)}
+                {renderTextField('Tareas — Botón', 'crmNewTaskBtnText', siteTexts.crmNewTaskBtnText, 'Nueva Tarea')}
+                {renderTextField('Calendario — Título', 'crmCalendarTitle', siteTexts.crmCalendarTitle, 'Calendario Comercial & Vencimientos')}
+                {renderTextField('Calendario — Subtítulo', 'crmCalendarSubtitle', siteTexts.crmCalendarSubtitle, 'Feriados, tareas, visitas y recordatorios.', true)}
+                {renderTextField('Calendario — Botón', 'crmNewEventBtnText', siteTexts.crmNewEventBtnText, 'Nuevo Evento / Recordatorio')}
+                {renderTextField('Proveedores — Título', 'crmSuppliersTitle', siteTexts.crmSuppliersTitle, 'Pedidos a Proveedores & Stock')}
+                {renderTextField('Proveedores — Subtítulo', 'crmSuppliersSubtitle', siteTexts.crmSuppliersSubtitle, 'Agrupación automática de faltantes del catálogo.', true)}
               </>
             )}
 
@@ -826,6 +944,58 @@ export const SectionThemeEditor: React.FC<SectionThemeEditorProps> = ({
                 {renderTextField('Dirección de Sucursales', 'footerAddress', siteTexts.footerAddress, 'Pescara 250 (Maipú) · San Martín 477 (Ciudad) · Patricios 384 (Luján)', true)}
                 {renderTextField('Texto Botón WhatsApp Footer', 'footerWhatsappBtnText', siteTexts.footerWhatsappBtnText, 'WhatsApp 261 527-6713')}
                 {renderTextField('Enlace Acceso Administrador Footer', 'footerAdminLinkText', siteTexts.footerAdminLinkText, 'Acceso Administrador (Panel de Control)')}
+              </>
+            )}
+
+            {/* 10. BARRA LATERAL TEXTS INFO */}
+            {selectedSection === 'sidebar' && (
+              <div className="p-4 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs text-[#4A453F] space-y-2">
+                <p className="font-bold text-[#18231C] uppercase">Barra Lateral Unificada</p>
+                <p>
+                  Los 4 controles de color a la izquierda actualizan la barra lateral en <strong>Gestión Pampero</strong>, <strong>Panel de Control</strong>, <strong>RRHH</strong> y <strong>Costos & Finanzas</strong>. Para editar los nombres de cada módulo o pestaña, elegí la sección correspondiente arriba.
+                </p>
+              </div>
+            )}
+
+            {/* 11. RRHH TEXTS */}
+            {selectedSection === 'rrhh' && (
+              <>
+                {renderTextField('Título Módulo RRHH', 'rrhhTitle', siteTexts.rrhhTitle, 'Recursos Humanos')}
+                {renderTextField('Subtítulo Módulo RRHH', 'rrhhSubtitle', siteTexts.rrhhSubtitle, 'Control de asistencia GPS, legajo de personal y cronograma por sucursal.', true)}
+                {renderTextField('Pestaña 1: Fichaje GPS', 'rrhhFichajeTabText', siteTexts.rrhhFichajeTabText, '1. Fichaje GPS')}
+                {renderTextField('Pestaña 2: Mi Legajo', 'rrhhLegajoTabText', siteTexts.rrhhLegajoTabText, '2. Mi Legajo & Horarios')}
+                {renderTextField('Título Tarjeta Fichaje', 'rrhhFichajeCardTitle', siteTexts.rrhhFichajeCardTitle, 'Fichaje de Llegada al Local')}
+                {renderTextField('Subtítulo Tarjeta Fichaje', 'rrhhFichajeCardSubtitle', siteTexts.rrhhFichajeCardSubtitle, 'Registrá tu ingreso o salida con fecha, hora exacta y ubicación GPS verificada.', true)}
+                {renderTextField('Botón Registrar Llegada', 'rrhhFichajeBtnText', siteTexts.rrhhFichajeBtnText, 'Registrar Llegada Ahora')}
+                {renderTextField('Botón Configurar en Panel', 'rrhhAdminBtnText', siteTexts.rrhhAdminBtnText, 'Configurar en Panel')}
+                {renderTextField('Botón Volver al Hub', 'rrhhBackBtnText', siteTexts.rrhhBackBtnText, 'Volver al Hub')}
+              </>
+            )}
+
+            {/* 12. COSTOS & FINANZAS TEXTS */}
+            {selectedSection === 'costs' && (
+              <>
+                {renderTextField('Título Módulo Costos', 'costsTitle', siteTexts.costsTitle, 'Costos & Finanzas')}
+                {renderTextField('Subtítulo Módulo Costos', 'costsSubtitle', siteTexts.costsSubtitle, 'Liquidez, cheques, caja chica por local y control operativo', true)}
+                {renderTextField('Pestaña 1: Dashboard', 'costsTabDashboardText', siteTexts.costsTabDashboardText, '1. Dashboard & Liquidez')}
+                {renderTextField('Pestaña 2: Costos y Ventas', 'costsTabCostsText', siteTexts.costsTabCostsText, '2. Costos y Ventas')}
+                {renderTextField('Pestaña 3: Facturas & Gastos', 'costsTabInvoicesText', siteTexts.costsTabInvoicesText, '3. Facturas & Gastos')}
+                {renderTextField('Pestaña 4: Cheques', 'costsTabChecksText', siteTexts.costsTabChecksText, '4. Cheques Emitidos y Recibidos')}
+                {renderTextField('Pestaña 5: Caja Chica', 'costsTabPettyCashText', siteTexts.costsTabPettyCashText, '5. Caja Chica por Local')}
+                {renderTextField('Título Dashboard Liquidez', 'costsDashTitle', siteTexts.costsDashTitle, 'Tablero Financiero & Liquidez Global')}
+                {renderTextField('Subtítulo Dashboard Liquidez', 'costsDashSubtitle', siteTexts.costsDashSubtitle, 'Cruce en tiempo real de ventas CRM, costos, cheques y caja chica.', true)}
+                {renderTextField('Botón Volver al Hub', 'costsBackBtnText', siteTexts.costsBackBtnText, 'Volver al Hub')}
+              </>
+            )}
+
+            {/* 13. CHAT INTERNO TEXTS */}
+            {selectedSection === 'chat' && (
+              <>
+                {renderTextField('Título Ventana Chat', 'chatTitle', siteTexts.chatTitle, 'Chat Interno Pampero')}
+                {renderTextField('Subtítulo Ventana Chat', 'chatSubtitle', siteTexts.chatSubtitle, 'Mensajería directa en tiempo real con administradores, empleados y clientes.', true)}
+                {renderTextField('Botón Menú / Acceso Chat', 'chatNavBtnText', siteTexts.chatNavBtnText, 'Chat / Mensajes')}
+                {renderTextField('Placeholder Caja de Mensaje', 'chatInputPlaceholder', siteTexts.chatInputPlaceholder, 'Escribí un mensaje directo...')}
+                {renderTextField('Botón Enviar', 'chatSendBtnText', siteTexts.chatSendBtnText, 'Enviar')}
               </>
             )}
           </div>
@@ -857,6 +1027,8 @@ export const SectionThemeEditor: React.FC<SectionThemeEditorProps> = ({
               selectedSection === 'hub' ? (theme.hubBgColor || '#18231C') :
               selectedSection === 'crm' ? (theme.crmHeaderBgColor || '#FFFFFF') :
               selectedSection === 'corporate_services' ? (theme.corporateServicesBgColor || theme.backgroundColor || '#F5F2EC') :
+              (selectedSection === 'sidebar' || selectedSection === 'rrhh' || selectedSection === 'costs') ? (theme.sidebarBgColor || theme.primaryColor || '#18231C') :
+              selectedSection === 'chat' ? (theme.primaryColor || '#18231C') :
               (theme.footerBgColor || theme.primaryColor || '#18231C'),
             borderColor: '#DCD4C9'
           }}
@@ -875,6 +1047,8 @@ export const SectionThemeEditor: React.FC<SectionThemeEditorProps> = ({
                     selectedSection === 'hub' ? (theme.hubTextColor || '#F5F2EC') :
                     selectedSection === 'crm' ? (theme.crmHeaderTextColor || '#18231C') :
                     selectedSection === 'corporate_services' ? (theme.corporateServicesTextColor || '#18231C') :
+                    (selectedSection === 'sidebar' || selectedSection === 'rrhh' || selectedSection === 'costs') ? (theme.sidebarTextColor || '#F5F2EC') :
+                    selectedSection === 'chat' ? '#FFFFFF' :
                     (theme.footerTextColor || '#F5F2EC')
                 }}
               >
@@ -884,8 +1058,12 @@ export const SectionThemeEditor: React.FC<SectionThemeEditorProps> = ({
                 {selectedSection === 'quote_drawer' && (siteTexts.quoteDrawerTitle || 'Mi Pedido')}
                 {selectedSection === 'auth' && (siteTexts.authLoginTitle || 'ACCESO AL CATÁLOGO')}
                 {selectedSection === 'hub' && (siteTexts.hubTitle || 'HUB DE TRABAJO INTERNO')}
-                {selectedSection === 'crm' && (siteTexts.crmTitle || 'Gestión Comercial & Pedidos (CRM)')}
+                {selectedSection === 'crm' && (siteTexts.crmTitle || 'Gestión Pampero')}
                 {selectedSection === 'corporate_services' && (siteTexts.sizingPortalTitle || 'Portal de Curva de Talles')}
+                {selectedSection === 'sidebar' && 'Barra Lateral · Menú Activo'}
+                {selectedSection === 'rrhh' && (siteTexts.rrhhTitle || 'Recursos Humanos')}
+                {selectedSection === 'costs' && (siteTexts.costsTitle || 'Costos & Finanzas')}
+                {selectedSection === 'chat' && (siteTexts.chatTitle || 'Chat Interno Pampero')}
                 {selectedSection === 'footer' && (siteTexts.footerTagline || 'Catálogo digital de exhibición oficial')}
               </span>
               <p 
@@ -900,6 +1078,8 @@ export const SectionThemeEditor: React.FC<SectionThemeEditorProps> = ({
                     selectedSection === 'hub' ? (theme.hubSecondaryTextColor || '#DCD4C9') :
                     selectedSection === 'crm' ? (theme.crmSecondaryTextColor || '#6F6860') :
                     selectedSection === 'corporate_services' ? (theme.corporateServicesSecondaryTextColor || '#6F6860') :
+                    (selectedSection === 'sidebar' || selectedSection === 'rrhh' || selectedSection === 'costs') ? (theme.sidebarTextColor || '#DCD4C9') :
+                    selectedSection === 'chat' ? '#DCD4C9' :
                     (theme.footerSecondaryTextColor || '#DCD4C9')
                 }}
               >
@@ -920,6 +1100,8 @@ export const SectionThemeEditor: React.FC<SectionThemeEditorProps> = ({
                   selectedSection === 'hub' ? (theme.hubButtonBg || theme.primaryColor || '#18231C') :
                   selectedSection === 'crm' ? (theme.crmButtonBg || theme.primaryColor || '#18231C') :
                   selectedSection === 'corporate_services' ? (theme.corporateServicesButtonBg || theme.primaryColor || '#18231C') :
+                  (selectedSection === 'sidebar' || selectedSection === 'rrhh' || selectedSection === 'costs') ? (theme.sidebarAccentColor || theme.accentColor || '#FDB813') :
+                  selectedSection === 'chat' ? (theme.accentColor || '#FDB813') :
                   (theme.footerButtonBg || theme.footerAccentColor || '#FDB813'),
                 color: 
                   selectedSection === 'navbar' ? (theme.navbarButtonTextColor || '#FFFFFF') :
@@ -930,6 +1112,7 @@ export const SectionThemeEditor: React.FC<SectionThemeEditorProps> = ({
                   selectedSection === 'hub' ? (theme.hubButtonTextColor || '#FFFFFF') :
                   selectedSection === 'crm' ? (theme.crmButtonTextColor || '#FFFFFF') :
                   selectedSection === 'corporate_services' ? (theme.corporateServicesButtonTextColor || '#FFFFFF') :
+                  (selectedSection === 'sidebar' || selectedSection === 'rrhh' || selectedSection === 'costs' || selectedSection === 'chat') ? '#18231C' :
                   (theme.footerButtonTextColor || '#FFFFFF')
               }}
             >
@@ -941,6 +1124,10 @@ export const SectionThemeEditor: React.FC<SectionThemeEditorProps> = ({
               {selectedSection === 'hub' && (siteTexts.hubCrmCardText || 'IR A GESTIÓN / CRM')}
               {selectedSection === 'crm' && (siteTexts.crmNewOrderBtnText || 'Nuevo Pedido')}
               {selectedSection === 'corporate_services' && (siteTexts.corporateQuoteBtnText || 'SOLICITAR COTIZACIÓN')}
+              {selectedSection === 'sidebar' && 'Ítem Activo'}
+              {selectedSection === 'rrhh' && (siteTexts.rrhhFichajeBtnText || 'Registrar Llegada Ahora')}
+              {selectedSection === 'costs' && (siteTexts.costsTabDashboardText || 'Dashboard & Liquidez')}
+              {selectedSection === 'chat' && (siteTexts.chatSendBtnText || 'Enviar')}
               {selectedSection === 'footer' && 'CONSULTAR POR WHATSAPP'}
             </button>
           </div>

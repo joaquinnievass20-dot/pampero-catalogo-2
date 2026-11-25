@@ -15,10 +15,9 @@ import {
   subscribeToRRHHConfig,
   subscribeToRRHHLegajos,
 } from '../../services/firebase';
-import { canManageRRHH } from '../../utils/permissions';
+import { canManageRRHH, hasAdminPanelAccess } from '../../utils/permissions';
 import { PamperoLogo } from '../PamperoLogo';
 import { isColorDark } from '../../context/ThemeContext';
-import { AdminRRHHTab } from '../admin/AdminRRHHTab';
 import {
   getBranchColor,
   resolveDayScheduleEntry,
@@ -33,18 +32,23 @@ import {
 import {
   ArrowLeft,
   CheckCircle2,
+  ChevronRight,
   ExternalLink,
   FileText,
   Loader2,
   Lock,
   MapPin,
+  Menu,
   Navigation,
   Palmtree,
   Save,
+  Settings,
   ShieldAlert,
-  Users,
   AlertTriangle,
   Crosshair,
+  X,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react';
 
 interface RRHHViewProps {
@@ -52,6 +56,7 @@ interface RRHHViewProps {
   theme?: ThemeConfig;
   branches?: BranchLocation[];
   onClose: () => void;
+  onOpenAdminPanel?: () => void;
 }
 
 function parseHHMMToMinutes(hhmm?: string): number | null {
@@ -70,21 +75,17 @@ export const RRHHView: React.FC<RRHHViewProps> = ({
   theme,
   branches = [],
   onClose,
+  onOpenAdminPanel,
 }) => {
   const isAdmin = userSession.role === 'admin';
   const isEmployee = userSession.role === 'employee';
   const canUsePersonalRRHH = isAdmin || isEmployee;
-  const isManager = canManageRRHH(userSession);
+  const canOpenAdminRRHH =
+    canManageRRHH(userSession) && hasAdminPanelAccess(userSession) && Boolean(onOpenAdminPanel);
 
-  const [activeSection, setActiveSection] = useState<'checkin' | 'my_legajo' | 'manage'>(() =>
-    canUsePersonalRRHH ? 'checkin' : isManager ? 'manage' : 'my_legajo'
-  );
-
-  useEffect(() => {
-    if (!canUsePersonalRRHH && activeSection === 'checkin') {
-      setActiveSection(isManager ? 'manage' : 'my_legajo');
-    }
-  }, [canUsePersonalRRHH, isManager, activeSection]);
+  const [activeSection, setActiveSection] = useState<'checkin' | 'my_legajo'>('checkin');
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [isDesktopSidebarCollapsed, setIsDesktopSidebarCollapsed] = useState(false);
 
   const [legajos, setLegajos] = useState<RRHHEmployeeRecord[]>([]);
   const [checkIns, setCheckIns] = useState<RRHHCheckInRecord[]>([]);
@@ -477,105 +478,254 @@ export const RRHHView: React.FC<RRHHViewProps> = ({
     nowDate.getMinutes()
   ).padStart(2, '0')}:${String(nowDate.getSeconds()).padStart(2, '0')}`;
 
+  const st = theme?.siteTexts;
+  const rrhhSections: Array<{ key: 'checkin' | 'my_legajo'; label: string; category: string; icon: any }> = [
+    { key: 'checkin', label: st?.rrhhFichajeTabText || 'Fichaje de Llegada', category: 'Asistencia & GPS', icon: Navigation },
+    { key: 'my_legajo', label: st?.rrhhLegajoTabText || 'Mi Legajo, Calendario y Vacaciones', category: 'Legajo Personal', icon: FileText },
+  ];
+  const activeSectionMeta = rrhhSections.find((s) => s.key === activeSection) || rrhhSections[0];
+  const ActiveSectionIcon = activeSectionMeta.icon;
+  void hubBg;
+  void isHubDark;
+
+  const sidebarBg = theme?.sidebarBgColor || theme?.primaryColor || '#18231C';
+  const isSidebarDark = isColorDark(sidebarBg);
+  const sidebarText = theme?.sidebarTextColor || (isSidebarDark ? '#DCD4C9' : '#18231C');
+  const sidebarActiveBg = theme?.sidebarActiveBgColor || (isSidebarDark ? '#2B3B30' : '#ECE5DC');
+  const sidebarAccent = theme?.sidebarAccentColor || theme?.accentColor || '#FDB813';
+  const sidebarMutedText = isSidebarDark ? '#A69E94' : '#6F6860';
+  const sidebarBorderClass = isSidebarDark ? 'border-white/10' : 'border-black/10';
+
   return (
-    <div className="min-h-screen w-full bg-[#F5F2EC] flex flex-col font-sans">
-      {/* Top Bar */}
-      <header
-        style={{ backgroundColor: hubBg }}
-        className="border-b border-black/30 px-4 sm:px-8 py-3.5 sticky top-0 z-40"
+    <div className="fixed inset-0 z-50 flex flex-col md:flex-row bg-[#FAF8F5] text-[#18231C] w-screen h-screen overflow-hidden animate-fadeIn font-sans">
+      {/* Mobile Sidebar Overlay */}
+      {isMobileSidebarOpen && (
+        <div
+          onClick={() => setIsMobileSidebarOpen(false)}
+          className="md:hidden fixed inset-0 bg-black/60 z-30 backdrop-blur-2xs"
+        />
+      )}
+
+      {/* SIDEBAR NAVIGATION (Unified & Collapsible) */}
+      <aside
+        style={{ backgroundColor: sidebarBg, color: isSidebarDark ? '#FFFFFF' : '#18231C' }}
+        className={`fixed md:static inset-y-0 left-0 z-40 flex flex-col h-full transition-all duration-200 ease-in-out shrink-0 ${
+          isMobileSidebarOpen ? 'translate-x-0 w-72 max-w-[85vw]' : '-translate-x-full md:translate-x-0'
+        } ${
+          isDesktopSidebarCollapsed
+            ? 'md:w-0 md:overflow-hidden md:border-r-0'
+            : 'md:w-72 border-r border-black/30'
+        }`}
       >
-        <div className="max-w-6xl mx-auto flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3.5 min-w-0">
+        <div className={`p-3.5 border-b ${sidebarBorderClass} flex items-center justify-between gap-2`}>
+          <div className="flex items-center gap-2.5 min-w-0 flex-1">
             <PamperoLogo
               customUrl={theme?.customLogoUrl || theme?.logoUrl}
-              height={34}
-              navBgColor={hubBg}
-              onDarkBackground={isHubDark}
+              height={theme?.logoHeight ? Math.min(theme.logoHeight, 34) : 30}
+              size="sm"
+              onDarkBackground={isSidebarDark}
+              variant={isSidebarDark ? 'light' : 'dark'}
+              navBgColor={sidebarBg}
             />
-            <div className="border-l border-white/20 pl-3.5 min-w-0">
-              <span className="text-[10px] tracking-[0.2em] font-extrabold uppercase text-[#FDB813] block">
-                RRHH · RECURSOS HUMANOS
-              </span>
-              <span className="text-xs font-medium text-[#DCD4C9] truncate block">
-                {displayName} · {effectiveLegajo.assignedBranch || userSession.branch || 'Gran Mendoza'}
+            <div className="min-w-0 flex-1">
+              <h2
+                style={{ color: sidebarAccent }}
+                className="font-display font-bold text-[13px] uppercase tracking-wide whitespace-normal leading-tight"
+              >
+                {st?.rrhhTitle || 'RRHH & Personal'}
+              </h2>
+              <span
+                style={{ color: sidebarText }}
+                className="text-[10px] opacity-80 block whitespace-normal leading-tight mt-0.5"
+              >
+                {st?.rrhhSubtitle || effectiveLegajo.assignedBranch || userSession.branch || 'Gran Mendoza'}
               </span>
             </div>
           </div>
+          <button
+            type="button"
+            onClick={() => setIsDesktopSidebarCollapsed(true)}
+            style={{ color: sidebarText }}
+            className="hidden md:inline-flex p-1.5 hover:bg-black/15 rounded-xs cursor-pointer shrink-0 transition-colors"
+            title="Ocultar barra lateral"
+          >
+            <PanelLeftClose className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsMobileSidebarOpen(false)}
+            style={{ color: sidebarText }}
+            className="md:hidden p-1.5 hover:bg-black/15 rounded-xs cursor-pointer shrink-0"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-3 py-4 space-y-5 scrollbar-thin">
+          <div className="space-y-1.5">
+            <span
+              style={{ color: sidebarMutedText }}
+              className="px-3 text-[10px] font-black uppercase tracking-[0.18em] block"
+            >
+              Mi Espacio RRHH
+            </span>
+            <div className="space-y-0.5">
+              {canUsePersonalRRHH &&
+                rrhhSections.map((sec) => {
+                  const isSelected = activeSection === sec.key;
+                  const SecIcon = sec.icon;
+                  return (
+                    <button
+                      key={sec.key}
+                      type="button"
+                      onClick={() => {
+                        setActiveSection(sec.key);
+                        setIsMobileSidebarOpen(false);
+                      }}
+                      style={
+                        isSelected
+                          ? { backgroundColor: sidebarActiveBg, color: sidebarAccent }
+                          : { color: sidebarText }
+                      }
+                      className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xs text-xs font-bold transition-all cursor-pointer group text-left ${
+                        isSelected ? 'shadow-xs' : 'hover:bg-black/10'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <SecIcon
+                          style={{ color: isSelected ? sidebarAccent : sidebarMutedText }}
+                          className="w-4 h-4 shrink-0 transition-colors"
+                        />
+                        <span className="truncate">{sec.label}</span>
+                      </div>
+                      {isSelected && (
+                        <span
+                          style={{ backgroundColor: sidebarAccent }}
+                          className="w-1.5 h-1.5 rounded-full shrink-0"
+                        />
+                      )}
+                    </button>
+                  );
+                })}
+            </div>
+          </div>
+        </div>
+
+        <div className={`p-3 border-t ${sidebarBorderClass} space-y-2 bg-black/15`}>
+          <div className={`px-2.5 py-2 rounded-xs bg-white/5 border ${sidebarBorderClass}`}>
+            <span
+              style={{ color: sidebarMutedText }}
+              className="text-[9px] font-bold uppercase tracking-wider block"
+            >
+              Colaborador Activo
+            </span>
+            <span
+              style={{ color: isSidebarDark ? '#FFFFFF' : '#18231C' }}
+              className="text-xs font-bold truncate block mt-0.5"
+            >
+              {displayName}
+            </span>
+          </div>
+
+          {canOpenAdminRRHH && (
+            <button
+              type="button"
+              onClick={onOpenAdminPanel}
+              style={{ backgroundColor: sidebarAccent, color: isColorDark(sidebarAccent) ? '#FFFFFF' : '#18231C' }}
+              className="w-full py-2 px-3 hover:opacity-90 rounded-xs text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-opacity cursor-pointer"
+            >
+              <Settings className="w-3.5 h-3.5" />
+              <span>{st?.rrhhAdminBtnText || 'Administrar RRHH'}</span>
+            </button>
+          )}
 
           <button
             type="button"
             onClick={onClose}
-            className="px-3.5 py-2 rounded-xs bg-white/10 hover:bg-white/20 text-white text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 border border-white/20 cursor-pointer shrink-0"
+            style={{ backgroundColor: sidebarActiveBg, color: isSidebarDark ? '#FAF8F5' : '#18231C' }}
+            className="w-full py-2 px-3 hover:opacity-90 rounded-xs text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-opacity cursor-pointer"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
-            <span>Volver al Hub</span>
+            <span>{st?.rrhhBackBtnText || 'Volver al Hub'}</span>
           </button>
         </div>
-      </header>
+      </aside>
 
-      {/* Navigation Tabs */}
-      <div className="bg-white border-b border-[#DCD4C9] px-4 sm:px-8">
-        <div className="max-w-6xl mx-auto flex items-center gap-2 overflow-x-auto">
-          {canUsePersonalRRHH && (
+      {/* MAIN WORKSPACE CONTENT AREA */}
+      <div className="flex-1 flex flex-col h-full min-w-0 bg-[#FAF8F5]">
+        <header className="bg-white border-b border-[#DCD4C9] px-4 sm:px-6 py-3 flex items-center justify-between gap-3 shrink-0 shadow-2xs z-10">
+          <div className="flex items-center gap-2.5 min-w-0">
             <button
               type="button"
-              onClick={() => setActiveSection('checkin')}
-              className={`px-4 py-3 text-xs font-bold uppercase tracking-wider border-b-2 transition-colors whitespace-nowrap cursor-pointer flex items-center gap-2 ${
-                activeSection === 'checkin'
-                  ? 'border-[#B9522F] text-[#18231C]'
-                  : 'border-transparent text-[#6F6860] hover:text-[#18231C]'
-              }`}
+              onClick={() => setIsMobileSidebarOpen(true)}
+              className="md:hidden p-2 text-[#18231C] hover:bg-[#FAF8F5] rounded-xs cursor-pointer"
+              title="Abrir menú lateral"
             >
-              <Navigation className="w-4 h-4 text-[#B9522F]" />
-              <span>Fichaje de Llegada</span>
+              <Menu className="w-5 h-5" />
             </button>
-          )}
 
-          {canUsePersonalRRHH && (
+            {isDesktopSidebarCollapsed && (
+              <button
+                type="button"
+                onClick={() => setIsDesktopSidebarCollapsed(false)}
+                className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-[#FAF8F5] hover:bg-[#ECE5DC] border border-[#DCD4C9] text-[#18231C] rounded-xs text-xs font-bold cursor-pointer transition-colors shrink-0"
+                title="Mostrar barra lateral"
+              >
+                <PanelLeftOpen className="w-4 h-4" />
+                <span>Menú</span>
+              </button>
+            )}
+
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 text-[11px] text-[#6F6860] uppercase font-bold tracking-wider">
+                <span>{st?.rrhhTitle || 'RRHH'}</span>
+                <ChevronRight className="w-3 h-3 text-[#A69E94]" />
+                <span className="text-[#18231C]">{activeSectionMeta.category}</span>
+              </div>
+              <h1 className="font-display font-bold text-lg sm:text-xl uppercase tracking-wider text-[#18231C] flex items-center gap-2 mt-0.5 leading-none truncate">
+                <ActiveSectionIcon className="w-5 h-5 text-[#18231C] shrink-0" />
+                <span className="truncate">{activeSectionMeta.label}</span>
+              </h1>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            {canOpenAdminRRHH && (
+              <button
+                type="button"
+                onClick={onOpenAdminPanel}
+                className="px-3 py-1.5 rounded-xs bg-[#18231C] hover:bg-black text-[#FDB813] text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer shrink-0 transition-colors"
+                title="Administrar legajos, turnos, colores y fichajes desde el Panel de Control"
+              >
+                <Settings className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">{st?.rrhhAdminBtnText || 'Configurar en Panel'}</span>
+              </button>
+            )}
             <button
               type="button"
-              onClick={() => setActiveSection('my_legajo')}
-              className={`px-4 py-3 text-xs font-bold uppercase tracking-wider border-b-2 transition-colors whitespace-nowrap cursor-pointer flex items-center gap-2 ${
-                activeSection === 'my_legajo'
-                  ? 'border-[#B9522F] text-[#18231C]'
-                  : 'border-transparent text-[#6F6860] hover:text-[#18231C]'
-              }`}
+              onClick={onClose}
+              className="px-3 py-1.5 bg-[#FAF8F5] hover:bg-[#ECE5DC] text-[#18231C] border border-[#DCD4C9] rounded-xs text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
             >
-              <FileText className="w-4 h-4" />
-              <span>Mi Legajo, Calendario y Vacaciones</span>
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">{st?.rrhhBackBtnText || 'Volver al Hub'}</span>
             </button>
-          )}
+          </div>
+        </header>
 
-          {isManager && (
-            <button
-              type="button"
-              onClick={() => setActiveSection('manage')}
-              className={`px-4 py-3 text-xs font-bold uppercase tracking-wider border-b-2 transition-colors whitespace-nowrap cursor-pointer flex items-center gap-2 ${
-                activeSection === 'manage'
-                  ? 'border-[#B9522F] text-[#18231C]'
-                  : 'border-transparent text-[#6F6860] hover:text-[#18231C]'
-              }`}
-            >
-              <Users className="w-4 h-4" />
-              <span>Gestión RRHH del Equipo</span>
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Main Content */}
-      <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6">
+        {/* Scrollable Viewport */}
+        <div className="flex-1 overflow-y-scroll min-w-0">
+          <div className="w-full max-w-[1600px] mx-auto p-4 sm:p-6 space-y-6">
         {activeSection === 'checkin' && canUsePersonalRRHH && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             {/* Check-in Action Card */}
-            <div className="lg:col-span-5 bg-white border border-[#DCD4C9] rounded-xs p-5 sm:p-6 space-y-5">
+            <div className="lg:col-span-5 bg-white border border-[#DCD4C9] rounded-sm shadow-2xs p-5 sm:p-6 space-y-5">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-[#B9522F] block">
-                    Asistencia Diaria con GPS
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-[#6F6860] block">
+                    {st?.rrhhFichajeCardSubtitle || 'Asistencia Diaria con GPS'}
                   </span>
                   <h2 className="text-lg font-black text-[#18231C] uppercase tracking-wide mt-0.5">
-                    Registrar Llegada
+                    {st?.rrhhFichajeCardTitle || 'Registrar Llegada'}
                   </h2>
                 </div>
                 <div className="text-right bg-[#18231C] text-[#FDB813] px-3 py-1.5 rounded-xs">
@@ -597,15 +747,12 @@ export const RRHHView: React.FC<RRHHViewProps> = ({
                     ? '#059669'
                     : getBranchColor(bName, rrhhConfig.branchColors, configuredBranches);
                 return (
-                  <div
-                    className="p-3.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs space-y-1.5 text-xs"
-                    style={{ borderLeftWidth: '4px', borderLeftColor: bColor }}
-                  >
+                  <div className="p-3.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs space-y-1.5 text-xs">
                     <div className="flex items-center justify-between">
                       <span className="text-[#6F6860] font-semibold">Turno asignado hoy:</span>
-                      <span className="font-bold flex items-center gap-1.5" style={{ color: bColor }}>
+                      <span className="font-bold flex items-center gap-1.5 text-[#18231C]">
                         <span
-                          className="w-2 h-2 rounded-xs inline-block"
+                          className="w-2.5 h-2.5 rounded-full inline-block"
                           style={{ backgroundColor: bColor }}
                         />
                         <span>{bName}</span>
@@ -772,7 +919,7 @@ export const RRHHView: React.FC<RRHHViewProps> = ({
                 type="button"
                 disabled={isRecording}
                 onClick={handleRegisterArrival}
-                className="w-full py-3.5 px-4 bg-[#B9522F] hover:bg-[#9E3E1E] text-white text-xs font-black uppercase tracking-widest rounded-xs flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 transition-colors"
+                className="w-full py-3.5 px-4 bg-[#18231C] hover:bg-black text-[#FDB813] text-xs font-black uppercase tracking-widest rounded-xs flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 transition-colors"
               >
                 {isRecording ? (
                   <>
@@ -782,7 +929,7 @@ export const RRHHView: React.FC<RRHHViewProps> = ({
                 ) : (
                   <>
                     <MapPin className="w-4 h-4" />
-                    <span>Marcar Llegada a {selectedBranch}</span>
+                    <span>{st?.rrhhFichajeBtnText || `Marcar Llegada a ${selectedBranch}`}</span>
                   </>
                 )}
               </button>
@@ -841,10 +988,10 @@ export const RRHHView: React.FC<RRHHViewProps> = ({
               <div className="px-5 py-4 border-b border-[#DCD4C9] bg-[#FAF8F5] flex items-center justify-between">
                 <div>
                   <h3 className="font-bold text-sm text-[#18231C] uppercase tracking-wider">
-                    Mi Historial de Llegadas
+                    Mi Historial de Fichajes
                   </h3>
                   <p className="text-[11px] text-[#6F6860]">
-                    Registro verificado de tus últimos ingresos por sucursal.
+                    Registro verificado de tus últimos fichajes de ingreso por sucursal.
                   </p>
                 </div>
                 <span className="px-2.5 py-1 bg-white border border-[#DCD4C9] rounded-xs text-xs font-mono font-bold tabular-nums">
@@ -1108,7 +1255,7 @@ export const RRHHView: React.FC<RRHHViewProps> = ({
                     <button
                       type="submit"
                       disabled={savingMyLegajo}
-                      className="px-4 py-2 bg-[#B9522F] hover:bg-[#9E3E1E] text-white text-xs font-bold uppercase tracking-wider rounded-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+                      className="px-4 py-2 bg-[#18231C] hover:bg-black text-[#FDB813] text-xs font-bold uppercase tracking-wider rounded-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-60 transition-colors"
                     >
                       <Save className="w-3.5 h-3.5" />
                       <span>{savingMyLegajo ? 'Guardando...' : 'Guardar Mis Datos'}</span>
@@ -1118,9 +1265,9 @@ export const RRHHView: React.FC<RRHHViewProps> = ({
               </form>
 
               {/* Vacations Card */}
-              <div className="lg:col-span-5 bg-white border border-[#DCD4C9] rounded-xs p-5 space-y-4">
+              <div className="lg:col-span-5 bg-white border border-[#DCD4C9] rounded-sm shadow-2xs p-5 space-y-4">
                 <div className="flex items-center gap-2 border-b border-[#DCD4C9] pb-3">
-                  <Palmtree className="w-4 h-4 text-[#B9522F]" />
+                  <Palmtree className="w-4 h-4 text-[#18231C]" />
                   <h3 className="font-bold text-sm uppercase tracking-wider text-[#18231C]">
                     Mis Vacaciones Registradas
                   </h3>
@@ -1160,11 +1307,9 @@ export const RRHHView: React.FC<RRHHViewProps> = ({
             </div>
           </div>
         )}
-
-        {activeSection === 'manage' && isManager && (
-          <AdminRRHHTab userSession={userSession} branches={branches} embeddedInHub={true} />
-        )}
-      </main>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };

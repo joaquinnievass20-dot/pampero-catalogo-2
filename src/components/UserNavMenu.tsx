@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { UserSession, ThemeConfig } from '../types';
 import { subscribeToCRMOrders } from '../services/firebase';
-import { hasAdminPanelAccess, hasCRMAccess, hasRRHHAccess } from '../utils/permissions';
+import { hasAdminPanelAccess, hasCRMAccess, hasRRHHAccess, hasCostsAccess } from '../utils/permissions';
 import { 
   ShoppingBag, 
   User as UserIcon, 
@@ -15,7 +15,9 @@ import {
   Sparkles,
   Shirt,
   Package,
-  Clock
+  Clock,
+  Wallet,
+  MessageSquare
 } from 'lucide-react';
 
 interface UserNavMenuProps {
@@ -27,6 +29,7 @@ interface UserNavMenuProps {
   onOpenAdmin?: () => void;
   onOpenCRM?: () => void;
   onOpenRRHH?: () => void;
+  onOpenCosts?: () => void;
   onOpenHub?: () => void;
   onOpenUniformSimulator?: () => void;
   onOpenSizingPortal?: () => void;
@@ -36,6 +39,8 @@ interface UserNavMenuProps {
   theme?: ThemeConfig;
   isDarkHeader?: boolean;
   squareTrigger?: boolean;
+  unreadChatCount?: number;
+  onOpenChat?: () => void;
 }
 
 export const UserNavMenu: React.FC<UserNavMenuProps> = ({
@@ -47,6 +52,7 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
   onOpenAdmin,
   onOpenCRM,
   onOpenRRHH,
+  onOpenCosts,
   onOpenHub,
   onOpenUniformSimulator,
   onOpenSizingPortal,
@@ -56,6 +62,8 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
   theme,
   isDarkHeader = false,
   squareTrigger = false,
+  unreadChatCount = 0,
+  onOpenChat,
 }) => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [pendingQuotesCount, setPendingQuotesCount] = useState(0);
@@ -178,6 +186,33 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
         </button>
       )}
 
+      {/* 2B. Chat / Mensajes Directos (Staff y Clientes logueados) */}
+      {userSession && onOpenChat && (
+        <button
+          id="btn-nav-chat-direct"
+          type="button"
+          onClick={onOpenChat}
+          style={{
+            backgroundColor: isDarkHeader ? 'rgba(255, 255, 255, 0.08)' : '#FFFFFF',
+            borderColor: unreadChatCount > 0 ? '#DC2626' : (isDarkHeader ? 'rgba(255, 255, 255, 0.2)' : '#DCD4C9'),
+            color: isDarkHeader ? '#F5F2EC' : '#18231C',
+          }}
+          className="relative px-2.5 sm:px-3 py-2 rounded-xs border text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 shadow-2xs transition-all hover:brightness-105 shrink-0 cursor-pointer select-none"
+          title={theme?.siteTexts?.chatNavBtnText || 'Chat / Mensajes'}
+          aria-label="Abrir Chat Interno"
+        >
+          <MessageSquare className="w-4 h-4 shrink-0" style={{ color: unreadChatCount > 0 ? '#DC2626' : accent }} />
+          <span className="hidden md:inline font-sans text-xs">
+            {theme?.siteTexts?.chatNavBtnText || 'Chat'}
+          </span>
+          {unreadChatCount > 0 && (
+            <span className="px-1.5 py-0.2 rounded-full bg-red-600 text-white text-[10px] font-black leading-tight tabular-nums animate-pulse">
+              {unreadChatCount}
+            </span>
+          )}
+        </button>
+      )}
+
       {/* 3. User Dropdown Menu or INGRESAR Button */}
       {userSession ? (
         <div 
@@ -204,7 +239,7 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
               backgroundColor: isDarkHeader ? 'rgba(255, 255, 255, 0.1)' : '#FFFFFF',
               borderColor: isDarkHeader ? 'rgba(255, 255, 255, 0.25)' : '#DCD4C9',
             }}
-            className={`flex items-center justify-center rounded-xs border transition-all cursor-pointer select-none shadow-2xs ${
+            className={`relative flex items-center justify-center rounded-xs border transition-all cursor-pointer select-none shadow-2xs ${
               squareTrigger
                 ? 'w-9 h-9 sm:w-9 sm:h-9 p-0 aspect-square'
                 : 'gap-2 p-1.5 sm:px-2.5 sm:py-1.5'
@@ -212,6 +247,11 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
             title={`Cuenta: ${getDisplayName()} (${getRoleLabel()}) - Clic para ver opciones`}
             aria-expanded={dropdownOpen}
           >
+            {unreadChatCount > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-red-600 text-white text-[9px] font-black flex items-center justify-center border border-white shadow-xs">
+                {unreadChatCount}
+              </span>
+            )}
             {/* Avatar Circle */}
             <div 
               style={{ backgroundColor: `${accent}22`, borderColor: `${accent}66` }}
@@ -386,6 +426,26 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
                   </button>
                 )}
 
+                {/* 3C. STAFF AUTORIZADO: Acceso Directo a Costos & Finanzas */}
+                {(userSession.role === 'admin' || userSession.role === 'employee') && hasCostsAccess(userSession) && onOpenCosts && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDropdownOpen(false);
+                      onOpenCosts();
+                    }}
+                    className="w-full flex items-center justify-between px-3 py-2 text-left text-xs font-bold text-[#18231C] hover:bg-[#FAF8F5] rounded-xs transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Wallet className="w-4 h-4 text-[#18231C]" />
+                      <span>Costos & Finanzas</span>
+                    </div>
+                    <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded-xs bg-[#FAF8F5] text-[#18231C] border border-[#DCD4C9]">
+                      Liquidez
+                    </span>
+                  </button>
+                )}
+
                 {/* 4. CLIENT ONLY: Armador de Uniformes */}
                 {userSession.role === 'client' && onOpenUniformSimulator && (
                   <button
@@ -440,6 +500,28 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
                     <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded-xs bg-blue-600 text-white">
                       En Vivo
                     </span>
+                  </button>
+                )}
+
+                {/* 6B. TODOS LOS USUARIOS LOGUEADOS: Chat / Mensajes */}
+                {onOpenChat && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDropdownOpen(false);
+                      onOpenChat();
+                    }}
+                    className="w-full flex items-center justify-between px-3 py-2 text-left text-xs font-bold text-[#18231C] hover:bg-[#FAF8F5] rounded-xs transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2">
+                      <MessageSquare className="w-4 h-4 text-blue-600" />
+                      <span>{theme?.siteTexts?.chatNavBtnText || 'Chat / Mensajes'}</span>
+                    </div>
+                    {unreadChatCount > 0 && (
+                      <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full bg-red-600 text-white tabular-nums">
+                        +{unreadChatCount} {unreadChatCount === 1 ? 'NUEVO' : 'NUEVOS'}
+                      </span>
+                    )}
                   </button>
                 )}
 

@@ -10,7 +10,11 @@ import {
   EmployeeSizeEntry,
   Seller,
   EmployeeAccount,
-  ObservationHistoryEntry
+  ObservationHistoryEntry,
+  Product,
+  CRMOrderShortageItem,
+  CategoryHierarchyItem,
+  InternalChatThread
 } from '../../types';
 import { 
   subscribeToCRMOrders, 
@@ -35,7 +39,11 @@ import {
   recordAuditLog,
   subscribeToReadNotifications,
   saveReadNotifications,
+  saveCRMOrderShortage,
+  deleteCRMOrderShortage,
+  getChatParticipantKey,
 } from '../../services/firebase';
+import { isColorDark } from '../../context/ThemeContext';
 import { fixUtf8Encoding, sanitizeObjectEncoding } from '../../utils/encodingUtils';
 import { formatDateTime } from '../../utils/dateUtils';
 import { 
@@ -61,7 +69,6 @@ import {
   Phone,
   ArrowRight,
   ShieldCheck,
-  DollarSign,
   Download,
   Upload,
   FileSpreadsheet,
@@ -70,16 +77,27 @@ import {
   MapPin,
   ExternalLink,
   Eye,
-  Edit3
+  Edit3,
+  MessageSquarePlus,
+  PackageX,
+  Menu,
+  ChevronRight,
+  ChevronLeft,
+  ArrowLeft,
+  MessageSquare,
+  PanelLeftClose,
+  PanelLeftOpen
 } from 'lucide-react';
 import { exportOrdersToExcel, importOrdersFromExcel } from '../../utils/kanbanExcelUtils';
 import { normalizeCRMOrder, normalizeLeadVisit, normalizeSupplierOrder } from '../../utils/crmNormalizers';
+import { PamperoLogo } from '../PamperoLogo';
 import { CRMNotificationsModal, CRMNotificationItem } from './CRMNotificationsModal';
 import { CRMVisitsTab } from './CRMVisitsTab';
 import { CRMTasksTab } from './CRMTasksTab';
 import { CRMCalendarTab } from './CRMCalendarTab';
 import { CRMSupplierOrdersTab } from './CRMSupplierOrdersTab';
-import { CRMCostsTab } from './CRMCostsTab';
+import { CRMObservationsModal } from './CRMObservationsModal';
+import { CRMOrderShortagesModal } from './CRMOrderShortagesModal';
 
 interface CRMTabErrorBoundaryProps {
   tabKey: string;
@@ -147,6 +165,10 @@ interface CRMViewProps {
   userSession: UserSession | null;
   onClose: () => void;
   theme: ThemeConfig;
+  products?: Product[];
+  categories?: CategoryHierarchyItem[];
+  unreadChatThreads?: InternalChatThread[];
+  onOpenChat?: (threadId?: string) => void;
   onSetSession?: (session: UserSession) => void;
   onOpenAuth?: () => void;
 }
@@ -159,7 +181,17 @@ const STATUS_COLUMNS: { id: CRMOrderStatus; label: string; color: string; bgColo
   { id: 'entregado', label: 'Entregado / Cerrado', color: '#3B82F6', bgColor: '#EFF6FF' },
 ];
 
-export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, onSetSession, onOpenAuth }) => {
+export const CRMView: React.FC<CRMViewProps> = ({
+  userSession,
+  onClose,
+  theme,
+  products,
+  categories,
+  unreadChatThreads = [],
+  onOpenChat,
+  onSetSession,
+  onOpenAuth,
+}) => {
   const [orders, setOrders] = useState<CRMOrder[]>([]);
   const [visits, setVisits] = useState<LeadVisit[]>([]);
   const [supplierOrders, setSupplierOrders] = useState<SupplierOrder[]>([]);
@@ -266,17 +298,17 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
   const crmTabsStr = currentEmployee?.crmTabs?.join(',') || '';
   const crmTasksConfigured = Boolean(currentEmployee?.crmTasksConfigured);
   const crmCalendarConfigured = Boolean(currentEmployee?.crmCalendarConfigured);
-  const allowedCrmTabs: ('visits' | 'board' | 'tasks' | 'calendar' | 'suppliers' | 'costs')[] = React.useMemo(() => {
-    if (userSession?.role === 'admin') return ['visits', 'board', 'tasks', 'calendar', 'suppliers', 'costs'];
+  const allowedCrmTabs: ('visits' | 'board' | 'tasks' | 'calendar' | 'suppliers')[] = React.useMemo(() => {
+    if (userSession?.role === 'admin') return ['visits', 'board', 'tasks', 'calendar', 'suppliers'];
     if (currentEmployee?.crmTabs && Array.isArray(currentEmployee.crmTabs) && currentEmployee.crmTabs.length > 0) {
-      const nextTabs = [...currentEmployee.crmTabs];
+      const nextTabs = currentEmployee.crmTabs.filter((t) => t !== 'costs');
       if (!crmTasksConfigured && !nextTabs.includes('tasks')) {
         nextTabs.push('tasks');
       }
       if (!crmCalendarConfigured && !nextTabs.includes('calendar')) {
         nextTabs.push('calendar');
       }
-      return nextTabs as ('visits' | 'board' | 'tasks' | 'calendar' | 'suppliers' | 'costs')[];
+      return nextTabs as ('visits' | 'board' | 'tasks' | 'calendar' | 'suppliers')[];
     }
     return ['visits', 'board', 'tasks', 'calendar', 'suppliers'];
   }, [userSession?.role, crmTabsStr, crmTasksConfigured, crmCalendarConfigured]);
@@ -288,7 +320,30 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
     currentEmployee?.canControlTasks
   );
 
-  const [activeTab, setActiveTab] = useState<'visits' | 'board' | 'tasks' | 'calendar' | 'suppliers' | 'costs'>('visits');
+  const [activeTab, setActiveTab] = useState<'visits' | 'board' | 'tasks' | 'calendar' | 'suppliers'>('visits');
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [isDesktopSidebarCollapsed, setIsDesktopSidebarCollapsed] = useState(false);
+  const boardBodyScrollRef = React.useRef<HTMLDivElement>(null);
+  const boardTopScrollRef = React.useRef<HTMLDivElement>(null);
+  const isSyncingBoardScrollRef = React.useRef(false);
+  const [boardScrollContentWidth, setBoardScrollContentWidth] = useState(1400);
+
+  useEffect(() => {
+    if (activeTab !== 'board') return;
+    const bodyEl = boardBodyScrollRef.current;
+    if (!bodyEl) return;
+    const syncWidth = () => {
+      setBoardScrollContentWidth(Math.max(bodyEl.scrollWidth, 1100));
+    };
+    syncWidth();
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(syncWidth) : null;
+    ro?.observe(bodyEl);
+    window.addEventListener('resize', syncWidth);
+    return () => {
+      ro?.disconnect();
+      window.removeEventListener('resize', syncWidth);
+    };
+  }, [activeTab, companyColumns.length, isDesktopSidebarCollapsed]);
 
   useEffect(() => {
     if (allowedCrmTabs.length > 0 && !allowedCrmTabs.includes(activeTab)) {
@@ -369,10 +424,39 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
   const [showNotificationsModal, setShowNotificationsModal] = useState(false);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
   const [viewingOrder, setViewingOrder] = useState<CRMOrder | null>(null);
+  const [showObsModal, setShowObsModal] = useState(false);
+  const [showShortagesModal, setShowShortagesModal] = useState(false);
   const [selectedOrderForDetail, setSelectedOrderForDetail] = useState<CRMOrder | null>(null);
   const [excelNotice, setExcelNotice] = useState<string | null>(null);
   const [isExcelProcessing, setIsExcelProcessing] = useState(false);
   const fileInputOrdersRef = React.useRef<HTMLInputElement>(null);
+
+  const catalogProducts = React.useMemo<Product[]>(() => {
+    if (Array.isArray(products) && products.length > 0) return products;
+    try {
+      const raw = localStorage.getItem('pampero_catalog_products');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {}
+    return [];
+  }, [products]);
+
+  const knownSuppliers = React.useMemo<string[]>(() => {
+    const set = new Set<string>(['Macata', 'Pampero Central', 'Calzado Confort']);
+    supplierOrders.forEach((so) => {
+      if (so.supplierName) set.add(so.supplierName);
+    });
+    orders.forEach((o) => {
+      if (Array.isArray(o.shortages)) {
+        o.shortages.forEach((s) => {
+          if (s.supplier) set.add(s.supplier);
+        });
+      }
+    });
+    return Array.from(set);
+  }, [supplierOrders, orders]);
 
   const notifUserKey = (userSession?.email || userSession?.id || 'admin').toLowerCase().trim();
   const [readNotifIds, setReadNotifIds] = useState<string[]>([]);
@@ -676,8 +760,36 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
         });
     }
 
+    // 6. Mensajes sin leer en Chat Interno
+    const myParticipantKey = getChatParticipantKey(userSession);
+    if (Array.isArray(unreadChatThreads) && unreadChatThreads.length > 0 && myParticipantKey) {
+      unreadChatThreads.forEach((thread) => {
+        const unread = thread.unreadBy?.[myParticipantKey] || 0;
+        if (unread <= 0) return;
+        const otherKey = (thread.participantIds || []).find((id) => id !== myParticipantKey) || myParticipantKey;
+        const otherMeta = thread.participantMeta?.[otherKey];
+        const senderLabel = otherMeta?.name || thread.lastSenderName || 'Contacto';
+        const roleLabel =
+          otherMeta?.role === 'admin'
+            ? 'Administrador'
+            : otherMeta?.role === 'employee'
+              ? 'Empleado'
+              : 'Cliente';
+        items.unshift({
+          id: `chat-unread-${thread.id}-${thread.lastMessageAt || unread}`,
+          category: 'chat',
+          title: `Mensaje de ${senderLabel}`,
+          subtitle: thread.lastMessageText || 'Nuevo mensaje en el chat interno.',
+          meta: `${roleLabel} · ${unread} mensaje${unread === 1 ? '' : 's'} sin leer`,
+          badgeText: `Chat (${unread})`,
+          badgeClass: 'bg-blue-50 border-blue-300 text-blue-900',
+          chatThreadId: thread.id,
+        });
+      });
+    }
+
     return items;
-  }, [scopedOrdersForNotif, scopedVisitsForNotif, notifSettings]);
+  }, [scopedOrdersForNotif, scopedVisitsForNotif, notifSettings, unreadChatThreads, userSession]);
 
   const readNotifSet = React.useMemo(() => new Set(readNotifIds), [readNotifIds]);
   const unreadNotificationsCount = React.useMemo(
@@ -879,7 +991,7 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
             <LayoutDashboard className="w-7 h-7" />
           </div>
           <div>
-            <span className="text-[10px] font-black uppercase tracking-[0.25em] text-[#B9522F] block">
+            <span className="text-[10px] font-black uppercase tracking-[0.25em] text-[#6F6860] block">
               PORTAL INTERNO EXCLUSIVO
             </span>
             <h2 className="font-display text-2xl font-bold text-[#18231C] uppercase tracking-wider mt-1">
@@ -916,193 +1028,340 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
     );
   }
 
+  const crmNavItems: Array<{
+    key: 'visits' | 'board' | 'tasks' | 'calendar' | 'suppliers';
+    label: string;
+    category: string;
+    icon: any;
+  }> = [
+    {
+      key: 'visits',
+      label: theme?.siteTexts?.crmTabVisitsText || '1. Visitas Comerciales',
+      category: 'Embudo Comercial',
+      icon: Building2,
+    },
+    {
+      key: 'board',
+      label: theme?.siteTexts?.crmTabBoardText || '2. Seguimiento Empresas',
+      category: 'Embudo Comercial',
+      icon: LayoutDashboard,
+    },
+    {
+      key: 'tasks',
+      label: theme?.siteTexts?.crmTabTasksText || '3. Tareas',
+      category: 'Operación & Agenda',
+      icon: CheckSquare,
+    },
+    {
+      key: 'calendar',
+      label: theme?.siteTexts?.crmTabCalendarText || '4. Calendario',
+      category: 'Operación & Agenda',
+      icon: Calendar,
+    },
+    {
+      key: 'suppliers',
+      label: theme?.siteTexts?.crmTabSuppliersText || '5. Pedidos Proveedor',
+      category: 'Operación & Agenda',
+      icon: Truck,
+    },
+  ];
+  const visibleCrmNavItems = crmNavItems.filter((tab) => allowedCrmTabs.includes(tab.key));
+  const activeCrmMeta = visibleCrmNavItems.find((t) => t.key === activeTab) || visibleCrmNavItems[0] || crmNavItems[0];
+  const ActiveCrmIcon = activeCrmMeta.icon;
+  const crmNavGroups = ['Embudo Comercial', 'Operación & Agenda']
+    .map((groupName) => ({
+      title: groupName,
+      items: visibleCrmNavItems.filter((t) => t.category === groupName),
+    }))
+    .filter((g) => g.items.length > 0);
+
+  const st = theme?.siteTexts;
+  const sidebarBg = theme?.sidebarBgColor || theme?.primaryColor || '#18231C';
+  const isSidebarDark = isColorDark(sidebarBg);
+  const sidebarText = theme?.sidebarTextColor || (isSidebarDark ? '#DCD4C9' : '#18231C');
+  const sidebarActiveBg = theme?.sidebarActiveBgColor || (isSidebarDark ? '#2B3B30' : '#ECE5DC');
+  const sidebarAccent = theme?.sidebarAccentColor || theme?.accentColor || '#FDB813';
+  const sidebarMutedText = isSidebarDark ? '#A69E94' : '#6F6860';
+  const sidebarBorderClass = isSidebarDark ? 'border-white/10' : 'border-black/10';
+
   return (
-    <div className="flex flex-col min-h-[calc(100vh-80px)] bg-[#FAF8F5]">
-      {/* Top Bar Navigation (Two-tier professional SaaS header + single-row underline sub-tabs) */}
-      <header
-        className="border-b w-full shrink-0 transition-colors"
-        style={{
-          backgroundColor: theme?.crmHeaderBgColor || '#FFFFFF',
-          borderColor: theme?.crmHeaderBorderColor || '#DCD4C9',
-          color: theme?.crmHeaderTextColor || '#18231C',
-        }}
+    <div className="fixed inset-0 z-50 flex flex-col md:flex-row bg-[#FAF8F5] text-[#18231C] w-screen h-screen overflow-hidden animate-fadeIn font-sans">
+      {/* Mobile Sidebar Overlay */}
+      {isMobileSidebarOpen && (
+        <div
+          onClick={() => setIsMobileSidebarOpen(false)}
+          className="md:hidden fixed inset-0 bg-black/60 z-30 backdrop-blur-2xs"
+        />
+      )}
+
+      {/* SIDEBAR NAVIGATION (Unified & Collapsible) */}
+      <aside
+        style={{ backgroundColor: sidebarBg, color: isSidebarDark ? '#FFFFFF' : '#18231C' }}
+        className={`fixed md:static inset-y-0 left-0 z-40 flex flex-col h-full transition-all duration-200 ease-in-out shrink-0 ${
+          isMobileSidebarOpen ? 'translate-x-0 w-72 max-w-[85vw]' : '-translate-x-full md:translate-x-0'
+        } ${
+          isDesktopSidebarCollapsed
+            ? 'md:w-0 md:overflow-hidden md:border-r-0'
+            : 'md:w-72 border-r border-black/30'
+        }`}
       >
-        {/* Row 1: Brand Title + Operator + Notification Bell + Primary CTA + Back */}
-        <div className="w-full max-w-[1700px] mx-auto px-4 sm:px-6 pt-3 pb-2.5 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="p-1.5 rounded-xs bg-[#18231C] text-[#FDB813] shrink-0">
-              <LayoutDashboard className="w-4 h-4" />
-            </div>
-            <div>
+        <div className={`p-3.5 border-b ${sidebarBorderClass} flex items-center justify-between gap-2`}>
+          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+            <PamperoLogo
+              customUrl={theme?.customLogoUrl || theme?.logoUrl}
+              height={theme?.logoHeight ? Math.min(theme.logoHeight, 34) : 30}
+              size="sm"
+              onDarkBackground={isSidebarDark}
+              variant={isSidebarDark ? 'light' : 'dark'}
+              navBgColor={sidebarBg}
+            />
+            <div className="min-w-0 flex-1">
               <h2
-                className="font-display font-bold text-lg sm:text-xl uppercase tracking-wider leading-none"
-                style={{ color: theme?.crmHeaderTextColor || '#18231C' }}
+                style={{ color: sidebarAccent }}
+                className="font-display font-bold text-[13px] uppercase tracking-wide whitespace-normal leading-tight"
               >
-                {theme?.siteTexts?.crmTitle || 'Gestión Pampero'}
+                {st?.crmTitle || 'Gestión Pampero'}
               </h2>
-              <span className="text-[10px] font-semibold uppercase tracking-widest text-[#6F6860] hidden sm:block mt-0.5">
-                Centro Operativo Comercial
+              <span
+                style={{ color: sidebarText }}
+                className="text-[10px] opacity-80 block whitespace-normal leading-tight mt-0.5"
+              >
+                Gran Mendoza · Comercial
               </span>
             </div>
           </div>
+          <button
+            type="button"
+            onClick={() => setIsDesktopSidebarCollapsed(true)}
+            style={{ color: sidebarText }}
+            className="hidden md:inline-flex p-1.5 hover:bg-black/15 rounded-xs cursor-pointer shrink-0 transition-colors"
+            title="Ocultar barra lateral"
+          >
+            <PanelLeftClose className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsMobileSidebarOpen(false)}
+            style={{ color: sidebarText }}
+            className="md:hidden p-1.5 hover:bg-black/15 rounded-xs cursor-pointer shrink-0"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
 
-          <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap">
-            {/* Active staff switcher / identity badge */}
-            {userSession?.role === 'admin' && onSetSession ? (
-              <div className="flex items-center gap-1.5 text-xs bg-[#FAF8F5] border border-[#DCD4C9] px-2.5 py-1.5 rounded-xs">
-                <span className="text-[10px] text-[#8C827A] uppercase font-bold">Operador:</span>
-                <select
-                  value={activeStaffUser}
-                  onChange={(e) => {
-                    const name = e.target.value;
-                    const role = name.includes('Admin') ? 'admin' : 'employee';
-                    handleSwitchStaffRole(role, name);
-                  }}
-                  className="font-bold text-[#18231C] bg-transparent outline-none cursor-pointer text-xs"
-                  title="Simular vista de operador (Exclusivo Administrador)"
-                >
-                  <option value="Administrador General">Administrador General (Todo)</option>
-                  {sellersList.map((s) => (
-                    <option key={s.id} value={`${s.name} (${s.branch})`}>
-                      {s.name} ({s.branch})
-                    </option>
-                  ))}
-                </select>
+        <div className="flex-1 overflow-y-auto px-3 py-4 space-y-5 scrollbar-thin">
+          {crmNavGroups.map((grp) => (
+            <div key={grp.title} className="space-y-1.5">
+              <span
+                style={{ color: sidebarMutedText }}
+                className="px-3 text-[10px] font-black uppercase tracking-[0.18em] block"
+              >
+                {grp.title}
+              </span>
+              <div className="space-y-0.5">
+                {grp.items.map((tab) => {
+                  const isSelected = activeTab === tab.key;
+                  const TabIcon = tab.icon;
+                  return (
+                    <button
+                      key={tab.key}
+                      type="button"
+                      onClick={() => {
+                        setActiveTab(tab.key);
+                        setIsMobileSidebarOpen(false);
+                      }}
+                      style={
+                        isSelected
+                          ? { backgroundColor: sidebarActiveBg, color: sidebarAccent }
+                          : { color: sidebarText }
+                      }
+                      className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xs text-xs font-bold transition-all cursor-pointer group text-left ${
+                        isSelected ? 'shadow-xs' : 'hover:bg-black/10'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <TabIcon
+                          style={{ color: isSelected ? sidebarAccent : sidebarMutedText }}
+                          className="w-4 h-4 shrink-0 transition-colors"
+                        />
+                        <span className="truncate">{tab.label}</span>
+                      </div>
+                      {isSelected && (
+                        <span
+                          style={{ backgroundColor: sidebarAccent }}
+                          className="w-1.5 h-1.5 rounded-full shrink-0"
+                        />
+                      )}
+                    </button>
+                  );
+                })}
               </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Sidebar Bottom Operator & Hub Return */}
+        <div className={`p-3 border-t ${sidebarBorderClass} space-y-2.5 bg-black/15`}>
+          <div className={`px-2.5 py-2 rounded-xs bg-white/5 border ${sidebarBorderClass} space-y-1`}>
+            <span
+              style={{ color: sidebarMutedText }}
+              className="text-[9px] font-bold uppercase tracking-wider block"
+            >
+              Operador Activo
+            </span>
+            {userSession?.role === 'admin' && onSetSession ? (
+              <select
+                value={activeStaffUser}
+                onChange={(e) => {
+                  const name = e.target.value;
+                  const role = name.includes('Admin') ? 'admin' : 'employee';
+                  handleSwitchStaffRole(role, name);
+                }}
+                style={{ color: isSidebarDark ? '#FFFFFF' : '#18231C' }}
+                className="w-full font-bold bg-transparent outline-none cursor-pointer text-xs"
+                title="Simular vista de operador (Exclusivo Administrador)"
+              >
+                <option value="Administrador General" className="text-[#18231C]">
+                  Administrador General (Todo)
+                </option>
+                {sellersList.map((s) => (
+                  <option key={s.id} value={`${s.name} (${s.branch})`} className="text-[#18231C]">
+                    {s.name} ({s.branch})
+                  </option>
+                ))}
+              </select>
             ) : (
-              <div className="flex items-center gap-1.5 text-xs bg-[#FAF8F5] border border-[#DCD4C9] px-2.5 py-1.5 rounded-xs">
-                <span className="text-[10px] text-[#8C827A] uppercase font-bold">Operador:</span>
-                <span className="font-bold text-[#18231C] text-xs">{activeStaffUser}</span>
-                {effectiveSellerRole === 'encargado' ? (
-                  <span className="text-[10px] bg-purple-50 text-purple-900 border border-purple-200 px-1.5 py-0.2 rounded-xs font-bold">
-                    Encargado · Todos los Locales
-                  </span>
-                ) : (
-                  assignedBranch && (
-                    <span className="text-[10px] bg-blue-50 text-blue-900 border border-blue-200 px-1.5 py-0.2 rounded-xs font-semibold">
-                      {assignedBranch}
-                    </span>
-                  )
-                )}
+              <div>
+                <span
+                  style={{ color: isSidebarDark ? '#FFFFFF' : '#18231C' }}
+                  className="text-xs font-bold truncate block"
+                >
+                  {activeStaffUser}
+                </span>
+                <span style={{ color: sidebarText }} className="text-[10px] opacity-80 block truncate">
+                  {effectiveSellerRole === 'encargado'
+                    ? 'Encargado · Todos los Locales'
+                    : assignedBranch || 'Gran Mendoza'}
+                </span>
               </div>
             )}
+          </div>
 
-            {/* Notifications Bell (Unread counter only) */}
+          <button
+            type="button"
+            onClick={onClose}
+            style={{ backgroundColor: sidebarActiveBg, color: isSidebarDark ? '#FAF8F5' : '#18231C' }}
+            className="w-full py-2 px-3 hover:opacity-90 rounded-xs text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-opacity cursor-pointer"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span>{st?.crmBackBtnText || 'Volver al Hub'}</span>
+          </button>
+        </div>
+      </aside>
+
+      {/* MAIN WORKSPACE CONTENT AREA */}
+      <div className="flex-1 flex flex-col h-full min-w-0 bg-[#FAF8F5]">
+        {/* Top White Workspace Header */}
+        <header className="bg-white border-b border-[#DCD4C9] px-4 sm:px-6 py-3 flex items-center justify-between gap-3 shrink-0 shadow-2xs z-10">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <button
+              type="button"
+              onClick={() => setIsMobileSidebarOpen(true)}
+              className="md:hidden p-2 text-[#18231C] hover:bg-[#FAF8F5] rounded-xs cursor-pointer"
+              title="Abrir menú lateral"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+
+            {isDesktopSidebarCollapsed && (
+              <button
+                type="button"
+                onClick={() => setIsDesktopSidebarCollapsed(false)}
+                className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-[#FAF8F5] hover:bg-[#ECE5DC] border border-[#DCD4C9] text-[#18231C] rounded-xs text-xs font-bold cursor-pointer transition-colors shrink-0"
+                title="Mostrar barra lateral"
+              >
+                <PanelLeftOpen className="w-4 h-4" />
+                <span>Menú</span>
+              </button>
+            )}
+
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 text-[11px] text-[#6F6860] uppercase font-bold tracking-wider">
+                <span>{st?.crmTitle || 'Gestión Pampero'}</span>
+                <ChevronRight className="w-3 h-3 text-[#A69E94]" />
+                <span className="text-[#18231C]">{activeCrmMeta.category}</span>
+              </div>
+              <h1 className="font-display font-bold text-lg sm:text-xl uppercase tracking-wider text-[#18231C] flex items-center gap-2 mt-0.5 leading-none truncate">
+                <ActiveCrmIcon className="w-5 h-5 text-[#18231C] shrink-0" />
+                <span className="truncate">{activeCrmMeta.label}</span>
+              </h1>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap shrink-0">
+            {onOpenChat && (
+              <button
+                type="button"
+                onClick={() => onOpenChat()}
+                className="relative px-3 py-1.5 bg-[#FAF8F5] hover:bg-[#ECE5DC] border border-[#DCD4C9] rounded-xs text-[#18231C] transition-colors cursor-pointer flex items-center gap-1.5 text-xs font-bold"
+                title="Chat Interno"
+              >
+                <MessageSquare className="w-3.5 h-3.5 text-[#18231C]" />
+                <span className="hidden sm:inline">{st?.chatNavBtnText || 'Chat'}</span>
+                {unreadChatThreads.length > 0 && (
+                  <span className="px-1.5 py-0.5 bg-blue-600 text-white rounded-xs text-[10px] font-mono font-black tabular-nums leading-none">
+                    {unreadChatThreads.length}
+                  </span>
+                )}
+              </button>
+            )}
+
             <button
               type="button"
               onClick={() => setShowNotificationsModal(true)}
-              className="relative p-2 bg-[#FAF8F5] hover:bg-[#ECE5DC] border border-[#DCD4C9] rounded-xs text-[#18231C] transition-colors cursor-pointer"
+              className="relative px-3 py-1.5 bg-[#FAF8F5] hover:bg-[#ECE5DC] border border-[#DCD4C9] rounded-xs text-[#18231C] transition-colors cursor-pointer flex items-center gap-1.5 text-xs font-bold"
               title="Notificaciones del Equipo"
             >
-              <Bell className="w-4 h-4 text-[#18231C]" />
+              <Bell className="w-3.5 h-3.5 text-[#18231C]" />
+              <span className="hidden sm:inline">{st?.crmNotifBtnText || 'Notificaciones'}</span>
               {unreadNotificationsCount > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 bg-red-600 text-white rounded-full text-[10px] font-black tabular-nums flex items-center justify-center border border-white">
+                <span className="px-1.5 py-0.5 bg-red-600 text-white rounded-xs text-[10px] font-mono font-black tabular-nums leading-none">
                   {unreadNotificationsCount}
                 </span>
               )}
             </button>
 
-            {/* New Company / Order button */}
             {(activeTab === 'visits' || activeTab === 'board') && (
               <button
                 type="button"
                 onClick={() => setShowNewOrderModal(true)}
-                style={{
-                  backgroundColor: theme?.crmButtonBg || theme?.primaryColor || '#18231C',
-                  color: theme?.crmButtonTextColor || '#FFFFFF',
-                }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xs text-xs font-bold hover:brightness-110 transition-colors cursor-pointer"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-[#18231C] hover:bg-black text-[#FDB813] rounded-xs text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer whitespace-nowrap"
               >
                 <Plus className="w-3.5 h-3.5" />
-                <span>{theme?.siteTexts?.crmNewOrderBtnText || 'Nueva Empresa / Pedido'}</span>
+                <span>{st?.crmNewOrderBtnText || 'Nueva Empresa / Pedido'}</span>
               </button>
             )}
 
             <button
               type="button"
               onClick={onClose}
-              className="px-3 py-1.5 rounded-xs border border-[#DCD4C9] bg-white hover:bg-[#FAF8F5] text-[#18231C] text-xs font-bold transition-colors cursor-pointer"
+              className="px-3 py-1.5 rounded-xs border border-[#DCD4C9] bg-[#FAF8F5] hover:bg-[#ECE5DC] text-[#18231C] text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer flex items-center gap-1.5 whitespace-nowrap"
             >
-              {theme?.siteTexts?.crmBackBtnText || 'Volver al menú principal'}
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">{st?.crmBackBtnText || 'Volver al Hub'}</span>
             </button>
           </div>
-        </div>
+        </header>
 
-        {/* Row 2: Clean Single-Row Horizontal Underline Tab Bar */}
-        <nav
-          aria-label="Módulos de Gestión CRM"
-          className="w-full border-t border-[#DCD4C9]/70 bg-[#FAF8F5]/75"
-        >
-          <div className="w-full max-w-[1700px] mx-auto px-4 sm:px-6 flex items-center gap-1 sm:gap-2 overflow-x-auto no-scrollbar">
-            {[
-              {
-                key: 'visits' as const,
-                label: theme?.siteTexts?.crmTabVisitsText || '1. Visitas Comerciales',
-                icon: Building2,
-              },
-              {
-                key: 'board' as const,
-                label: theme?.siteTexts?.crmTabBoardText || '2. Seguimiento Empresas',
-                icon: LayoutDashboard,
-              },
-              {
-                key: 'tasks' as const,
-                label: theme?.siteTexts?.crmTabTasksText || '3. Tareas',
-                icon: CheckSquare,
-              },
-              {
-                key: 'calendar' as const,
-                label: theme?.siteTexts?.crmTabCalendarText || '4. Calendario',
-                icon: Calendar,
-              },
-              {
-                key: 'suppliers' as const,
-                label: theme?.siteTexts?.crmTabSuppliersText || 'Pedidos Proveedor',
-                icon: Truck,
-              },
-              {
-                key: 'costs' as const,
-                label: theme?.siteTexts?.crmTabCostsText || 'Control de Costos',
-                icon: DollarSign,
-              },
-            ]
-              .filter((tab) => allowedCrmTabs.includes(tab.key))
-              .map((tab) => {
-                const Icon = tab.icon;
-                const isActive = activeTab === tab.key;
-                return (
-                  <button
-                    key={tab.key}
-                    type="button"
-                    onClick={() => setActiveTab(tab.key)}
-                    className={`px-3 sm:px-3.5 py-2.5 text-xs font-bold uppercase tracking-wider border-b-2 transition-colors cursor-pointer flex items-center gap-2 whitespace-nowrap shrink-0 ${
-                      isActive
-                        ? 'border-[#B9522F] text-[#18231C] bg-white'
-                        : 'border-transparent text-[#6F6860] hover:text-[#18231C] hover:bg-white/60'
-                    }`}
-                  >
-                    <Icon
-                      className={`w-3.5 h-3.5 shrink-0 ${
-                        isActive ? 'text-[#B9522F]' : 'text-[#8C827A]'
-                      }`}
-                    />
-                    <span>{tab.label}</span>
-                  </button>
-                );
-              })}
-          </div>
-        </nav>
-      </header>
-
-      {/* Main Content Area */}
-      <div className="flex-1 overflow-auto">
-        <div className="w-full max-w-[1700px] mx-auto p-4 sm:p-6 h-full flex flex-col">
+        {/* Main Content Viewport */}
+        <div className="flex-1 overflow-y-scroll min-w-0">
+          <div className="w-full max-w-[1700px] mx-auto p-4 sm:p-6 min-h-full flex flex-col">
         {/* === TAB 1: KANBAN BOARD === */}
         {activeTab === 'board' && (
           <div className="flex flex-col h-full space-y-4">
             {/* Phase 1 User Request: Notificación visual de nuevo pedido para cotizar recibido */}
             {orders.filter((o) => (o.columnId || o.status) === 'cotizacion').length > 0 && (
-              <div className="bg-amber-50 border-l-4 border-[#FDB813] p-3.5 rounded-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-amber-950 shadow-2xs animate-fadeIn">
+              <div className="bg-amber-50/70 border border-[#FDB813]/70 p-3.5 rounded-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-amber-950 shadow-2xs animate-fadeIn">
                 <div className="flex items-center gap-2.5">
                   <div className="p-2 bg-[#FDB813] text-[#18231C] rounded-xs font-black">
                     <Sparkles className="w-4 h-4" />
@@ -1271,25 +1530,25 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
                 <button
                   type="button"
                   onClick={handleExportOrders}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xs text-xs font-bold transition-colors cursor-pointer shadow-xs"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#FAF8F5] hover:bg-[#ECE5DC] border border-[#DCD4C9] text-[#18231C] rounded-xs text-xs font-bold transition-colors cursor-pointer"
                   title="Descargar todas las tarjetas actuales en archivo Excel"
                 >
-                  <Download className="w-3.5 h-3.5" />
+                  <Download className="w-3.5 h-3.5 text-[#18231C]" />
                   <span>Descargar Excel</span>
                 </button>
                 <button
                   type="button"
                   disabled={isExcelProcessing}
                   onClick={() => fileInputOrdersRef.current?.click()}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#FAF8F5] hover:bg-[#ECE5DC] border border-[#DCD4C9] text-[#18231C] rounded-xs text-xs font-bold transition-colors cursor-pointer shadow-xs disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#FAF8F5] hover:bg-[#ECE5DC] border border-[#DCD4C9] text-[#18231C] rounded-xs text-xs font-bold transition-colors cursor-pointer disabled:opacity-50"
                   title="Subir archivo Excel para actualizar estados y datos de las tarjetas masivamente en Firestore"
                 >
-                  <Upload className="w-3.5 h-3.5 text-emerald-700" />
+                  <Upload className="w-3.5 h-3.5 text-[#18231C]" />
                   <span>{isExcelProcessing ? 'Procesando...' : 'Subir Excel'}</span>
                 </button>
               </div>
 
-              <div className="ml-auto text-[10px] font-bold text-[#8C827A] uppercase">
+              <div className="ml-auto text-[10px] font-bold text-[#8C827A] uppercase tabular-nums">
                 {filteredOrders.length} pedidos mostrados
               </div>
             </div>
@@ -1304,15 +1563,108 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
                 <button
                   type="button"
                   onClick={() => setExcelNotice(null)}
-                  className="text-emerald-700 hover:text-emerald-900 font-bold text-xs"
+                  className="text-emerald-700 hover:text-emerald-900 font-bold text-xs cursor-pointer"
                 >
                   ✕
                 </button>
               </div>
             )}
 
-            {/* Kanban Board Columns - Grid perfectamente alineado sin desplazamiento */}
-            <div className="flex-1 overflow-x-auto pb-4">
+            {/* Top Dynamic Navigation & Synchronized Horizontal Scrollbar for Kanban */}
+            <div className="bg-white border border-[#DCD4C9] rounded-xs px-3 py-2 space-y-1.5 shadow-2xs">
+              <div className="flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    boardBodyScrollRef.current?.scrollBy({ left: -340, behavior: 'smooth' })
+                  }
+                  className="p-1.5 bg-[#FAF8F5] hover:bg-[#ECE5DC] border border-[#DCD4C9] rounded-xs text-[#18231C] cursor-pointer shrink-0 transition-colors"
+                  title="Desplazar tablero hacia la izquierda"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+
+                <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar flex-1 py-0.5">
+                  {companyColumns.map((col) => {
+                    const colCount = filteredOrders.filter((o) => {
+                      const effectiveColId = (o as any).columnId || o.status || companyColumns[0]?.id;
+                      if (effectiveColId === col.id) return true;
+                      const existsInBoard = companyColumns.some((c) => c.id === effectiveColId);
+                      return !existsInBoard && col.id === companyColumns[0]?.id;
+                    }).length;
+                    return (
+                      <button
+                        key={col.id}
+                        type="button"
+                        onClick={() => {
+                          const target = boardBodyScrollRef.current?.querySelector(
+                            `[data-board-col-id="${col.id}"]`
+                          ) as HTMLElement | null;
+                          if (target && boardBodyScrollRef.current) {
+                            target.scrollIntoView({ behavior: 'smooth', inline: 'start', block: 'nearest' });
+                          }
+                        }}
+                        className="px-2.5 py-1 bg-[#FAF8F5] hover:bg-[#ECE5DC] border border-[#DCD4C9] rounded-xs text-[11px] font-bold text-[#18231C] flex items-center gap-1.5 shrink-0 cursor-pointer transition-colors"
+                      >
+                        <span
+                          className="w-2 h-2 rounded-full shrink-0"
+                          style={{ backgroundColor: col.color }}
+                        />
+                        <span className="truncate max-w-[140px]">{fixUtf8Encoding(col.label)}</span>
+                        <span className="px-1 bg-white border border-[#DCD4C9] rounded-xs text-[10px] font-mono tabular-nums">
+                          {colCount}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    boardBodyScrollRef.current?.scrollBy({ left: 340, behavior: 'smooth' })
+                  }
+                  className="p-1.5 bg-[#FAF8F5] hover:bg-[#ECE5DC] border border-[#DCD4C9] rounded-xs text-[#18231C] cursor-pointer shrink-0 transition-colors"
+                  title="Desplazar tablero hacia la derecha"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div
+                ref={boardTopScrollRef}
+                onScroll={() => {
+                  if (isSyncingBoardScrollRef.current) return;
+                  if (boardBodyScrollRef.current && boardTopScrollRef.current) {
+                    isSyncingBoardScrollRef.current = true;
+                    boardBodyScrollRef.current.scrollLeft = boardTopScrollRef.current.scrollLeft;
+                    requestAnimationFrame(() => {
+                      isSyncingBoardScrollRef.current = false;
+                    });
+                  }
+                }}
+                className="overflow-x-auto overflow-y-hidden h-3 bg-[#FAF8F5] rounded-xs border border-[#ECE5DC]"
+                title="Barra de desplazamiento horizontal del tablero"
+              >
+                <div style={{ width: `${boardScrollContentWidth}px`, height: '1px' }} />
+              </div>
+            </div>
+
+            {/* Kanban Board Columns */}
+            <div
+              ref={boardBodyScrollRef}
+              onScroll={() => {
+                if (isSyncingBoardScrollRef.current) return;
+                if (boardTopScrollRef.current && boardBodyScrollRef.current) {
+                  isSyncingBoardScrollRef.current = true;
+                  boardTopScrollRef.current.scrollLeft = boardBodyScrollRef.current.scrollLeft;
+                  requestAnimationFrame(() => {
+                    isSyncingBoardScrollRef.current = false;
+                  });
+                }
+              }}
+              className="flex-1 overflow-x-auto pb-4"
+            >
               <div 
                 className="grid gap-4 min-w-[1100px]"
                 style={{ gridTemplateColumns: `repeat(${companyColumns.length}, minmax(260px, 1fr))` }}
@@ -1329,29 +1681,26 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
                   return (
                     <div
                       key={col.id}
-                      className={`rounded-xs border flex flex-col min-h-[520px] transition-colors ${
+                      data-board-col-id={col.id}
+                      className={`rounded-sm border flex flex-col min-h-[520px] transition-colors ${
                         isDragOver
-                          ? 'border-[#B9522F] bg-[#B9522F]/5'
-                          : 'border-[#DCD4C9]/80 bg-[#ECE5DC]/30'
+                          ? 'border-[#18231C] bg-[#18231C]/5'
+                          : 'border-[#DCD4C9] bg-[#ECE5DC]/35'
                       }`}
                       onDragOver={(e) => handleDragOver(e, col.id)}
                       onDragLeave={handleDragLeave}
                       onDrop={(e) => handleDrop(e, col.id as CRMOrderStatus)}
                     >
-                      {/* Column Header */}
-                      <div
-                        className="p-3 border-b border-[#DCD4C9] rounded-t-xs font-bold text-xs uppercase text-[#18231C] flex justify-between items-center bg-white"
-                        style={{
-                          borderLeftColor: col.color,
-                          borderLeftWidth: '4px',
-                          borderTop: `2px solid ${col.color}40`,
-                        }}
-                      >
-                        <span>{fixUtf8Encoding(col.label)}</span>
-                        <span
-                          className="px-2 py-0.5 rounded-full text-[10px] font-black"
-                          style={{ backgroundColor: col.color + '22', color: col.color }}
-                        >
+                      {/* Clean Column Header */}
+                      <div className="px-3.5 py-2.5 border-b border-[#DCD4C9] rounded-t-sm font-bold text-xs uppercase tracking-wider text-[#18231C] flex justify-between items-center bg-white">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span
+                            className="w-2.5 h-2.5 rounded-full shrink-0"
+                            style={{ backgroundColor: col.color }}
+                          />
+                          <span className="truncate">{fixUtf8Encoding(col.label)}</span>
+                        </div>
+                        <span className="px-2 py-0.5 rounded-xs bg-[#FAF8F5] border border-[#DCD4C9] text-[#18231C] text-[11px] font-mono font-bold tabular-nums shrink-0">
                           {columnOrders.length}
                         </span>
                       </div>
@@ -1372,18 +1721,15 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
                                 draggable
                                 onDragStart={(e) => handleDragStart(e, order.id)}
                                 onClick={() => setViewingOrder(order)}
-                                style={{
-                                  backgroundColor: theme.crmCardBgColor || '#FFFFFF',
-                                  borderColor: isDelayed ? '#FCA5A5' : (theme.crmCardBorderColor || '#DCD4C9'),
-                                  color: theme.crmCardTextColor || '#18231C',
-                                }}
-                                className="rounded-xs px-3 py-2 border hover:border-[#18231C] shadow-2xs transition-all cursor-pointer flex items-center justify-between gap-2 select-none"
+                                className={`bg-white rounded-sm px-3 py-2 border hover:border-[#18231C] shadow-2xs transition-all cursor-pointer flex items-center justify-between gap-2 select-none ${
+                                  isDelayed ? 'border-rose-300' : 'border-[#DCD4C9]'
+                                }`}
                               >
                                 <div className="min-w-0 flex-1">
                                   <span className="font-bold text-xs text-[#18231C] block truncate uppercase">
                                     {fixUtf8Encoding(order.clientName)}
                                   </span>
-                                  <span className="text-[9px] font-mono text-[#6F6860] block truncate">
+                                  <span className="text-[10px] font-mono text-[#6F6860] block truncate">
                                     {order.trackingCode || order.orderNumber || `#${order.id.slice(-6)}`}
                                   </span>
                                 </div>
@@ -1393,7 +1739,7 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
                                     e.stopPropagation();
                                     setViewingOrder(order);
                                   }}
-                                  className="p-1.5 hover:bg-amber-50 rounded-xs text-[#18231C] border border-transparent hover:border-amber-300 cursor-pointer shrink-0"
+                                  className="p-1.5 bg-[#FAF8F5] hover:bg-[#ECE5DC] rounded-xs text-[#18231C] border border-[#DCD4C9] cursor-pointer shrink-0"
                                   title="Ver ficha completa"
                                 >
                                   <Eye className="w-3.5 h-3.5" />
@@ -1402,159 +1748,153 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
                             );
                           }
 
+                          const hasCalmDetails = Boolean(
+                            order.companyLocation ||
+                            order.locationUrl ||
+                            order.blockReason ||
+                            order.observations ||
+                            order.reminderDate
+                          );
+
                           return (
                             <div
                               key={order.id}
                               draggable
                               onDragStart={(e) => handleDragStart(e, order.id)}
                               onClick={() => setViewingOrder(order)}
-                              style={{
-                                backgroundColor: theme.crmCardBgColor || '#FFFFFF',
-                                borderColor: isDelayed ? '#FCA5A5' : (theme.crmCardBorderColor || '#DCD4C9'),
-                                color: theme.crmCardTextColor || '#18231C',
-                              }}
-                              className={`p-3 rounded-xs border shadow-xs cursor-grab active:cursor-grabbing hover:shadow-md transition-all select-none overflow-hidden ${
+                              className={`p-3 rounded-sm border bg-white shadow-2xs cursor-grab active:cursor-grabbing hover:shadow-sm transition-all select-none space-y-2 ${
                                 isDelayed
-                                  ? 'border-l-4 border-l-red-500 bg-red-50/20'
-                                  : 'hover:border-[#B9522F]'
+                                  ? 'border-rose-300 bg-rose-50/15 hover:border-rose-500'
+                                  : 'border-[#DCD4C9] hover:border-[#18231C]'
                               }`}
                             >
-                              {/* Card Top */}
-                              <div className="flex justify-between items-start gap-1.5 mb-1.5">
-                                <div className="flex items-center gap-1 min-w-0">
+                              {/* Line 1: Tracking Code + Quiet Status Flags */}
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-1.5 min-w-0">
                                   {order.clientType === 'empresa' ? (
-                                    <Building2 className="w-3 h-3 text-amber-600 shrink-0" />
+                                    <Building2 className="w-3 h-3 text-[#6F6860] shrink-0" />
                                   ) : (
-                                    <User className="w-3 h-3 text-emerald-600 shrink-0" />
+                                    <User className="w-3 h-3 text-[#6F6860] shrink-0" />
                                   )}
-                                  {isValidStructuredTrackingCode(order.trackingCode) ? (
-                                    <span
-                                      className="text-[10px] font-black font-mono px-1.5 py-0.5 rounded-xs bg-[#18231C] text-[#FDB813] truncate"
-                                      title={`Código de Seguimiento: ${order.trackingCode}`}
-                                    >
-                                      {order.trackingCode}
-                                    </span>
-                                  ) : (
-                                    <span className="text-[11px] font-black font-mono truncate">
-                                      {order.trackingCode || order.orderNumber || `#${order.id.slice(-6)}`}
-                                    </span>
-                                  )}
+                                  <span
+                                    className={`text-[10px] font-mono font-bold truncate ${
+                                      isValidStructuredTrackingCode(order.trackingCode)
+                                        ? 'px-1.5 py-0.5 rounded-xs bg-[#18231C] text-[#FDB813]'
+                                        : 'text-[#6F6860]'
+                                    }`}
+                                    title={order.trackingCode ? `Código: ${order.trackingCode}` : undefined}
+                                  >
+                                    {order.trackingCode || order.orderNumber || `#${order.id.slice(-6)}`}
+                                  </span>
                                 </div>
-                                <div className="flex items-center gap-1">
+
+                                <div className="flex items-center gap-1.5 text-[10px] font-semibold shrink-0">
                                   {order.quotePdfUrl && (
-                                    <span 
-                                      className="text-[9px] font-bold px-1 py-0.2 bg-purple-50 text-purple-700 border border-purple-200 rounded-xs flex items-center gap-0.5"
-                                      title="Cotización oficial en PDF adjunta"
-                                    >
-                                      📄 PDF
+                                    <span className="text-[#4A453F]" title="Cotización oficial en PDF adjunta">
+                                      PDF
                                     </span>
                                   )}
                                   {order.clientApprovalStatus === 'aprobada' && (
-                                    <span className="text-[9px] font-bold px-1 py-0.2 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-xs">
-                                      ✓ Aprobada
-                                    </span>
+                                    <span className="text-emerald-700 font-bold">✓ Aprobada</span>
                                   )}
                                   {order.clientApprovalStatus === 'rechazada' && (
-                                    <span className="text-[9px] font-bold px-1 py-0.2 bg-red-50 text-red-700 border border-red-200 rounded-xs">
-                                      ✕ Rechazada
-                                    </span>
+                                    <span className="text-rose-700 font-bold">✕ Rechazada</span>
                                   )}
                                   {isDelayed && (
-                                    <span className="text-[9px] font-bold px-1.5 py-0.5 bg-red-100 text-red-700 rounded-xs uppercase flex items-center gap-0.5 animate-pulse">
-                                      <AlertTriangle className="w-2.5 h-2.5" />
+                                    <span className="text-rose-700 font-bold tabular-nums">
                                       {daysOld}d demorado
                                     </span>
                                   )}
                                 </div>
                               </div>
 
-                              {/* Client Name */}
-                              <h4 className="font-bold text-sm text-[#18231C] leading-tight">
-                                {fixUtf8Encoding(order.clientName)}
-                              </h4>
-                              <p className="text-[11px] text-[#6F6860] mt-0.5">
-                                {order.totalUnits} prendas
-                              </p>
-
-                              {/* Ubicación de entrega / empresa */}
-                              {(order.companyLocation || order.locationUrl) && (
-                                <div className="mt-1.5 text-[10px] bg-blue-50/80 text-blue-950 px-2 py-1 rounded-xs border border-blue-200 flex items-center justify-between gap-1.5">
-                                  <span className="truncate flex items-center gap-1">
-                                    <MapPin className="w-3 h-3 text-blue-700 shrink-0" />
-                                    <span>{fixUtf8Encoding(order.companyLocation || 'Ubicación cargada')}</span>
-                                  </span>
-                                  {order.locationUrl && (
-                                    <a
-                                      href={order.locationUrl}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      onClick={(e) => e.stopPropagation()}
-                                      className="text-blue-700 hover:underline font-bold shrink-0 flex items-center gap-0.5"
-                                    >
-                                      <span>Mapa</span>
-                                      <ExternalLink className="w-2.5 h-2.5" />
-                                    </a>
-                                  )}
-                                </div>
-                              )}
-
-                              {/* Block Reason */}
-                              {order.blockReason && (
-                                <div className="mt-2 text-[10px] bg-red-50 text-red-700 p-1.5 rounded-xs font-medium border border-red-200">
-                                  ⚠ Bloqueado: {fixUtf8Encoding(order.blockReason)}
-                                </div>
-                              )}
-
-                              {/* Observations */}
-                              {order.observations && !order.blockReason && (
-                                <div className="mt-2 text-[10px] bg-amber-50 text-amber-800 p-1.5 rounded-xs">
-                                  {order.observationDate ? `[${order.observationDate}] ` : ''}
-                                  {fixUtf8Encoding(order.observations.slice(0, 80))}
-                                  {order.observations.length > 80 ? '...' : ''}
-                                </div>
-                              )}
-
-                              {/* Reminder Badge */}
-                              {order.reminderDate && (
-                                <div className="mt-1.5 text-[10px] text-amber-950 bg-amber-100/80 px-2 py-1 rounded-xs border border-amber-300 flex items-center gap-1 font-bold">
-                                  <Bell className="w-3 h-3 text-[#B9522F] shrink-0" />
+                              {/* Line 2: Client Title + Single Summary Row */}
+                              <div>
+                                <h4 className="font-bold text-sm text-[#18231C] leading-snug">
+                                  {fixUtf8Encoding(order.clientName)}
+                                </h4>
+                                <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-[#6F6860]">
                                   <span className="truncate">
-                                    Recordatorio: {order.reminderDate}{order.reminderTime ? ` ${order.reminderTime}hs` : ''}
-                                  </span>
-                                </div>
-                              )}
-
-                              {/* Card Footer */}
-                              <div className="mt-2.5 flex justify-between items-center border-t border-[#ECE5DC] pt-2">
-                                <div className="flex items-center gap-1.5">
-                                  <Clock className="w-3 h-3 text-[#8C827A]" />
-                                  <span className="text-[10px] font-bold text-[#8C827A]">
+                                    <strong className="text-[#18231C] font-semibold tabular-nums">
+                                      {order.totalUnits} u.
+                                    </strong>
+                                    {' · '}
                                     {fixUtf8Encoding(order.seller || 'Sin asignar')}
+                                    {order.branch ? ` · ${fixUtf8Encoding(order.branch)}` : ''}
                                   </span>
-                                  {order.branch && (
-                                    <span className="text-[9px] px-1 py-0.2 rounded-xs bg-[#FAF8F5] border border-[#DCD4C9] text-[#6F6860]">
-                                      {fixUtf8Encoding(order.branch)}
-                                    </span>
-                                  )}
+                                  <span className="font-mono font-bold text-[#18231C] tabular-nums shrink-0">
+                                    $ {(order.totalEstimated || 0).toLocaleString('es-AR')}
+                                  </span>
                                 </div>
-                                <span className="font-bold text-emerald-700 text-sm">
-                                  $ {(order.totalEstimated || 0).toLocaleString('es-AR')}
-                                </span>
                               </div>
 
-                              {/* Card Action Shortcuts */}
-                              <div className="mt-2 pt-1.5 border-t border-dashed border-[#ECE5DC] flex flex-wrap items-center justify-between gap-1.5 min-w-0">
-                                <div className="flex items-center gap-1 shrink-0">
+                              {/* Line 3: Single Quiet Neutral Details Block (Preserves ALL info cleanly) */}
+                              {hasCalmDetails && (
+                                <div className="bg-[#FAF8F5] border border-[#ECE5DC] rounded-xs px-2.5 py-2 space-y-1 text-[11px] text-[#4A453F]">
+                                  {(order.companyLocation || order.locationUrl) && (
+                                    <div className="flex items-center justify-between gap-1.5">
+                                      <span className="truncate flex items-center gap-1.5">
+                                        <MapPin className="w-3 h-3 text-[#6F6860] shrink-0" />
+                                        <span className="truncate">{fixUtf8Encoding(order.companyLocation || 'Ubicación cargada')}</span>
+                                      </span>
+                                      {order.locationUrl && (
+                                        <a
+                                          href={order.locationUrl}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          onClick={(e) => e.stopPropagation()}
+                                          className="text-[#18231C] hover:underline font-bold shrink-0 flex items-center gap-0.5 text-[10px]"
+                                        >
+                                          <span>Mapa</span>
+                                          <ExternalLink className="w-2.5 h-2.5" />
+                                        </a>
+                                      )}
+                                    </div>
+                                  )}
+
+                                  {order.blockReason && (
+                                    <div className="flex items-start gap-1.5 text-rose-700 font-semibold">
+                                      <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" />
+                                      <span className="line-clamp-2">
+                                        Bloqueado: {fixUtf8Encoding(order.blockReason)}
+                                      </span>
+                                    </div>
+                                  )}
+
+                                  {order.observations && !order.blockReason && (
+                                    <div className="flex items-start gap-1.5 text-[#4A453F]">
+                                      <MessageSquare className="w-3 h-3 text-[#6F6860] shrink-0 mt-0.5" />
+                                      <span className="line-clamp-2 leading-snug">
+                                        {order.observationDate ? `${order.observationDate} · ` : ''}
+                                        {fixUtf8Encoding(order.observations)}
+                                      </span>
+                                    </div>
+                                  )}
+
+                                  {order.reminderDate && (
+                                    <div className="flex items-center gap-1.5 text-[#18231C] font-semibold">
+                                      <Bell className="w-3 h-3 text-[#6F6860] shrink-0" />
+                                      <span className="truncate tabular-nums">
+                                        Recordatorio: {order.reminderDate}{order.reminderTime ? ` ${order.reminderTime}hs` : ''}
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* Line 4: Unified Calm Button Bar */}
+                              <div className="pt-2 border-t border-[#ECE5DC] flex flex-wrap items-center justify-between gap-1.5 min-w-0">
+                                <div className="flex items-center gap-1.5 shrink-0">
                                   <button
                                     type="button"
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       setViewingOrder(order);
                                     }}
-                                    className="px-1.5 py-1 hover:bg-amber-50 rounded-xs text-[#18231C] border border-transparent hover:border-amber-300 cursor-pointer flex items-center gap-1 text-[10px] font-bold shrink-0"
+                                    className="px-2 py-1 bg-[#FAF8F5] hover:bg-[#ECE5DC] border border-[#DCD4C9] rounded-xs text-[#18231C] cursor-pointer flex items-center gap-1 text-[10px] font-bold transition-colors shrink-0"
                                     title="Ver ficha completa"
                                   >
-                                    <Eye className="w-3.5 h-3.5" />
+                                    <Eye className="w-3 h-3" />
                                     <span>Ficha</span>
                                   </button>
                                   <a
@@ -1562,10 +1902,10 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
                                     target="_blank"
                                     rel="noreferrer"
                                     onClick={(e) => e.stopPropagation()}
-                                    className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xs text-[10px] font-bold flex items-center gap-1 transition-colors shrink-0"
+                                    className="px-2 py-1 bg-[#FAF8F5] hover:bg-[#ECE5DC] border border-[#DCD4C9] text-[#18231C] rounded-xs text-[10px] font-bold flex items-center gap-1 transition-colors shrink-0"
                                     title="Avisar al cliente por WhatsApp"
                                   >
-                                    <MessageCircle className="w-3 h-3 text-emerald-600" />
+                                    <MessageCircle className="w-3 h-3 text-[#18231C]" />
                                     <span>WhatsApp</span>
                                   </a>
                                 </div>
@@ -1591,11 +1931,11 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
                                           metadata: { orderId: order.id, toStatus: nextCol.id }
                                         });
                                       }}
-                                      className="px-2 py-1 bg-[#18231C] hover:bg-[#B9522F] text-white rounded-xs text-[10px] font-bold uppercase tracking-tight flex items-center gap-1 transition-colors cursor-pointer shrink-0 max-w-full ml-auto"
+                                      className="px-2.5 py-1 bg-[#18231C] hover:bg-black text-white rounded-xs text-[10px] font-bold uppercase tracking-tight flex items-center gap-1 transition-colors cursor-pointer shrink-0 max-w-full ml-auto"
                                       title={`Avanzar a ${fixUtf8Encoding(nextCol.label)}`}
                                     >
                                       <span className="truncate">{rawFirst}</span>
-                                      <ArrowRight className="w-2.5 h-2.5 shrink-0" />
+                                      <ArrowRight className="w-2.5 h-2.5 shrink-0 text-[#FDB813]" />
                                     </button>
                                   );
                                 })()}
@@ -1606,8 +1946,8 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
 
                         {columnOrders.length === 0 && (
                           <div
-                            className={`p-6 text-center text-[11px] text-[#8C827A] border-2 border-dashed rounded-xs ${
-                              isDragOver ? 'border-[#B9522F] bg-[#B9522F]/5' : 'border-[#DCD4C9]'
+                            className={`p-6 text-center text-[11px] text-[#8C827A] border border-dashed rounded-sm ${
+                              isDragOver ? 'border-[#18231C] bg-[#18231C]/5' : 'border-[#DCD4C9]'
                             }`}
                           >
                             {isDragOver ? 'Soltar aquí' : 'Sin pedidos en esta fase'}
@@ -1645,6 +1985,7 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
               assignedSellerName={assignedSellerName}
               onPromoteToCompanies={handlePromoteVisitToCompanyOrder}
               onVisitsUpdated={setVisits}
+              theme={theme}
             />
           </CRMTabErrorBoundary>
         )}
@@ -1682,17 +2023,17 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
 
         {/* === TAB 5: PEDIDOS A PROVEEDOR === */}
         {activeTab === 'suppliers' && (
-          <CRMSupplierOrdersTab orders={supplierOrders} accentColor={accent} />
-        )}
-
-        {/* === TAB 6: CONTROL DE COSTOS === */}
-        {activeTab === 'costs' && (
-          <CRMCostsTab 
-            accentColor={accent} 
-            userRole={userSession?.role || 'admin'} 
-            defaultBranch={assignedBranch}
+          <CRMSupplierOrdersTab
+            orders={supplierOrders}
+            crmOrders={orders}
+            accentColor={accent}
+            theme={theme}
+            onUpdateCrmOrder={(updated) =>
+              setOrders((prev) => [updated, ...prev.filter((o) => o.id !== updated.id)])
+            }
           />
         )}
+          </div>
         </div>
       </div>
 
@@ -1706,6 +2047,8 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
         onMarkAllAsRead={handleMarkAllNotifsAsRead}
         onSelectOrder={(ord) => setViewingOrder(ord)}
         onGoToVisits={() => setActiveTab('visits')}
+        onOpenChat={onOpenChat}
+        theme={theme}
       />
 
       {/* Read-Only Order Ficha Modal (with internal Editar Ficha button) */}
@@ -1860,29 +2203,137 @@ export const CRMView: React.FC<CRMViewProps> = ({ userSession, onClose, theme, o
             </div>
 
             <div className="p-4 border-t border-[#DCD4C9] bg-[#FAF8F5] flex items-center justify-between gap-2 flex-wrap">
-              <button
-                type="button"
-                onClick={() => {
-                  const target = viewingOrder;
-                  setViewingOrder(null);
-                  setSelectedOrderForDetail(target);
-                }}
-                className="px-4 py-2 bg-[#18231C] hover:bg-black text-white text-xs font-bold uppercase rounded-xs flex items-center gap-1.5 cursor-pointer"
-              >
-                <Edit3 className="w-3.5 h-3.5 text-[#FDB813]" />
-                <span>Editar Ficha</span>
-              </button>
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setShowObsModal(true)}
+                  className="px-3 py-2 bg-[#FAF8F5] hover:bg-[#ECE5DC] border border-[#DCD4C9] text-[#18231C] text-xs font-bold uppercase rounded-xs flex items-center gap-1.5 cursor-pointer transition-colors"
+                >
+                  <MessageSquarePlus className="w-3.5 h-3.5 text-[#18231C]" />
+                  <span className="tabular-nums">
+                    {st?.crmObservationsBtnText || 'Observaciones'} ({Array.isArray(viewingOrder.observationHistory) ? viewingOrder.observationHistory.length : viewingOrder.observations ? 1 : 0})
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowShortagesModal(true)}
+                  className="px-3 py-2 bg-[#FAF8F5] hover:bg-[#ECE5DC] border border-[#DCD4C9] text-[#18231C] text-xs font-bold uppercase rounded-xs flex items-center gap-1.5 cursor-pointer transition-colors"
+                >
+                  <PackageX className="w-3.5 h-3.5 text-[#18231C]" />
+                  <span className="tabular-nums">
+                    {st?.crmShortagesBtnText || 'Faltantes'} ({Array.isArray(viewingOrder.shortages) ? viewingOrder.shortages.filter((s) => s.status !== 'recibido').length : 0})
+                  </span>
+                </button>
+
+                <a
+                  href={`https://wa.me/${viewingOrder.clientPhone ? String(viewingOrder.clientPhone).replace(/\D/g, '') : ''}?text=${encodeURIComponent(`Hola ${viewingOrder.clientName}, te escribimos de Pampero Gran Mendoza por tu pedido ${viewingOrder.trackingCode || viewingOrder.orderNumber || `#${viewingOrder.id.slice(-6)}`}. Total estimado: $${(viewingOrder.totalEstimated || 0).toLocaleString('es-AR')}.`)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3 py-2 bg-[#FAF8F5] hover:bg-[#ECE5DC] border border-[#DCD4C9] text-[#18231C] text-xs font-bold uppercase rounded-xs flex items-center gap-1.5 cursor-pointer transition-colors"
+                >
+                  <MessageCircle className="w-3.5 h-3.5 text-[#18231C]" />
+                  <span>WhatsApp</span>
+                </a>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const target = viewingOrder;
+                    setViewingOrder(null);
+                    setSelectedOrderForDetail(target);
+                  }}
+                  className="px-3 py-2 bg-[#FAF8F5] hover:bg-[#ECE5DC] border border-[#DCD4C9] text-[#18231C] text-xs font-bold uppercase rounded-xs flex items-center gap-1.5 cursor-pointer transition-colors"
+                >
+                  <Edit3 className="w-3.5 h-3.5 text-[#18231C]" />
+                  <span>Editar Ficha</span>
+                </button>
+              </div>
 
               <button
                 type="button"
                 onClick={() => setViewingOrder(null)}
-                className="px-3 py-2 border border-[#DCD4C9] bg-white hover:bg-neutral-100 text-xs font-bold rounded-xs cursor-pointer"
+                className="px-3 py-2 bg-[#FAF8F5] hover:bg-[#ECE5DC] border border-[#DCD4C9] text-[#18231C] text-xs font-bold uppercase rounded-xs cursor-pointer transition-colors"
               >
                 Cerrar
               </button>
             </div>
           </div>
         </div>
+      )}
+
+      {/* Sub-modal Observaciones para Seguimiento Empresas */}
+      {viewingOrder && (
+        <CRMObservationsModal
+          isOpen={showObsModal}
+          onClose={() => setShowObsModal(false)}
+          entityTitle={viewingOrder.clientName}
+          trackingCode={viewingOrder.trackingCode || viewingOrder.orderNumber}
+          branch={viewingOrder.branch}
+          currentObservation={viewingOrder.observations}
+          currentObservationDate={viewingOrder.observationDate}
+          currentReminderDate={viewingOrder.reminderDate}
+          currentReminderTime={viewingOrder.reminderTime}
+          currentReminderNote={viewingOrder.reminderNote}
+          history={viewingOrder.observationHistory}
+          activeStaffUser={activeStaffUser}
+          onSaveObservation={async (payload) => {
+            const updated = sanitizeObjectEncoding({
+              ...viewingOrder,
+              observations: payload.observations,
+              observationDate: payload.observationDate,
+              reminderDate: payload.reminderDate,
+              reminderTime: payload.reminderTime,
+              reminderNote: payload.reminderNote,
+              observationHistory: payload.observationHistory,
+              updatedAt: new Date().toISOString(),
+            });
+            setViewingOrder(updated);
+            setOrders((prev) => [updated, ...prev.filter((o) => o.id !== updated.id)]);
+            await saveCRMOrder(updated);
+            if (payload.reminderDate) {
+              await upsertObservationReminderCalendarEvent('order', {
+                sourceId: updated.id,
+                title: `${updated.clientName} (${updated.trackingCode || updated.orderNumber || updated.id})`,
+                reminderDate: payload.reminderDate,
+                reminderTime: payload.reminderTime,
+                reminderNote: payload.reminderNote || payload.observations,
+                branch: updated.branch,
+                seller: updated.seller,
+                createdBy: activeStaffUser,
+                createdByEmail: userSession?.email,
+              });
+            }
+          }}
+        />
+      )}
+
+      {/* Sub-modal Tabla de Faltantes para Seguimiento Empresas */}
+      {viewingOrder && (
+        <CRMOrderShortagesModal
+          isOpen={showShortagesModal}
+          onClose={() => setShowShortagesModal(false)}
+          order={viewingOrder}
+          products={catalogProducts}
+          categories={categories}
+          knownSuppliers={knownSuppliers}
+          activeStaffUser={activeStaffUser}
+          theme={theme}
+          onUpdateShortages={async (ord, nextShortages, removedIds) => {
+            const updated: CRMOrder = sanitizeObjectEncoding({
+              ...ord,
+              shortages: nextShortages,
+              updatedAt: new Date().toISOString(),
+            });
+            setViewingOrder(updated);
+            setOrders((prev) => [updated, ...prev.filter((o) => o.id !== updated.id)]);
+            await saveCRMOrder(updated);
+            await Promise.all(nextShortages.map((s) => saveCRMOrderShortage(s)));
+            if (Array.isArray(removedIds) && removedIds.length > 0) {
+              await Promise.all(removedIds.map((rid) => deleteCRMOrderShortage(rid)));
+            }
+          }}
+        />
       )}
 
       {/* Detail & Edit Order Modal */}

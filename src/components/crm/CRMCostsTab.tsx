@@ -54,13 +54,15 @@ interface CRMCostsTabProps {
   userRole?: 'admin' | 'employee' | string;
   defaultBranch?: string;
   orders?: CRMOrder[];
+  embeddedInCostsHub?: boolean;
 }
 
 export const CRMCostsTab: React.FC<CRMCostsTabProps> = ({ 
   accentColor = '#FDB813',
   userRole = 'admin',
   defaultBranch = 'Maipú',
-  orders = []
+  orders = [],
+  embeddedInCostsHub = false,
 }) => {
   const isAdmin = userRole === 'admin';
 
@@ -176,6 +178,7 @@ export const CRMCostsTab: React.FC<CRMCostsTabProps> = ({
   const [formAmount, setFormAmount] = useState<string>('');
   const [formDetail, setFormDetail] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [feedbackNotice, setFeedbackNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   // 1. Load dynamic branches from Firestore 'branches' collection & store_config in real time
@@ -478,22 +481,6 @@ export const CRMCostsTab: React.FC<CRMCostsTabProps> = ({
       }
     });
 
-    // Provide default initial demo proportions only if no real data exists across the system
-    const hasAnyRealData = sales.length > 0 || expenses.length > 0 || allOrdersList.length > 0;
-    if (!hasAnyRealData && totalVariables === 0 && totalFijos === 0) {
-      costoCompra = 3850000;
-      embalajePrenda = 420000;
-      comisiones = 590000;
-      fletesLogistica = 280000;
-      totalVariables = costoCompra + embalajePrenda + comisiones + fletesLogistica;
-
-      alquileres = 1250000;
-      serviciosBasicos = 380000;
-      sueldos = 2400000;
-      segurosImpuestos = 310000;
-      totalFijos = alquileres + serviciosBasicos + sueldos + segurosImpuestos;
-    }
-
     const totalCostos = totalVariables + totalFijos;
     const percentVariables = salesRevenue > 0 ? Math.round((totalVariables / salesRevenue) * 100) : 0;
     const percentFijos = salesRevenue > 0 ? Math.round((totalFijos / salesRevenue) * 100) : 0;
@@ -640,9 +627,9 @@ export const CRMCostsTab: React.FC<CRMCostsTabProps> = ({
   };
 
   // Delete with strict error handling: force local update to unblock UI
-  const handleDelete = async (id: string, detail: string) => {
+  const handleDelete = async (id: string) => {
     if (!isAdmin) return;
-    if (!confirm(`¿Eliminar el registro de gasto "${detail}"?`)) return;
+    setConfirmDeleteId(null);
 
     // Strict requirement: Force immediate React state update to unblock UI
     setExpenses((prev) => prev.filter((item) => item.id !== id));
@@ -656,7 +643,6 @@ export const CRMCostsTab: React.FC<CRMCostsTabProps> = ({
       setTimeout(() => setFeedbackNotice(null), 3000);
     } catch (err: any) {
       console.error('[CRMCostsTab] Error eliminando gasto en Firestore:', err);
-      // En caso de fallo al eliminar, forzar la actualización del estado local de React para destrabar la interfaz
       setExpenses((prev) => prev.filter((item) => item.id !== id));
       setFeedbackNotice({ type: 'error', message: 'No se pudo eliminar en Firestore pero se actualizó la vista local para destrabar la interfaz.' });
       setTimeout(() => setFeedbackNotice(null), 3500);
@@ -664,82 +650,133 @@ export const CRMCostsTab: React.FC<CRMCostsTabProps> = ({
   };
 
   return (
-    <div className="flex flex-col h-full space-y-5 animate-fadeIn">
-      {/* Top Banner */}
-      <div className="bg-white p-4 sm:p-5 rounded-xs border border-[#DCD4C9] shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2.5">
-            <div className="p-2.5 bg-[#18231C] text-white rounded-xs">
-              <DollarSign className="w-5 h-5 text-emerald-400" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="font-bold text-base text-[#18231C] uppercase tracking-wider">
-                  {isAdmin ? 'Control de Costos · Gestión Financiera' : 'Carga de Costos y Gastos · Gran Mendoza'}
-                </h3>
-                <span className={`px-2 py-0.5 rounded-xs text-[10px] font-black uppercase tracking-wider border ${
-                  isAdmin 
-                    ? 'bg-emerald-50 border-emerald-300 text-emerald-800' 
-                    : 'bg-amber-50 border-amber-300 text-amber-800'
-                }`}>
-                  {isAdmin ? 'Dashboard Administrador' : 'Empleado · Carga Directa (Write-Only)'}
-                </span>
-              </div>
-              <p className="text-xs text-[#6F6860] mt-0.5">
-                {isAdmin 
-                  ? 'Seguimiento integral en tiempo real de costos fijos y variables por sucursal en Gran Mendoza (Maipú, Ciudad, Luján).'
-                  : 'Formulario de registro de comprobantes y gastos de sucursal. Los datos se envían a la base central.'}
-              </p>
-            </div>
+    <div className={embeddedInCostsHub ? 'space-y-4 animate-fadeIn' : 'flex flex-col h-full space-y-5 animate-fadeIn'}>
+      {/* Top Banner / Filter Toolbar */}
+      {embeddedInCostsHub ? (
+        <div className="bg-white border border-[#DCD4C9] rounded-xs p-4 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="text-xs font-bold uppercase tracking-wider text-[#18231C]">
+              {isAdmin ? 'Control de Costos y Ventas por Local' : 'Carga de Costos y Gastos · Gran Mendoza'}
+            </h3>
+            <p className="text-[11px] text-[#6F6860] mt-0.5">
+              {isAdmin
+                ? 'Registro operativo de costos fijos, variables e ingresos por sucursal.'
+                : 'Formulario de registro de comprobantes y gastos de sucursal.'}
+            </p>
           </div>
-        </div>
 
-        {/* Filter Selectors: Mes/Año, Sucursal y Cargar Ventas */}
-        <div className="flex items-center gap-2 flex-wrap">
-          {isAdmin && (
-            <>
-              <div className="flex items-center gap-1.5 bg-[#FAF8F5] border border-[#DCD4C9] px-2.5 py-1.5 rounded-xs text-xs">
-                <Calendar className="w-3.5 h-3.5 text-neutral-500" />
+          <div className="flex items-center gap-2 flex-wrap">
+            {isAdmin && (
+              <>
                 <select
                   value={selectedMonthYear}
                   onChange={(e) => setSelectedMonthYear(e.target.value)}
-                  className="bg-transparent font-bold text-[#18231C] outline-none cursor-pointer"
+                  className="px-2.5 py-1.5 text-xs border border-[#DCD4C9] rounded-xs bg-white font-semibold text-[#18231C] outline-none cursor-pointer"
                 >
                   <option value="todos">Todos los Meses</option>
                   {monthYearOptions.map((ym) => (
                     <option key={ym} value={ym}>{formatMonthYearLabel(ym)}</option>
                   ))}
                 </select>
-              </div>
 
-              <div className="flex items-center gap-1.5 bg-[#FAF8F5] border border-[#DCD4C9] px-2.5 py-1.5 rounded-xs text-xs">
-                <Building2 className="w-3.5 h-3.5 text-neutral-500" />
                 <select
                   value={selectedBranch}
                   onChange={(e) => setSelectedBranch(e.target.value)}
-                  className="bg-transparent font-bold text-[#18231C] outline-none cursor-pointer"
+                  className="px-2.5 py-1.5 text-xs border border-[#DCD4C9] rounded-xs bg-white font-semibold text-[#18231C] outline-none cursor-pointer"
                 >
-                  <option value="todas">Todas las Sucursales</option>
+                  <option value="todas">Sucursal: Todas</option>
                   {dynamicBranches.map((b) => (
                     <option key={b} value={b}>{fixUtf8Encoding(b)}</option>
                   ))}
                 </select>
-              </div>
-            </>
-          )}
+              </>
+            )}
 
-          {/* Botón Principal: Cargar Ventas */}
-          <button
-            type="button"
-            id="btn-open-sales-modal"
-            onClick={() => setIsSalesModalOpen(true)}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#18231C] hover:bg-black text-[#FDB813] text-xs font-black uppercase tracking-wider rounded-xs transition-colors cursor-pointer border border-[#18231C] shadow-2xs"
-          >
-            <DollarSign className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Cargar Ventas</span>
-          </button>
+            <button
+              type="button"
+              id="btn-open-sales-modal"
+              onClick={() => setIsSalesModalOpen(true)}
+              className="px-3.5 py-2 bg-[#18231C] hover:bg-black text-white text-xs font-bold uppercase rounded-xs flex items-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap"
+            >
+              <DollarSign className="w-3.5 h-3.5" style={{ color: accentColor }} />
+              <span>Cargar Ventas</span>
+            </button>
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="bg-white p-4 sm:p-5 rounded-xs border border-[#DCD4C9] shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2.5">
+              <div className="p-2.5 bg-[#18231C] text-white rounded-xs">
+                <DollarSign className="w-5 h-5 text-emerald-400" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-bold text-base text-[#18231C] uppercase tracking-wider">
+                    {isAdmin ? 'Control de Costos · Gestión Financiera' : 'Carga de Costos y Gastos · Gran Mendoza'}
+                  </h3>
+                  <span className={`px-2 py-0.5 rounded-xs text-[10px] font-black uppercase tracking-wider border ${
+                    isAdmin 
+                      ? 'bg-emerald-50 border-emerald-300 text-emerald-800' 
+                      : 'bg-amber-50 border-amber-300 text-amber-800'
+                  }`}>
+                    {isAdmin ? 'Dashboard Administrador' : 'Empleado · Carga Directa (Write-Only)'}
+                  </span>
+                </div>
+                <p className="text-xs text-[#6F6860] mt-0.5">
+                  {isAdmin 
+                    ? 'Seguimiento integral en tiempo real de costos fijos y variables por sucursal en Gran Mendoza (Maipú, Ciudad, Luján).'
+                    : 'Formulario de registro de comprobantes y gastos de sucursal. Los datos se envían a la base central.'}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            {isAdmin && (
+              <>
+                <div className="flex items-center gap-1.5 bg-[#FAF8F5] border border-[#DCD4C9] px-2.5 py-1.5 rounded-xs text-xs">
+                  <Calendar className="w-3.5 h-3.5 text-neutral-500" />
+                  <select
+                    value={selectedMonthYear}
+                    onChange={(e) => setSelectedMonthYear(e.target.value)}
+                    className="bg-transparent font-bold text-[#18231C] outline-none cursor-pointer"
+                  >
+                    <option value="todos">Todos los Meses</option>
+                    {monthYearOptions.map((ym) => (
+                      <option key={ym} value={ym}>{formatMonthYearLabel(ym)}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-1.5 bg-[#FAF8F5] border border-[#DCD4C9] px-2.5 py-1.5 rounded-xs text-xs">
+                  <Building2 className="w-3.5 h-3.5 text-neutral-500" />
+                  <select
+                    value={selectedBranch}
+                    onChange={(e) => setSelectedBranch(e.target.value)}
+                    className="bg-transparent font-bold text-[#18231C] outline-none cursor-pointer"
+                  >
+                    <option value="todas">Todas las Sucursales</option>
+                    {dynamicBranches.map((b) => (
+                      <option key={b} value={b}>{fixUtf8Encoding(b)}</option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            )}
+
+            <button
+              type="button"
+              id="btn-open-sales-modal"
+              onClick={() => setIsSalesModalOpen(true)}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#18231C] hover:bg-black text-[#FDB813] text-xs font-black uppercase tracking-wider rounded-xs transition-colors cursor-pointer border border-[#18231C] shadow-2xs"
+            >
+              <DollarSign className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Cargar Ventas</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {syncError && isAdmin && (
         <div className="p-3 bg-red-50 border border-red-200 rounded-xs text-xs text-red-900 flex items-center gap-2">
@@ -748,297 +785,443 @@ export const CRMCostsTab: React.FC<CRMCostsTabProps> = ({
         </div>
       )}
 
-      {/* SECCIÓN SUPERIOR: TARJETAS KPI DE CRUCE FINANCIERO (Ventas Excel crm_sales vs. Gastos crm_expenses) */}
+      {/* SECCIÓN SUPERIOR: TARJETAS KPI */}
       {isAdmin && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 animate-fadeIn">
-          {/* Tarjeta KPI 1: Ingresos Totales */}
-          <div className="bg-white p-4 rounded-xs border-2 border-emerald-600/40 shadow-2xs flex flex-col justify-between">
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-xs">
-                  {cruceFinanciero.hasRealSales ? 'Ventas Reales (crm_sales)' : 'Ventas Estimadas'}
-                </span>
-                <div className="p-1.5 bg-emerald-50 text-emerald-700 rounded-xs">
-                  <TrendingUp className="w-4 h-4" />
-                </div>
-              </div>
-              <span className="text-[11px] font-bold uppercase tracking-wider text-[#18231C] block mt-1">
-                Ingresos Totales
+        embeddedInCostsHub ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 animate-fadeIn">
+            <div className="bg-white border border-[#DCD4C9] rounded-xs p-4 space-y-1">
+              <span className="text-[10px] font-bold uppercase text-[#6F6860] block">
+                {cruceFinanciero.hasRealSales ? 'Ingresos por Ventas (Cierres)' : 'Ingresos por Ventas'}
               </span>
-              <p className="text-2xl sm:text-3xl font-black text-[#18231C] tracking-tight mt-1">
-                ${cruceFinanciero.ingresosTotales.toLocaleString('es-AR')}
-              </p>
-            </div>
-            <div className="pt-2.5 mt-2.5 border-t border-neutral-100 flex items-center justify-between text-xs text-neutral-600">
-              <span>{cruceFinanciero.hasRealSales ? `${cruceFinanciero.ventasDiasCount} cierres importados` : 'Ventas de pedidos activos'}</span>
-              <span className="font-semibold text-neutral-700">
-                {selectedBranch === 'todas' ? 'Todos los locales' : fixUtf8Encoding(selectedBranch)}
+              <span className="text-xl font-bold font-mono tabular-nums text-emerald-700 block">
+                $ {cruceFinanciero.ingresosTotales.toLocaleString('es-AR')}
+              </span>
+              <span className="text-[11px] text-[#6F6860] block tabular-nums">
+                {cruceFinanciero.ventasDiasCount} cierre(s) · Ticket prom. $ {financialERP.averageTicket.toLocaleString('es-AR')}
               </span>
             </div>
-          </div>
 
-          {/* Tarjeta KPI 2: Costos Totales */}
-          <div className="bg-white p-4 rounded-xs border-2 border-neutral-300 shadow-2xs flex flex-col justify-between">
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-[10px] font-black uppercase tracking-wider text-neutral-700 bg-neutral-100 border border-neutral-200 px-2 py-0.5 rounded-xs">
-                  Gastos del Período
-                </span>
-                <div className="p-1.5 bg-neutral-100 text-[#18231C] rounded-xs">
-                  <Receipt className="w-4 h-4" />
-                </div>
-              </div>
-              <span className="text-[11px] font-bold uppercase tracking-wider text-[#18231C] block mt-1">
-                Costos Totales
+            <div className="bg-white border border-[#DCD4C9] rounded-xs p-4 space-y-1">
+              <span className="text-[10px] font-bold uppercase text-[#6F6860] block">
+                Costos Totales del Período
               </span>
-              <p className="text-2xl sm:text-3xl font-black text-[#18231C] tracking-tight mt-1">
-                ${cruceFinanciero.costosTotales.toLocaleString('es-AR')}
-              </p>
+              <span className="text-xl font-bold font-mono tabular-nums text-[#18231C] block">
+                $ {cruceFinanciero.costosTotales.toLocaleString('es-AR')}
+              </span>
+              <span className="text-[11px] text-[#6F6860] block tabular-nums">
+                Fijos: $ {cruceFinanciero.totalFijos.toLocaleString('es-AR')} · Var: $ {cruceFinanciero.totalVariables.toLocaleString('es-AR')}
+              </span>
             </div>
-            <div className="pt-2.5 mt-2.5 border-t border-neutral-100 flex items-center justify-between text-xs text-neutral-600">
-              <span>Fijos: <strong className="text-blue-900">${cruceFinanciero.totalFijos.toLocaleString('es-AR')}</strong></span>
-              <span>Variables: <strong className="text-amber-900">${cruceFinanciero.totalVariables.toLocaleString('es-AR')}</strong></span>
-            </div>
-          </div>
 
-          {/* Tarjeta KPI 3: Rentabilidad Neta (Lógica de colores estricta) */}
-          <div className={`p-4 rounded-xs border-2 shadow-2xs flex flex-col justify-between bg-white ${
-            cruceFinanciero.esPositiva ? 'border-emerald-600' : 'border-red-600'
-          }`}>
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-xs border ${
-                  cruceFinanciero.esPositiva
-                    ? 'bg-emerald-50 text-emerald-900 border-emerald-300'
-                    : 'bg-red-50 text-red-900 border-red-300'
-                }`}>
-                  {cruceFinanciero.esPositiva ? 'Ganancia / Superávit' : 'Pérdida / Déficit'}
-                </span>
-                <div className={`p-1.5 rounded-xs ${
-                  cruceFinanciero.esPositiva ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
-                }`}>
-                  {cruceFinanciero.esPositiva ? (
-                    <ArrowUpRight className="w-4 h-4" />
-                  ) : (
-                    <ArrowDownRight className="w-4 h-4" />
-                  )}
-                </div>
-              </div>
-              <span className="text-[11px] font-bold uppercase tracking-wider text-[#18231C] block mt-1">
+            <div className="bg-white border border-[#DCD4C9] rounded-xs p-4 space-y-1">
+              <span className="text-[10px] font-bold uppercase text-[#6F6860] block">
                 Rentabilidad Neta (Cruce)
               </span>
-              {/* Lógica de colores estricta: Verde si ganancia (+), Rojo si pérdida (-) */}
-              <p className={`text-2xl sm:text-3xl font-black tracking-tight mt-1 ${
-                cruceFinanciero.esPositiva ? 'text-emerald-600' : 'text-red-600'
-              }`}>
-                ${cruceFinanciero.rentabilidadNeta.toLocaleString('es-AR')}
-              </p>
-            </div>
-            <div className="pt-2.5 mt-2.5 border-t border-neutral-100 flex items-center justify-between text-xs">
-              <span className="text-neutral-500">
-                Margen Neto: <strong className={cruceFinanciero.esPositiva ? 'text-emerald-700 font-bold' : 'text-red-700 font-bold'}>{cruceFinanciero.margenRentabilidadPct}%</strong>
+              <span className={`text-xl font-bold font-mono tabular-nums block ${cruceFinanciero.esPositiva ? 'text-emerald-700' : 'text-rose-700'}`}>
+                $ {cruceFinanciero.rentabilidadNeta.toLocaleString('es-AR')}
               </span>
-              <span className="text-[10px] text-neutral-500 font-mono">
-                Ingresos - Gastos
+              <span className="text-[11px] text-[#6F6860] block tabular-nums">
+                Margen neto: {cruceFinanciero.margenRentabilidadPct}% ({cruceFinanciero.esPositiva ? 'Superávit' : 'Déficit'})
+              </span>
+            </div>
+
+            <div className="bg-white border border-[#DCD4C9] rounded-xs p-4 space-y-1">
+              <span className="text-[10px] font-bold uppercase text-[#6F6860] block">
+                Punto de Equilibrio
+              </span>
+              <span className="text-xl font-bold font-mono tabular-nums text-[#18231C] block">
+                $ {financialERP.puntoEquilibrio.toLocaleString('es-AR')}
+              </span>
+              <span className="text-[11px] text-[#6F6860] block tabular-nums">
+                Contribución: $ {financialERP.margenContribucion.toLocaleString('es-AR')} ({financialERP.margenContribucionPct}%)
               </span>
             </div>
           </div>
-        </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 animate-fadeIn">
+            <div className="bg-white p-4 rounded-xs border-2 border-emerald-600/40 shadow-2xs flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-xs">
+                    {cruceFinanciero.hasRealSales ? 'Ventas Reales (crm_sales)' : 'Ventas Estimadas'}
+                  </span>
+                  <div className="p-1.5 bg-emerald-50 text-emerald-700 rounded-xs">
+                    <TrendingUp className="w-4 h-4" />
+                  </div>
+                </div>
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[#18231C] block mt-1">
+                  Ingresos Totales
+                </span>
+                <p className="text-2xl sm:text-3xl font-black text-[#18231C] tracking-tight mt-1">
+                  ${cruceFinanciero.ingresosTotales.toLocaleString('es-AR')}
+                </p>
+              </div>
+              <div className="pt-2.5 mt-2.5 border-t border-neutral-100 flex items-center justify-between text-xs text-neutral-600">
+                <span>{cruceFinanciero.hasRealSales ? `${cruceFinanciero.ventasDiasCount} cierres importados` : 'Ventas de pedidos activos'}</span>
+                <span className="font-semibold text-neutral-700">
+                  {selectedBranch === 'todas' ? 'Todos los locales' : fixUtf8Encoding(selectedBranch)}
+                </span>
+              </div>
+            </div>
+
+            <div className="bg-white p-4 rounded-xs border-2 border-neutral-300 shadow-2xs flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-neutral-700 bg-neutral-100 border border-neutral-200 px-2 py-0.5 rounded-xs">
+                    Gastos del Período
+                  </span>
+                  <div className="p-1.5 bg-neutral-100 text-[#18231C] rounded-xs">
+                    <Receipt className="w-4 h-4" />
+                  </div>
+                </div>
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[#18231C] block mt-1">
+                  Costos Totales
+                </span>
+                <p className="text-2xl sm:text-3xl font-black text-[#18231C] tracking-tight mt-1">
+                  ${cruceFinanciero.costosTotales.toLocaleString('es-AR')}
+                </p>
+              </div>
+              <div className="pt-2.5 mt-2.5 border-t border-neutral-100 flex items-center justify-between text-xs text-neutral-600">
+                <span>Fijos: <strong className="text-blue-900">${cruceFinanciero.totalFijos.toLocaleString('es-AR')}</strong></span>
+                <span>Variables: <strong className="text-amber-900">${cruceFinanciero.totalVariables.toLocaleString('es-AR')}</strong></span>
+              </div>
+            </div>
+
+            <div className={`p-4 rounded-xs border-2 shadow-2xs flex flex-col justify-between bg-white ${
+              cruceFinanciero.esPositiva ? 'border-emerald-600' : 'border-red-600'
+            }`}>
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-xs border ${
+                    cruceFinanciero.esPositiva
+                      ? 'bg-emerald-50 text-emerald-900 border-emerald-300'
+                      : 'bg-red-50 text-red-900 border-red-300'
+                  }`}>
+                    {cruceFinanciero.esPositiva ? 'Ganancia / Superávit' : 'Pérdida / Déficit'}
+                  </span>
+                  <div className={`p-1.5 rounded-xs ${
+                    cruceFinanciero.esPositiva ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
+                  }`}>
+                    {cruceFinanciero.esPositiva ? (
+                      <ArrowUpRight className="w-4 h-4" />
+                    ) : (
+                      <ArrowDownRight className="w-4 h-4" />
+                    )}
+                  </div>
+                </div>
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[#18231C] block mt-1">
+                  Rentabilidad Neta (Cruce)
+                </span>
+                <p className={`text-2xl sm:text-3xl font-black tracking-tight mt-1 ${
+                  cruceFinanciero.esPositiva ? 'text-emerald-600' : 'text-red-600'
+                }`}>
+                  ${cruceFinanciero.rentabilidadNeta.toLocaleString('es-AR')}
+                </p>
+              </div>
+              <div className="pt-2.5 mt-2.5 border-t border-neutral-100 flex items-center justify-between text-xs">
+                <span className="text-neutral-500">
+                  Margen Neto: <strong className={cruceFinanciero.esPositiva ? 'text-emerald-700 font-bold' : 'text-red-700 font-bold'}>{cruceFinanciero.margenRentabilidadPct}%</strong>
+                </span>
+                <span className="text-[10px] text-neutral-500 font-mono">
+                  Ingresos - Gastos
+                </span>
+              </div>
+            </div>
+          </div>
+        )
       )}
 
-      {/* DASHBOARD: Estado de Resultados Online / ERP en 4 Bloques (Admin only) */}
+      {/* DESGLOSE ESTRUCTURAL EN 3/4 COLUMNAS UNIFORMES (Admin only) */}
       {isAdmin && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 animate-fadeIn">
-          {/* BLOQUE 1: Ingresos por Ventas */}
-          <div className="bg-white p-4 rounded-xs border-2 border-[#18231C] shadow-2xs flex flex-col justify-between">
-            <div>
-              <div className="flex items-center justify-between text-neutral-500 mb-1">
-                <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-xs">
-                  Bloque 1 · Facturación
+        embeddedInCostsHub ? (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 animate-fadeIn">
+            {/* Desglose Variables */}
+            <div className="bg-white border border-[#DCD4C9] rounded-xs p-4 space-y-2.5">
+              <div className="flex items-center justify-between border-b border-[#ECE5DC] pb-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[#18231C]">
+                  Detalle Costos Variables
                 </span>
-                <div className="p-1.5 bg-neutral-100 rounded-xs text-[#18231C]">
-                  <TrendingUp className="w-4 h-4 text-emerald-600" />
+                <span className="text-[11px] font-mono font-bold tabular-nums text-[#6F6860]">
+                  {financialERP.percentVariables}% s/ventas
+                </span>
+              </div>
+              <div className="space-y-1.5 text-xs">
+                <div className="flex justify-between text-[#4A453F]">
+                  <span>Costo de compra / mercadería:</span>
+                  <span className="font-mono font-bold tabular-nums text-[#18231C]">$ {financialERP.costoCompra.toLocaleString('es-AR')}</span>
+                </div>
+                <div className="flex justify-between text-[#4A453F]">
+                  <span>Embalaje e insumos:</span>
+                  <span className="font-mono font-bold tabular-nums text-[#18231C]">$ {financialERP.embalajePrenda.toLocaleString('es-AR')}</span>
+                </div>
+                <div className="flex justify-between text-[#4A453F]">
+                  <span>Comisiones / Fletes:</span>
+                  <span className="font-mono font-bold tabular-nums text-[#18231C]">$ {(financialERP.comisiones + financialERP.fletesLogistica).toLocaleString('es-AR')}</span>
+                </div>
+                <div className="flex justify-between text-[#4A453F]">
+                  <span>Otros variables:</span>
+                  <span className="font-mono font-bold tabular-nums text-[#18231C]">$ {financialERP.otrosVariables.toLocaleString('es-AR')}</span>
                 </div>
               </div>
-              <span className="text-[11px] font-bold uppercase tracking-wider text-[#18231C] block mt-1">
-                Ingresos por Ventas
-              </span>
-              <p className="text-2xl sm:text-3xl font-black text-[#18231C] tracking-tight mt-1">
-                ${financialERP.salesRevenue.toLocaleString('es-AR')}
-              </p>
             </div>
 
-            <div className="space-y-1.5 text-xs pt-3 mt-3 border-t border-neutral-100">
-              <div className="flex justify-between items-center text-neutral-600">
-                <span>Pedidos registrados:</span>
-                <span className="font-bold text-[#18231C]">{financialERP.ordersCount}</span>
-              </div>
-              <div className="flex justify-between items-center text-neutral-600">
-                <span>Prendas / unidades:</span>
-                <span className="font-bold text-[#18231C]">{financialERP.unitsCount} u.</span>
-              </div>
-              <div className="flex justify-between items-center text-neutral-600">
-                <span>Ticket promedio:</span>
-                <span className="font-black text-[#18231C]">
-                  ${financialERP.averageTicket.toLocaleString('es-AR')}
+            {/* Desglose Fijos */}
+            <div className="bg-white border border-[#DCD4C9] rounded-xs p-4 space-y-2.5">
+              <div className="flex items-center justify-between border-b border-[#ECE5DC] pb-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[#18231C]">
+                  Detalle Costos Fijos
                 </span>
+                <span className="text-[11px] font-mono font-bold tabular-nums text-[#6F6860]">
+                  {financialERP.percentFijos}% s/ventas
+                </span>
+              </div>
+              <div className="space-y-1.5 text-xs">
+                <div className="flex justify-between text-[#4A453F]">
+                  <span>Alquiler y expensas:</span>
+                  <span className="font-mono font-bold tabular-nums text-[#18231C]">$ {financialERP.alquileres.toLocaleString('es-AR')}</span>
+                </div>
+                <div className="flex justify-between text-[#4A453F]">
+                  <span>Servicios básicos:</span>
+                  <span className="font-mono font-bold tabular-nums text-[#18231C]">$ {financialERP.serviciosBasicos.toLocaleString('es-AR')}</span>
+                </div>
+                <div className="flex justify-between text-[#4A453F]">
+                  <span>Sueldos y cargas:</span>
+                  <span className="font-mono font-bold tabular-nums text-[#18231C]">$ {financialERP.sueldos.toLocaleString('es-AR')}</span>
+                </div>
+                <div className="flex justify-between text-[#4A453F]">
+                  <span>Seguros, impuestos y otros:</span>
+                  <span className="font-mono font-bold tabular-nums text-[#18231C]">$ {(financialERP.segurosImpuestos + financialERP.otrosFijos).toLocaleString('es-AR')}</span>
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* BLOQUE 2: Costos Variables */}
-          <div className="bg-white p-4 rounded-xs border border-[#DCD4C9] shadow-2xs flex flex-col justify-between">
-            <div>
-              <div className="flex items-center justify-between text-neutral-500 mb-1">
-                <span className="text-[10px] font-black uppercase tracking-wider text-amber-900 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-xs">
-                  Bloque 2 · Variables
+            {/* Resumen Operativo */}
+            <div className="bg-white border border-[#DCD4C9] rounded-xs p-4 space-y-2.5">
+              <div className="flex items-center justify-between border-b border-[#ECE5DC] pb-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[#18231C]">
+                  Volumen & Balance
                 </span>
-                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-xs bg-amber-100 text-amber-900">
-                  {financialERP.percentVariables}% de ventas
-                </span>
-              </div>
-              <span className="text-[11px] font-bold uppercase tracking-wider text-amber-950 block mt-1">
-                Costos Variables
-              </span>
-              <p className="text-2xl font-black text-amber-950 tracking-tight mt-1">
-                ${financialERP.totalVariables.toLocaleString('es-AR')}
-              </p>
-            </div>
-
-            <div className="space-y-1 text-xs pt-2.5 mt-2.5 border-t border-neutral-100">
-              <div className="flex justify-between items-center text-neutral-600">
-                <span className="truncate">Costo de compra:</span>
-                <span className="font-bold text-[#18231C] shrink-0">
-                  ${financialERP.costoCompra.toLocaleString('es-AR')}
-                </span>
-              </div>
-              <div className="flex justify-between items-center text-neutral-600">
-                <span className="truncate">Embalaje por prenda:</span>
-                <span className="font-bold text-[#18231C] shrink-0">
-                  ${financialERP.embalajePrenda.toLocaleString('es-AR')}
-                </span>
-              </div>
-              <div className="flex justify-between items-center text-neutral-600">
-                <span className="truncate">Comisiones por ventas:</span>
-                <span className="font-bold text-[#18231C] shrink-0">
-                  ${financialERP.comisiones.toLocaleString('es-AR')}
-                </span>
-              </div>
-              <div className="w-full bg-neutral-100 h-1.5 rounded-full mt-2 overflow-hidden">
-                <div
-                  className="bg-amber-500 h-full rounded-full transition-all duration-500"
-                  style={{ width: `${Math.min(100, financialERP.percentVariables)}%` }}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* BLOQUE 3: Costos Fijos */}
-          <div className="bg-white p-4 rounded-xs border border-[#DCD4C9] shadow-2xs flex flex-col justify-between">
-            <div>
-              <div className="flex items-center justify-between text-neutral-500 mb-1">
-                <span className="text-[10px] font-black uppercase tracking-wider text-blue-900 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-xs">
-                  Bloque 3 · Estructurales
-                </span>
-                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-xs bg-blue-100 text-blue-800">
-                  {financialERP.percentFijos}% de ventas
-                </span>
-              </div>
-              <span className="text-[11px] font-bold uppercase tracking-wider text-blue-950 block mt-1">
-                Costos Fijos
-              </span>
-              <p className="text-2xl font-black text-blue-950 tracking-tight mt-1">
-                ${financialERP.totalFijos.toLocaleString('es-AR')}
-              </p>
-            </div>
-
-            <div className="space-y-1 text-xs pt-2.5 mt-2.5 border-t border-neutral-100">
-              <div className="flex justify-between items-center text-neutral-600">
-                <span className="truncate">Alquiler y expensas:</span>
-                <span className="font-bold text-[#18231C] shrink-0">
-                  ${financialERP.alquileres.toLocaleString('es-AR')}
-                </span>
-              </div>
-              <div className="flex justify-between items-center text-neutral-600">
-                <span className="truncate">Servicios Básicos:</span>
-                <span className="font-bold text-[#18231C] shrink-0">
-                  ${financialERP.serviciosBasicos.toLocaleString('es-AR')}
-                </span>
-              </div>
-              <div className="flex justify-between items-center text-neutral-600">
-                <span className="truncate">Sueldos y cargas:</span>
-                <span className="font-bold text-[#18231C] shrink-0">
-                  ${financialERP.sueldos.toLocaleString('es-AR')}
-                </span>
-              </div>
-              <div className="flex justify-between items-center text-neutral-600">
-                <span className="truncate">Seguros y honorarios:</span>
-                <span className="font-bold text-[#18231C] shrink-0">
-                  ${financialERP.segurosImpuestos.toLocaleString('es-AR')}
-                </span>
-              </div>
-              <div className="w-full bg-neutral-100 h-1.5 rounded-full mt-2 overflow-hidden">
-                <div
-                  className="bg-blue-600 h-full rounded-full transition-all duration-500"
-                  style={{ width: `${Math.min(100, financialERP.percentFijos)}%` }}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* BLOQUE 4: Resultados y Punto de Equilibrio */}
-          <div className="bg-white p-4 rounded-xs border-2 border-[#B9522F] shadow-2xs flex flex-col justify-between">
-            <div>
-              <div className="flex items-center justify-between text-neutral-500 mb-1">
-                <span className="text-[10px] font-black uppercase tracking-wider text-[#B9522F] bg-[#B9522F]/10 border border-[#B9522F]/30 px-2 py-0.5 rounded-xs">
-                  Bloque 4 · Balance
-                </span>
-                <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-xs border ${
+                <span className={`text-[11px] font-bold uppercase ${
                   financialERP.estadoRentabilidad === 'Superávit'
-                    ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                    ? 'text-emerald-700'
                     : financialERP.estadoRentabilidad === 'Déficit'
-                    ? 'bg-red-100 text-red-900 border-red-300'
-                    : 'bg-amber-100 text-amber-900 border-amber-300'
+                      ? 'text-rose-700'
+                      : 'text-[#6F6860]'
                 }`}>
                   {financialERP.estadoRentabilidad}
                 </span>
               </div>
-              <span className="text-[11px] font-bold uppercase tracking-wider text-[#18231C] block mt-1">
-                Utilidad Neta Calculada
-              </span>
-              <p className={`text-2xl font-black tracking-tight mt-1 ${
-                financialERP.utilidadNeta >= 0 ? 'text-emerald-700' : 'text-red-600'
-              }`}>
-                ${financialERP.utilidadNeta.toLocaleString('es-AR')}
-              </p>
-            </div>
-
-            <div className="space-y-1 text-xs pt-2.5 mt-2.5 border-t border-neutral-100">
-              <div className="flex justify-between items-center text-neutral-600">
-                <span>Margen Contribución:</span>
-                <span className="font-bold text-[#18231C]">
-                  ${financialERP.margenContribucion.toLocaleString('es-AR')} ({financialERP.margenContribucionPct}%)
-                </span>
-              </div>
-              <div className="flex justify-between items-center text-neutral-600">
-                <span>Punto de Equilibrio:</span>
-                <span className="font-bold text-[#18231C]">
-                  ${financialERP.puntoEquilibrio.toLocaleString('es-AR')}
-                </span>
-              </div>
-              <div className="flex justify-between items-center text-neutral-600">
-                <span>Margen Neto Total:</span>
-                <span className={`font-black ${financialERP.margenNetoPct >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
-                  {financialERP.margenNetoPct}%
-                </span>
+              <div className="space-y-1.5 text-xs">
+                <div className="flex justify-between text-[#4A453F]">
+                  <span>Pedidos / cierres registrados:</span>
+                  <span className="font-mono font-bold tabular-nums text-[#18231C]">{financialERP.ordersCount}</span>
+                </div>
+                <div className="flex justify-between text-[#4A453F]">
+                  <span>Prendas / unidades:</span>
+                  <span className="font-mono font-bold tabular-nums text-[#18231C]">{financialERP.unitsCount} u.</span>
+                </div>
+                <div className="flex justify-between text-[#4A453F]">
+                  <span>Utilidad neta calculada:</span>
+                  <span className={`font-mono font-bold tabular-nums ${financialERP.utilidadNeta >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                    $ {financialERP.utilidadNeta.toLocaleString('es-AR')}
+                  </span>
+                </div>
+                <div className="flex justify-between text-[#4A453F]">
+                  <span>Estado de equilibrio:</span>
+                  <span className="font-mono font-bold tabular-nums text-[#18231C]">{financialERP.puntoEquilibrioCumplidoPct}%</span>
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 animate-fadeIn">
+            <div className="bg-white p-4 rounded-xs border-2 border-[#18231C] shadow-2xs flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between text-neutral-500 mb-1">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-xs">
+                    Bloque 1 · Facturación
+                  </span>
+                  <div className="p-1.5 bg-neutral-100 rounded-xs text-[#18231C]">
+                    <TrendingUp className="w-4 h-4 text-emerald-600" />
+                  </div>
+                </div>
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[#18231C] block mt-1">
+                  Ingresos por Ventas
+                </span>
+                <p className="text-2xl sm:text-3xl font-black text-[#18231C] tracking-tight mt-1">
+                  ${financialERP.salesRevenue.toLocaleString('es-AR')}
+                </p>
+              </div>
+
+              <div className="space-y-1.5 text-xs pt-3 mt-3 border-t border-neutral-100">
+                <div className="flex justify-between items-center text-neutral-600">
+                  <span>Pedidos registrados:</span>
+                  <span className="font-bold text-[#18231C]">{financialERP.ordersCount}</span>
+                </div>
+                <div className="flex justify-between items-center text-neutral-600">
+                  <span>Prendas / unidades:</span>
+                  <span className="font-bold text-[#18231C]">{financialERP.unitsCount} u.</span>
+                </div>
+                <div className="flex justify-between items-center text-neutral-600">
+                  <span>Ticket promedio:</span>
+                  <span className="font-black text-[#18231C]">
+                    ${financialERP.averageTicket.toLocaleString('es-AR')}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white p-4 rounded-xs border border-[#DCD4C9] shadow-2xs flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between text-neutral-500 mb-1">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-amber-900 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-xs">
+                    Bloque 2 · Variables
+                  </span>
+                  <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-xs bg-amber-100 text-amber-900">
+                    {financialERP.percentVariables}% de ventas
+                  </span>
+                </div>
+                <span className="text-[11px] font-bold uppercase tracking-wider text-amber-950 block mt-1">
+                  Costos Variables
+                </span>
+                <p className="text-2xl font-black text-amber-950 tracking-tight mt-1">
+                  ${financialERP.totalVariables.toLocaleString('es-AR')}
+                </p>
+              </div>
+
+              <div className="space-y-1 text-xs pt-2.5 mt-2.5 border-t border-neutral-100">
+                <div className="flex justify-between items-center text-neutral-600">
+                  <span className="truncate">Costo de compra:</span>
+                  <span className="font-bold text-[#18231C] shrink-0">
+                    ${financialERP.costoCompra.toLocaleString('es-AR')}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-neutral-600">
+                  <span className="truncate">Embalaje por prenda:</span>
+                  <span className="font-bold text-[#18231C] shrink-0">
+                    ${financialERP.embalajePrenda.toLocaleString('es-AR')}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-neutral-600">
+                  <span className="truncate">Comisiones por ventas:</span>
+                  <span className="font-bold text-[#18231C] shrink-0">
+                    ${financialERP.comisiones.toLocaleString('es-AR')}
+                  </span>
+                </div>
+                <div className="w-full bg-neutral-100 h-1.5 rounded-full mt-2 overflow-hidden">
+                  <div
+                    className="bg-amber-500 h-full rounded-full transition-all duration-500"
+                    style={{ width: `${Math.min(100, financialERP.percentVariables)}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white p-4 rounded-xs border border-[#DCD4C9] shadow-2xs flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between text-neutral-500 mb-1">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-blue-900 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-xs">
+                    Bloque 3 · Estructurales
+                  </span>
+                  <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-xs bg-blue-100 text-blue-800">
+                    {financialERP.percentFijos}% de ventas
+                  </span>
+                </div>
+                <span className="text-[11px] font-bold uppercase tracking-wider text-blue-950 block mt-1">
+                  Costos Fijos
+                </span>
+                <p className="text-2xl font-black text-blue-950 tracking-tight mt-1">
+                  ${financialERP.totalFijos.toLocaleString('es-AR')}
+                </p>
+              </div>
+
+              <div className="space-y-1 text-xs pt-2.5 mt-2.5 border-t border-neutral-100">
+                <div className="flex justify-between items-center text-neutral-600">
+                  <span className="truncate">Alquiler y expensas:</span>
+                  <span className="font-bold text-[#18231C] shrink-0">
+                    ${financialERP.alquileres.toLocaleString('es-AR')}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-neutral-600">
+                  <span className="truncate">Servicios Básicos:</span>
+                  <span className="font-bold text-[#18231C] shrink-0">
+                    ${financialERP.serviciosBasicos.toLocaleString('es-AR')}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-neutral-600">
+                  <span className="truncate">Sueldos y cargas:</span>
+                  <span className="font-bold text-[#18231C] shrink-0">
+                    ${financialERP.sueldos.toLocaleString('es-AR')}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-neutral-600">
+                  <span className="truncate">Seguros y honorarios:</span>
+                  <span className="font-bold text-[#18231C] shrink-0">
+                    ${financialERP.segurosImpuestos.toLocaleString('es-AR')}
+                  </span>
+                </div>
+                <div className="w-full bg-neutral-100 h-1.5 rounded-full mt-2 overflow-hidden">
+                  <div
+                    className="bg-blue-600 h-full rounded-full transition-all duration-500"
+                    style={{ width: `${Math.min(100, financialERP.percentFijos)}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white p-4 rounded-xs border-2 border-[#B9522F] shadow-2xs flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between text-neutral-500 mb-1">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-[#B9522F] bg-[#B9522F]/10 border border-[#B9522F]/30 px-2 py-0.5 rounded-xs">
+                    Bloque 4 · Balance
+                  </span>
+                  <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-xs border ${
+                    financialERP.estadoRentabilidad === 'Superávit'
+                      ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                      : financialERP.estadoRentabilidad === 'Déficit'
+                      ? 'bg-red-100 text-red-900 border-red-300'
+                      : 'bg-amber-100 text-amber-900 border-amber-300'
+                  }`}>
+                    {financialERP.estadoRentabilidad}
+                  </span>
+                </div>
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[#18231C] block mt-1">
+                  Utilidad Neta Calculada
+                </span>
+                <p className={`text-2xl font-black tracking-tight mt-1 ${
+                  financialERP.utilidadNeta >= 0 ? 'text-emerald-700' : 'text-red-600'
+                }`}>
+                  ${financialERP.utilidadNeta.toLocaleString('es-AR')}
+                </p>
+              </div>
+
+              <div className="space-y-1 text-xs pt-2.5 mt-2.5 border-t border-neutral-100">
+                <div className="flex justify-between items-center text-neutral-600">
+                  <span>Margen Contribución:</span>
+                  <span className="font-bold text-[#18231C]">
+                    ${financialERP.margenContribucion.toLocaleString('es-AR')} ({financialERP.margenContribucionPct}%)
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-neutral-600">
+                  <span>Punto de Equilibrio:</span>
+                  <span className="font-bold text-[#18231C]">
+                    ${financialERP.puntoEquilibrio.toLocaleString('es-AR')}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-neutral-600">
+                  <span>Margen Neto Total:</span>
+                  <span className={`font-black ${financialERP.margenNetoPct >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                    {financialERP.margenNetoPct}%
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
       )}
 
       {/* FORMULARIO DE CARGA ÁGIL (Visible para Empleados y Administradores) */}
-      <div className="bg-white p-4 sm:p-5 rounded-xs border border-[#DCD4C9] shadow-2xs space-y-4">
+      <div className="bg-white p-4 rounded-xs border border-[#DCD4C9] space-y-4">
         <div className="flex items-center justify-between border-b border-[#DCD4C9] pb-3">
           <div className="flex items-center gap-2">
             <Plus className="w-4 h-4 text-[#B9522F]" />
@@ -1257,24 +1440,43 @@ export const CRMCostsTab: React.FC<CRMCostsTabProps> = ({
                         ${Number(exp.amount || 0).toLocaleString('es-AR')}
                       </td>
                       <td className="py-2 px-3 text-center whitespace-nowrap">
-                        <div className="flex items-center justify-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => handleStartEdit(exp)}
-                            className="p-1 text-neutral-500 hover:text-black hover:bg-neutral-100 rounded-xs transition-colors cursor-pointer"
-                            title="Editar gasto"
-                          >
-                            <Edit3 className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDelete(exp.id, exp.detail)}
-                            className="p-1 text-neutral-400 hover:text-red-600 hover:bg-red-50 rounded-xs transition-colors cursor-pointer"
-                            title="Eliminar gasto"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
+                        {confirmDeleteId === exp.id ? (
+                          <div className="inline-flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleDelete(exp.id)}
+                              className="px-2 py-1 bg-red-600 text-white text-[10px] font-bold uppercase rounded-xs cursor-pointer"
+                            >
+                              Confirmar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setConfirmDeleteId(null)}
+                              className="px-2 py-1 bg-white border border-[#DCD4C9] text-[10px] font-bold rounded-xs cursor-pointer"
+                            >
+                              No
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleStartEdit(exp)}
+                              className="p-1 text-neutral-500 hover:text-black hover:bg-neutral-100 rounded-xs transition-colors cursor-pointer"
+                              title="Editar gasto"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setConfirmDeleteId(exp.id)}
+                              className="p-1 text-neutral-400 hover:text-red-600 hover:bg-red-50 rounded-xs transition-colors cursor-pointer"
+                              title="Eliminar gasto"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   ))

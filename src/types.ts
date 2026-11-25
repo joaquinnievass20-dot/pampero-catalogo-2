@@ -361,12 +361,20 @@ export interface SiteTextsConfig {
   hubSubtitle?: string;
   hubHeaderTag?: string;
   hubHeaderSub?: string;
+  hubRoleAdminText?: string;
+  hubRoleEmployeeText?: string;
   hubCrmCardText?: string;
   hubCrmCardDesc?: string;
   hubCrmBtnText?: string;
   hubRrhhCardText?: string;
   hubRrhhCardDesc?: string;
   hubRrhhBtnText?: string;
+  hubCostsCardText?: string;
+  hubCostsCardDesc?: string;
+  hubCostsBtnText?: string;
+  hubChatCardText?: string;
+  hubChatCardDesc?: string;
+  hubChatBtnText?: string;
   hubAdminCardText?: string;
   hubAdminCardDesc?: string;
   hubAdminBtnText?: string;
@@ -389,6 +397,22 @@ export interface SiteTextsConfig {
   crmTabCalendarText?: string;
   crmTabSuppliersText?: string;
   crmTabCostsText?: string;
+  crmVisitsTitle?: string;
+  crmVisitsSubtitle?: string;
+  crmNewVisitBtnText?: string;
+  crmTasksTitle?: string;
+  crmTasksSubtitle?: string;
+  crmNewTaskBtnText?: string;
+  crmCalendarTitle?: string;
+  crmCalendarSubtitle?: string;
+  crmNewEventBtnText?: string;
+  crmSuppliersTitle?: string;
+  crmSuppliersSubtitle?: string;
+  crmShortagesTitle?: string;
+  crmShortagesBtnText?: string;
+  crmObservationsBtnText?: string;
+  crmNotifBtnText?: string;
+  crmNotifTitle?: string;
 
   // 9. Servicios Corporativos (Portal de Talles, Simulador)
   sizingPortalTitle?: string;
@@ -407,6 +431,36 @@ export interface SiteTextsConfig {
   footerBranchesTitle?: string;
   footerAdminLinkText?: string;
   footerWhatsappBtnText?: string;
+
+  // 11. Módulo RRHH
+  rrhhTitle?: string;
+  rrhhSubtitle?: string;
+  rrhhFichajeTabText?: string;
+  rrhhLegajoTabText?: string;
+  rrhhFichajeCardTitle?: string;
+  rrhhFichajeCardSubtitle?: string;
+  rrhhFichajeBtnText?: string;
+  rrhhAdminBtnText?: string;
+  rrhhBackBtnText?: string;
+
+  // 12. Módulo Costos & Finanzas
+  costsTitle?: string;
+  costsSubtitle?: string;
+  costsTabDashboardText?: string;
+  costsTabCostsText?: string;
+  costsTabInvoicesText?: string;
+  costsTabChecksText?: string;
+  costsTabPettyCashText?: string;
+  costsDashTitle?: string;
+  costsDashSubtitle?: string;
+  costsBackBtnText?: string;
+
+  // 13. Chat Interno & Mensajería
+  chatTitle?: string;
+  chatSubtitle?: string;
+  chatInputPlaceholder?: string;
+  chatSendBtnText?: string;
+  chatNavBtnText?: string;
 
   // Compatibilidad con campos previos de screenTexts
   landingTitle1?: string;
@@ -450,6 +504,10 @@ export interface ThemeConfig {
   panelTextColor?: string;
   panelAccentColor?: string;
   panelBorderColor?: string;
+  sidebarBgColor?: string; // Barra lateral interna (Panel, CRM, RRHH, Costos)
+  sidebarTextColor?: string;
+  sidebarActiveBgColor?: string;
+  sidebarAccentColor?: string;
   logoHeight?: number; // e.g. 40px default, up to 90px
   logoOptimalBackground?: 'light' | 'dark'; // Background that best fits the original uploaded logo (default 'light')
   logoAutoInvert?: boolean; // Automatically apply negative color on opposing backgrounds (default true)
@@ -622,6 +680,28 @@ export interface AuditLogEntry {
 // --- CRM & MANAGEMENT TYPES ---
 export type CRMOrderStatus = 'cotizacion' | 'sena_50' | 'produccion' | 'listo' | 'entregado' | 'cancelado';
 
+export type ShortageStatus = 'pendiente' | 'pedido' | 'recibido';
+
+export interface CRMOrderShortageItem {
+  id: string;
+  orderId: string;
+  orderNumber?: string;
+  trackingCode?: string;
+  clientName: string;
+  branch?: string;
+  productCode: string;
+  productName: string;
+  size: string;
+  color: string;
+  quantity: number;
+  supplier: string;
+  status: ShortageStatus;
+  supplierOrderId?: string;
+  notes?: string;
+  createdAt: string;
+  createdBy?: string;
+}
+
 export interface CRMOrder {
   id: string;
   orderNumber?: string; // Structured tracking code [E|C][M|C|L][DDMM][00000] or legacy #N
@@ -651,6 +731,7 @@ export interface CRMOrder {
   reminderTime?: string; // HH:mm opcional
   reminderNote?: string;
   observationHistory?: ObservationHistoryEntry[];
+  shortages?: CRMOrderShortageItem[];
   blockReason?: string;
   items?: any[];
   updatedAt: string;
@@ -810,6 +891,92 @@ export interface CRMSale {
   importedAt?: string;
   createdAt?: string;
   updatedAt?: string;
+}
+
+// --- FINANZAS: CHEQUES EMITIDOS Y RECIBIDOS ---
+export type FinancialCheckDirection = 'emitido' | 'recibido';
+export type FinancialCheckMode = 'comun' | 'diferido' | 'echeq';
+export type FinancialCheckStatus =
+  | 'en_cartera'
+  | 'depositado'
+  | 'cobrado'
+  | 'pendiente_debito'
+  | 'debitado'
+  | 'rechazado'
+  | 'anulado';
+
+export interface FinancialCheckRecord {
+  id: string;
+  direction: FinancialCheckDirection;
+  checkMode: FinancialCheckMode;
+  checkNumber: string;
+  bank: string;
+  issueDate: string; // YYYY-MM-DD
+  dueDate: string; // YYYY-MM-DD
+  partyName: string;
+  cuitOrDni?: string;
+  branch: string;
+  amount: number;
+  status: FinancialCheckStatus;
+  notes?: string;
+  registeredBy?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// --- FINANZAS: CAJA CHICA POR LOCAL ---
+export type PettyCashMovementType = 'ingreso' | 'egreso';
+
+export interface PettyCashMovement {
+  id: string;
+  branch: string;
+  date: string; // YYYY-MM-DD
+  movementType: PettyCashMovementType;
+  category: string;
+  concept: string;
+  amount: number;
+  receiptNumber?: string;
+  responsible: string;
+  notes?: string;
+  registeredBy?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// --- FINANZAS: FACTURAS DE COSTOS / GASTOS CON VENCIMIENTO ---
+export type ExpenseInvoiceStatus = 'pendiente' | 'pagada' | 'anulada';
+export type ExpenseInvoiceType =
+  | 'Factura A'
+  | 'Factura B'
+  | 'Factura C'
+  | 'Servicio / Impuesto'
+  | 'Recibo / Ticket'
+  | 'Nota de Débito';
+
+export interface ExpenseInvoiceRecord {
+  id: string;
+  invoiceType: ExpenseInvoiceType | string;
+  invoiceNumber: string;
+  supplierOrEntity: string;
+  cuit?: string;
+  category: string;
+  costType: ExpenseType;
+  branch: string;
+  issueDate: string; // YYYY-MM-DD
+  dueDate: string; // YYYY-MM-DD
+  amount: number;
+  status: ExpenseInvoiceStatus;
+  notifyDaysBefore?: number;
+  paidDate?: string;
+  paymentMethod?: 'Transferencia' | 'Efectivo' | 'Cheque' | 'Caja Chica' | 'Tarjeta' | string;
+  linkedExpenseId?: string;
+  syncToCalendar?: boolean;
+  attachmentUrl?: string;
+  attachmentName?: string;
+  notes?: string;
+  registeredBy?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // --- CRM TASKS KANBAN (3. TAREAS DEL EQUIPO) ---
@@ -1025,4 +1192,40 @@ export interface RRHHCheckInRecord {
   locationError?: string;
   note?: string;
 }
+
+// --- CHAT INTERNO EN TIEMPO REAL ---
+export type ChatParticipantRole = 'admin' | 'employee' | 'client';
+
+export interface ChatParticipantInfo {
+  id: string;
+  name: string;
+  email?: string;
+  role: ChatParticipantRole;
+  subLabel?: string;
+}
+
+export interface InternalChatThread {
+  id: string;
+  participantIds: string[];
+  participants: ChatParticipantInfo[];
+  lastMessageText?: string;
+  lastMessageAt?: string;
+  lastSenderId?: string;
+  lastSenderName?: string;
+  unreadCounts: Record<string, number>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface InternalChatMessage {
+  id: string;
+  threadId: string;
+  senderId: string;
+  senderName: string;
+  senderEmail?: string;
+  senderRole: ChatParticipantRole;
+  text: string;
+  createdAt: string;
+}
+
 

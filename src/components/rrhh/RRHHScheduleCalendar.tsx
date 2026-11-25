@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   BranchLocation,
   RRHHEmployeeRecord,
@@ -13,19 +13,32 @@ import {
   resolveConfiguredBranchName,
 } from '../../utils/rrhhBranches';
 import {
-  Calendar,
+  Calendar as CalendarIcon,
   ChevronLeft,
   ChevronRight,
   Clock,
   Eraser,
+  Filter,
   Paintbrush,
   Palmtree,
   RotateCcw,
+  Check,
   Wand2,
 } from 'lucide-react';
 
 export const WEEKDAY_KEYS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'] as const;
 export const WEEKDAY_MON_FIRST = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'] as const;
+
+const WEEKDAY_FULL_ES: Record<string, string> = {
+  Dom: 'Domingo',
+  Lun: 'Lunes',
+  Mar: 'Martes',
+  Mié: 'Miércoles',
+  Jue: 'Jueves',
+  Vie: 'Viernes',
+  Sáb: 'Sábado',
+};
+
 const MONTH_NAMES = [
   'Enero',
   'Febrero',
@@ -62,6 +75,8 @@ export function getBranchColor(
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .trim();
+
+  if (norm === 'vacaciones') return '#059669';
 
   if (branchColors) {
     if (branchColors[branch]) return branchColors[branch];
@@ -208,6 +223,15 @@ function calcShiftMinutes(start?: string, end?: string): number {
   return diff > 0 ? diff : 0;
 }
 
+function formatReadableDateEs(dateStr: string): string {
+  const dt = new Date(`${dateStr}T12:00:00`);
+  if (isNaN(dt.getTime())) return dateStr;
+  const wd = WEEKDAY_FULL_ES[WEEKDAY_KEYS[dt.getDay()]] || '';
+  const dayNum = dt.getDate();
+  const monthName = MONTH_NAMES[dt.getMonth()] || '';
+  return `${wd} ${dayNum} de ${monthName} ${dt.getFullYear()}`;
+}
+
 interface RRHHScheduleCalendarProps {
   legajo: RRHHEmployeeRecord;
   config: RRHHModuleConfig;
@@ -215,6 +239,7 @@ interface RRHHScheduleCalendarProps {
   editable?: boolean;
   onUpdateLegajo?: (updated: RRHHEmployeeRecord) => void | Promise<void>;
   compact?: boolean;
+  externalBranchFilter?: string; // 'Todas' or exact branch name
 }
 
 export const RRHHScheduleCalendar: React.FC<RRHHScheduleCalendarProps> = ({
@@ -224,15 +249,26 @@ export const RRHHScheduleCalendar: React.FC<RRHHScheduleCalendarProps> = ({
   editable = false,
   onUpdateLegajo,
   compact = false,
+  externalBranchFilter,
 }) => {
   const now = new Date();
   const [year, setYear] = useState<number>(now.getFullYear());
   const [month, setMonth] = useState<number>(now.getMonth());
-  const [selectedDateStr, setSelectedDateStr] = useState<string>(
-    `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(
-      now.getDate()
-    ).padStart(2, '0')}`
-  );
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(
+    now.getDate()
+  ).padStart(2, '0')}`;
+  const [selectedDateStr, setSelectedDateStr] = useState<string>(todayStr);
+
+  // Filter pill inside calendar ('all' | branchName | 'Franco' | 'Vacaciones')
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
+
+  useEffect(() => {
+    if (!externalBranchFilter || externalBranchFilter === 'Todas') {
+      setCategoryFilter('all');
+    } else {
+      setCategoryFilter(externalBranchFilter);
+    }
+  }, [externalBranchFilter]);
 
   const configuredBranches = useMemo(() => getConfiguredBranchList(branches), [branches]);
   const branchNames = useMemo(
@@ -245,15 +281,18 @@ export const RRHHScheduleCalendar: React.FC<RRHHScheduleCalendarProps> = ({
     return branchNames.includes(resolved) ? resolved : branchNames[0] || 'Pampero Maipú';
   }, [legajo.assignedBranch, configuredBranches, branchNames]);
 
-  // Brush state when editable
-  const [brushMode, setBrushMode] = useState<'paint' | 'clear'>('paint');
+  // Editor state in right side panel when editable=true
+  const [quickPaintOnClick, setQuickPaintOnClick] = useState<boolean>(false);
   const [brushBranch, setBrushBranch] = useState<string>(initialBrushBranch);
   const [brushStart, setBrushStart] = useState<string>(legajo.scheduledStart || '08:30');
   const [brushEnd, setBrushEnd] = useState<string>(legajo.scheduledEnd || '17:30');
 
-  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(
-    now.getDate()
-  ).padStart(2, '0')}`;
+  useEffect(() => {
+    const resolved = resolveConfiguredBranchName(legajo.assignedBranch, configuredBranches, false);
+    setBrushBranch(branchNames.includes(resolved) ? resolved : branchNames[0] || 'Pampero Maipú');
+    setBrushStart(legajo.scheduledStart || '08:30');
+    setBrushEnd(legajo.scheduledEnd || '17:30');
+  }, [legajo.id, legajo.assignedBranch, legajo.scheduledStart, legajo.scheduledEnd, configuredBranches, branchNames]);
 
   const selectedBrushBranchObj = useMemo(
     () => findConfiguredBranch(brushBranch, configuredBranches),
@@ -264,20 +303,33 @@ export const RRHHScheduleCalendar: React.FC<RRHHScheduleCalendarProps> = ({
     [selectedBrushBranchObj]
   );
 
+  // Grilla completa (incluyendo días relleno mes anterior/siguiente para mantener formato mensual limpio)
   const calendarCells = useMemo(() => {
     const firstDay = new Date(year, month, 1);
     const daysInMonth = new Date(year, month + 1, 0).getDate();
     const startOffset = (firstDay.getDay() + 6) % 7;
 
     const cells: Array<{
-      dateStr: string | null;
-      dayNum: number | null;
-      resolved?: ReturnType<typeof resolveDayScheduleEntry>;
+      dateStr: string;
+      dayNum: number;
+      inCurrentMonth: boolean;
+      resolved: ReturnType<typeof resolveDayScheduleEntry>;
     }> = [];
 
-    for (let i = 0; i < startOffset; i++) {
-      cells.push({ dateStr: null, dayNum: null });
+    const prevMonthLastDay = new Date(year, month, 0).getDate();
+    for (let i = startOffset - 1; i >= 0; i--) {
+      const d = new Date(year, month - 1, prevMonthLastDay - i);
+      const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
+        d.getDate()
+      ).padStart(2, '0')}`;
+      cells.push({
+        dateStr,
+        dayNum: d.getDate(),
+        inCurrentMonth: false,
+        resolved: resolveDayScheduleEntry(legajo, dateStr, configuredBranches),
+      });
     }
+
     for (let d = 1; d <= daysInMonth; d++) {
       const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(
         2,
@@ -286,21 +338,36 @@ export const RRHHScheduleCalendar: React.FC<RRHHScheduleCalendarProps> = ({
       cells.push({
         dateStr,
         dayNum: d,
+        inCurrentMonth: true,
         resolved: resolveDayScheduleEntry(legajo, dateStr, configuredBranches),
       });
     }
+
+    let nextDay = 1;
     while (cells.length % 7 !== 0) {
-      cells.push({ dateStr: null, dayNum: null });
+      const d = new Date(year, month + 1, nextDay++);
+      const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
+        d.getDate()
+      ).padStart(2, '0')}`;
+      cells.push({
+        dateStr,
+        dayNum: d.getDate(),
+        inCurrentMonth: false,
+        resolved: resolveDayScheduleEntry(legajo, dateStr, configuredBranches),
+      });
     }
+
     return cells;
   }, [year, month, legajo, configuredBranches]);
 
   const monthStats = useMemo(() => {
     const counts: Record<string, number> = {};
+    let totalDaysInMonth = 0;
     let totalMinutes = 0;
     calendarCells.forEach((cell) => {
-      if (!cell.resolved) return;
-      const b = cell.resolved.entry.branch || 'Franco';
+      if (!cell.inCurrentMonth) return;
+      totalDaysInMonth += 1;
+      const b = cell.resolved.source === 'vacation' ? 'Vacaciones' : cell.resolved.entry.branch || 'Franco';
       counts[b] = (counts[b] || 0) + 1;
       if (!cell.resolved.entry.isOffDay && cell.resolved.source !== 'vacation') {
         totalMinutes += calcShiftMinutes(
@@ -311,19 +378,51 @@ export const RRHHScheduleCalendar: React.FC<RRHHScheduleCalendarProps> = ({
     });
     return {
       counts,
+      totalDaysInMonth,
       totalHours: Math.round((totalMinutes / 60) * 10) / 10,
     };
   }, [calendarCells]);
 
-  // Solo las sucursales cargadas en Sucursales + Franco (+ 'Todas' únicamente si hay días asignados como 'Todas')
-  const legendBranches = useMemo(() => {
-    const items = [...branchNames];
-    if ((monthStats.counts['Todas'] || 0) > 0 && !items.includes('Todas')) {
-      items.push('Todas');
+  // Filtros color-coded: Todos + Sucursales configuradas + Franco + Vacaciones
+  const filterItems = useMemo(() => {
+    const items: Array<{ key: string; label: string; count: number; color: string }> = [
+      {
+        key: 'all',
+        label: 'Todos',
+        count: monthStats.totalDaysInMonth,
+        color: '#18231C',
+      },
+    ];
+    branchNames.forEach((b) => {
+      items.push({
+        key: b,
+        label: b,
+        count: monthStats.counts[b] || 0,
+        color: getBranchColor(b, config.branchColors, configuredBranches),
+      });
+    });
+    if ((monthStats.counts['Todas'] || 0) > 0 && !branchNames.includes('Todas')) {
+      items.push({
+        key: 'Todas',
+        label: 'Rotativo / Todas',
+        count: monthStats.counts['Todas'] || 0,
+        color: getBranchColor('Todas', config.branchColors, configuredBranches),
+      });
     }
-    items.push('Franco');
-    return items;
-  }, [branchNames, monthStats.counts]);
+    items.push({
+      key: 'Franco',
+      label: 'Franco',
+      count: monthStats.counts['Franco'] || 0,
+      color: getBranchColor('Franco', config.branchColors, configuredBranches),
+    });
+    items.push({
+      key: 'Vacaciones',
+      label: 'Vacaciones',
+      count: monthStats.counts['Vacaciones'] || 0,
+      color: '#059669',
+    });
+    return items.filter((item) => item.key === 'all' || item.count > 0);
+  }, [monthStats, branchNames, config.branchColors, configuredBranches]);
 
   const handlePrevMonth = () => {
     if (month === 0) {
@@ -349,48 +448,61 @@ export const RRHHScheduleCalendar: React.FC<RRHHScheduleCalendarProps> = ({
     setSelectedDateStr(todayStr);
   };
 
-  const handleDayClick = (dateStr: string) => {
-    setSelectedDateStr(dateStr);
+  const applyShiftToDate = (dateStr: string) => {
     if (!editable || !onUpdateLegajo) return;
-
     const currentOverrides = { ...(legajo.dateSchedules || {}) };
-    if (brushMode === 'clear') {
-      delete currentOverrides[dateStr];
-    } else {
-      currentOverrides[dateStr] =
-        brushBranch === 'Franco'
-          ? { date: dateStr, branch: 'Franco', isOffDay: true }
-          : {
-              date: dateStr,
-              branch: brushBranch,
-              startTime: brushStart || '08:30',
-              endTime: brushEnd || '17:30',
-              isOffDay: false,
-            };
-    }
-
+    currentOverrides[dateStr] =
+      brushBranch === 'Franco'
+        ? { date: dateStr, branch: 'Franco', isOffDay: true }
+        : {
+            date: dateStr,
+            branch: brushBranch,
+            startTime: brushStart || '08:30',
+            endTime: brushEnd || '17:30',
+            isOffDay: false,
+          };
     onUpdateLegajo({
       ...legajo,
       dateSchedules: currentOverrides,
     });
   };
 
-  const handleWeekdayClick = (dayKey: string) => {
+  const clearOverrideForDate = (dateStr: string) => {
+    if (!editable || !onUpdateLegajo) return;
+    const currentOverrides = { ...(legajo.dateSchedules || {}) };
+    delete currentOverrides[dateStr];
+    onUpdateLegajo({
+      ...legajo,
+      dateSchedules: currentOverrides,
+    });
+  };
+
+  const handleDayClick = (dateStr: string, inCurrentMonth: boolean) => {
+    setSelectedDateStr(dateStr);
+    if (!inCurrentMonth) {
+      const dt = new Date(`${dateStr}T12:00:00`);
+      if (!isNaN(dt.getTime())) {
+        setYear(dt.getFullYear());
+        setMonth(dt.getMonth());
+      }
+    }
+    if (editable && quickPaintOnClick) {
+      applyShiftToDate(dateStr);
+    }
+  };
+
+  const applyShiftToWeekday = (dayKey: string) => {
     if (!editable || !onUpdateLegajo) return;
     const currentWeekly = { ...(legajo.weeklySchedule || {}) };
-    if (brushMode === 'clear') {
-      delete currentWeekly[dayKey];
-    } else {
-      currentWeekly[dayKey] =
-        brushBranch === 'Franco'
-          ? { branch: 'Franco', isOffDay: true }
-          : {
-              branch: brushBranch,
-              startTime: brushStart || '08:30',
-              endTime: brushEnd || '17:30',
-              isOffDay: false,
-            };
-    }
+    currentWeekly[dayKey] =
+      brushBranch === 'Franco'
+        ? { branch: 'Franco', isOffDay: true }
+        : {
+            branch: brushBranch,
+            startTime: brushStart || '08:30',
+            endTime: brushEnd || '17:30',
+            isOffDay: false,
+          };
 
     const nextWorkDays = WEEKDAY_MON_FIRST.filter((d) => {
       const w = currentWeekly[d];
@@ -438,413 +550,536 @@ export const RRHHScheduleCalendar: React.FC<RRHHScheduleCalendarProps> = ({
     [legajo, selectedDateStr, configuredBranches]
   );
 
+  const selectedDayWeekdayKey = useMemo(() => {
+    const dt = new Date(`${selectedDateStr}T12:00:00`);
+    return isNaN(dt.getTime()) ? 'Lun' : WEEKDAY_KEYS[dt.getDay()];
+  }, [selectedDateStr]);
+
+  const selectedDayBranchObj = useMemo(() => {
+    if (selectedDayResolved.entry.isOffDay || selectedDayResolved.source === 'vacation') {
+      return undefined;
+    }
+    return findConfiguredBranch(selectedDayResolved.entry.branch, configuredBranches);
+  }, [selectedDayResolved, configuredBranches]);
+
   return (
-    <div className="bg-white border border-[#DCD4C9] rounded-xs overflow-hidden">
-      {/* Header Month Controls */}
-      <div className="px-4 py-3 bg-[#FAF8F5] border-b border-[#DCD4C9] flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <Calendar className="w-4 h-4 text-[#B9522F]" />
-          <h4 className="font-bold text-xs uppercase tracking-wider text-[#18231C]">
-            Calendario de Turnos y Locales · {MONTH_NAMES[month]} {year}
-          </h4>
-        </div>
-
-        <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={handlePrevMonth}
-            className="p-1.5 bg-white hover:bg-neutral-100 border border-[#DCD4C9] rounded-xs text-[#18231C] cursor-pointer"
-            title="Mes anterior"
-          >
-            <ChevronLeft className="w-3.5 h-3.5" />
-          </button>
-          <button
-            type="button"
-            onClick={handleGoToday}
-            className="px-2.5 py-1 bg-white hover:bg-neutral-100 border border-[#DCD4C9] rounded-xs text-[11px] font-bold uppercase text-[#18231C] cursor-pointer"
-          >
-            Hoy
-          </button>
-          <button
-            type="button"
-            onClick={handleNextMonth}
-            className="p-1.5 bg-white hover:bg-neutral-100 border border-[#DCD4C9] rounded-xs text-[#18231C] cursor-pointer"
-            title="Mes siguiente"
-          >
-            <ChevronRight className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      </div>
-
-      {/* Editable Brush & Branch Schedule Sync Bar */}
-      {editable && (
-        <div className="p-3.5 bg-[#FAF8F5]/70 border-b border-[#DCD4C9] space-y-3 text-xs">
-          <div className="flex flex-wrap items-end gap-2.5">
-            <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-[#B9522F] mr-1 self-center">
-              <Paintbrush className="w-3.5 h-3.5" />
-              <span>Asignar al hacer clic:</span>
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-bold uppercase text-[#6F6860] mb-0.5">
-                Sucursal / Estado
-              </label>
-              <select
-                value={brushBranch}
-                onChange={(e) => {
-                  const nextB = e.target.value;
-                  setBrushBranch(nextB);
-                  setBrushMode('paint');
-                  const bObj = findConfiguredBranch(nextB, configuredBranches);
-                  if (bObj) {
-                    const parsed = parseBranchOpeningHours(bObj);
-                    setBrushStart(parsed.fullShift.start);
-                    setBrushEnd(parsed.fullShift.end);
-                  }
-                }}
-                className="px-2.5 py-1.5 bg-white border border-[#DCD4C9] rounded-xs text-xs font-bold text-[#18231C] cursor-pointer outline-none"
-              >
-                {branchNames.map((b) => (
-                  <option key={b} value={b}>
-                    {b}
-                  </option>
-                ))}
-                <option value="Franco">Franco / Descanso</option>
-              </select>
-            </div>
-
-            {brushBranch !== 'Franco' && brushMode === 'paint' && (
-              <>
-                <div>
-                  <label className="block text-[10px] font-bold uppercase text-[#6F6860] mb-0.5">
-                    Ingreso
-                  </label>
-                  <input
-                    type="time"
-                    value={brushStart}
-                    onChange={(e) => setBrushStart(e.target.value)}
-                    className="px-2 py-1.5 bg-white border border-[#DCD4C9] rounded-xs text-xs font-mono tabular-nums outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold uppercase text-[#6F6860] mb-0.5">
-                    Salida
-                  </label>
-                  <input
-                    type="time"
-                    value={brushEnd}
-                    onChange={(e) => setBrushEnd(e.target.value)}
-                    className="px-2 py-1.5 bg-white border border-[#DCD4C9] rounded-xs text-xs font-mono tabular-nums outline-none"
-                  />
-                </div>
-              </>
-            )}
-
-            <button
-              type="button"
-              onClick={() => setBrushMode((m) => (m === 'paint' ? 'clear' : 'paint'))}
-              className={`px-2.5 py-1.5 rounded-xs border text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors ${
-                brushMode === 'clear'
-                  ? 'bg-[#18231C] border-[#18231C] text-[#FDB813]'
-                  : 'bg-white border-[#DCD4C9] text-[#4A453F] hover:bg-neutral-100'
-              }`}
-              title="Restablecer día al horario semanal base"
-            >
-              <Eraser className="w-3.5 h-3.5" />
-              <span>{brushMode === 'clear' ? 'Modo: Limpiar día' : 'Limpiar día'}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={handleResetMonthOverrides}
-              className="px-2.5 py-1.5 rounded-xs border border-[#DCD4C9] bg-white hover:bg-neutral-100 text-[11px] font-semibold text-[#6F6860] flex items-center gap-1 cursor-pointer"
-              title="Quitar cambios manuales de este mes"
-            >
-              <RotateCcw className="w-3 h-3" />
-              <span>Limpiar mes</span>
-            </button>
-          </div>
-
-          {/* Branch Opening Hours Reference + Quick Presets */}
-          {selectedBrushBranchObj && selectedBrushParsed && brushBranch !== 'Franco' && (
-            <div className="p-2.5 bg-white border border-[#DCD4C9] rounded-xs flex flex-wrap items-center justify-between gap-2">
-              <div className="text-[11px] text-[#4A453F]">
-                <strong className="text-[#18231C]">{selectedBrushBranchObj.name} · Horario a cubrir: </strong>
-                <span>{selectedBrushParsed.rawText}</span>
-              </div>
-              <div className="flex flex-wrap items-center gap-1.5">
-                {selectedBrushParsed.morningShift && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setBrushMode('paint');
-                      setBrushStart(selectedBrushParsed.morningShift!.start);
-                      setBrushEnd(selectedBrushParsed.morningShift!.end);
-                    }}
-                    className="px-2 py-1 bg-[#FAF8F5] hover:bg-neutral-100 border border-[#DCD4C9] rounded-xs text-[10px] font-mono font-bold text-[#18231C] cursor-pointer"
-                  >
-                    Mañana {selectedBrushParsed.morningShift.start}-{selectedBrushParsed.morningShift.end}
-                  </button>
-                )}
-                {selectedBrushParsed.afternoonShift && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setBrushMode('paint');
-                      setBrushStart(selectedBrushParsed.afternoonShift!.start);
-                      setBrushEnd(selectedBrushParsed.afternoonShift!.end);
-                    }}
-                    className="px-2 py-1 bg-[#FAF8F5] hover:bg-neutral-100 border border-[#DCD4C9] rounded-xs text-[10px] font-mono font-bold text-[#18231C] cursor-pointer"
-                  >
-                    Tarde {selectedBrushParsed.afternoonShift.start}-{selectedBrushParsed.afternoonShift.end}
-                  </button>
-                )}
-                {selectedBrushParsed.saturdayShift && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setBrushMode('paint');
-                      setBrushStart(selectedBrushParsed.saturdayShift!.start);
-                      setBrushEnd(selectedBrushParsed.saturdayShift!.end);
-                    }}
-                    className="px-2 py-1 bg-[#FAF8F5] hover:bg-neutral-100 border border-[#DCD4C9] rounded-xs text-[10px] font-mono font-bold text-[#18231C] cursor-pointer"
-                  >
-                    Sáb {selectedBrushParsed.saturdayShift.start}-{selectedBrushParsed.saturdayShift.end}
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => handleApplyBranchScheduleToWeek('full')}
-                  className="px-2.5 py-1 bg-[#18231C] hover:bg-black text-[#FDB813] rounded-xs text-[10px] font-bold uppercase flex items-center gap-1 cursor-pointer"
-                  title="Rellena Lunes a Sábado según los horarios cargados en esa sucursal"
-                >
-                  <Wand2 className="w-3 h-3" />
-                  <span>Aplicar días/horarios de {selectedBrushBranchObj.name}</span>
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Weekly Default Pattern Strip */}
-          <div className="pt-1">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-[#6F6860] mb-1.5">
-              Plantilla Semanal Habitual (clic en un día para asignarle la sucursal y horario arriba elegido):
-            </div>
-            <div className="grid grid-cols-7 gap-1.5">
-              {WEEKDAY_MON_FIRST.map((dayKey) => {
-                const weeklyEntry = legajo.weeklySchedule?.[dayKey];
-                const defaultBranch = resolveConfiguredBranchName(
-                  legajo.assignedBranch,
-                  configuredBranches,
-                  true
-                );
-                const isDefaultWork = (
-                  legajo.workDays || ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
-                ).includes(dayKey);
-                const resolvedBranch = weeklyEntry
-                  ? resolveConfiguredBranchName(weeklyEntry.branch, configuredBranches, true)
-                  : isDefaultWork
-                    ? defaultBranch
-                    : 'Franco';
-                const resolvedStart = weeklyEntry?.startTime || legajo.scheduledStart || '08:30';
-                const resolvedEnd = weeklyEntry?.endTime || legajo.scheduledEnd || '17:30';
-                const isOff = resolvedBranch === 'Franco' || weeklyEntry?.isOffDay;
-                const color = getBranchColor(resolvedBranch, config.branchColors, configuredBranches);
-
-                return (
-                  <button
-                    key={dayKey}
-                    type="button"
-                    onClick={() => handleWeekdayClick(dayKey)}
-                    className="p-1.5 bg-white hover:bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-left cursor-pointer transition-colors"
-                    style={{ borderTopWidth: '3px', borderTopColor: color }}
-                    title={`Clic para asignar ${
-                      brushMode === 'clear' ? 'valor base' : brushBranch
-                    } a todos los ${dayKey}`}
-                  >
-                    <div className="text-[10px] font-black text-[#18231C] uppercase">{dayKey}</div>
-                    <div className="text-[10px] font-bold truncate" style={{ color }}>
-                      {isOff ? 'Franco' : resolvedBranch}
-                    </div>
-                    {!isOff && (
-                      <div className="text-[9px] font-mono text-[#6F6860] tabular-nums truncate">
-                        {resolvedStart}-{resolvedEnd}
-                      </div>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Color Legend & Month Totals */}
-      <div className="px-4 py-2.5 bg-white border-b border-[#DCD4C9] flex flex-wrap items-center justify-between gap-2 text-[11px]">
-        <div className="flex flex-wrap items-center gap-3">
-          {legendBranches.map((b) => {
-            const color = getBranchColor(b, config.branchColors, configuredBranches);
-            const count = monthStats.counts[b] || 0;
-            return (
-              <span key={b} className="inline-flex items-center gap-1.5 font-semibold text-[#18231C]">
-                <span
-                  className="w-2.5 h-2.5 rounded-xs inline-block shrink-0"
-                  style={{ backgroundColor: color }}
-                />
-                <span>{b}</span>
-                <span className="font-mono text-[#6F6860] tabular-nums">({count}d)</span>
-              </span>
-            );
-          })}
-          <span className="inline-flex items-center gap-1.5 font-semibold text-emerald-800">
-            <Palmtree className="w-3 h-3 text-emerald-600" />
-            <span>Vacaciones</span>
-            <span className="font-mono text-[#6F6860] tabular-nums">
-              ({monthStats.counts['Vacaciones'] || 0}d)
-            </span>
-          </span>
-        </div>
-        <div className="font-mono font-bold text-[#18231C] tabular-nums">
-          Total mes: {monthStats.totalHours} hs
-        </div>
-      </div>
-
-      {/* Calendar Grid */}
-      <div className="p-3 bg-[#FAF8F5]/40">
-        <div className="grid grid-cols-7 gap-1 mb-1">
-          {WEEKDAY_MON_FIRST.map((wd) => (
-            <div
-              key={wd}
-              className="text-center text-[10px] font-black uppercase tracking-wider text-[#6F6860] py-1"
-            >
-              {wd}
-            </div>
-          ))}
-        </div>
-
-        <div className="grid grid-cols-7 gap-1">
-          {calendarCells.map((cell, idx) => {
-            if (!cell.dateStr || !cell.resolved) {
-              return (
-                <div
-                  key={`empty-${idx}`}
-                  className={`${
-                    compact ? 'min-h-[52px]' : 'min-h-[68px]'
-                  } rounded-xs bg-neutral-100/50 border border-transparent`}
-                />
-              );
-            }
-
-            const { entry, source } = cell.resolved;
-            const isToday = cell.dateStr === todayStr;
-            const isSelected = cell.dateStr === selectedDateStr;
-            const isVacation = source === 'vacation';
-            const isOff = entry.isOffDay || entry.branch === 'Franco';
-            const color = isVacation
-              ? '#059669'
-              : getBranchColor(entry.branch, config.branchColors, configuredBranches);
-
+    <div className="space-y-3">
+      {/* Color-Coded Filter Bar (CRM-style) */}
+      <div className="bg-white p-3 rounded-xs border border-[#DCD4C9] flex flex-wrap items-center justify-between gap-2.5">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <Filter className="w-3.5 h-3.5 text-[#8C827A] mr-1 shrink-0" />
+          {filterItems.map((item) => {
+            const isSelected = categoryFilter === item.key;
             return (
               <button
-                key={cell.dateStr}
+                key={item.key}
                 type="button"
-                onClick={() => handleDayClick(cell.dateStr!)}
-                className={`${
-                  compact ? 'min-h-[54px] p-1' : 'min-h-[70px] p-1.5'
-                } rounded-xs border text-left flex flex-col justify-between transition-all cursor-pointer relative ${
+                onClick={() => setCategoryFilter(item.key)}
+                className="px-2.5 py-1 text-[11px] font-bold rounded-xs border transition-colors cursor-pointer flex items-center gap-1.5"
+                style={
                   isSelected
-                    ? 'border-[#18231C] ring-1 ring-[#18231C] bg-white'
-                    : isToday
-                      ? 'border-[#B9522F] bg-white'
-                      : 'border-[#DCD4C9] bg-white hover:border-[#18231C]/50'
-                }`}
-                style={{
-                  borderTopWidth: '3px',
-                  borderTopColor: color,
-                  backgroundColor: isVacation
-                    ? '#ECFDF5'
-                    : isOff
-                      ? '#F9FAFB'
-                      : `${color}10`,
-                }}
+                    ? {
+                        backgroundColor: item.color,
+                        borderColor: item.color,
+                        color: '#FFFFFF',
+                      }
+                    : {
+                        backgroundColor: `${item.color}12`,
+                        borderColor: `${item.color}45`,
+                        color: '#18231C',
+                      }
+                }
               >
-                <div className="flex items-center justify-between w-full">
-                  <span
-                    className={`font-mono text-[11px] font-bold tabular-nums ${
-                      isToday ? 'text-[#B9522F]' : 'text-[#18231C]'
-                    }`}
-                  >
-                    {cell.dayNum}
-                  </span>
-                  {source === 'override' && (
-                    <span
-                      className="text-[8px] font-black uppercase px-1 rounded-xs bg-[#18231C] text-[#FDB813]"
-                      title="Turno modificado manualmente"
-                    >
-                      Esp
-                    </span>
-                  )}
-                  {isVacation && <Palmtree className="w-3 h-3 text-emerald-700" />}
-                </div>
-
-                <div className="mt-1 space-y-0.5 w-full overflow-hidden">
-                  <div
-                    className="text-[10px] font-extrabold truncate leading-tight"
-                    style={{ color }}
-                  >
-                    {isVacation ? 'Vacaciones' : entry.branch}
-                  </div>
-                  {!isVacation && !isOff && entry.startTime && (
-                    <div className="text-[9px] font-mono text-[#4A453F] tabular-nums truncate leading-tight">
-                      {entry.startTime}-{entry.endTime || ''}
-                    </div>
-                  )}
-                </div>
+                <span
+                  className="w-2 h-2 rounded-full shrink-0"
+                  style={{ backgroundColor: isSelected ? '#FFFFFF' : item.color }}
+                />
+                <span>{item.label}</span>
+                <span
+                  className="px-1.5 py-0.2 rounded-xs text-[10px] font-mono tabular-nums"
+                  style={
+                    isSelected
+                      ? { backgroundColor: 'rgba(255,255,255,0.22)', color: '#FFFFFF' }
+                      : { backgroundColor: 'rgba(0,0,0,0.07)', color: '#18231C' }
+                  }
+                >
+                  {item.count}d
+                </span>
               </button>
             );
           })}
         </div>
+
+        <div className="px-2.5 py-1 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-[11px] font-mono font-bold text-[#18231C] tabular-nums">
+          Total mes: {monthStats.totalHours} hs
+        </div>
       </div>
 
-      {/* Selected Day Inspector */}
-      <div className="px-4 py-2.5 bg-white border-t border-[#DCD4C9] flex flex-wrap items-center justify-between gap-2 text-xs">
-        <div className="flex items-center gap-2">
-          <Clock className="w-3.5 h-3.5 text-[#B9522F]" />
-          <span className="font-mono font-bold text-[#18231C]">{selectedDateStr}</span>
-          <span className="text-[#6F6860]">·</span>
-          {selectedDayResolved.source === 'vacation' ? (
-            <span className="font-bold text-emerald-800">
-              Vacaciones
-              {selectedDayResolved.vacationNote
-                ? ` (${selectedDayResolved.vacationNote})`
-                : ''}
-            </span>
-          ) : selectedDayResolved.entry.isOffDay ? (
-            <span className="font-bold text-neutral-600">Día Franco / Descanso</span>
-          ) : (
-            <span className="font-bold text-[#18231C] flex items-center gap-1.5">
-              <span
-                className="w-2.5 h-2.5 rounded-xs inline-block"
-                style={{
-                  backgroundColor: getBranchColor(
-                    selectedDayResolved.entry.branch,
-                    config.branchColors,
-                    configuredBranches
-                  ),
-                }}
-              />
-              <span>{selectedDayResolved.entry.branch}</span>
-              <span className="font-mono text-[#B9522F] tabular-nums">
-                ({selectedDayResolved.entry.startTime} - {selectedDayResolved.entry.endTime} hs)
-              </span>
-            </span>
-          )}
+      {/* Main Split: Left 2/3 Monthly Grid + Right 1/3 Agenda/Editor Panel */}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+        {/* Monthly Calendar Grid */}
+        <div className="xl:col-span-2 bg-white rounded-xs border border-[#DCD4C9] flex flex-col overflow-hidden">
+          {/* Month Controls */}
+          <div className="p-3.5 border-b border-[#DCD4C9] flex items-center justify-between bg-[#FAF8F5]">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handlePrevMonth}
+                className="p-1.5 bg-white border border-[#DCD4C9] rounded-xs hover:bg-[#ECE5DC] text-[#18231C] cursor-pointer"
+                title="Mes anterior"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <h4 className="font-display font-bold text-sm sm:text-base uppercase tracking-wider text-[#18231C] min-w-[165px] text-center">
+                {MONTH_NAMES[month]} {year}
+              </h4>
+              <button
+                type="button"
+                onClick={handleNextMonth}
+                className="p-1.5 bg-white border border-[#DCD4C9] rounded-xs hover:bg-[#ECE5DC] text-[#18231C] cursor-pointer"
+                title="Mes siguiente"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {editable && (
+                <button
+                  type="button"
+                  onClick={() => setQuickPaintOnClick((v) => !v)}
+                  className={`px-2.5 py-1.5 rounded-xs border text-[11px] font-bold flex items-center gap-1.5 cursor-pointer transition-colors ${
+                    quickPaintOnClick
+                      ? 'bg-[#18231C] border-[#18231C] text-[#FDB813]'
+                      : 'bg-white border-[#DCD4C9] text-[#18231C] hover:bg-[#ECE5DC]'
+                  }`}
+                  title="Al activarlo, cada clic sobre un día del calendario asigna el local y horario elegido en el panel derecho"
+                >
+                  <Paintbrush className="w-3.5 h-3.5" />
+                  <span>{quickPaintOnClick ? 'Pintando al hacer clic' : 'Modo Pincel'}</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={handleGoToday}
+                className="px-3 py-1.5 bg-white hover:bg-[#ECE5DC] border border-[#DCD4C9] rounded-xs text-xs font-bold text-[#18231C] uppercase cursor-pointer"
+              >
+                Hoy
+              </button>
+            </div>
+          </div>
+
+          {/* Weekdays Header */}
+          <div className="grid grid-cols-7 border-b border-[#DCD4C9] bg-[#ECE5DC]/40">
+            {WEEKDAY_MON_FIRST.map((dayName) => (
+              <div
+                key={dayName}
+                className="py-2 text-center text-[10px] font-black uppercase tracking-wider text-[#6F6860]"
+              >
+                {dayName}
+              </div>
+            ))}
+          </div>
+
+          {/* Days Grid */}
+          <div className="grid grid-cols-7 flex-1 auto-rows-fr">
+            {calendarCells.map((cell) => {
+              const { entry, source } = cell.resolved;
+              const isToday = cell.dateStr === todayStr;
+              const isSelected = cell.dateStr === selectedDateStr;
+              const isVacation = source === 'vacation';
+              const isOff = entry.isOffDay || entry.branch === 'Franco';
+              const effectiveBranch = isVacation ? 'Vacaciones' : entry.branch || 'Franco';
+              const color = isVacation
+                ? '#059669'
+                : getBranchColor(effectiveBranch, config.branchColors, configuredBranches);
+
+              const matchesFilter =
+                categoryFilter === 'all' ||
+                effectiveBranch.toLowerCase() === categoryFilter.toLowerCase();
+
+              return (
+                <button
+                  key={cell.dateStr}
+                  type="button"
+                  onClick={() => handleDayClick(cell.dateStr, cell.inCurrentMonth)}
+                  className={`${
+                    compact ? 'min-h-[68px]' : 'min-h-[86px]'
+                  } p-1.5 border-b border-r border-[#DCD4C9]/70 text-left flex flex-col justify-between transition-all cursor-pointer ${
+                    isSelected
+                      ? 'bg-amber-50/90 ring-2 ring-inset ring-[#B9522F]'
+                      : cell.inCurrentMonth
+                        ? 'bg-white hover:bg-[#FAF8F5]'
+                        : 'bg-neutral-50/70 text-neutral-400 hover:bg-neutral-100'
+                  } ${!matchesFilter ? 'opacity-30' : ''}`}
+                >
+                  <div className="flex items-center justify-between w-full mb-1">
+                    <span
+                      className={`text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full tabular-nums ${
+                        isToday
+                          ? 'bg-[#18231C] text-[#FDB813] font-black'
+                          : isSelected
+                            ? 'bg-[#18231C] text-white'
+                            : cell.inCurrentMonth
+                              ? 'text-[#18231C]'
+                              : 'text-neutral-400'
+                      }`}
+                    >
+                      {cell.dayNum}
+                    </span>
+
+                    <div className="flex items-center gap-1">
+                      {source === 'override' && (
+                        <span
+                          className="text-[8px] font-black uppercase px-1 py-0.2 rounded-xs bg-[#18231C] text-[#FDB813]"
+                          title="Turno modificado manualmente para esta fecha"
+                        >
+                          Esp
+                        </span>
+                      )}
+                      {isVacation && <Palmtree className="w-3 h-3 text-emerald-700" />}
+                    </div>
+                  </div>
+
+                  <div className="space-y-1 w-full overflow-hidden">
+                    <div
+                      className="text-[10px] font-bold px-1.5 py-0.5 rounded-xs border truncate flex items-center gap-1"
+                      style={{
+                        backgroundColor: isVacation
+                          ? '#ECFDF5'
+                          : isOff
+                            ? '#F3F4F6'
+                            : `${color}15`,
+                        borderColor: isVacation
+                          ? '#A7F3D0'
+                          : isOff
+                            ? '#D1D5DB'
+                            : `${color}55`,
+                        color: isVacation ? '#065F46' : isOff ? '#4B5563' : color,
+                      }}
+                      title={effectiveBranch}
+                    >
+                      <span
+                        className="w-1.5 h-1.5 rounded-full shrink-0"
+                        style={{ backgroundColor: color }}
+                      />
+                      <span className="truncate">{effectiveBranch}</span>
+                    </div>
+
+                    {!isVacation && !isOff && entry.startTime && (
+                      <div className="text-[10px] font-mono font-semibold text-[#4A453F] tabular-nums truncate pl-0.5">
+                        {entry.startTime} - {entry.endTime || ''}
+                      </div>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
         </div>
-        {editable && (
-          <span className="text-[10px] text-[#6F6860]">
-            Hacé clic en cualquier día del calendario para pintar su sucursal y horario.
-          </span>
-        )}
+
+        {/* Right Column: Selected Day Detail & Editor (CRM Agenda style) */}
+        <div className="bg-white rounded-xs border border-[#DCD4C9] flex flex-col overflow-hidden">
+          <div className="p-3.5 border-b border-[#DCD4C9] bg-[#18231C] text-white flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <span className="text-[10px] uppercase tracking-widest text-[#FDB813] font-bold block">
+                Detalle del Día
+              </span>
+              <h4 className="font-bold text-xs sm:text-sm uppercase tracking-wider mt-0.5 truncate">
+                {selectedDateStr === todayStr
+                  ? `Hoy · ${formatReadableDateEs(selectedDateStr)}`
+                  : formatReadableDateEs(selectedDateStr)}
+              </h4>
+            </div>
+            <CalendarIcon className="w-4 h-4 text-[#FDB813] shrink-0" />
+          </div>
+
+          <div className="p-3.5 flex-1 bg-[#FAF8F5] space-y-3.5 overflow-y-auto text-xs">
+            {/* Day Summary Card */}
+            {(() => {
+              const isVac = selectedDayResolved.source === 'vacation';
+              const isOff = selectedDayResolved.entry.isOffDay;
+              const label = isVac ? 'Vacaciones' : selectedDayResolved.entry.branch;
+              const col = isVac
+                ? '#059669'
+                : getBranchColor(label, config.branchColors, configuredBranches);
+              const sourceLabel =
+                selectedDayResolved.source === 'vacation'
+                  ? 'Período de vacaciones'
+                  : selectedDayResolved.source === 'override'
+                    ? 'Asignación puntual del día'
+                    : selectedDayResolved.source === 'weekly'
+                      ? 'Por plantilla semanal'
+                      : 'Por sucursal base';
+
+              return (
+                <div
+                  className="bg-white p-3 rounded-sm border border-[#DCD4C9] space-y-2"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-[#6F6860]">
+                      {sourceLabel}
+                    </span>
+                    {editable && selectedDayResolved.source === 'override' && (
+                      <button
+                        type="button"
+                        onClick={() => clearOverrideForDate(selectedDateStr)}
+                        className="text-[10px] font-bold text-[#B9522F] hover:underline flex items-center gap-1 cursor-pointer"
+                      >
+                        <Eraser className="w-3 h-3" />
+                        <span>Quitar cambio</span>
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-black text-sm flex items-center gap-1.5" style={{ color: col }}>
+                      <span
+                        className="w-2.5 h-2.5 rounded-xs inline-block shrink-0"
+                        style={{ backgroundColor: col }}
+                      />
+                      <span>{label}</span>
+                    </span>
+                    {!isVac && !isOff && (
+                      <span className="font-mono font-bold text-xs text-[#18231C] bg-[#FAF8F5] px-2 py-0.5 border border-[#DCD4C9] rounded-xs tabular-nums">
+                        {selectedDayResolved.entry.startTime} - {selectedDayResolved.entry.endTime} hs
+                      </span>
+                    )}
+                  </div>
+
+                  {selectedDayResolved.vacationNote && (
+                    <p className="text-[11px] text-emerald-800">{selectedDayResolved.vacationNote}</p>
+                  )}
+
+                  {selectedDayBranchObj && (
+                    <div className="pt-1.5 border-t border-[#ECE5DC] text-[11px] text-[#6F6860]">
+                      <span className="font-bold text-[#18231C]">Horario de apertura del local: </span>
+                      <span>
+                        {selectedDayBranchObj.openingHours || selectedDayBranchObj.hours || 'Sin especificar'}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* Edit Controls when in Panel de Control */}
+            {editable && (
+              <div className="bg-white p-3.5 rounded-xs border border-[#DCD4C9] space-y-3">
+                <div className="flex items-center justify-between border-b border-[#ECE5DC] pb-2">
+                  <span className="font-bold uppercase tracking-wider text-[#18231C] flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-[#B9522F]" />
+                    <span>Asignar Turno / Sucursal</span>
+                  </span>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-[#6F6860] mb-1">
+                    Sucursal / Estado
+                  </label>
+                  <select
+                    value={brushBranch}
+                    onChange={(e) => {
+                      const nextB = e.target.value;
+                      setBrushBranch(nextB);
+                      const bObj = findConfiguredBranch(nextB, configuredBranches);
+                      if (bObj) {
+                        const parsed = parseBranchOpeningHours(bObj);
+                        setBrushStart(parsed.fullShift.start);
+                        setBrushEnd(parsed.fullShift.end);
+                      }
+                    }}
+                    className="w-full px-2.5 py-2 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs font-bold text-[#18231C] cursor-pointer outline-none"
+                  >
+                    {branchNames.map((b) => (
+                      <option key={b} value={b}>
+                        {b}
+                      </option>
+                    ))}
+                    <option value="Franco">Franco / Descanso</option>
+                  </select>
+                </div>
+
+                {brushBranch !== 'Franco' && (
+                  <>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase text-[#6F6860] mb-1">
+                          Ingreso
+                        </label>
+                        <input
+                          type="time"
+                          value={brushStart}
+                          onChange={(e) => setBrushStart(e.target.value)}
+                          className="w-full px-2 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs font-mono tabular-nums outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase text-[#6F6860] mb-1">
+                          Salida
+                        </label>
+                        <input
+                          type="time"
+                          value={brushEnd}
+                          onChange={(e) => setBrushEnd(e.target.value)}
+                          className="w-full px-2 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs font-mono tabular-nums outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    {selectedBrushBranchObj && selectedBrushParsed && (
+                      <div className="p-2 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs space-y-1.5">
+                        <div className="text-[10px] text-[#6F6860]">
+                          <strong className="text-[#18231C]">Franjas de {selectedBrushBranchObj.name}:</strong>{' '}
+                          {selectedBrushParsed.rawText}
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          {selectedBrushParsed.morningShift && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setBrushStart(selectedBrushParsed.morningShift!.start);
+                                setBrushEnd(selectedBrushParsed.morningShift!.end);
+                              }}
+                              className="px-2 py-1 bg-white hover:bg-neutral-100 border border-[#DCD4C9] rounded-xs text-[10px] font-mono font-bold text-[#18231C] cursor-pointer"
+                            >
+                              Mañana {selectedBrushParsed.morningShift.start}-{selectedBrushParsed.morningShift.end}
+                            </button>
+                          )}
+                          {selectedBrushParsed.afternoonShift && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setBrushStart(selectedBrushParsed.afternoonShift!.start);
+                                setBrushEnd(selectedBrushParsed.afternoonShift!.end);
+                              }}
+                              className="px-2 py-1 bg-white hover:bg-neutral-100 border border-[#DCD4C9] rounded-xs text-[10px] font-mono font-bold text-[#18231C] cursor-pointer"
+                            >
+                              Tarde {selectedBrushParsed.afternoonShift.start}-{selectedBrushParsed.afternoonShift.end}
+                            </button>
+                          )}
+                          {selectedBrushParsed.saturdayShift && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setBrushStart(selectedBrushParsed.saturdayShift!.start);
+                                setBrushEnd(selectedBrushParsed.saturdayShift!.end);
+                              }}
+                              className="px-2 py-1 bg-white hover:bg-neutral-100 border border-[#DCD4C9] rounded-xs text-[10px] font-mono font-bold text-[#18231C] cursor-pointer"
+                            >
+                              Sáb {selectedBrushParsed.saturdayShift.start}-{selectedBrushParsed.saturdayShift.end}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                <div className="grid grid-cols-1 gap-1.5 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => applyShiftToDate(selectedDateStr)}
+                    className="w-full py-2 px-3 bg-[#FAF8F5] hover:bg-[#ECE5DC] border border-[#DCD4C9] text-[#18231C] rounded-xs text-[11px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Check className="w-3.5 h-3.5 text-[#18231C]" />
+                    <span>Aplicar solo al {selectedDateStr}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => applyShiftToWeekday(selectedDayWeekdayKey)}
+                    className="w-full py-2 px-3 bg-[#18231C] hover:bg-black text-[#FDB813] rounded-xs text-[11px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <CalendarIcon className="w-3.5 h-3.5" />
+                    <span>Aplicar a todos los {WEEKDAY_FULL_ES[selectedDayWeekdayKey] || selectedDayWeekdayKey}</span>
+                  </button>
+                  {selectedBrushBranchObj && brushBranch !== 'Franco' && (
+                    <button
+                      type="button"
+                      onClick={() => handleApplyBranchScheduleToWeek('full')}
+                      className="w-full py-1.5 px-3 bg-[#FAF8F5] hover:bg-neutral-100 border border-[#DCD4C9] text-[#18231C] rounded-xs text-[10px] font-bold uppercase flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <Wand2 className="w-3 h-3 text-[#B9522F]" />
+                      <span>Usar semana tipo de {selectedBrushBranchObj.name}</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleResetMonthOverrides}
+                    className="w-full py-1.5 px-3 bg-white hover:bg-red-50 border border-[#DCD4C9] text-[#6F6860] hover:text-red-700 rounded-xs text-[10px] font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    <span>Limpiar cambios puntuales de {MONTH_NAMES[month]}</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Compact Weekly Template Overview */}
+            <div className="bg-white p-3 rounded-xs border border-[#DCD4C9] space-y-2">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-[#6F6860]">
+                {editable
+                  ? 'Semana habitual (clic en un día para asignarle el local elegido)'
+                  : 'Tu semana habitual'}
+              </div>
+              <div className="space-y-1">
+                {WEEKDAY_MON_FIRST.map((dayKey) => {
+                  const weeklyEntry = legajo.weeklySchedule?.[dayKey];
+                  const defaultBranch = resolveConfiguredBranchName(
+                    legajo.assignedBranch,
+                    configuredBranches,
+                    true
+                  );
+                  const isDefaultWork = (
+                    legajo.workDays || ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
+                  ).includes(dayKey);
+                  const resolvedBranch = weeklyEntry
+                    ? resolveConfiguredBranchName(weeklyEntry.branch, configuredBranches, true)
+                    : isDefaultWork
+                      ? defaultBranch
+                      : 'Franco';
+                  const resolvedStart = weeklyEntry?.startTime || legajo.scheduledStart || '08:30';
+                  const resolvedEnd = weeklyEntry?.endTime || legajo.scheduledEnd || '17:30';
+                  const isOff = resolvedBranch === 'Franco' || weeklyEntry?.isOffDay;
+                  const color = getBranchColor(resolvedBranch, config.branchColors, configuredBranches);
+
+                  const RowTag = editable ? 'button' : 'div';
+                  return (
+                    <RowTag
+                      key={dayKey}
+                      {...(editable
+                        ? {
+                            type: 'button' as const,
+                            onClick: () => applyShiftToWeekday(dayKey),
+                            title: `Clic para asignar ${brushBranch} a todos los ${WEEKDAY_FULL_ES[dayKey]}`,
+                          }
+                        : {})}
+                      className={`w-full px-2.5 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs flex items-center justify-between gap-2 text-[11px] ${
+                        editable ? 'hover:bg-white cursor-pointer' : ''
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span
+                          className="w-2 h-2 rounded-full shrink-0"
+                          style={{ backgroundColor: color }}
+                        />
+                        <span className="font-black text-[#18231C] uppercase w-7 shrink-0">
+                          {dayKey}
+                        </span>
+                        <span className="font-bold truncate" style={{ color }}>
+                          {isOff ? 'Franco' : resolvedBranch}
+                        </span>
+                      </div>
+                      <span className="font-mono text-[10px] text-[#4A453F] tabular-nums shrink-0">
+                        {isOff ? '—' : `${resolvedStart}-${resolvedEnd}`}
+                      </span>
+                    </RowTag>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

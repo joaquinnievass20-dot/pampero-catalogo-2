@@ -908,15 +908,16 @@ export const CRMTasksTab: React.FC<CRMTasksTabProps> = ({
         <div>
           <div className="flex items-center gap-2 flex-wrap">
             <h3 className="font-bold text-base text-[#18231C] uppercase tracking-wider flex items-center gap-2">
-              <CheckSquare className="w-5 h-5 text-[#B9522F]" />
-              Tareas del Equipo
+              <CheckSquare className="w-4 h-4 text-[#18231C]" />
+              {theme?.siteTexts?.crmTasksTitle || 'Tareas del Equipo'}
             </h3>
-            <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-xs bg-amber-100 text-amber-900 border border-amber-300">
+            <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-xs bg-[#FAF8F5] text-[#18231C] border border-[#DCD4C9]">
               {hasControlPermission ? 'Controlador / Encargado' : 'Vista Usuario'}
             </span>
           </div>
           <p className="text-xs text-[#6F6860] mt-0.5">
-            Usá tareas preestablecidas o creá nuevas, asigná etiquetas y varios responsables, programá activaciones por fecha o mes, y respaldá con historial permanente y fotos.
+            {theme?.siteTexts?.crmTasksSubtitle ||
+              'Usá tareas preestablecidas o creá nuevas, asigná etiquetas y varios responsables, programá activaciones por fecha o mes, y respaldá con historial permanente y fotos.'}
           </p>
         </div>
 
@@ -924,17 +925,17 @@ export const CRMTasksTab: React.FC<CRMTasksTabProps> = ({
           <button
             type="button"
             onClick={() => openNewModal()}
-            className="px-4 py-2 bg-[#B9522F] hover:bg-[#9E3E1E] text-white text-xs font-bold uppercase tracking-wider rounded-xs transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+            className="px-4 py-2 bg-[#18231C] hover:bg-black text-[#FDB813] text-xs font-bold uppercase tracking-wider rounded-xs transition-colors flex items-center gap-1.5 cursor-pointer"
           >
             <Plus className="w-4 h-4" />
-            <span>Nueva Tarea</span>
+            <span>{theme?.siteTexts?.crmNewTaskBtnText || 'Nueva Tarea'}</span>
           </button>
         </div>
       </div>
 
       {/* Panel de Control y Supervisión */}
       {hasControlPermission && (
-        <div className="bg-white p-3.5 rounded-xs border border-[#DCD4C9] shadow-2xs space-y-3">
+        <div className="bg-white p-3.5 rounded-sm border border-[#DCD4C9] shadow-2xs space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <div className="p-1.5 bg-[#18231C] text-[#FDB813] rounded-xs">
@@ -951,29 +952,29 @@ export const CRMTasksTab: React.FC<CRMTasksTabProps> = ({
             </div>
 
             <div className="flex items-center gap-2 flex-wrap text-xs">
-              <span className="px-2.5 py-1 rounded-xs bg-[#FAF8F5] border border-[#DCD4C9] font-bold text-[#18231C]">
+              <span className="px-2.5 py-1 rounded-xs bg-[#FAF8F5] border border-[#DCD4C9] font-bold text-[#18231C] tabular-nums">
                 Activas: {managerOverview.total}
               </span>
-              <span className="px-2.5 py-1 rounded-xs bg-emerald-50 border border-emerald-200 font-bold text-emerald-800">
+              <span className="px-2.5 py-1 rounded-xs bg-[#FAF8F5] border border-[#DCD4C9] font-bold text-emerald-700 tabular-nums">
                 Completadas: {managerOverview.completed}
               </span>
-              <span className="px-2.5 py-1 rounded-xs bg-blue-50 border border-blue-200 font-bold text-blue-900 flex items-center gap-1">
-                <TrendingUp className="w-3.5 h-3.5" />
+              <span className="px-2.5 py-1 rounded-xs bg-[#FAF8F5] border border-[#DCD4C9] font-bold text-[#18231C] flex items-center gap-1 tabular-nums">
+                <TrendingUp className="w-3.5 h-3.5 text-[#18231C]" />
                 Avance: {managerOverview.avgProgress}%
               </span>
               {scheduledFutureCount > 0 && (
                 <button
                   type="button"
                   onClick={() => setScheduleViewFilter(scheduleViewFilter === 'scheduled' ? 'active' : 'scheduled')}
-                  className="px-2.5 py-1 rounded-xs bg-indigo-50 border border-indigo-200 font-bold text-indigo-800 flex items-center gap-1 cursor-pointer hover:bg-indigo-100"
+                  className="px-2.5 py-1 rounded-xs bg-[#FAF8F5] hover:bg-[#ECE5DC] border border-[#DCD4C9] font-bold text-[#18231C] flex items-center gap-1 cursor-pointer tabular-nums"
                 >
                   <CalendarClock className="w-3.5 h-3.5" />
                   Programadas: {scheduledFutureCount}
                 </button>
               )}
               {managerOverview.overdueCount > 0 && (
-                <span className="px-2.5 py-1 rounded-xs bg-red-600 text-white font-bold flex items-center gap-1 animate-pulse">
-                  <AlertTriangle className="w-3.5 h-3.5" />
+                <span className="px-2.5 py-1 rounded-xs bg-rose-50 border border-rose-200 text-rose-800 font-bold flex items-center gap-1 tabular-nums">
+                  <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
                   Vencidas: {managerOverview.overdueCount}
                 </span>
               )}
@@ -1146,27 +1147,27 @@ export const CRMTasksTab: React.FC<CRMTasksTabProps> = ({
                 }}
                 onDragLeave={() => setDragOverCol(null)}
                 onDrop={() => handleDropOnColumn(col.id)}
-                className={`bg-[#FAF8F5] rounded-xs border-2 flex flex-col h-full min-h-[520px] transition-all ${
-                  isDragTarget ? 'border-[#B9522F] bg-amber-50/50 shadow-md' : 'border-[#DCD4C9]'
+                className={`bg-[#FAF8F5] rounded-sm border flex flex-col h-full min-h-[520px] transition-all ${
+                  isDragTarget ? 'border-[#18231C] bg-amber-50/40 shadow-sm' : 'border-[#DCD4C9]'
                 }`}
               >
-                <div
-                  className="p-3 border-b border-[#DCD4C9] bg-white rounded-t-xs"
-                  style={{ borderTop: `4px solid ${col.color}` }}
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <h4 className="font-bold text-xs uppercase tracking-wider text-[#18231C]">
-                      {fixUtf8Encoding(col.label)}
-                    </h4>
-                    <span
-                      style={{ backgroundColor: `${col.color}22`, color: col.color }}
-                      className="w-5 h-5 rounded-full text-[11px] font-black flex items-center justify-center border border-current"
-                    >
+                <div className="px-3.5 py-2.5 border-b border-[#DCD4C9] bg-white rounded-t-sm space-y-0.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span
+                        className="w-2.5 h-2.5 rounded-full shrink-0"
+                        style={{ backgroundColor: col.color }}
+                      />
+                      <h4 className="font-bold text-xs uppercase tracking-wider text-[#18231C] truncate">
+                        {fixUtf8Encoding(col.label)}
+                      </h4>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-xs bg-[#FAF8F5] border border-[#DCD4C9] text-[#18231C] text-[11px] font-mono font-bold tabular-nums shrink-0">
                       {colTasks.length}
                     </span>
                   </div>
                   {col.description && (
-                    <p className="text-[10px] text-[#6F6860] leading-tight">
+                    <p className="text-[10px] text-[#6F6860] leading-tight truncate">
                       {fixUtf8Encoding(col.description)}
                     </p>
                   )}
@@ -1174,12 +1175,12 @@ export const CRMTasksTab: React.FC<CRMTasksTabProps> = ({
 
                 <div className="p-2.5 flex-1 space-y-2.5 overflow-y-auto">
                   {colTasks.length === 0 ? (
-                    <div className="h-32 border-2 border-dashed border-[#DCD4C9] rounded-xs flex flex-col items-center justify-center text-center p-3 text-neutral-400">
+                    <div className="h-32 border border-dashed border-[#DCD4C9] rounded-sm flex flex-col items-center justify-center text-center p-3 text-[#6F6860] bg-white/40">
                       <p className="text-[11px] font-medium">Sin tareas en esta etapa</p>
                       <button
                         type="button"
                         onClick={() => openNewModal(col.id)}
-                        className="mt-1 text-[10px] text-[#B9522F] hover:underline font-bold cursor-pointer"
+                        className="mt-1.5 text-[10px] text-[#18231C] hover:underline font-bold cursor-pointer"
                       >
                         + Agregar acá
                       </button>
@@ -1209,6 +1210,13 @@ export const CRMTasksTab: React.FC<CRMTasksTabProps> = ({
                       const scheduleLabel = getScheduleSummary(task);
                       const commentCount = Array.isArray(task.comments) ? task.comments.length : 0;
                       const photoCount = Array.isArray(task.evidencePhotos) ? task.evidencePhotos.length : 0;
+                      const hasQuietDetails = Boolean(
+                        task.requiredAdvance ||
+                        scheduleLabel ||
+                        lastAdvance ||
+                        commentCount > 0 ||
+                        photoCount > 0
+                      );
 
                       return (
                         <div
@@ -1217,134 +1225,147 @@ export const CRMTasksTab: React.FC<CRMTasksTabProps> = ({
                           onDragStart={() => setDraggedTaskId(task.id)}
                           onClick={() => setViewingTask(task)}
                           style={{
-                            backgroundColor: theme?.crmCardBgColor || '#FFFFFF',
+                            backgroundColor:
+                              dl.kind === 'overdue'
+                                ? undefined
+                                : theme?.crmCardBgColor || '#FFFFFF',
                             borderColor:
                               dl.kind === 'overdue'
-                                ? '#FCA5A5'
+                                ? undefined
                                 : theme?.crmCardBorderColor || '#DCD4C9',
-                            borderLeftWidth: '4px',
-                            borderLeftColor: imp.borderLeftColor,
                             color: theme?.crmCardTextColor || '#18231C',
                           }}
-                          className="rounded-xs p-3 border hover:border-[#18231C] shadow-2xs hover:shadow-md transition-all cursor-grab active:cursor-grabbing group space-y-2 select-none"
+                          className={`rounded-sm p-3 border shadow-2xs hover:border-[#18231C] hover:shadow-sm transition-all cursor-grab active:cursor-grabbing group space-y-2 select-none ${
+                            dl.kind === 'overdue'
+                              ? 'border-rose-300 bg-rose-50/15'
+                              : 'bg-white border-[#DCD4C9]'
+                          }`}
                         >
-                          {/* Top Row */}
+                          {/* Line 1: Priority dot + Branch */}
                           <div className="flex items-center justify-between gap-1.5">
-                            <span
-                              className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded-xs border inline-flex items-center gap-1 ${imp.badgeClass}`}
-                            >
-                              <Flag className="w-2.5 h-2.5" />
+                            <span className="text-[10px] font-bold uppercase text-[#18231C] inline-flex items-center gap-1.5">
+                              <span
+                                className="w-2 h-2 rounded-full shrink-0"
+                                style={{ backgroundColor: imp.dotColor }}
+                              />
                               <span>{imp.shortLabel}</span>
                             </span>
 
-                            <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-xs bg-[#ECE5DC] text-[#18231C] shrink-0">
+                            <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-xs bg-[#FAF8F5] border border-[#ECE5DC] text-[#6F6860] shrink-0">
                               {fixUtf8Encoding(task.branch || 'Maipú')}
                             </span>
                           </div>
 
-                          {/* Etiquetas (Tags) */}
-                          {Array.isArray(task.tags) && task.tags.length > 0 && (
-                            <div className="flex flex-wrap gap-1">
-                              {task.tags.map((tg) => (
-                                <span
-                                  key={tg}
-                                  style={{ backgroundColor: getTagColor(tg) }}
-                                  className="text-[9px] font-bold text-white px-1.5 py-0.5 rounded-xs"
-                                >
-                                  {fixUtf8Encoding(tg)}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-
-                          {/* Title & Desc */}
-                          <div>
+                          {/* Line 2: Title, Description & Quiet Tags */}
+                          <div className="space-y-1">
                             <h5 className="font-bold text-xs text-[#18231C] leading-snug">
                               {fixUtf8Encoding(task.title)}
                             </h5>
                             {task.description && (
-                              <p className="text-[11px] text-[#6F6860] mt-0.5 line-clamp-2 leading-snug">
+                              <p className="text-[11px] text-[#6F6860] line-clamp-2 leading-snug">
                                 {fixUtf8Encoding(task.description)}
                               </p>
                             )}
+                            {Array.isArray(task.tags) && task.tags.length > 0 && (
+                              <div className="flex flex-wrap gap-1 pt-0.5">
+                                {task.tags.map((tg) => (
+                                  <span
+                                    key={tg}
+                                    className="text-[10px] font-semibold bg-[#FAF8F5] border border-[#DCD4C9] text-[#18231C] px-1.5 py-0.5 rounded-xs inline-flex items-center gap-1"
+                                  >
+                                    <span
+                                      className="w-1.5 h-1.5 rounded-full shrink-0"
+                                      style={{ backgroundColor: getTagColor(tg) }}
+                                    />
+                                    <span>{fixUtf8Encoding(tg)}</span>
+                                  </span>
+                                ))}
+                              </div>
+                            )}
                           </div>
 
-                          {/* Programación */}
-                          {scheduleLabel && (
-                            <div className="text-[10px] font-bold px-2 py-0.5 rounded-xs bg-indigo-50 text-indigo-800 border border-indigo-200 inline-flex items-center gap-1">
-                              <Repeat className="w-3 h-3 shrink-0" />
-                              <span>{scheduleLabel}</span>
-                            </div>
-                          )}
-
-                          {/* Meta de avance */}
-                          {task.requiredAdvance && (
-                            <div className="text-[10px] bg-amber-50/90 text-amber-950 px-2 py-1.5 rounded-xs border border-amber-200 space-y-0.5">
-                              <span className="font-black uppercase tracking-wider flex items-center gap-1 text-[9px] text-amber-800">
-                                <Target className="w-3 h-3 text-[#B9522F]" />
-                                Avance requerido (Meta {targetPct}%):
-                              </span>
-                              <p className="leading-snug">{fixUtf8Encoding(task.requiredAdvance)}</p>
-                            </div>
-                          )}
-
-                          {/* Progreso */}
+                          {/* Line 3: Slim Progress + Deadline */}
                           <div className="space-y-1">
-                            <div className="flex items-center justify-between text-[10px]">
-                              <span className="font-bold text-[#6F6860]">Avance actual</span>
+                            <div className="flex items-center justify-between gap-2 text-[10px]">
                               <span
-                                className={`font-black font-mono ${
+                                className={`font-mono font-bold tabular-nums ${
                                   metTarget || isFinalColumn ? 'text-emerald-700' : 'text-[#18231C]'
                                 }`}
                               >
-                                {pct}%{task.targetProgressPercent && task.targetProgressPercent < 100 ? ` / ${targetPct}% req.` : ''}
+                                Avance: {pct}%{task.targetProgressPercent && task.targetProgressPercent < 100 ? ` / ${targetPct}%` : ''}
+                              </span>
+                              <span
+                                className={`font-semibold inline-flex items-center gap-1 truncate ${
+                                  dl.kind === 'overdue'
+                                    ? 'text-rose-700'
+                                    : dl.kind === 'soon'
+                                    ? 'text-amber-800'
+                                    : 'text-[#6F6860]'
+                                }`}
+                              >
+                                <Calendar className="w-3 h-3 shrink-0" />
+                                <span className="truncate">{dl.label}</span>
                               </span>
                             </div>
-                            <div className="w-full h-1.5 bg-neutral-200 rounded-full overflow-hidden">
+                            <div className="w-full h-1.5 bg-[#ECE5DC] rounded-full overflow-hidden">
                               <div
                                 className={`h-full transition-all duration-300 ${
-                                  metTarget || isFinalColumn ? 'bg-emerald-600' : 'bg-[#B9522F]'
+                                  metTarget || isFinalColumn ? 'bg-emerald-600' : 'bg-[#18231C]'
                                 }`}
                                 style={{ width: `${pct}%` }}
                               />
                             </div>
                           </div>
 
-                          {/* Plazo + Badges Comentarios / Fotos */}
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            <span
-                              className={`text-[10px] font-bold px-2 py-0.5 rounded-xs border inline-flex items-center gap-1 ${dl.badgeClass}`}
-                            >
-                              <Calendar className="w-3 h-3 shrink-0" />
-                              <span>{dl.label}</span>
-                            </span>
-                            {commentCount > 0 && (
-                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-xs bg-slate-100 text-slate-700 border border-slate-200 inline-flex items-center gap-1">
-                                <MessageSquare className="w-2.5 h-2.5" />
-                                {commentCount}
-                              </span>
-                            )}
-                            {photoCount > 0 && (
-                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-xs bg-emerald-50 text-emerald-800 border border-emerald-200 inline-flex items-center gap-1">
-                                <Camera className="w-2.5 h-2.5" />
-                                {photoCount}
-                              </span>
-                            )}
-                          </div>
+                          {/* Line 4: Quiet Single-Box Detail Block (Meta, Programación, Último avance, Comentarios/Fotos) */}
+                          {hasQuietDetails && (
+                            <div className="bg-[#FAF8F5] border border-[#ECE5DC] rounded-xs px-2.5 py-2 space-y-1 text-[11px] text-[#4A453F]">
+                              {task.requiredAdvance && (
+                                <p className="leading-snug line-clamp-2">
+                                  <strong className="text-[#18231C]">Meta {targetPct}%:</strong>{' '}
+                                  {fixUtf8Encoding(task.requiredAdvance)}
+                                </p>
+                              )}
 
-                          {lastAdvance && (
-                            <div className="text-[10px] bg-[#FAF8F5] text-[#4A453F] px-2 py-1 rounded-xs border border-[#ECE5DC] leading-snug">
-                              <span className="font-bold text-[#18231C]">
-                                {fixUtf8Encoding(lastAdvance.author)}:
-                              </span>{' '}
-                              {fixUtf8Encoding(lastAdvance.note)}
+                              {scheduleLabel && (
+                                <div className="flex items-center gap-1 text-[#18231C] truncate">
+                                  <Repeat className="w-3 h-3 text-[#6F6860] shrink-0" />
+                                  <span className="truncate">{scheduleLabel}</span>
+                                </div>
+                              )}
+
+                              {lastAdvance && (
+                                <p className="leading-snug line-clamp-2">
+                                  <strong className="text-[#18231C]">
+                                    {fixUtf8Encoding(lastAdvance.author)}:
+                                  </strong>{' '}
+                                  {fixUtf8Encoding(lastAdvance.note)}
+                                </p>
+                              )}
+
+                              {(commentCount > 0 || photoCount > 0) && (
+                                <div className="flex items-center gap-3 text-[10px] font-semibold text-[#6F6860] pt-0.5">
+                                  {commentCount > 0 && (
+                                    <span className="inline-flex items-center gap-1">
+                                      <MessageSquare className="w-3 h-3" />
+                                      <span className="tabular-nums">{commentCount} com.</span>
+                                    </span>
+                                  )}
+                                  {photoCount > 0 && (
+                                    <span className="inline-flex items-center gap-1 text-emerald-700">
+                                      <Camera className="w-3 h-3" />
+                                      <span className="tabular-nums">{photoCount} fotos</span>
+                                    </span>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           )}
 
-                          {/* Footer */}
-                          <div className="pt-2 border-t border-neutral-100 flex items-center justify-between gap-1">
+                          {/* Line 5: Unified Footer */}
+                          <div className="pt-1.5 border-t border-[#ECE5DC] flex items-center justify-between gap-1.5">
                             <div className="flex items-center gap-1 min-w-0">
-                              <Users className="w-3 h-3 text-neutral-400 shrink-0" />
+                              <Users className="w-3 h-3 text-[#6F6860] shrink-0" />
                               <span className="text-[10px] font-bold text-[#18231C] truncate">
                                 {assignees.join(', ') || 'Sin asignar'}
                               </span>
@@ -1357,10 +1378,10 @@ export const CRMTasksTab: React.FC<CRMTasksTabProps> = ({
                                   e.stopPropagation();
                                   setViewingTask(task);
                                 }}
-                                className="px-1.5 py-1 hover:bg-amber-50 rounded-xs text-[#18231C] border border-transparent hover:border-amber-300 cursor-pointer flex items-center gap-1 text-[10px] font-bold"
+                                className="px-2 py-1 bg-[#FAF8F5] hover:bg-[#ECE5DC] rounded-xs text-[#18231C] border border-[#DCD4C9] cursor-pointer flex items-center gap-1 text-[10px] font-bold transition-colors"
                                 title="Ver ficha completa de la tarea"
                               >
-                                <Eye className="w-3.5 h-3.5" />
+                                <Eye className="w-3 h-3" />
                                 <span>Ficha</span>
                               </button>
 
@@ -1372,7 +1393,7 @@ export const CRMTasksTab: React.FC<CRMTasksTabProps> = ({
                                     e.stopPropagation();
                                     handleDeleteTask(task);
                                   }}
-                                  className="p-1 hover:bg-red-50 rounded-xs text-neutral-400 hover:text-red-600 cursor-pointer"
+                                  className="p-1 bg-[#FAF8F5] hover:bg-red-50 rounded-xs text-[#6F6860] hover:text-red-600 border border-[#DCD4C9] cursor-pointer transition-colors"
                                   title="Eliminar tarea"
                                 >
                                   <Trash2 className="w-3 h-3" />
@@ -1386,14 +1407,14 @@ export const CRMTasksTab: React.FC<CRMTasksTabProps> = ({
                                     e.stopPropagation();
                                     handleMoveTask(task, nextCol.id);
                                   }}
-                                  className="px-2 py-1 bg-[#18231C] hover:bg-[#B9522F] text-white rounded-xs text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 transition-colors cursor-pointer"
+                                  className="px-2.5 py-1 bg-[#18231C] hover:bg-black text-white rounded-xs text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 transition-colors cursor-pointer"
                                   title={`Avanzar a ${fixUtf8Encoding(nextCol.label)}`}
                                 >
                                   <span>{fixUtf8Encoding(nextCol.label.replace(/^\d+\.\s*/, '').split('/')[0].split(' ')[0])}</span>
-                                  <ArrowRight className="w-2.5 h-2.5" />
+                                  <ArrowRight className="w-2.5 h-2.5 text-[#FDB813]" />
                                 </button>
                               ) : (
-                                <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-xs flex items-center gap-1">
+                                <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-xs flex items-center gap-1">
                                   <CheckCircle2 className="w-3 h-3 text-emerald-600" />
                                   <span>Lista</span>
                                 </span>
@@ -1910,9 +1931,9 @@ export const CRMTasksTab: React.FC<CRMTasksTabProps> = ({
                   <button
                     type="button"
                     onClick={handleAddImmutableComment}
-                    className="px-3 py-1.5 bg-[#B9522F] hover:bg-[#9E3E1E] text-white text-xs font-bold rounded-xs flex items-center gap-1 cursor-pointer shrink-0"
+                    className="px-3 py-1.5 bg-[#18231C] hover:bg-black text-white text-xs font-bold rounded-xs flex items-center gap-1 cursor-pointer shrink-0"
                   >
-                    <MessageSquarePlus className="w-3.5 h-3.5" />
+                    <MessageSquarePlus className="w-3.5 h-3.5 text-[#FDB813]" />
                     <span>Comentar</span>
                   </button>
                 </div>
@@ -2021,7 +2042,7 @@ export const CRMTasksTab: React.FC<CRMTasksTabProps> = ({
                   </button>
                   <button
                     type="submit"
-                    className="px-5 py-2 bg-[#B9522F] hover:bg-[#9E3E1E] text-white font-bold uppercase tracking-wider rounded-xs transition-colors cursor-pointer shadow-xs"
+                    className="px-5 py-2 bg-[#18231C] hover:bg-black text-[#FDB813] font-bold uppercase tracking-wider rounded-xs transition-colors cursor-pointer shadow-xs"
                   >
                     {editingTask ? 'Guardar Cambios' : 'Registrar Tarea'}
                   </button>

@@ -138,3 +138,16 @@ export function canManageRRHH(userSession: UserSession | null | undefined): bool
   const panelTabs = getEmployeePanelTabs(userSession);
   return panelTabs.includes('rrhh_admin');
 }
+
+/**
+ * Acceso al Módulo independiente de Costos & Finanzas (Dashboard, Cheques, Caja Chica).
+ * Restringido exclusivamente a Administradores o empleados/encargados explícitamente autorizados con 'costs' en allowedTabs.
+ */
+export function hasCostsAccess(userSession: UserSession | null | undefined): boolean {
+  if (!userSession) return false;
+  if (userSession.role === 'admin') return true;
+  if (userSession.role !== 'employee') return false;
+  const emp = resolveEmployeeRecord(userSession);
+  const rawTabs = emp?.allowedTabs || userSession.allowedTabs || [];
+  return Array.isArray(rawTabs) && rawTabs.includes('costs');
+}

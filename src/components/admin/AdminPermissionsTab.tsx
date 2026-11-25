@@ -19,13 +19,14 @@ import {
   Sliders,
   Users,
   Clock,
+  Wallet,
 } from 'lucide-react';
 
 interface AdminPermissionsTabProps {
   triggerSaveNotice?: () => void;
 }
 
-export type CRMTabPermissionKey = 'visits' | 'board' | 'tasks' | 'calendar' | 'suppliers' | 'costs';
+export type CRMTabPermissionKey = 'visits' | 'board' | 'tasks' | 'calendar' | 'suppliers';
 
 export const CRM_TAB_DEFINITIONS: { key: CRMTabPermissionKey; label: string; description: string; badge: string }[] = [
   {
@@ -57,12 +58,6 @@ export const CRM_TAB_DEFINITIONS: { key: CRMTabPermissionKey; label: string; des
     label: 'Pedidos proveedor',
     description: 'Control de reposición y compras mayoristas',
     badge: 'Proveedores',
-  },
-  {
-    key: 'costs',
-    label: 'Control de costos',
-    description: 'Registro de gastos fijos y variables por sucursal',
-    badge: 'Finanzas',
   },
 ];
 
@@ -106,7 +101,7 @@ export const AdminPermissionsTab: React.FC<AdminPermissionsTabProps> = ({ trigge
 
   const getResolvedTabs = (target: EmployeeAccount): CRMTabPermissionKey[] => {
     if (!target.crmTabs) return ['visits', 'board', 'tasks', 'calendar', 'suppliers'];
-    const list = [...target.crmTabs] as CRMTabPermissionKey[];
+    const list = target.crmTabs.filter((t) => (t as string) !== 'costs') as CRMTabPermissionKey[];
     if (list.length > 0 && !target.crmTasksConfigured && !list.includes('tasks')) {
       list.push('tasks');
     }
@@ -128,6 +123,10 @@ export const AdminPermissionsTab: React.FC<AdminPermissionsTabProps> = ({ trigge
         target.canManageRRHH ||
         (target.panelTabsConfigured && tabs.includes('rrhh_admin'))
     );
+  };
+
+  const getResolvedCostsAccess = (target: EmployeeAccount): boolean => {
+    return Boolean((target.allowedTabs || []).includes('costs'));
   };
 
   const persistEmployeeUpdate = async (empId: string, updatedEmp: EmployeeAccount, msg: string) => {
@@ -246,6 +245,31 @@ export const AdminPermissionsTab: React.FC<AdminPermissionsTabProps> = ({ trigge
     );
   };
 
+  const handleToggleCosts = async (empId: string) => {
+    const target = employees.find((e) => e.id === empId);
+    if (!target) return;
+
+    const currentlyHas = getResolvedCostsAccess(target);
+    const nextHas = !currentlyHas;
+    const baseAllowed = target.allowedTabs || [];
+    const nextAllowed = nextHas
+      ? Array.from(new Set([...baseAllowed, 'costs']))
+      : baseAllowed.filter((t) => t !== 'costs');
+
+    const updatedEmp: EmployeeAccount = {
+      ...target,
+      allowedTabs: nextAllowed,
+    };
+
+    await persistEmployeeUpdate(
+      empId,
+      updatedEmp,
+      nextHas
+        ? `Acceso al Módulo Costos & Finanzas habilitado para ${updatedEmp.name}`
+        : `Acceso al Módulo Costos & Finanzas removido para ${updatedEmp.name}`
+    );
+  };
+
   const handleTogglePanelTab = async (empId: string, panelTabKey: string) => {
     const target = employees.find((e) => e.id === empId);
     if (!target) return;
@@ -339,7 +363,7 @@ export const AdminPermissionsTab: React.FC<AdminPermissionsTabProps> = ({ trigge
     const target = employees.find((e) => e.id === empId);
     if (!target) return;
 
-    const allTabs: CRMTabPermissionKey[] = ['visits', 'board', 'tasks', 'calendar', 'suppliers', 'costs'];
+    const allTabs: CRMTabPermissionKey[] = ['visits', 'board', 'tasks', 'calendar', 'suppliers'];
     const updatedEmp: EmployeeAccount = {
       ...target,
       crmTabs: allTabs,
@@ -431,6 +455,12 @@ export const AdminPermissionsTab: React.FC<AdminPermissionsTabProps> = ({ trigge
                     horarios/vac.
                   </span>
                 </th>
+                <th className="py-3.5 px-2.5 text-center">
+                  <div className="text-[#18231C]">Módulo Costos</div>
+                  <span className="text-[9px] font-normal text-[#6F6860] lowercase">
+                    finanzas/caja
+                  </span>
+                </th>
                 <th className="py-3.5 px-3 text-center">
                   <div className="text-[#18231C]">Panel de Control</div>
                   <span className="text-[9px] font-normal text-[#6F6860] lowercase">
@@ -445,6 +475,7 @@ export const AdminPermissionsTab: React.FC<AdminPermissionsTabProps> = ({ trigge
                 const assignedTabs = getResolvedTabs(emp);
                 const resolvedPanelTabs = getResolvedPanelTabs(emp);
                 const hasRRHH = getResolvedRRHHAccess(emp);
+                const hasCosts = getResolvedCostsAccess(emp);
                 const managesRRHH = Boolean(emp.canManageRRHH || resolvedPanelTabs.includes('rrhh_admin'));
                 const isPanelExpanded = expandedPanelEmpId === emp.id;
 
@@ -585,10 +616,31 @@ export const AdminPermissionsTab: React.FC<AdminPermissionsTabProps> = ({ trigge
                           title={
                             managesRRHH
                               ? 'Puede gestionar legajos, horarios y vacaciones del equipo'
-                              : 'Solo ficha su propia llegada'
+                              : 'Solo registra su fichaje de llegada'
                           }
                         >
                           <Users className="w-4 h-4" />
+                        </button>
+                      </td>
+
+                      {/* Restricted Costos & Finanzas Toggle */}
+                      <td className="py-3.5 px-2.5 text-center">
+                        <button
+                          type="button"
+                          disabled={isSaving}
+                          onClick={() => handleToggleCosts(emp.id)}
+                          className={`p-2 rounded-xs border transition-colors cursor-pointer inline-flex items-center justify-center ${
+                            hasCosts
+                              ? 'bg-[#18231C] border-[#18231C] text-[#FDB813] hover:bg-black'
+                              : 'bg-neutral-100 border-[#DCD4C9] text-neutral-400 hover:bg-neutral-200'
+                          }`}
+                          title={
+                            hasCosts
+                              ? 'Acceso autorizado al Módulo Costos & Finanzas (Liquidez, Cheques, Caja Chica)'
+                              : 'Sin acceso al Módulo Costos & Finanzas'
+                          }
+                        >
+                          <Wallet className="w-4 h-4" />
                         </button>
                       </td>
 

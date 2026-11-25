@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { LeadVisit, ObservationHistoryEntry } from '../../types';
+import { LeadVisit, ObservationHistoryEntry, ThemeConfig } from '../../types';
 import { 
   saveLeadVisit, 
   deleteLeadVisit, 
@@ -39,10 +39,12 @@ import {
   Download,
   Upload,
   CheckCircle2,
-  Bell
+  Bell,
+  MessageSquarePlus
 } from 'lucide-react';
 import { exportVisitsToExcel, importVisitsFromExcel } from '../../utils/kanbanExcelUtils';
 import { normalizeLeadVisit } from '../../utils/crmNormalizers';
+import { CRMObservationsModal } from './CRMObservationsModal';
 
 interface CRMVisitsTabProps {
   visits: LeadVisit[];
@@ -52,6 +54,7 @@ interface CRMVisitsTabProps {
   assignedSellerName?: string;
   onPromoteToCompanies?: (visit: LeadVisit) => void;
   onVisitsUpdated?: (visits: LeadVisit[]) => void;
+  theme?: ThemeConfig;
 }
 
 export type VisitKanbanStep = 'primer_contacto' | 'reunion' | 'previo_cotizacion' | 'convertida';
@@ -95,7 +98,9 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({
   assignedSellerName = '',
   onPromoteToCompanies,
   onVisitsUpdated,
+  theme,
 }) => {
+  const st = theme?.siteTexts;
   const [columns, setColumns] = useState<KanbanColumnConfig[]>(() => {
     try {
       const saved = localStorage.getItem('pampero_kanban_visits_cols');
@@ -171,6 +176,7 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({
   const [showModal, setShowModal] = useState(false);
   const [editingVisit, setEditingVisit] = useState<LeadVisit | null>(null);
   const [viewingVisit, setViewingVisit] = useState<LeadVisit | null>(null);
+  const [showVisitObsModal, setShowVisitObsModal] = useState(false);
   const [draggedVisitId, setDraggedVisitId] = useState<string | null>(null);
   const [dragOverCol, setDragOverCol] = useState<string | null>(null);
   const [excelNotice, setExcelNotice] = useState<string | null>(null);
@@ -522,15 +528,16 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({
         <div>
           <div className="flex items-center gap-2">
             <h3 className="font-bold text-base text-[#18231C] uppercase tracking-wider flex items-center gap-2">
-              <Layers className="w-5 h-5 text-[#B9522F]" />
-              Visitas Comerciales
+              <Layers className="w-4 h-4 text-[#18231C]" />
+              {st?.crmVisitsTitle || 'Visitas Comerciales'}
             </h3>
-            <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-xs bg-amber-100 text-amber-900 border border-amber-300">
+            <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-xs bg-[#FAF8F5] text-[#18231C] border border-[#DCD4C9]">
               Prospección a Empresas
             </span>
           </div>
           <p className="text-xs text-[#6F6860] mt-0.5">
-            Flujo paso a paso desde el primer contacto hasta superar <strong>"Previo a cotización"</strong> (momento en que la empresa pasa automáticamente al tablero de <strong>Seguimiento Empresas</strong>).
+            {st?.crmVisitsSubtitle ||
+              'Flujo paso a paso desde el primer contacto hasta superar "Previo a cotización" (momento en que la empresa pasa automáticamente al tablero de Seguimiento Empresas).'}
           </p>
         </div>
 
@@ -546,30 +553,30 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({
           <button
             type="button"
             onClick={handleExportVisits}
-            className="px-3 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold uppercase tracking-wider rounded-xs transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+            className="px-3 py-2 bg-[#FAF8F5] hover:bg-[#ECE5DC] border border-[#DCD4C9] text-[#18231C] text-xs font-bold uppercase tracking-wider rounded-xs transition-colors flex items-center gap-1.5 cursor-pointer"
             title="Descargar tarjetas de visitas comerciales en Excel"
           >
-            <Download className="w-3.5 h-3.5" />
+            <Download className="w-3.5 h-3.5 text-[#18231C]" />
             <span>Descargar Excel</span>
           </button>
           <button
             type="button"
             disabled={isExcelProcessing}
             onClick={() => fileInputVisitsRef.current?.click()}
-            className="px-3 py-2 bg-white hover:bg-[#FAF8F5] border border-[#DCD4C9] text-[#18231C] text-xs font-bold uppercase tracking-wider rounded-xs transition-all flex items-center gap-1.5 shadow-sm cursor-pointer disabled:opacity-50"
+            className="px-3 py-2 bg-[#FAF8F5] hover:bg-[#ECE5DC] border border-[#DCD4C9] text-[#18231C] text-xs font-bold uppercase tracking-wider rounded-xs transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
             title="Subir archivo Excel para actualizar fases y visitas en Firestore"
           >
-            <Upload className="w-3.5 h-3.5 text-emerald-700" />
+            <Upload className="w-3.5 h-3.5 text-[#18231C]" />
             <span>{isExcelProcessing ? 'Procesando...' : 'Subir Excel'}</span>
           </button>
 
           <button
             type="button"
             onClick={() => openNewModal('primer_contacto')}
-            className="px-4 py-2 bg-[#B9522F] hover:bg-[#9E3E1E] text-white text-xs font-bold uppercase tracking-wider rounded-xs transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+            className="px-4 py-2 bg-[#18231C] hover:bg-black text-[#FDB813] text-xs font-bold uppercase tracking-wider rounded-xs transition-colors flex items-center gap-1.5 cursor-pointer"
           >
             <Plus className="w-4 h-4" />
-            <span>Nueva Empresa / Visita</span>
+            <span>{st?.crmNewVisitBtnText || 'Nueva Empresa / Visita'}</span>
           </button>
         </div>
       </div>
@@ -682,40 +689,42 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({
                 onDragOver={(e) => { e.preventDefault(); setDragOverCol(col.id); }}
                 onDragLeave={() => setDragOverCol(null)}
                 onDrop={() => handleDrop(col.id)}
-                className={`bg-[#FAF8F5] rounded-xs border-2 flex flex-col h-full min-h-[520px] transition-all ${
-                  isDragTarget ? 'border-[#B9522F] bg-amber-50/50 shadow-md' : 'border-[#DCD4C9]'
+                className={`bg-[#FAF8F5] rounded-sm border flex flex-col h-full min-h-[520px] transition-all ${
+                  isDragTarget ? 'border-[#18231C] bg-amber-50/40 shadow-sm' : 'border-[#DCD4C9]'
                 }`}
               >
                 {/* Column Header */}
-                <div 
-                  className="p-3 border-b border-[#DCD4C9] bg-white rounded-t-xs"
-                  style={{ borderTop: `4px solid ${col.color}` }}
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <h4 className="font-bold text-xs uppercase tracking-wider text-[#18231C]">
-                      {fixUtf8Encoding(col.label)}
-                    </h4>
-                    <span 
-                      style={{ backgroundColor: `${col.color}22`, color: col.color }}
-                      className="w-5 h-5 rounded-full text-[11px] font-black flex items-center justify-center border border-current"
-                    >
+                <div className="px-3.5 py-2.5 border-b border-[#DCD4C9] bg-white rounded-t-sm space-y-0.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span
+                        className="w-2.5 h-2.5 rounded-full shrink-0"
+                        style={{ backgroundColor: col.color }}
+                      />
+                      <h4 className="font-bold text-xs uppercase tracking-wider text-[#18231C] truncate">
+                        {fixUtf8Encoding(col.label)}
+                      </h4>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-xs bg-[#FAF8F5] border border-[#DCD4C9] text-[#18231C] text-[11px] font-mono font-bold tabular-nums shrink-0">
                       {colVisits.length}
                     </span>
                   </div>
-                  <p className="text-[10px] text-[#6F6860] leading-tight">
-                    {fixUtf8Encoding(col.description || '')}
-                  </p>
+                  {col.description && (
+                    <p className="text-[10px] text-[#6F6860] leading-tight truncate">
+                      {fixUtf8Encoding(col.description)}
+                    </p>
+                  )}
                 </div>
 
                 {/* Cards Container */}
                 <div className="p-2.5 flex-1 space-y-2.5 overflow-y-auto">
                   {colVisits.length === 0 ? (
-                    <div className="h-32 border-2 border-dashed border-[#DCD4C9] rounded-xs flex flex-col items-center justify-center text-center p-3 text-neutral-400">
+                    <div className="h-32 border border-dashed border-[#DCD4C9] rounded-sm flex flex-col items-center justify-center text-center p-3 text-[#6F6860] bg-white/40">
                       <p className="text-[11px] font-medium">Sin empresas en esta etapa</p>
                       <button
                         type="button"
                         onClick={() => openNewModal(col.id)}
-                        className="mt-1 text-[10px] text-[#B9522F] hover:underline font-bold"
+                        className="mt-1.5 text-[10px] text-[#18231C] hover:underline font-bold cursor-pointer"
                       >
                         + Agregar acá
                       </button>
@@ -731,7 +740,7 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({
                             draggable
                             onDragStart={() => handleDragStart(visit.id)}
                             onClick={() => setViewingVisit(visit)}
-                            className="bg-white rounded-xs px-3 py-2 border border-[#DCD4C9] hover:border-[#18231C] shadow-2xs transition-all cursor-pointer flex items-center justify-between gap-2"
+                            className="bg-white rounded-sm px-3 py-2 border border-[#DCD4C9] hover:border-[#18231C] shadow-2xs transition-all cursor-pointer flex items-center justify-between gap-2"
                           >
                             <div className="min-w-0 flex-1">
                               <span className="font-bold text-xs text-[#18231C] block truncate uppercase">
@@ -749,7 +758,7 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({
                                 e.stopPropagation();
                                 setViewingVisit(visit);
                               }}
-                              className="p-1.5 hover:bg-amber-50 rounded-xs text-[#18231C] border border-transparent hover:border-amber-300 cursor-pointer shrink-0"
+                              className="p-1.5 bg-[#FAF8F5] hover:bg-[#ECE5DC] rounded-xs text-[#18231C] border border-[#DCD4C9] cursor-pointer shrink-0"
                               title="Ver ficha completa"
                             >
                               <Eye className="w-3.5 h-3.5" />
@@ -758,123 +767,136 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({
                         );
                       }
 
+                      const hasQuietDetails = Boolean(
+                        visit.companyLocation ||
+                        visit.locationUrl ||
+                        visit.objective ||
+                        visit.nextStep ||
+                        visit.reminderDate
+                      );
+
                       return (
                         <div
                           key={visit.id}
                           draggable
                           onDragStart={() => handleDragStart(visit.id)}
-                          className="bg-white rounded-xs p-3 border border-[#DCD4C9] hover:border-[#18231C] shadow-2xs transition-all cursor-grab active:cursor-grabbing group space-y-2 overflow-hidden"
+                          className="bg-white rounded-sm p-3 border border-[#DCD4C9] hover:border-[#18231C] shadow-2xs hover:shadow-sm transition-all cursor-grab active:cursor-grabbing group space-y-2 overflow-hidden"
                         >
-                          <div className="flex items-start justify-between gap-1.5">
-                            <div className="min-w-0">
-                              {visit.trackingCode && (
-                                <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded-xs bg-[#18231C] text-[#FDB813] inline-block mb-1">
-                                  {visit.trackingCode}
-                                </span>
-                              )}
-                              <span className="font-bold text-xs text-[#18231C] block truncate uppercase">
-                                {fixUtf8Encoding(visit.companyName)}
+                          {/* Line 1: Tracking Code + Branch */}
+                          <div className="flex items-center justify-between gap-1.5">
+                            {visit.trackingCode ? (
+                              <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-xs bg-[#18231C] text-[#FDB813]">
+                                {visit.trackingCode}
                               </span>
-                              <span className="text-[11px] text-[#6F6860] flex items-center gap-1 mt-0.5">
-                                <User className="w-3 h-3 text-neutral-400 shrink-0" />
-                                <strong className="text-neutral-800">{fixUtf8Encoding(visit.contactName || 'Sin contacto')}</strong>
-                              </span>
-                            </div>
-                            <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-xs bg-[#ECE5DC] text-[#18231C] shrink-0">
+                            ) : (
+                              <span className="text-[10px] text-[#8C827A] font-medium">Visita</span>
+                            )}
+                            <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-xs bg-[#FAF8F5] border border-[#ECE5DC] text-[#6F6860] shrink-0">
                               {fixUtf8Encoding(visit.branch || 'Maipú')}
                             </span>
                           </div>
 
-                          {/* Contact quick links */}
-                          <div className="text-[10px] text-[#6F6860] flex flex-wrap gap-2 pt-1 border-t border-neutral-100">
-                            {Boolean(visit.phone && String(visit.phone).trim()) && (
-                              <a
-                                href={`https://wa.me/${String(visit.phone).replace(/\D/g, '')}`}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="flex items-center gap-1 text-emerald-700 hover:underline font-semibold"
-                              >
-                                <MessageCircle className="w-3 h-3 text-emerald-600" />
-                                <span>{String(visit.phone)}</span>
-                              </a>
-                            )}
-                            <span className="text-neutral-500">
-                              Resp: <strong>{fixUtf8Encoding(visit.seller || 'Sin asignar')}</strong>
+                          {/* Line 2: Company Title + Contact & Quick Info */}
+                          <div className="space-y-1">
+                            <span className="font-bold text-xs text-[#18231C] block truncate uppercase leading-snug">
+                              {fixUtf8Encoding(visit.companyName)}
                             </span>
-                          </div>
-
-                          {/* Ubicación de la empresa para entregas / logística */}
-                          {(visit.companyLocation || visit.locationUrl) && (
-                            <div className="text-[10px] bg-blue-50/80 text-blue-950 px-2 py-1 rounded-xs border border-blue-200 flex items-center justify-between gap-1.5">
-                              <span className="truncate flex items-center gap-1">
-                                <MapPin className="w-3 h-3 text-blue-700 shrink-0" />
-                                <span>{fixUtf8Encoding(visit.companyLocation || 'Ubicación registrada')}</span>
+                            <div className="text-[11px] text-[#4A453F] flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                              <span className="inline-flex items-center gap-1 font-medium text-[#18231C]">
+                                <User className="w-3 h-3 text-[#6F6860] shrink-0" />
+                                <span>{fixUtf8Encoding(visit.contactName || 'Sin contacto')}</span>
                               </span>
-                              {visit.locationUrl && (
+                              {Boolean(visit.phone && String(visit.phone).trim()) && (
                                 <a
-                                  href={visit.locationUrl}
+                                  href={`https://wa.me/${String(visit.phone).replace(/\D/g, '')}`}
                                   target="_blank"
                                   rel="noreferrer"
                                   onClick={(e) => e.stopPropagation()}
-                                  className="text-blue-700 hover:underline font-bold shrink-0 flex items-center gap-0.5"
-                                  title="Abrir mapa en Google Maps"
+                                  className="inline-flex items-center gap-1 text-emerald-700 hover:underline font-semibold"
                                 >
-                                  <span>Mapa</span>
-                                  <ExternalLink className="w-2.5 h-2.5" />
+                                  <MessageCircle className="w-3 h-3 text-emerald-600 shrink-0" />
+                                  <span>{String(visit.phone)}</span>
                                 </a>
+                              )}
+                              <span className="text-[#6F6860]">
+                                · Resp: <strong className="text-[#18231C]">{fixUtf8Encoding(visit.seller || 'Sin asignar')}</strong>
+                              </span>
+                              {visit.estimatedUnits && (
+                                <span className="text-[#18231C] font-bold font-mono tabular-nums">
+                                  · Est. {visit.estimatedUnits} u.
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Line 3: Quiet Single-Box Detail Block (all extra info without visual noise) */}
+                          {hasQuietDetails && (
+                            <div className="bg-[#FAF8F5] border border-[#ECE5DC] rounded-xs px-2.5 py-2 space-y-1 text-[11px] text-[#4A453F]">
+                              {(visit.companyLocation || visit.locationUrl) && (
+                                <div className="flex items-center justify-between gap-1.5">
+                                  <span className="truncate flex items-center gap-1">
+                                    <MapPin className="w-3 h-3 text-[#6F6860] shrink-0" />
+                                    <span className="truncate">{fixUtf8Encoding(visit.companyLocation || 'Ubicación registrada')}</span>
+                                  </span>
+                                  {visit.locationUrl && (
+                                    <a
+                                      href={visit.locationUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="text-[#18231C] hover:underline font-bold shrink-0 inline-flex items-center gap-0.5 text-[10px]"
+                                      title="Abrir mapa en Google Maps"
+                                    >
+                                      <span>Mapa</span>
+                                      <ExternalLink className="w-2.5 h-2.5" />
+                                    </a>
+                                  )}
+                                </div>
+                              )}
+
+                              {visit.objective && (
+                                <p className="leading-snug text-[#4A453F] line-clamp-2">
+                                  <strong className="text-[#18231C]">Obj.:</strong> {fixUtf8Encoding(visit.objective)}
+                                </p>
+                              )}
+
+                              {visit.nextStep && (
+                                <div className="flex items-center gap-1 text-[#18231C] truncate">
+                                  <Clock className="w-3 h-3 text-[#6F6860] shrink-0" />
+                                  <span className="truncate">
+                                    Próx.{visit.nextStepDate ? ` (${visit.nextStepDate})` : ''}:{' '}
+                                    <strong>{fixUtf8Encoding(visit.nextStep)}</strong>
+                                  </span>
+                                </div>
+                              )}
+
+                              {visit.reminderDate && (
+                                <div className="flex items-center gap-1 text-[#18231C] font-semibold truncate">
+                                  <Bell className="w-3 h-3 text-[#18231C] shrink-0" />
+                                  <span className="truncate">
+                                    Recordatorio: {visit.reminderDate}{visit.reminderTime ? ` ${visit.reminderTime}hs` : ''}
+                                  </span>
+                                </div>
                               )}
                             </div>
                           )}
 
-                          {visit.objective && (
-                            <p className="text-[11px] text-neutral-700 bg-neutral-50 p-1.5 rounded-xs border border-neutral-200/60 leading-snug">
-                              {fixUtf8Encoding(visit.objective)}
-                            </p>
-                          )}
-
-                          {visit.estimatedUnits && (
-                            <div className="text-[10px] text-amber-900 bg-amber-50 px-2 py-0.5 rounded-xs border border-amber-200 inline-block font-bold">
-                              Estimado: {visit.estimatedUnits} prendas
-                            </div>
-                          )}
-
-                          {/* Next step notice */}
-                          {visit.nextStep && (
-                            <div className="text-[10px] text-purple-900 bg-purple-50 px-2 py-1 rounded-xs border border-purple-200 flex items-center gap-1">
-                              <Clock className="w-3 h-3 text-purple-600 shrink-0" />
-                              <span className="truncate">
-                                Próximo paso{visit.nextStepDate ? ` (${visit.nextStepDate})` : ''}:{' '}
-                                <strong>{fixUtf8Encoding(visit.nextStep)}</strong>
-                              </span>
-                            </div>
-                          )}
-
-                          {/* Observation Reminder Badge */}
-                          {visit.reminderDate && (
-                            <div className="text-[10px] text-amber-950 bg-amber-50 px-2 py-1 rounded-xs border border-amber-300 flex items-center gap-1 font-semibold">
-                              <Bell className="w-3 h-3 text-[#B9522F] shrink-0" />
-                              <span className="truncate">
-                                Recordatorio: {visit.reminderDate}{visit.reminderTime ? ` ${visit.reminderTime}hs` : ''}
-                              </span>
-                            </div>
-                          )}
-
-                          {/* Action controls */}
-                          <div className="pt-2 border-t border-neutral-100 flex flex-wrap items-center justify-between gap-1.5 min-w-0">
+                          {/* Line 4: Unified Action Controls */}
+                          <div className="pt-1.5 border-t border-[#ECE5DC] flex flex-wrap items-center justify-between gap-1.5 min-w-0">
                             <div className="flex items-center gap-1">
                               <button
                                 type="button"
                                 onClick={() => setViewingVisit(visit)}
-                                className="px-1.5 py-1 hover:bg-amber-50 rounded-xs text-[#18231C] border border-transparent hover:border-amber-300 cursor-pointer flex items-center gap-1 text-[10px] font-bold"
+                                className="px-2 py-1 bg-[#FAF8F5] hover:bg-[#ECE5DC] rounded-xs text-[#18231C] border border-[#DCD4C9] cursor-pointer flex items-center gap-1 text-[10px] font-bold transition-colors"
                                 title="Ver ficha completa"
                               >
-                                <Eye className="w-3.5 h-3.5" />
+                                <Eye className="w-3 h-3" />
                                 <span>Ficha</span>
                               </button>
                               <button
                                 type="button"
                                 onClick={() => handleDelete(visit.id)}
-                                className="p-1 hover:bg-red-50 rounded-xs text-neutral-400 hover:text-red-600 cursor-pointer"
+                                className="p-1 bg-[#FAF8F5] hover:bg-red-50 rounded-xs text-[#6F6860] hover:text-red-600 border border-[#DCD4C9] cursor-pointer transition-colors"
                                 title="Eliminar"
                               >
                                 <Trash2 className="w-3 h-3" />
@@ -894,18 +916,14 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({
                                     <button
                                       type="button"
                                       onClick={() => handleMoveStep(visit, nextCol.id as any)}
-                                      className={`text-[10px] px-2 py-1 rounded-xs flex items-center gap-1 cursor-pointer transition-colors ${
-                                        isConverting
-                                          ? 'font-black text-white bg-emerald-600 hover:bg-emerald-700 shadow-xs'
-                                          : 'font-bold text-neutral-800 bg-amber-50 hover:bg-amber-100 border border-amber-300'
-                                      }`}
+                                      className="text-[10px] px-2.5 py-1 rounded-xs flex items-center gap-1 cursor-pointer transition-colors font-bold text-white bg-[#18231C] hover:bg-black"
                                       title={`Avanzar a ${nextCol.label}`}
                                     >
-                                      <span>A {nextCol.label}</span>
+                                      <span>{isConverting ? 'A Seguimiento' : `A ${nextCol.label}`}</span>
                                       {isConverting ? (
-                                        <ArrowRightCircle className="w-3.5 h-3.5" />
+                                        <ArrowRightCircle className="w-3 h-3 text-[#FDB813]" />
                                       ) : (
-                                        <ArrowRight className="w-3 h-3 text-[#B9522F]" />
+                                        <ArrowRight className="w-3 h-3 text-[#FDB813]" />
                                       )}
                                     </button>
                                   );
@@ -913,7 +931,7 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({
 
                                 if (isLastCol) {
                                   return (
-                                    <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-xs flex items-center gap-1">
+                                    <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-xs flex items-center gap-1">
                                       <CheckCircle className="w-3 h-3 text-emerald-600" />
                                       <span>En Seguimiento</span>
                                     </span>
@@ -1085,20 +1103,31 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({
             </div>
 
             <div className="p-4 border-t border-[#DCD4C9] bg-[#FAF8F5] flex items-center justify-between gap-2 flex-wrap">
-              <button
-                type="button"
-                onClick={() => {
-                  const target = viewingVisit;
-                  setViewingVisit(null);
-                  openEditModal(target);
-                }}
-                className="px-4 py-2 bg-[#18231C] hover:bg-black text-white text-xs font-bold uppercase rounded-xs flex items-center gap-1.5 cursor-pointer"
-              >
-                <Edit3 className="w-3.5 h-3.5 text-[#FDB813]" />
-                <span>Editar Ficha</span>
-              </button>
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setShowVisitObsModal(true)}
+                  className="px-3 py-2 bg-[#FAF8F5] hover:bg-[#ECE5DC] border border-[#DCD4C9] text-[#18231C] text-xs font-bold uppercase rounded-xs flex items-center gap-1.5 cursor-pointer transition-colors"
+                >
+                  <MessageSquarePlus className="w-3.5 h-3.5 text-[#18231C]" />
+                  <span className="tabular-nums">
+                    Observaciones ({Array.isArray(viewingVisit.observationHistory) ? viewingVisit.observationHistory.length : viewingVisit.notes ? 1 : 0})
+                  </span>
+                </button>
 
-              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const target = viewingVisit;
+                    setViewingVisit(null);
+                    openEditModal(target);
+                  }}
+                  className="px-3 py-2 bg-[#FAF8F5] hover:bg-[#ECE5DC] border border-[#DCD4C9] text-[#18231C] text-xs font-bold uppercase rounded-xs flex items-center gap-1.5 cursor-pointer transition-colors"
+                >
+                  <Edit3 className="w-3.5 h-3.5 text-[#18231C]" />
+                  <span>Editar Ficha</span>
+                </button>
+
                 {getVisitStep(viewingVisit) !== 'convertida' && onPromoteToCompanies && (
                   <button
                     type="button"
@@ -1107,23 +1136,73 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({
                       setViewingVisit(null);
                       handleMoveStep(target, 'convertida');
                     }}
-                    className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold uppercase rounded-xs flex items-center gap-1.5 cursor-pointer"
+                    className="px-3 py-2 bg-[#FAF8F5] hover:bg-[#ECE5DC] border border-[#DCD4C9] text-[#18231C] text-xs font-bold uppercase rounded-xs flex items-center gap-1.5 cursor-pointer transition-colors"
                   >
-                    <ArrowRightCircle className="w-3.5 h-3.5" />
+                    <ArrowRightCircle className="w-3.5 h-3.5 text-[#18231C]" />
                     <span>Pasar a Seguimiento</span>
                   </button>
                 )}
-                <button
-                  type="button"
-                  onClick={() => setViewingVisit(null)}
-                  className="px-3 py-2 border border-[#DCD4C9] bg-white hover:bg-neutral-100 text-xs font-bold rounded-xs cursor-pointer"
-                >
-                  Cerrar
-                </button>
               </div>
+
+              <button
+                type="button"
+                onClick={() => setViewingVisit(null)}
+                className="px-3 py-2 bg-[#FAF8F5] hover:bg-[#ECE5DC] border border-[#DCD4C9] text-[#18231C] text-xs font-bold uppercase rounded-xs cursor-pointer transition-colors"
+              >
+                Cerrar
+              </button>
             </div>
           </div>
         </div>
+      )}
+
+      {/* Sub-modal Observaciones para Visitas Comerciales */}
+      {viewingVisit && (
+        <CRMObservationsModal
+          isOpen={showVisitObsModal}
+          onClose={() => setShowVisitObsModal(false)}
+          entityTitle={viewingVisit.companyName}
+          trackingCode={viewingVisit.trackingCode}
+          branch={viewingVisit.branch}
+          currentObservation={viewingVisit.notes}
+          currentObservationDate={viewingVisit.observationDate}
+          currentReminderDate={viewingVisit.reminderDate}
+          currentReminderTime={viewingVisit.reminderTime}
+          currentReminderNote={viewingVisit.reminderNote}
+          history={viewingVisit.observationHistory}
+          activeStaffUser={assignedSellerName || viewingVisit.seller || 'Equipo Pampero'}
+          onSaveObservation={async (payload) => {
+            const updated: LeadVisit = sanitizeObjectEncoding({
+              ...viewingVisit,
+              notes: payload.observations,
+              observationDate: payload.observationDate,
+              reminderDate: payload.reminderDate,
+              reminderTime: payload.reminderTime,
+              reminderNote: payload.reminderNote,
+              observationHistory: payload.observationHistory,
+              updatedAt: new Date().toISOString(),
+            });
+            setViewingVisit(updated);
+            setLocalVisits((prev) => {
+              const next = [updated, ...prev.filter((v) => v.id !== updated.id)];
+              if (onVisitsUpdated) onVisitsUpdated(next);
+              return next;
+            });
+            await saveLeadVisit(updated);
+            if (payload.reminderDate) {
+              await upsertObservationReminderCalendarEvent('visit', {
+                sourceId: updated.id,
+                title: `${updated.companyName}${updated.trackingCode ? ` (${updated.trackingCode})` : ''}`,
+                reminderDate: payload.reminderDate,
+                reminderTime: payload.reminderTime,
+                reminderNote: payload.reminderNote || payload.observations,
+                branch: updated.branch,
+                seller: updated.seller,
+                createdBy: assignedSellerName || updated.seller || 'Equipo Pampero',
+              });
+            }
+          }}
+        />
       )}
 
       {/* Modal Nueva / Editar Visita */}
@@ -1403,7 +1482,7 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-[#B9522F] hover:bg-[#9E3E1E] text-white font-bold uppercase rounded-xs transition-colors cursor-pointer"
+                  className="px-4 py-2 bg-[#18231C] hover:bg-black text-[#FDB813] font-bold uppercase rounded-xs transition-colors cursor-pointer"
                 >
                   Guardar en Tablero
                 </button>

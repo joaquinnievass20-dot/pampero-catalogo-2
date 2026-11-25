@@ -10,7 +10,8 @@ import {
   DiscountCoupon,
   LookbookItem,
   CategoryHierarchyItem,
-  VolumeDiscountRule
+  VolumeDiscountRule,
+  InternalChatThread
 } from './types';
 import { 
   INITIAL_PRODUCTS, 
@@ -44,12 +45,14 @@ import {
   subscribeToAuthSession,
   subscribeToFirestoreEmployees,
   logoutFirebaseAuth,
+  subscribeToUserChatThreads,
+  getChatParticipantKey,
   db,
   getFirebaseDb,
 } from './services/firebase';
 import { doc, deleteDoc } from 'firebase/firestore';
 import { ensureMasterAdminInitialized } from './utils/authInit';
-import { hasAdminPanelAccess, hasRRHHAccess } from './utils/permissions';
+import { hasAdminPanelAccess, hasRRHHAccess, hasCostsAccess } from './utils/permissions';
 import { trackAddToCart } from './utils/analytics';
 import { Navbar } from './components/Navbar';
 import { LandingHero } from './components/LandingHero';
@@ -60,12 +63,14 @@ import { AuthView } from './components/AuthView';
 import { AdminPanel } from './components/AdminPanel';
 import { CRMView } from './components/crm/CRMView';
 import { RRHHView } from './components/rrhh/RRHHView';
+import { CostsHubView } from './components/costs/CostsHubView';
 import { ClientUniformSimulatorView } from './components/client/ClientUniformSimulatorView';
 import { ClientSizingPortalView } from './components/client/ClientSizingPortalView';
 import { ClientOrderStatusView } from './components/client/ClientOrderStatusView';
 import { HubView } from './components/HubView';
 import { QuoteDrawer } from './components/QuoteDrawer';
 import { UserProfileModal } from './components/UserProfileModal';
+import { InternalChatModal } from './components/InternalChatModal';
 import { Footer } from './components/Footer';
 import { PamperoLogo } from './components/PamperoLogo';
 import { CategoryMenuNav } from './components/CategoryMenuNav';
@@ -432,6 +437,37 @@ export default function App() {
 
   const [isProfileOpen, setIsProfileOpen] = useState(false);
 
+  // Real-time Internal Chat State
+  const [chatThreads, setChatThreads] = useState<InternalChatThread[]>([]);
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [chatInitialThreadId, setChatInitialThreadId] = useState<string | undefined>(undefined);
+
+  const openChatModal = (threadId?: string) => {
+    setChatInitialThreadId(threadId);
+    setIsChatOpen(true);
+  };
+
+  useEffect(() => {
+    if (!userSession) {
+      setChatThreads([]);
+      return;
+    }
+    const participantKey = getChatParticipantKey(userSession);
+    if (!participantKey) return;
+    const unsubChat = subscribeToUserChatThreads(participantKey, (threads) => {
+      setChatThreads(threads);
+    });
+    return () => unsubChat();
+  }, [userSession]);
+
+  const myChatKey = userSession ? getChatParticipantKey(userSession) : '';
+  const unreadChatThreads = myChatKey
+    ? chatThreads.filter((t) => (t.unreadBy?.[myChatKey] || 0) > 0)
+    : [];
+  const unreadChatCount = myChatKey
+    ? chatThreads.reduce((sum, t) => sum + (t.unreadBy?.[myChatKey] || 0), 0)
+    : 0;
+
   // Lookbook State - initializes empty to avoid ghost images, rendered exclusively from Firestore
   const [lookbook, setLookbook] = useState<LookbookItem[]>(() => {
     try {
@@ -500,10 +536,10 @@ export default function App() {
   // 'sizing_portal'     -> Client digital employee sizing portal
   // 'order_tracking'    -> Client live order status view (Kanban phase tracking)
   // 'hub'               -> Internal staff & admin hub with large action cards
-  const [viewMode, setViewMode] = useState<'landing' | 'auth' | 'catalog' | 'product_detail' | 'admin' | 'lookbook' | 'crm' | 'rrhh' | 'uniform_simulator' | 'sizing_portal' | 'order_tracking' | 'hub'>(() => {
+  const [viewMode, setViewMode] = useState<'landing' | 'auth' | 'catalog' | 'product_detail' | 'admin' | 'lookbook' | 'crm' | 'rrhh' | 'costs' | 'uniform_simulator' | 'sizing_portal' | 'order_tracking' | 'hub'>(() => {
     try {
       const saved = sessionStorage.getItem('pampero_active_view');
-      if (saved && ['landing', 'auth', 'catalog', 'product_detail', 'admin', 'lookbook', 'crm', 'rrhh', 'uniform_simulator', 'sizing_portal', 'order_tracking', 'hub'].includes(saved)) {
+      if (saved && ['landing', 'auth', 'catalog', 'product_detail', 'admin', 'lookbook', 'crm', 'rrhh', 'costs', 'uniform_simulator', 'sizing_portal', 'order_tracking', 'hub'].includes(saved)) {
         return saved as any;
       }
     } catch {}
@@ -511,6 +547,11 @@ export default function App() {
   });
   const [authInitialTab, setAuthInitialTab] = useState<'login' | 'register' | 'admin'>('login');
   const [authInitialType, setAuthInitialType] = useState<'consumidor' | 'empresa'>('consumidor');
+  const [adminInitialTab, setAdminInitialTab] = useState<
+    | 'promos'
+    | 'rrhh_admin'
+    | undefined
+  >(undefined);
 
   useEffect(() => {
     try {
@@ -759,6 +800,7 @@ export default function App() {
         'admin',
         'crm',
         'rrhh',
+        'costs',
         'catalog',
         'landing',
         'product_detail',
@@ -771,9 +813,13 @@ export default function App() {
         setViewMode('hub');
       } else if (viewMode === 'admin' && !hasAdminPanelAccess(userSession)) {
         setViewMode('hub');
+      } else if (viewMode === 'costs' && !hasCostsAccess(userSession)) {
+        setViewMode('hub');
+      } else if (viewMode === 'rrhh' && !hasRRHHAccess(userSession)) {
+        setViewMode('hub');
       }
     } else {
-      const restrictedInternalViews: Array<typeof viewMode> = ['hub', 'admin', 'crm', 'rrhh'];
+      const restrictedInternalViews: Array<typeof viewMode> = ['hub', 'admin', 'crm', 'rrhh', 'costs'];
       if (restrictedInternalViews.includes(viewMode)) {
         setViewMode(userSession ? 'catalog' : 'landing');
       }
@@ -1028,6 +1074,7 @@ export default function App() {
           onOpenAdmin={() => setViewMode('admin')}
           onOpenCRM={() => setViewMode('crm')}
           onOpenRRHH={() => setViewMode('rrhh')}
+          onOpenCosts={() => setViewMode('costs')}
           onOpenHub={() => setViewMode('hub')}
           onOpenProfile={() => setIsProfileOpen(true)}
           onOpenLookbook={() => setViewMode('lookbook')}
@@ -1040,6 +1087,8 @@ export default function App() {
             setViewMode('catalog');
           }}
           theme={theme}
+          unreadChatCount={unreadChatCount}
+          onOpenChat={() => openChatModal()}
         />
       )}
 
@@ -1151,7 +1200,11 @@ export default function App() {
             onUpdateCoupons={handleUpdateCoupons}
             onUpdateLookbook={handleUpdateLookbook}
             userSession={userSession}
-            onClose={() => setViewMode('hub')}
+            initialTab={adminInitialTab}
+            onClose={() => {
+              setAdminInitialTab(undefined);
+              setViewMode('hub');
+            }}
             onSelectPromoFilter={(promo) => {
               setActivePromoFilter(promo.tagFilter || promo.title);
               setViewMode('catalog');
@@ -1166,8 +1219,12 @@ export default function App() {
               userSession={userSession}
               onClose={() => setViewMode('hub')}
               theme={theme}
+              products={products}
+              categories={categories}
               onSetSession={(s) => setUserSession(s)}
               onOpenAuth={() => openAuthScreen('admin', 'empresa')}
+              unreadChatThreads={unreadChatThreads}
+              onOpenChat={openChatModal}
             />
           )}
 
@@ -1198,9 +1255,23 @@ export default function App() {
             />
           )}
 
-          {/* VIEW 10B: RRHH (Legajos, Horarios, Vacaciones y Fichajes GPS) */}
+          {/* VIEW 10B: RRHH (Fichaje GPS, Mi Legajo, Calendario y Vacaciones) */}
           {viewMode === 'rrhh' && userSession && hasRRHHAccess(userSession) && (
             <RRHHView
+              userSession={userSession}
+              theme={theme}
+              branches={branches}
+              onClose={() => setViewMode('hub')}
+              onOpenAdminPanel={() => {
+                setAdminInitialTab('rrhh_admin');
+                setViewMode('admin');
+              }}
+            />
+          )}
+
+          {/* VIEW 10C: COSTOS & FINANZAS (Liquidez, Cheques, Caja Chica y Control de Costos) */}
+          {viewMode === 'costs' && userSession && hasCostsAccess(userSession) && (
+            <CostsHubView
               userSession={userSession}
               theme={theme}
               branches={branches}
@@ -1215,36 +1286,45 @@ export default function App() {
               theme={theme}
               onOpenCRM={() => setViewMode('crm')}
               onOpenRRHH={() => setViewMode('rrhh')}
-              onOpenAdmin={() => setViewMode('admin')}
+              onOpenCosts={() => setViewMode('costs')}
+              onOpenAdmin={() => {
+                setAdminInitialTab(undefined);
+                setViewMode('admin');
+              }}
               onOpenCatalog={() => setViewMode('catalog')}
               onLogout={handleLogout}
               onOpenProfile={() => setIsProfileOpen(true)}
+              unreadChatCount={unreadChatCount}
+              unreadChatThreads={unreadChatThreads}
+              onOpenChat={openChatModal}
             />
           )}
         </main>
 
-      {/* Footer (with exact Mendoza and Luján de Cuyo addresses) */}
-      <Footer
-        theme={theme}
-        branches={branches}
-        onOpenAdmin={() => {
-          if (hasAdminPanelAccess(userSession)) {
-            setViewMode('admin');
-          } else if (userSession?.role === 'employee') {
-            setViewMode('hub');
-          } else {
-            openAuthScreen('admin', 'empresa');
-          }
-        }}
-        onOpenCRM={() => setViewMode('crm')}
-        onOpenUniformSimulator={() => setViewMode('uniform_simulator')}
-        onOpenSizingPortal={() => setViewMode('sizing_portal')}
-        onSelectCategory={(cat) => openCatalogScreen(null, cat as MainCategory)}
-        onOpenLookbook={() => setViewMode('lookbook')}
-      />
+      {/* Footer (only shown on public storefront / client views, hidden on internal Hub/CRM/RRHH/Costs/Admin workspaces) */}
+      {!(viewMode === 'hub' || viewMode === 'crm' || viewMode === 'rrhh' || viewMode === 'costs' || viewMode === 'admin') && (
+        <Footer
+          theme={theme}
+          branches={branches}
+          onOpenAdmin={() => {
+            if (hasAdminPanelAccess(userSession)) {
+              setViewMode('admin');
+            } else if (userSession?.role === 'employee') {
+              setViewMode('hub');
+            } else {
+              openAuthScreen('admin', 'empresa');
+            }
+          }}
+          onOpenCRM={() => setViewMode('crm')}
+          onOpenUniformSimulator={() => setViewMode('uniform_simulator')}
+          onOpenSizingPortal={() => setViewMode('sizing_portal')}
+          onSelectCategory={(cat) => openCatalogScreen(null, cat as MainCategory)}
+          onOpenLookbook={() => setViewMode('lookbook')}
+        />
+      )}
 
-      {/* Admin Floating Quick Access Button */}
-      {userSession?.role === 'admin' && viewMode !== 'admin' && (
+      {/* Admin Floating Quick Access Button (only outside internal workspaces) */}
+      {userSession?.role === 'admin' && !(viewMode === 'admin' || viewMode === 'hub' || viewMode === 'crm' || viewMode === 'rrhh' || viewMode === 'costs') && (
         <button
           id="btn-admin-floating-quick"
           type="button"
@@ -1279,16 +1359,18 @@ export default function App() {
         </button>
       )}
 
-      {/* Floating WhatsApp Contact Button */}
-      <a
-        href={`https://wa.me/5492615276713?text=Hola%20Pampero%20Gran%20Mendoza,%20quisiera%20hacer%20una%20consulta%20directa%20sobre%20su%20cat%C3%A1logo.`}
-        target="_blank"
-        rel="noreferrer"
-        className="fixed bottom-5 right-5 z-40 w-13 h-13 rounded-full bg-[#25D366] hover:bg-[#20ba59] text-white flex items-center justify-center shadow-lg hover:scale-105 transition-all"
-        title="Consultar por WhatsApp a Pampero Gran Mendoza"
-      >
-        <MessageCircle className="w-7 h-7 fill-current" />
-      </a>
+      {/* Floating WhatsApp Contact Button (public storefront / client views only) */}
+      {!(viewMode === 'hub' || viewMode === 'crm' || viewMode === 'rrhh' || viewMode === 'costs' || viewMode === 'admin') && (
+        <a
+          href={`https://wa.me/5492615276713?text=Hola%20Pampero%20Gran%20Mendoza,%20quisiera%20hacer%20una%20consulta%20directa%20sobre%20su%20cat%C3%A1logo.`}
+          target="_blank"
+          rel="noreferrer"
+          className="fixed bottom-5 right-5 z-40 w-13 h-13 rounded-full bg-[#25D366] hover:bg-[#20ba59] text-white flex items-center justify-center shadow-lg hover:scale-105 transition-all"
+          title="Consultar por WhatsApp a Pampero Gran Mendoza"
+        >
+          <MessageCircle className="w-7 h-7 fill-current" />
+        </a>
+      )}
 
       {/* Quote Drawer Modal */}
       <QuoteDrawer
@@ -1313,6 +1395,16 @@ export default function App() {
         onUpdateSession={(updatedSession) => {
           setUserSession(updatedSession);
         }}
+        theme={theme}
+      />
+
+      {/* Real-time Internal Chat Modal */}
+      <InternalChatModal
+        isOpen={isChatOpen}
+        onClose={() => setIsChatOpen(false)}
+        userSession={userSession}
+        threads={chatThreads}
+        initialThreadId={chatInitialThreadId}
         theme={theme}
       />
 

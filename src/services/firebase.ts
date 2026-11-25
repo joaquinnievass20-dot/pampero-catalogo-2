@@ -62,6 +62,14 @@ import {
   RRHHEmployeeRecord,
   RRHHCheckInRecord,
   RRHHModuleConfig,
+  CRMOrderShortageItem,
+  FinancialCheckRecord,
+  PettyCashMovement,
+  ExpenseInvoiceRecord,
+  ChatParticipantInfo,
+  ChatParticipantRole,
+  InternalChatThread,
+  InternalChatMessage,
 } from '../types';
 import {
   DEFAULT_ARGENTINA_MENDOZA_DATES,
@@ -5901,6 +5909,732 @@ export async function saveReadNotifications(userKey: string, readIds: string[]):
     );
   } catch {}
 }
+
+// ==========================================
+// FALTANTES DE PEDIDOS (SINCRONIZADOS CON PEDIDOS A PROVEEDORES)
+// ==========================================
+const ORDER_SHORTAGES_LS_KEY = 'pampero_crm_order_shortages';
+
+export function subscribeToCRMOrderShortages(
+  onUpdate: (shortages: CRMOrderShortageItem[]) => void
+): () => void {
+  try {
+    const raw = localStorage.getItem(ORDER_SHORTAGES_LS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) onUpdate(parsed);
+    }
+  } catch {}
+
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return () => {};
+
+  try {
+    return onSnapshot(
+      collection(firestoreDb, 'crm_order_shortages'),
+      (snap) => {
+        const list: CRMOrderShortageItem[] = snap.docs
+          .map((d) => ({
+            ...(d.data() as CRMOrderShortageItem),
+            id: d.id,
+          }))
+          .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+        try {
+          localStorage.setItem(ORDER_SHORTAGES_LS_KEY, JSON.stringify(list));
+        } catch {}
+        onUpdate(list);
+      },
+      (err) => console.warn('[FIREBASE] Order shortages listener notice:', err?.message || err)
+    );
+  } catch {
+    return () => {};
+  }
+}
+
+export async function saveCRMOrderShortage(item: CRMOrderShortageItem): Promise<{ success: boolean; error?: string }> {
+  const docId = item.id || `sht-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const payload: CRMOrderShortageItem = {
+    ...item,
+    id: docId,
+    supplier: (item.supplier || 'Sin definir').trim(),
+    quantity: Math.max(1, Number(item.quantity) || 1),
+    createdAt: item.createdAt || new Date().toISOString(),
+  };
+
+  try {
+    const local: CRMOrderShortageItem[] = JSON.parse(localStorage.getItem(ORDER_SHORTAGES_LS_KEY) || '[]');
+    const updated = [payload, ...local.filter((s) => s.id !== docId)];
+    localStorage.setItem(ORDER_SHORTAGES_LS_KEY, JSON.stringify(updated));
+  } catch {}
+
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return { success: true };
+
+  try {
+    const cleaned = JSON.parse(JSON.stringify(payload, (_k, v) => (v === undefined ? null : v)));
+    await setDoc(doc(firestoreDb, 'crm_order_shortages', docId), cleaned, { merge: true });
+    return { success: true };
+  } catch (err: any) {
+    console.warn('[FIREBASE] Error guardando faltante:', err?.message || err);
+    return { success: false, error: err?.message || String(err) };
+  }
+}
+
+export async function deleteCRMOrderShortage(id: string): Promise<void> {
+  try {
+    const local: CRMOrderShortageItem[] = JSON.parse(localStorage.getItem(ORDER_SHORTAGES_LS_KEY) || '[]');
+    localStorage.setItem(ORDER_SHORTAGES_LS_KEY, JSON.stringify(local.filter((s) => s.id !== id)));
+  } catch {}
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return;
+  try {
+    await deleteDoc(doc(firestoreDb, 'crm_order_shortages', id));
+  } catch {}
+}
+
+// ==========================================
+// FINANZAS: CHEQUES EMITIDOS Y RECIBIDOS
+// ==========================================
+const FINANCE_CHECKS_LS_KEY = 'pampero_finance_checks';
+
+export function subscribeToFinancialChecks(
+  onUpdate: (checks: FinancialCheckRecord[]) => void
+): () => void {
+  try {
+    const raw = localStorage.getItem(FINANCE_CHECKS_LS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) onUpdate(parsed);
+    }
+  } catch {}
+
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return () => {};
+
+  try {
+    return onSnapshot(
+      collection(firestoreDb, 'finance_checks'),
+      (snap) => {
+        const list: FinancialCheckRecord[] = snap.docs
+          .map((d) => ({
+            ...(d.data() as FinancialCheckRecord),
+            id: d.id,
+          }))
+          .sort((a, b) => (a.dueDate || '').localeCompare(b.dueDate || ''));
+        try {
+          localStorage.setItem(FINANCE_CHECKS_LS_KEY, JSON.stringify(list));
+        } catch {}
+        onUpdate(list);
+      },
+      (err) => console.warn('[FIREBASE FINANZAS] Checks listener notice:', err?.message || err)
+    );
+  } catch {
+    return () => {};
+  }
+}
+
+export async function saveFinancialCheck(record: FinancialCheckRecord): Promise<{ success: boolean; error?: string }> {
+  const docId = record.id || `chk-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const payload: FinancialCheckRecord = {
+    ...record,
+    id: docId,
+    amount: Math.max(0, Number(record.amount) || 0),
+    createdAt: record.createdAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  try {
+    const local: FinancialCheckRecord[] = JSON.parse(localStorage.getItem(FINANCE_CHECKS_LS_KEY) || '[]');
+    const updated = [payload, ...local.filter((c) => c.id !== docId)].sort((a, b) =>
+      (a.dueDate || '').localeCompare(b.dueDate || '')
+    );
+    localStorage.setItem(FINANCE_CHECKS_LS_KEY, JSON.stringify(updated));
+  } catch {}
+
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return { success: true };
+
+  try {
+    const cleaned = JSON.parse(JSON.stringify(payload, (_k, v) => (v === undefined ? null : v)));
+    await setDoc(doc(firestoreDb, 'finance_checks', docId), cleaned, { merge: true });
+    recordAuditLog({
+      module: 'Costos & Finanzas',
+      action: 'Guardar Cheque',
+      details: `Cheque ${payload.direction === 'emitido' ? 'Emitido' : 'Recibido'} #${payload.checkNumber} (${payload.bank}) por $${Number(payload.amount || 0).toLocaleString('es-AR')} - Vto: ${payload.dueDate}.`,
+      targetId: docId,
+    }).catch(() => {});
+    return { success: true };
+  } catch (err: any) {
+    console.warn('[FIREBASE FINANZAS] Error guardando cheque:', err?.message || err);
+    return { success: false, error: err?.message || String(err) };
+  }
+}
+
+export async function deleteFinancialCheck(id: string): Promise<void> {
+  try {
+    const local: FinancialCheckRecord[] = JSON.parse(localStorage.getItem(FINANCE_CHECKS_LS_KEY) || '[]');
+    localStorage.setItem(FINANCE_CHECKS_LS_KEY, JSON.stringify(local.filter((c) => c.id !== id)));
+  } catch {}
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return;
+  try {
+    await deleteDoc(doc(firestoreDb, 'finance_checks', id));
+    recordAuditLog({
+      module: 'Costos & Finanzas',
+      action: 'Eliminar Cheque',
+      details: `Cheque eliminado (ID: ${id}).`,
+      targetId: id,
+    }).catch(() => {});
+  } catch {}
+}
+
+// ==========================================
+// FINANZAS: CAJA CHICA POR LOCAL
+// ==========================================
+const FINANCE_PETTY_CASH_LS_KEY = 'pampero_finance_petty_cash';
+
+export function subscribeToPettyCashMovements(
+  onUpdate: (movements: PettyCashMovement[]) => void
+): () => void {
+  try {
+    const raw = localStorage.getItem(FINANCE_PETTY_CASH_LS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) onUpdate(parsed);
+    }
+  } catch {}
+
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return () => {};
+
+  try {
+    return onSnapshot(
+      collection(firestoreDb, 'finance_petty_cash'),
+      (snap) => {
+        const list: PettyCashMovement[] = snap.docs
+          .map((d) => ({
+            ...(d.data() as PettyCashMovement),
+            id: d.id,
+          }))
+          .sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.createdAt || '').localeCompare(a.createdAt || ''));
+        try {
+          localStorage.setItem(FINANCE_PETTY_CASH_LS_KEY, JSON.stringify(list));
+        } catch {}
+        onUpdate(list);
+      },
+      (err) => console.warn('[FIREBASE FINANZAS] Petty cash listener notice:', err?.message || err)
+    );
+  } catch {
+    return () => {};
+  }
+}
+
+export async function savePettyCashMovement(record: PettyCashMovement): Promise<{ success: boolean; error?: string }> {
+  const docId = record.id || `pc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const payload: PettyCashMovement = {
+    ...record,
+    id: docId,
+    amount: Math.max(0, Number(record.amount) || 0),
+    createdAt: record.createdAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  try {
+    const local: PettyCashMovement[] = JSON.parse(localStorage.getItem(FINANCE_PETTY_CASH_LS_KEY) || '[]');
+    const updated = [payload, ...local.filter((m) => m.id !== docId)].sort(
+      (a, b) => (b.date || '').localeCompare(a.date || '') || (b.createdAt || '').localeCompare(a.createdAt || '')
+    );
+    localStorage.setItem(FINANCE_PETTY_CASH_LS_KEY, JSON.stringify(updated));
+  } catch {}
+
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return { success: true };
+
+  try {
+    const cleaned = JSON.parse(JSON.stringify(payload, (_k, v) => (v === undefined ? null : v)));
+    await setDoc(doc(firestoreDb, 'finance_petty_cash', docId), cleaned, { merge: true });
+    recordAuditLog({
+      module: 'Costos & Finanzas',
+      action: 'Caja Chica',
+      details: `Movimiento Caja Chica (${payload.branch}): ${payload.movementType === 'ingreso' ? '+' : '-'}$${Number(payload.amount || 0).toLocaleString('es-AR')} - ${payload.concept}.`,
+      targetId: docId,
+    }).catch(() => {});
+    return { success: true };
+  } catch (err: any) {
+    console.warn('[FIREBASE FINANZAS] Error guardando movimiento caja chica:', err?.message || err);
+    return { success: false, error: err?.message || String(err) };
+  }
+}
+
+export async function deletePettyCashMovement(id: string): Promise<void> {
+  try {
+    const local: PettyCashMovement[] = JSON.parse(localStorage.getItem(FINANCE_PETTY_CASH_LS_KEY) || '[]');
+    localStorage.setItem(FINANCE_PETTY_CASH_LS_KEY, JSON.stringify(local.filter((m) => m.id !== id)));
+  } catch {}
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return;
+  try {
+    await deleteDoc(doc(firestoreDb, 'finance_petty_cash', id));
+  } catch {}
+}
+
+// ==========================================
+// FINANZAS: FACTURAS DE COSTOS / GASTOS CON VENCIMIENTO
+// ==========================================
+const FINANCE_INVOICES_LS_KEY = 'pampero_finance_invoices';
+
+export function subscribeToExpenseInvoices(
+  onUpdate: (invoices: ExpenseInvoiceRecord[]) => void
+): () => void {
+  try {
+    const raw = localStorage.getItem(FINANCE_INVOICES_LS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) onUpdate(parsed);
+    }
+  } catch {}
+
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return () => {};
+
+  try {
+    return onSnapshot(
+      collection(firestoreDb, 'finance_expense_invoices'),
+      (snap) => {
+        const list: ExpenseInvoiceRecord[] = snap.docs
+          .map((d) => ({
+            ...(d.data() as ExpenseInvoiceRecord),
+            id: d.id,
+          }))
+          .sort((a, b) => (a.dueDate || '').localeCompare(b.dueDate || ''));
+        try {
+          localStorage.setItem(FINANCE_INVOICES_LS_KEY, JSON.stringify(list));
+        } catch {}
+        onUpdate(list);
+      },
+      (err) => console.warn('[FIREBASE FINANZAS] Expense invoices listener notice:', err?.message || err)
+    );
+  } catch {
+    return () => {};
+  }
+}
+
+export async function saveExpenseInvoice(
+  record: ExpenseInvoiceRecord
+): Promise<{ success: boolean; error?: string }> {
+  const docId = record.id || `inv-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const payload: ExpenseInvoiceRecord = {
+    ...record,
+    id: docId,
+    amount: Math.max(0, Number(record.amount) || 0),
+    notifyDaysBefore:
+      typeof record.notifyDaysBefore === 'number' && !isNaN(record.notifyDaysBefore)
+        ? Math.max(0, record.notifyDaysBefore)
+        : 5,
+    createdAt: record.createdAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  try {
+    const local: ExpenseInvoiceRecord[] = JSON.parse(localStorage.getItem(FINANCE_INVOICES_LS_KEY) || '[]');
+    const updated = [payload, ...local.filter((i) => i.id !== docId)].sort((a, b) =>
+      (a.dueDate || '').localeCompare(b.dueDate || '')
+    );
+    localStorage.setItem(FINANCE_INVOICES_LS_KEY, JSON.stringify(updated));
+  } catch {}
+
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return { success: true };
+
+  try {
+    const cleaned = JSON.parse(JSON.stringify(payload, (_k, v) => (v === undefined ? null : v)));
+    await setDoc(doc(firestoreDb, 'finance_expense_invoices', docId), cleaned, { merge: true });
+    recordAuditLog({
+      module: 'Costos & Finanzas',
+      action: 'Guardar Factura',
+      details: `${payload.invoiceType} #${payload.invoiceNumber} (${payload.supplierOrEntity}) por $${Number(payload.amount || 0).toLocaleString('es-AR')} - Vto: ${payload.dueDate} (${payload.status}).`,
+      targetId: docId,
+    }).catch(() => {});
+    return { success: true };
+  } catch (err: any) {
+    console.warn('[FIREBASE FINANZAS] Error guardando factura:', err?.message || err);
+    return { success: false, error: err?.message || String(err) };
+  }
+}
+
+export async function deleteExpenseInvoice(id: string): Promise<void> {
+  try {
+    const local: ExpenseInvoiceRecord[] = JSON.parse(localStorage.getItem(FINANCE_INVOICES_LS_KEY) || '[]');
+    localStorage.setItem(FINANCE_INVOICES_LS_KEY, JSON.stringify(local.filter((i) => i.id !== id)));
+  } catch {}
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return;
+  try {
+    await deleteDoc(doc(firestoreDb, 'finance_expense_invoices', id));
+    await deleteCRMCalendarEvent(`REM-INV-${id}`).catch(() => {});
+    recordAuditLog({
+      module: 'Costos & Finanzas',
+      action: 'Eliminar Factura',
+      details: `Factura de gasto eliminada (ID: ${id}).`,
+      targetId: id,
+    }).catch(() => {});
+  } catch {}
+}
+
+export async function upsertInvoiceDueCalendarEvent(
+  invoice: ExpenseInvoiceRecord,
+  operatorName: string,
+  operatorEmail?: string
+): Promise<void> {
+  const eventId = `REM-INV-${invoice.id}`;
+  if (!invoice.syncToCalendar || !invoice.dueDate || invoice.status === 'anulada') {
+    await deleteCRMCalendarEvent(eventId).catch(() => {});
+    return;
+  }
+  const cleanEvent: CRMCalendarEvent = sanitizeObjectEncoding({
+    id: eventId,
+    title: `[Vto. Factura] ${invoice.supplierOrEntity} · ${invoice.invoiceType} #${invoice.invoiceNumber}`,
+    description: `Monto: $${Number(invoice.amount || 0).toLocaleString('es-AR')} · Rubro: ${invoice.category} (${invoice.costType}) · Sucursal: ${invoice.branch}${invoice.notes ? ` · ${invoice.notes}` : ''}`,
+    date: invoice.dueDate,
+    eventType: 'vencimiento',
+    branch: invoice.branch || 'Maipú',
+    visibilityType: 'all',
+    visibleToUsers: [],
+    createdBy: operatorName || 'Costos & Finanzas',
+    createdByEmail: operatorEmail || '',
+    completed: invoice.status === 'pagada',
+    createdAt: invoice.createdAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
+  await saveCRMCalendarEvent(cleanEvent);
+}
+
+// ==========================================
+// INTERNAL REAL-TIME CHAT (ADMIN / EMPLEADOS / CLIENTES)
+// Collections: internal_chat_threads, internal_chat_messages
+// ==========================================
+
+const CHAT_THREADS_LS_PREFIX = 'pampero_chat_threads_';
+const CHAT_MESSAGES_LS_PREFIX = 'pampero_chat_msgs_';
+
+export function getChatParticipantKey(input?: { email?: string; id?: string } | null): string {
+  if (!input) return '';
+  const rawEmail = String(input.email || '').toLowerCase().trim();
+  if (rawEmail) return rawEmail;
+  const rawId = String(input.id || '').toLowerCase().trim();
+  return rawId;
+}
+
+export function getChatParticipantInfoFromSession(session: UserSession): ChatParticipantInfo {
+  const key = getChatParticipantKey(session);
+  const role: ChatParticipantRole =
+    session.role === 'admin'
+      ? 'admin'
+      : session.role === 'employee'
+      ? 'employee'
+      : 'client';
+  const name =
+    session.clientData?.companyName ||
+    session.clientData?.fullName ||
+    session.name ||
+    session.sellerName ||
+    (role === 'admin' ? 'Administrador Maestro Joaquín Nievas' : session.email?.split('@')[0] || 'Usuario');
+  const subLabel =
+    role === 'admin'
+      ? 'Administrador'
+      : role === 'employee'
+      ? `${session.sellerRole === 'encargado' ? 'Encargado' : 'Personal'}${session.branch ? ` · ${session.branch}` : ''}`
+      : session.clientType === 'empresa'
+      ? 'Cliente Empresa'
+      : 'Cliente';
+
+  return {
+    id: key,
+    name: String(name),
+    email: session.email || undefined,
+    role,
+    subLabel,
+  };
+}
+
+function sanitizeDocToken(raw: string): string {
+  return String(raw || '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9@._-]+/g, '_');
+}
+
+export function getDirectChatThreadId(keyA: string, keyB: string): string {
+  const sorted = [sanitizeDocToken(keyA), sanitizeDocToken(keyB)].sort();
+  return `dm__${sorted[0]}__${sorted[1]}`;
+}
+
+export function subscribeToUserChatThreads(
+  participantKey: string,
+  onUpdate: (threads: InternalChatThread[]) => void
+): () => void {
+  const cleanKey = getChatParticipantKey({ email: participantKey, id: participantKey });
+  if (!cleanKey) {
+    onUpdate([]);
+    return () => {};
+  }
+
+  const lsKey = `${CHAT_THREADS_LS_PREFIX}${sanitizeDocToken(cleanKey)}`;
+  try {
+    const raw = localStorage.getItem(lsKey);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) onUpdate(parsed);
+    }
+  } catch {}
+
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return () => {};
+
+  try {
+    const q = query(
+      collection(firestoreDb, 'internal_chat_threads'),
+      where('participantIds', 'array-contains', cleanKey)
+    );
+    return onSnapshot(
+      q,
+      (snap) => {
+        const list: InternalChatThread[] = snap.docs
+          .map((d) => ({
+            ...(d.data() as InternalChatThread),
+            id: d.id,
+          }))
+          .sort((a, b) =>
+            (b.lastMessageAt || b.updatedAt || '').localeCompare(a.lastMessageAt || a.updatedAt || '')
+          );
+        try {
+          localStorage.setItem(lsKey, JSON.stringify(list));
+        } catch {}
+        onUpdate(list);
+      },
+      (err) => {
+        console.warn('[FIREBASE CHAT] Thread listener aviso:', err?.message || err);
+      }
+    );
+  } catch {
+    return () => {};
+  }
+}
+
+export function subscribeToChatMessages(
+  threadId: string,
+  onUpdate: (messages: InternalChatMessage[]) => void
+): () => void {
+  if (!threadId) {
+    onUpdate([]);
+    return () => {};
+  }
+
+  const lsKey = `${CHAT_MESSAGES_LS_PREFIX}${threadId}`;
+  try {
+    const raw = localStorage.getItem(lsKey);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) onUpdate(parsed);
+    }
+  } catch {}
+
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return () => {};
+
+  try {
+    const q = query(
+      collection(firestoreDb, 'internal_chat_messages'),
+      where('threadId', '==', threadId)
+    );
+    return onSnapshot(
+      q,
+      (snap) => {
+        const list: InternalChatMessage[] = snap.docs
+          .map((d) => ({
+            ...(d.data() as InternalChatMessage),
+            id: d.id,
+          }))
+          .sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
+        try {
+          localStorage.setItem(lsKey, JSON.stringify(list));
+        } catch {}
+        onUpdate(list);
+      },
+      (err) => {
+        console.warn('[FIREBASE CHAT] Messages listener aviso:', err?.message || err);
+      }
+    );
+  } catch {
+    return () => {};
+  }
+}
+
+export async function ensureDirectChatThread(
+  me: ChatParticipantInfo,
+  other: ChatParticipantInfo
+): Promise<InternalChatThread> {
+  const meKey = getChatParticipantKey(me);
+  const otherKey = getChatParticipantKey(other);
+  const threadId = getDirectChatThreadId(meKey, otherKey);
+  const nowIso = new Date().toISOString();
+
+  const participantIds = meKey === otherKey ? [meKey] : [meKey, otherKey];
+  const participants: ChatParticipantInfo[] =
+    meKey === otherKey
+      ? [{ ...me, id: meKey }]
+      : [
+          { ...me, id: meKey },
+          { ...other, id: otherKey },
+        ];
+
+  const baseThread: InternalChatThread = sanitizeObjectEncoding({
+    id: threadId,
+    participantIds,
+    participants,
+    unreadCounts: {
+      [meKey]: 0,
+      [otherKey]: 0,
+    },
+    createdAt: nowIso,
+    updatedAt: nowIso,
+  });
+
+  const firestoreDb = db || getFirebaseDb();
+  if (firestoreDb) {
+    try {
+      const ref = doc(firestoreDb, 'internal_chat_threads', threadId);
+      const existing = await getDoc(ref);
+      if (existing.exists()) {
+        const existingData = existing.data() as InternalChatThread;
+        const merged: InternalChatThread = sanitizeObjectEncoding({
+          ...existingData,
+          id: threadId,
+          participantIds,
+          participants,
+          unreadCounts: existingData.unreadCounts || baseThread.unreadCounts,
+          updatedAt: existingData.updatedAt || nowIso,
+        });
+        await setDoc(ref, JSON.parse(JSON.stringify(merged, (_k, v) => (v === undefined ? null : v))), { merge: true });
+        return merged;
+      } else {
+        await setDoc(ref, JSON.parse(JSON.stringify(baseThread, (_k, v) => (v === undefined ? null : v))), { merge: true });
+      }
+    } catch (err: any) {
+      console.warn('[FIREBASE CHAT] ensureDirectChatThread aviso:', err?.message || err);
+    }
+  }
+
+  return baseThread;
+}
+
+export async function sendInternalChatMessage(
+  thread: InternalChatThread,
+  sender: ChatParticipantInfo,
+  text: string
+): Promise<{ success: boolean; error?: string }> {
+  const cleanText = String(text || '').trim();
+  if (!cleanText) return { success: false, error: 'Mensaje vacío' };
+
+  const senderKey = getChatParticipantKey(sender);
+  const nowIso = new Date().toISOString();
+  const msgId = `msg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+  const message: InternalChatMessage = sanitizeObjectEncoding({
+    id: msgId,
+    threadId: thread.id,
+    senderId: senderKey,
+    senderName: sender.name,
+    senderEmail: sender.email,
+    senderRole: sender.role,
+    text: cleanText,
+    createdAt: nowIso,
+  });
+
+  // Optimistic local message cache update
+  try {
+    const lsMsgKey = `${CHAT_MESSAGES_LS_PREFIX}${thread.id}`;
+    const existingMsgs: InternalChatMessage[] = JSON.parse(localStorage.getItem(lsMsgKey) || '[]');
+    localStorage.setItem(lsMsgKey, JSON.stringify([...existingMsgs, message]));
+  } catch {}
+
+  const nextUnread: Record<string, number> = { ...(thread.unreadCounts || {}) };
+  (thread.participantIds || []).forEach((pid) => {
+    if (pid === senderKey) {
+      nextUnread[pid] = 0;
+    } else {
+      nextUnread[pid] = (Number(nextUnread[pid]) || 0) + 1;
+    }
+  });
+
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return { success: true };
+
+  try {
+    const cleanedMsg = JSON.parse(JSON.stringify(message, (_k, v) => (v === undefined ? null : v)));
+    await setDoc(doc(firestoreDb, 'internal_chat_messages', msgId), cleanedMsg);
+
+    const threadUpdate: Partial<InternalChatThread> = sanitizeObjectEncoding({
+      id: thread.id,
+      participantIds: thread.participantIds,
+      participants: thread.participants,
+      lastMessageText: cleanText,
+      lastMessageAt: nowIso,
+      lastSenderId: senderKey,
+      lastSenderName: sender.name,
+      unreadCounts: nextUnread,
+      updatedAt: nowIso,
+    });
+    const cleanedThread = JSON.parse(JSON.stringify(threadUpdate, (_k, v) => (v === undefined ? null : v)));
+    await setDoc(doc(firestoreDb, 'internal_chat_threads', thread.id), cleanedThread, { merge: true });
+    return { success: true };
+  } catch (err: any) {
+    console.warn('[FIREBASE CHAT] Error enviando mensaje:', err?.message || err);
+    return { success: false, error: err?.message || String(err) };
+  }
+}
+
+export async function markChatThreadRead(threadId: string, participantKey: string): Promise<void> {
+  const cleanKey = getChatParticipantKey({ email: participantKey, id: participantKey });
+  if (!threadId || !cleanKey) return;
+
+  try {
+    const lsKey = `${CHAT_THREADS_LS_PREFIX}${sanitizeDocToken(cleanKey)}`;
+    const existing: InternalChatThread[] = JSON.parse(localStorage.getItem(lsKey) || '[]');
+    const updated = existing.map((t) =>
+      t.id === threadId
+        ? { ...t, unreadCounts: { ...(t.unreadCounts || {}), [cleanKey]: 0 } }
+        : t
+    );
+    localStorage.setItem(lsKey, JSON.stringify(updated));
+  } catch {}
+
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return;
+
+  try {
+    const ref = doc(firestoreDb, 'internal_chat_threads', threadId);
+    const snap = await getDoc(ref);
+    if (snap.exists()) {
+      const data = snap.data() as InternalChatThread;
+      const currentUnread = Number(data?.unreadCounts?.[cleanKey] || 0);
+      if (currentUnread > 0) {
+        await setDoc(
+          ref,
+          {
+            unreadCounts: {
+              ...(data.unreadCounts || {}),
+              [cleanKey]: 0,
+            },
+          },
+          { merge: true }
+        );
+      }
+    }
+  } catch {}
+}
+
+
 
 
 

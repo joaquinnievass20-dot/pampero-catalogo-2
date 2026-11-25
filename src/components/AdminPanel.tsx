@@ -49,6 +49,7 @@ import {
   normalizeSpecialSuffix,
 } from '../utils/sizeUtils';
 import { PamperoLogo } from './PamperoLogo';
+import { isColorDark } from '../context/ThemeContext';
 import { saveCatalogBackup } from '../utils/backupManager';
 import { doc, deleteDoc } from 'firebase/firestore';
 import { 
@@ -112,7 +113,9 @@ import {
   FileText,
   Type,
   Loader2,
-  Calendar
+  Calendar,
+  PanelLeftClose,
+  PanelLeftOpen
 } from 'lucide-react';
 
 export type AdminTabKey = 
@@ -164,6 +167,7 @@ interface AdminPanelProps {
   onUpdateCategories?: (newCats: CategoryHierarchyItem[]) => void;
   volumeDiscounts?: QuantityDiscountRule[];
   onUpdateVolumeDiscounts?: (newRules: QuantityDiscountRule[]) => void;
+  initialTab?: AdminTabKey;
 }
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({
@@ -189,6 +193,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   onUpdateCategories = () => {},
   volumeDiscounts = [],
   onUpdateVolumeDiscounts = () => {},
+  initialTab: requestedInitialTab,
 }) => {
   const isEmployee = userSession?.role === 'employee';
   const [liveEmployeesTick, setLiveEmployeesTick] = useState(0);
@@ -212,12 +217,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     return employeePermissions.includes(tabKey);
   }, [isEmployee, employeePermissions]);
 
-  const initialTab: AdminTabKey = isEmployee 
-    ? ((employeePermissions[0] as AdminTabKey) || 'products') 
+  const defaultTab: AdminTabKey = isEmployee
+    ? ((employeePermissions[0] as AdminTabKey) || 'products')
     : 'promos';
 
-  const [activeTab, setActiveTab] = useState<AdminTabKey>(initialTab);
+  const resolvedStartTab: AdminTabKey =
+    requestedInitialTab && (!isEmployee || employeePermissions.includes(requestedInitialTab))
+      ? requestedInitialTab
+      : defaultTab;
+
+  const [activeTab, setActiveTab] = useState<AdminTabKey>(resolvedStartTab);
   const [savedNotice, setSavedNotice] = useState(false);
+
+  useEffect(() => {
+    if (requestedInitialTab && isTabVisible(requestedInitialTab)) {
+      setActiveTab(requestedInitialTab);
+    }
+  }, [requestedInitialTab, isTabVisible]);
 
   useEffect(() => {
     if (isEmployee && employeePermissions.length > 0 && !isTabVisible(activeTab)) {
@@ -542,6 +558,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   });
 
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [isDesktopSidebarCollapsed, setIsDesktopSidebarCollapsed] = useState(false);
 
   if (!isOpen) return null;
 
@@ -932,6 +949,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const activeTabInfo = getActiveTabInfo();
   const ActiveIcon = activeTabInfo.Icon;
 
+  const sidebarBg = theme.sidebarBgColor || theme.primaryColor || '#18231C';
+  const isSidebarDark = isColorDark(sidebarBg);
+  const sidebarText = theme.sidebarTextColor || (isSidebarDark ? '#DCD4C9' : '#18231C');
+  const sidebarActiveBg = theme.sidebarActiveBgColor || (isSidebarDark ? '#2B3B30' : '#ECE5DC');
+  const sidebarAccent = theme.sidebarAccentColor || theme.accentColor || '#FDB813';
+  const sidebarMutedText = isSidebarDark ? '#A69E94' : '#6F6860';
+  const sidebarBorderClass = isSidebarDark ? 'border-white/10' : 'border-black/10';
+
   return (
     <div className="fixed inset-0 z-50 flex flex-col md:flex-row bg-[#FAF8F5] text-[#18231C] w-screen h-screen overflow-hidden animate-fadeIn font-sans">
       
@@ -945,35 +970,55 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
       {/* SIDEBAR DASHBOARD NAVIGATION */}
       <aside 
-        style={{ backgroundColor: theme.primaryColor || '#18231C' }}
-        className={`fixed md:static inset-y-0 left-0 z-40 w-72 max-w-[85vw] flex flex-col h-full border-r border-black/40 text-white transition-transform duration-200 ease-in-out shrink-0 ${
-          isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
+        style={{ backgroundColor: sidebarBg, color: isSidebarDark ? '#FFFFFF' : '#18231C' }}
+        className={`fixed md:static inset-y-0 left-0 z-40 flex flex-col h-full transition-all duration-200 ease-in-out shrink-0 ${
+          isMobileSidebarOpen ? 'translate-x-0 w-72 max-w-[85vw]' : '-translate-x-full md:translate-x-0'
+        } ${
+          isDesktopSidebarCollapsed
+            ? 'md:w-0 md:overflow-hidden md:border-r-0'
+            : 'md:w-72 border-r border-black/30'
         }`}
       >
         {/* Sidebar Brand Header */}
-        <div className="p-4 border-b border-white/10 flex items-center justify-between">
-          <div className="flex items-center gap-3 min-w-0">
+        <div className={`p-3.5 border-b ${sidebarBorderClass} flex items-center justify-between gap-2`}>
+          <div className="flex items-center gap-2.5 min-w-0 flex-1">
             <PamperoLogo 
               customUrl={theme.customLogoUrl || theme.logoUrl}
-              height={theme.logoHeight ? Math.min(theme.logoHeight, 36) : 32}
+              height={theme.logoHeight ? Math.min(theme.logoHeight, 34) : 30}
               size="sm"
-              onDarkBackground={true}
-              variant="light"
-              navBgColor={theme.primaryColor || '#18231C'}
+              onDarkBackground={isSidebarDark}
+              variant={isSidebarDark ? 'light' : 'dark'}
+              navBgColor={sidebarBg}
             />
-            <div className="min-w-0">
-              <h2 className="font-display font-bold text-sm uppercase tracking-wider text-[#FDB813] truncate">
+            <div className="min-w-0 flex-1">
+              <h2
+                style={{ color: sidebarAccent }}
+                className="font-display font-bold text-[13px] uppercase tracking-wide whitespace-normal leading-tight"
+              >
                 Panel de Control
               </h2>
-              <span className="text-[10px] text-neutral-300 block font-mono">
+              <span
+                style={{ color: sidebarText }}
+                className="text-[10px] opacity-80 block font-mono leading-tight mt-0.5"
+              >
                 Gran Mendoza · v2.5.0
               </span>
             </div>
           </div>
           <button
             type="button"
+            onClick={() => setIsDesktopSidebarCollapsed(true)}
+            style={{ color: sidebarText }}
+            className="hidden md:inline-flex p-1.5 hover:bg-black/15 rounded-xs cursor-pointer shrink-0 transition-colors"
+            title="Ocultar barra lateral"
+          >
+            <PanelLeftClose className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
             onClick={() => setIsMobileSidebarOpen(false)}
-            className="md:hidden p-1.5 text-neutral-400 hover:text-white rounded-xs cursor-pointer"
+            style={{ color: sidebarText }}
+            className="md:hidden p-1.5 hover:bg-black/15 rounded-xs cursor-pointer shrink-0"
           >
             <X className="w-5 h-5" />
           </button>
@@ -987,7 +1032,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
             return (
               <div key={catIdx} className="space-y-1">
-                <span className="px-3 text-[10px] font-black uppercase tracking-[0.18em] text-[#A69E94] block">
+                <span
+                  style={{ color: sidebarMutedText }}
+                  className="px-3 text-[10px] font-black uppercase tracking-[0.18em] block"
+                >
                   {cat.title}
                 </span>
 
@@ -1004,22 +1052,27 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           setActiveTab(t.key as AdminTabKey);
                           setIsMobileSidebarOpen(false);
                         }}
-                        className={`w-full flex items-center justify-between px-3 py-2 rounded-xs text-xs font-bold transition-all cursor-pointer group text-left ${
+                        style={
                           isSelected
-                            ? 'bg-[#2B3B30] text-[#FDB813] shadow-xs'
-                            : 'text-[#DCD4C9] hover:bg-white/10 hover:text-white'
+                            ? { backgroundColor: sidebarActiveBg, color: sidebarAccent }
+                            : { color: sidebarText }
+                        }
+                        className={`w-full flex items-center justify-between px-3 py-2 rounded-xs text-xs font-bold transition-all cursor-pointer group text-left ${
+                          isSelected ? 'shadow-xs' : 'hover:bg-black/10'
                         }`}
                       >
-                        <div className="flex items-center gap-2.5 truncate">
-                          <TabIcon 
-                            className={`w-4 h-4 shrink-0 transition-colors ${
-                              isSelected ? 'text-[#FDB813]' : 'text-neutral-400 group-hover:text-white'
-                            }`}
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <TabIcon
+                            style={{ color: isSelected ? sidebarAccent : sidebarMutedText }}
+                            className="w-4 h-4 shrink-0 transition-colors"
                           />
                           <span className="truncate">{t.label}</span>
                         </div>
                         {isSelected && (
-                          <span className="w-1.5 h-1.5 rounded-full bg-[#FDB813] shrink-0" />
+                          <span
+                            style={{ backgroundColor: sidebarAccent }}
+                            className="w-1.5 h-1.5 rounded-full shrink-0"
+                          />
                         )}
                       </button>
                     );
@@ -1031,7 +1084,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         </div>
 
         {/* Sidebar Bottom Footer Actions */}
-        <div className="p-3 border-t border-white/10 space-y-2 bg-black/20">
+        <div className={`p-3 border-t ${sidebarBorderClass} space-y-2 bg-black/15`}>
           <button
             id="btn-sidebar-global-save"
             type="button"
@@ -1046,7 +1099,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             id="btn-sidebar-return-hub"
             type="button"
             onClick={onClose}
-            className="w-full py-2 px-3 bg-[#2B3B30] hover:bg-[#3d5244] text-[#FAF8F5] rounded-xs text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+            style={{ backgroundColor: sidebarActiveBg, color: isSidebarDark ? '#FAF8F5' : '#18231C' }}
+            className="w-full py-2 px-3 hover:opacity-90 rounded-xs text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-opacity cursor-pointer"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
             <span>Volver al menú</span>
@@ -1059,7 +1113,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         
         {/* Top Header Navigation Bar */}
         <header className="bg-white border-b border-[#DCD4C9] px-4 sm:px-6 py-3 flex items-center justify-between shrink-0 shadow-2xs z-10">
-          <div className="flex items-center gap-3 min-w-0">
+          <div className="flex items-center gap-2.5 min-w-0">
             <button
               type="button"
               onClick={() => setIsMobileSidebarOpen(true)}
@@ -1068,6 +1122,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             >
               <Menu className="w-5 h-5" />
             </button>
+
+            {isDesktopSidebarCollapsed && (
+              <button
+                type="button"
+                onClick={() => setIsDesktopSidebarCollapsed(false)}
+                className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-[#FAF8F5] hover:bg-[#ECE5DC] border border-[#DCD4C9] text-[#18231C] rounded-xs text-xs font-bold cursor-pointer transition-colors shrink-0"
+                title="Mostrar barra lateral"
+              >
+                <PanelLeftOpen className="w-4 h-4" />
+                <span>Menú</span>
+              </button>
+            )}
 
             <div>
               <div className="flex items-center gap-1.5 text-[11px] text-[#6F6860] uppercase font-bold tracking-wider">

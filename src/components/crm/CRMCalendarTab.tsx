@@ -186,7 +186,9 @@ export const CRMCalendarTab: React.FC<CRMCalendarTabProps> = ({
   crmScope = 'all',
   orders,
   visits,
+  theme,
 }) => {
+  const st = theme?.siteTexts;
   const todayStr = useMemo(() => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(
@@ -355,10 +357,10 @@ export const CRMCalendarTab: React.FC<CRMCalendarTabProps> = ({
           branch: task.branch,
           responsible: fixUtf8Encoding(respDisplay),
           badgeText: isDone ? 'Tarea Completada' : `Vence Tarea (${task.importance.toUpperCase()})`,
-          colorHex: isDone ? '#10B981' : task.importance === 'urgente' ? '#DC2626' : '#D97706',
-          bgClass: isDone ? 'bg-emerald-50' : task.importance === 'urgente' ? 'bg-red-50' : 'bg-amber-50',
-          textClass: isDone ? 'text-emerald-900' : task.importance === 'urgente' ? 'text-red-900' : 'text-amber-900',
-          borderClass: isDone ? 'border-emerald-300' : task.importance === 'urgente' ? 'border-red-300' : 'border-amber-300',
+          colorHex: '#DC2626',
+          bgClass: 'bg-red-50',
+          textClass: 'text-red-900',
+          borderClass: 'border-red-300',
           isCompleted: isDone,
           isOverdue: !isDone && due < todayStr,
         });
@@ -376,10 +378,10 @@ export const CRMCalendarTab: React.FC<CRMCalendarTabProps> = ({
           branch: task.branch,
           responsible: fixUtf8Encoding(respDisplay),
           badgeText: 'Activación Tarea',
-          colorHex: '#4F46E5',
-          bgClass: 'bg-indigo-50',
-          textClass: 'text-indigo-900',
-          borderClass: 'border-indigo-300',
+          colorHex: '#DC2626',
+          bgClass: 'bg-red-50',
+          textClass: 'text-red-900',
+          borderClass: 'border-red-300',
         });
       }
     });
@@ -466,10 +468,10 @@ export const CRMCalendarTab: React.FC<CRMCalendarTabProps> = ({
         branch: order.branch,
         responsible: fixUtf8Encoding(order.seller || 'Sin asignar'),
         badgeText: isDelayed ? 'Seguimiento Demorado' : 'Seguimiento Pedido',
-        colorHex: isDelayed ? '#DC2626' : '#2563EB',
-        bgClass: isDelayed ? 'bg-red-50' : 'bg-blue-50',
-        textClass: isDelayed ? 'text-red-900' : 'text-blue-900',
-        borderClass: isDelayed ? 'border-red-300' : 'border-blue-300',
+        colorHex: '#2563EB',
+        bgClass: 'bg-blue-50',
+        textClass: 'text-blue-900',
+        borderClass: isDelayed ? 'border-blue-500' : 'border-blue-300',
         isOverdue: isDelayed,
         locationText: order.companyLocation,
         locationUrl: order.locationUrl,
@@ -500,10 +502,10 @@ export const CRMCalendarTab: React.FC<CRMCalendarTabProps> = ({
         branch: ev.branch,
         responsible: fixUtf8Encoding(ev.createdBy),
         badgeText: ev.completed ? `${meta.label} · Hecho` : meta.label,
-        colorHex: ev.completed ? '#10B981' : meta.colorHex,
-        bgClass: ev.completed ? 'bg-emerald-50' : meta.bgClass,
-        textClass: ev.completed ? 'text-emerald-900' : meta.textClass,
-        borderClass: ev.completed ? 'border-emerald-300' : meta.borderClass,
+        colorHex: '#0D9488',
+        bgClass: 'bg-teal-50',
+        textClass: 'text-teal-900',
+        borderClass: 'border-teal-300',
         isCompleted: Boolean(ev.completed),
         isOverdue: !ev.completed && dateIso < todayStr && ev.eventType === 'vencimiento',
         visibilityLabel,
@@ -556,10 +558,10 @@ export const CRMCalendarTab: React.FC<CRMCalendarTabProps> = ({
               ? 'Mendoza'
               : 'Nacional',
           badgeText: meta.shortLabel,
-          colorHex: meta.colorHex,
-          bgClass: meta.bgClass,
-          textClass: meta.textClass,
-          borderClass: meta.borderClass,
+          colorHex: '#D97706',
+          bgClass: 'bg-amber-50',
+          textClass: 'text-amber-900',
+          borderClass: 'border-amber-300',
           rawHoliday: h,
           linkedPromoTitle: linkedPromo ? fixUtf8Encoding(linkedPromo.title) : undefined,
           linkedPromoActive: linkedPromo?.active,
@@ -748,14 +750,15 @@ export const CRMCalendarTab: React.FC<CRMCalendarTabProps> = ({
           <div className="flex items-center gap-2 flex-wrap">
             <h3 className="font-bold text-base text-[#18231C] uppercase tracking-wider flex items-center gap-2">
               <CalendarIcon className="w-5 h-5 text-[#B9522F]" />
-              Calendario de Gestión y Vencimientos
+              {st?.crmCalendarTitle || 'Calendario de Gestión y Vencimientos'}
             </h3>
             <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-xs bg-amber-100 text-amber-900 border border-amber-300">
               {allEntries.length} eventos visibles
             </span>
           </div>
           <p className="text-xs text-[#6F6860] mt-0.5">
-            Visualizá en un solo lugar vencimientos de tareas, próximos pasos de visitas comerciales, seguimiento de empresas y recordatorios con permisos personalizados.
+            {st?.crmCalendarSubtitle ||
+              'Visualizá en un solo lugar vencimientos de tareas, próximos pasos de visitas comerciales, seguimiento de empresas y recordatorios con permisos personalizados.'}
           </p>
         </div>
 
@@ -764,10 +767,10 @@ export const CRMCalendarTab: React.FC<CRMCalendarTabProps> = ({
             <button
               type="button"
               onClick={() => openNewEventModal(selectedDate)}
-              className="px-4 py-2 bg-[#B9522F] hover:bg-[#9E3E1E] text-white text-xs font-bold uppercase tracking-wider rounded-xs transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+              className="px-4 py-2 bg-[#18231C] hover:bg-black text-[#FDB813] text-xs font-bold uppercase tracking-wider rounded-xs transition-colors flex items-center gap-1.5 cursor-pointer"
             >
               <Plus className="w-4 h-4" />
-              <span>Nuevo Evento / Recordatorio</span>
+              <span>{st?.crmNewEventBtnText || 'Nuevo Evento / Recordatorio'}</span>
             </button>
           </div>
         )}
@@ -782,7 +785,7 @@ export const CRMCalendarTab: React.FC<CRMCalendarTabProps> = ({
               key: 'all' as const,
               label: 'Todos',
               count: allEntries.length,
-              dotClass: 'bg-[#18231C]',
+              hex: '#18231C',
               activeClass: 'bg-[#18231C] text-white border-[#18231C]',
               idleClass: 'bg-[#FAF8F5] text-[#18231C] border-[#DCD4C9] hover:bg-neutral-100',
               badgeActive: 'bg-white/20 text-white',
@@ -792,79 +795,80 @@ export const CRMCalendarTab: React.FC<CRMCalendarTabProps> = ({
               key: 'holiday' as const,
               label: 'Feriados & Comerciales',
               count: allEntries.filter((e) => e.source === 'holiday').length,
-              dotClass: 'bg-amber-500',
+              hex: '#D97706',
               activeClass: 'bg-amber-600 text-white border-amber-700',
-              idleClass: 'bg-amber-50/70 text-amber-900 border-amber-200 hover:bg-amber-100/80',
+              idleClass: 'bg-amber-50 text-amber-950 border-amber-300 hover:bg-amber-100',
               badgeActive: 'bg-white/20 text-white',
-              badgeIdle: 'bg-amber-200/70 text-amber-950',
+              badgeIdle: 'bg-amber-200/80 text-amber-950',
             },
             {
               key: 'task' as const,
               label: 'Tareas / Vencimientos',
               count: allEntries.filter((e) => e.source === 'task').length,
-              dotClass: 'bg-red-600',
+              hex: '#DC2626',
               activeClass: 'bg-red-600 text-white border-red-700',
-              idleClass: 'bg-red-50/70 text-red-900 border-red-200 hover:bg-red-100/80',
+              idleClass: 'bg-red-50 text-red-950 border-red-300 hover:bg-red-100',
               badgeActive: 'bg-white/20 text-white',
-              badgeIdle: 'bg-red-200/70 text-red-950',
+              badgeIdle: 'bg-red-200/80 text-red-950',
             },
             {
               key: 'visit' as const,
               label: 'Visitas Comerciales',
               count: allEntries.filter((e) => e.source === 'visit').length,
-              dotClass: 'bg-purple-600',
+              hex: '#7C3AED',
               activeClass: 'bg-purple-600 text-white border-purple-700',
-              idleClass: 'bg-purple-50/70 text-purple-900 border-purple-200 hover:bg-purple-100/80',
+              idleClass: 'bg-purple-50 text-purple-950 border-purple-300 hover:bg-purple-100',
               badgeActive: 'bg-white/20 text-white',
-              badgeIdle: 'bg-purple-200/70 text-purple-950',
+              badgeIdle: 'bg-purple-200/80 text-purple-950',
             },
             {
               key: 'order' as const,
               label: 'Seguimiento Empresas',
               count: allEntries.filter((e) => e.source === 'order').length,
-              dotClass: 'bg-blue-600',
+              hex: '#2563EB',
               activeClass: 'bg-blue-600 text-white border-blue-700',
-              idleClass: 'bg-blue-50/70 text-blue-900 border-blue-200 hover:bg-blue-100/80',
+              idleClass: 'bg-blue-50 text-blue-950 border-blue-300 hover:bg-blue-100',
               badgeActive: 'bg-white/20 text-white',
-              badgeIdle: 'bg-blue-200/70 text-blue-950',
+              badgeIdle: 'bg-blue-200/80 text-blue-950',
             },
             {
               key: 'custom' as const,
               label: 'Mis Eventos / Privados',
               count: allEntries.filter((e) => e.source === 'custom').length,
-              dotClass: 'bg-teal-600',
+              hex: '#0D9488',
               activeClass: 'bg-teal-600 text-white border-teal-700',
-              idleClass: 'bg-teal-50/70 text-teal-900 border-teal-200 hover:bg-teal-100/80',
+              idleClass: 'bg-teal-50 text-teal-950 border-teal-300 hover:bg-teal-100',
               badgeActive: 'bg-white/20 text-white',
-              badgeIdle: 'bg-teal-200/70 text-teal-950',
+              badgeIdle: 'bg-teal-200/80 text-teal-950',
             },
-          ].map((pill) => {
-            const isSelected = sourceFilter === pill.key;
-            return (
-              <button
-                key={pill.key}
-                type="button"
-                onClick={() => setSourceFilter(pill.key)}
-                className={`px-2.5 py-1 text-[11px] font-bold rounded-xs border transition-colors cursor-pointer flex items-center gap-1.5 ${
-                  isSelected ? pill.activeClass : pill.idleClass
-                }`}
-              >
-                <span
-                  className={`w-2 h-2 rounded-full shrink-0 ${
-                    isSelected ? 'bg-white' : pill.dotClass
-                  }`}
-                />
-                <span>{pill.label}</span>
-                <span
-                  className={`px-1.5 py-0.2 rounded-xs text-[10px] font-mono tabular-nums ${
-                    isSelected ? pill.badgeActive : pill.badgeIdle
+          ]
+            .filter((pill) => pill.key === 'all' || pill.count > 0)
+            .map((pill) => {
+              const isSelected = sourceFilter === pill.key;
+              return (
+                <button
+                  key={pill.key}
+                  type="button"
+                  onClick={() => setSourceFilter(pill.key)}
+                  className={`px-2.5 py-1 text-[11px] font-bold rounded-xs border transition-colors cursor-pointer flex items-center gap-1.5 ${
+                    isSelected ? pill.activeClass : pill.idleClass
                   }`}
                 >
-                  {pill.count}
-                </span>
-              </button>
-            );
-          })}
+                  <span
+                    className="w-2.5 h-2.5 rounded-full shrink-0"
+                    style={{ backgroundColor: isSelected ? '#FFFFFF' : pill.hex }}
+                  />
+                  <span>{pill.label}</span>
+                  <span
+                    className={`px-1.5 py-0.2 rounded-xs text-[10px] font-mono tabular-nums ${
+                      isSelected ? pill.badgeActive : pill.badgeIdle
+                    }`}
+                  >
+                    {pill.count}
+                  </span>
+                </button>
+              );
+            })}
         </div>
 
         <div className="relative min-w-[220px] flex-1 max-w-xs">
@@ -953,7 +957,7 @@ export const CRMCalendarTab: React.FC<CRMCalendarTabProps> = ({
                     <span
                       className={`text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full ${
                         isToday
-                          ? 'bg-[#B9522F] text-white font-black'
+                          ? 'bg-[#18231C] text-[#FDB813] font-black'
                           : isSelected
                           ? 'bg-[#18231C] text-white'
                           : cell.inCurrentMonth
@@ -964,7 +968,9 @@ export const CRMCalendarTab: React.FC<CRMCalendarTabProps> = ({
                       {cell.dayNum}
                     </span>
                     {hasOverdue && (
-                      <AlertTriangle className="w-3 h-3 text-red-600 shrink-0" title="Tiene vencimientos o demoras" />
+                      <span title="Tiene vencimientos o demoras">
+                        <AlertTriangle className="w-3 h-3 text-red-600 shrink-0" />
+                      </span>
                     )}
                   </div>
 
@@ -1041,8 +1047,8 @@ export const CRMCalendarTab: React.FC<CRMCalendarTabProps> = ({
                 return (
                   <div
                     key={item.uid}
-                    className={`bg-white p-3 rounded-xs border shadow-2xs space-y-1.5 ${
-                      item.isOverdue ? 'border-l-4 border-l-red-600 border-red-200' : 'border-[#DCD4C9]'
+                    className={`bg-white p-3 rounded-sm border shadow-2xs space-y-1.5 ${
+                      item.isOverdue ? 'border-rose-300 bg-rose-50/20' : 'border-[#DCD4C9]'
                     }`}
                   >
                     <div className="flex items-start justify-between gap-2">
@@ -1394,7 +1400,7 @@ export const CRMCalendarTab: React.FC<CRMCalendarTabProps> = ({
                 <button
                   type="submit"
                   disabled={isSavingEvent}
-                  className="px-5 py-2 bg-[#B9522F] hover:bg-[#9E3E1E] text-white text-xs font-bold uppercase tracking-wider rounded-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+                  className="px-5 py-2 bg-[#18231C] hover:bg-black text-[#FDB813] text-xs font-bold uppercase tracking-wider rounded-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
                 >
                   <CheckSquare className="w-3.5 h-3.5" />
                   <span>{isSavingEvent ? 'Guardando...' : 'Guardar Evento'}</span>

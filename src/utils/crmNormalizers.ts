@@ -155,6 +155,7 @@ export function normalizeCRMOrder(raw: any, indexFallback?: number): CRMOrder {
     reminderTime: safeCellString(sanitized.reminderTime) || undefined,
     reminderNote: safeCellString(sanitized.reminderNote) || undefined,
     observationHistory: Array.isArray(sanitized.observationHistory) ? sanitized.observationHistory : undefined,
+    shortages: Array.isArray(sanitized.shortages) ? sanitized.shortages : undefined,
     updatedAt: safeCellString(sanitized.updatedAt) || new Date().toISOString(),
   } as CRMOrder;
 }

@@ -1,10 +1,11 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { CRMOrder, LeadVisit } from '../../types';
+import { CRMOrder, LeadVisit, ThemeConfig } from '../../types';
 import {
   X,
   AlertTriangle,
   Clock,
   MessageCircle,
+  MessageSquare,
   CheckCircle2,
   Bell,
   Calendar,
@@ -15,7 +16,7 @@ import {
 
 export interface CRMNotificationItem {
   id: string;
-  category: 'reminder' | 'blocked' | 'delayed' | 'visit';
+  category: 'reminder' | 'blocked' | 'delayed' | 'visit' | 'chat';
   title: string;
   subtitle: string;
   meta: string;
@@ -23,6 +24,7 @@ export interface CRMNotificationItem {
   badgeClass: string;
   order?: CRMOrder;
   visit?: LeadVisit;
+  chatThreadId?: string;
   whatsappPhone?: string;
   whatsappText?: string;
 }
@@ -36,6 +38,8 @@ interface CRMNotificationsModalProps {
   onMarkAllAsRead: () => void;
   onSelectOrder?: (order: CRMOrder) => void;
   onGoToVisits?: () => void;
+  onOpenChat?: (threadId?: string) => void;
+  theme?: ThemeConfig;
 }
 
 export const CRMNotificationsModal: React.FC<CRMNotificationsModalProps> = ({
@@ -47,7 +51,10 @@ export const CRMNotificationsModal: React.FC<CRMNotificationsModalProps> = ({
   onMarkAllAsRead,
   onSelectOrder,
   onGoToVisits,
+  onOpenChat,
+  theme,
 }) => {
+  const st = theme?.siteTexts;
   const readSet = useMemo(() => new Set(readIds), [readIds]);
   const unreadCount = useMemo(
     () => notifications.filter((n) => !readSet.has(n.id)).length,
@@ -79,6 +86,8 @@ export const CRMNotificationsModal: React.FC<CRMNotificationsModalProps> = ({
         return <Calendar className="w-4 h-4 text-[#B9522F] shrink-0" />;
       case 'visit':
         return <CheckCircle2 className="w-4 h-4 text-purple-600 shrink-0" />;
+      case 'chat':
+        return <MessageSquare className="w-4 h-4 text-blue-600 shrink-0" />;
     }
   };
 
@@ -99,7 +108,7 @@ export const CRMNotificationsModal: React.FC<CRMNotificationsModalProps> = ({
             </div>
             <div>
               <h3 className="font-bold text-sm uppercase tracking-wider">
-                Notificaciones del Equipo
+                {st?.crmNotifTitle || 'Notificaciones del Equipo'}
               </h3>
               <p className="text-[11px] text-[#DCD4C9]/80 tabular-nums">
                 {unreadCount > 0
@@ -234,6 +243,20 @@ export const CRMNotificationsModal: React.FC<CRMNotificationsModalProps> = ({
 
                   {/* Direct Actions */}
                   <div className="mt-2.5 pt-2 border-t border-[#DCD4C9]/60 flex items-center justify-end gap-2 flex-wrap">
+                    {item.chatThreadId && onOpenChat && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!isRead) onMarkAsRead(item.id);
+                          onClose();
+                          onOpenChat(item.chatThreadId);
+                        }}
+                        className="px-2.5 py-1 bg-[#18231C] hover:bg-black text-[#FDB813] text-[10px] font-bold uppercase tracking-wider rounded-xs inline-flex items-center gap-1 cursor-pointer"
+                      >
+                        <MessageSquare className="w-3 h-3" />
+                        <span>Abrir Chat</span>
+                      </button>
+                    )}
                     {item.order && onSelectOrder && (
                       <button
                         type="button"

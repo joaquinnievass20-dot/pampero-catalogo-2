@@ -46,11 +46,14 @@ interface NavbarProps {
   onOpenSizingPortal?: () => void;
   onOpenCRM?: () => void;
   onOpenRRHH?: () => void;
+  onOpenCosts?: () => void;
   onOpenHub?: () => void;
   promotions: Promotion[];
   activePromoFilter: string | null;
   onSelectPromo: (promo: Promotion) => void;
   theme: ThemeConfig;
+  unreadChatCount?: number;
+  onOpenChat?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -74,11 +77,14 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenSizingPortal,
   onOpenCRM,
   onOpenRRHH,
+  onOpenCosts,
   onOpenHub,
   promotions,
   activePromoFilter,
   onSelectPromo,
   theme,
+  unreadChatCount = 0,
+  onOpenChat,
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
@@ -384,6 +390,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             onOpenAdmin={onOpenAdmin}
             onOpenCRM={onOpenCRM}
             onOpenRRHH={onOpenRRHH}
+            onOpenCosts={onOpenCosts}
             onOpenHub={onOpenHub}
             onOpenProfile={onOpenProfile}
             onOpenUniformSimulator={onOpenUniformSimulator}
@@ -391,6 +398,8 @@ export const Navbar: React.FC<NavbarProps> = ({
             theme={theme}
             isDarkHeader={isNavDark}
             squareTrigger={true}
+            unreadChatCount={unreadChatCount}
+            onOpenChat={onOpenChat}
           />
         </div>
       </div>

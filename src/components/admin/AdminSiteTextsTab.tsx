@@ -15,6 +15,9 @@ import {
   Layers,
   Kanban,
   Briefcase,
+  Users,
+  Wallet,
+  MessageSquare,
 } from 'lucide-react';
 import { saveFirestoreStoreConfig, recordAuditLog } from '../../services/firebase';
 
@@ -34,7 +37,10 @@ type SiteTextSectionId =
   | 'hub'
   | 'crm'
   | 'corporate'
-  | 'footer';
+  | 'footer'
+  | 'rrhh'
+  | 'costs'
+  | 'chat';
 
 const DEFAULT_SITE_TEXTS: SiteTextsConfig = {
   // 1. Header & Navbar
@@ -94,12 +100,20 @@ const DEFAULT_SITE_TEXTS: SiteTextsConfig = {
   hubHeaderSub: 'Pampero Gran Mendoza · Sistema Operativo',
   hubTitle: 'Hub de Trabajo Interno',
   hubSubtitle: '',
+  hubRoleAdminText: 'Super Administrador',
+  hubRoleEmployeeText: 'Encargado General · Todos los Locales',
   hubCrmCardText: 'Gestión / CRM',
   hubCrmCardDesc: 'Tablero Kanban con cotizaciones entrantes, pedidos en curso, visitas a empresas y seguimiento comercial.',
   hubCrmBtnText: 'Ir a Gestión / CRM',
   hubRrhhCardText: 'RRHH',
   hubRrhhCardDesc: 'Legajos de personal, fichaje de llegada con horario y GPS exacto por local, horarios y vacaciones.',
   hubRrhhBtnText: 'Ir a RRHH',
+  hubCostsCardText: 'Costos & Finanzas',
+  hubCostsCardDesc: 'Dashboard de situación y liquidez, cheques emitidos y recibidos, caja chica por local y control de costos.',
+  hubCostsBtnText: 'Ir a Costos',
+  hubChatCardText: 'Chat Interno',
+  hubChatCardDesc: 'Mensajería directa en tiempo real entre administradores, empleados de locales y clientes registrados.',
+  hubChatBtnText: 'Abrir Chat',
   hubAdminCardText: 'Panel de Control',
   hubAdminCardDesc: 'Administración de catálogo, precios, promociones, operadores, locales y configuración integral.',
   hubAdminBtnText: 'Panel de Control',
@@ -122,6 +136,22 @@ const DEFAULT_SITE_TEXTS: SiteTextsConfig = {
   crmColCotizacionText: 'Cotización Recibida',
   crmColProduccionText: 'En Producción',
   crmColListoText: 'Listo para Retiro',
+  crmVisitsTitle: 'Visitas Comerciales',
+  crmVisitsSubtitle: 'Registro de visitas en terreno, prospección corporativa y seguimiento de cuentas en Gran Mendoza.',
+  crmNewVisitBtnText: 'Registrar Visita',
+  crmTasksTitle: 'Tablero de Tareas Operativas',
+  crmTasksSubtitle: 'Organización interna, entregas, cobros, seguimientos y vencimientos asignados al equipo.',
+  crmNewTaskBtnText: 'Nueva Tarea',
+  crmCalendarTitle: 'Calendario Comercial & Vencimientos',
+  crmCalendarSubtitle: 'Feriados comerciales, tareas pendientes, visitas agendadas, entregas y recordatorios internos.',
+  crmNewEventBtnText: 'Nuevo Evento / Recordatorio',
+  crmSuppliersTitle: 'Pedidos a Proveedores & Stock',
+  crmSuppliersSubtitle: 'Agrupación automática de faltantes del catálogo y reposición por proveedor.',
+  crmShortagesTitle: 'Faltantes & Pedido a Proveedor',
+  crmShortagesBtnText: 'Faltantes',
+  crmObservationsBtnText: 'Observaciones',
+  crmNotifBtnText: 'Notificaciones',
+  crmNotifTitle: 'Centro de Alertas & Notificaciones',
 
   // 9. Servicios Corporativos
   sizingPortalTitle: 'Portal de Curva de Talles Corporativos',
@@ -140,6 +170,36 @@ const DEFAULT_SITE_TEXTS: SiteTextsConfig = {
   footerAddress: 'Pescara 250 (Maipú) · San Martín 477 (Ciudad) · Patricios 384 (Luján)',
   footerWhatsappBtnText: '',
   footerAdminLinkText: 'Acceso Administrador (Panel de Control)',
+
+  // 11. RRHH
+  rrhhTitle: 'Recursos Humanos',
+  rrhhSubtitle: 'Control de asistencia GPS, legajo de personal y cronograma por sucursal.',
+  rrhhFichajeTabText: '1. Fichaje GPS',
+  rrhhLegajoTabText: '2. Mi Legajo & Horarios',
+  rrhhFichajeCardTitle: 'Fichaje de Llegada al Local',
+  rrhhFichajeCardSubtitle: 'Registrá tu ingreso o salida con fecha, hora exacta y ubicación GPS verificada.',
+  rrhhFichajeBtnText: 'Registrar Llegada Ahora',
+  rrhhAdminBtnText: 'Configurar en Panel',
+  rrhhBackBtnText: 'Volver al Hub',
+
+  // 12. Costos & Finanzas
+  costsTitle: 'Costos & Finanzas',
+  costsSubtitle: 'Liquidez, cheques, caja chica por local y control operativo',
+  costsTabDashboardText: '1. Dashboard & Liquidez',
+  costsTabCostsText: '2. Costos y Ventas',
+  costsTabInvoicesText: '3. Facturas & Gastos',
+  costsTabChecksText: '4. Cheques Emitidos y Recibidos',
+  costsTabPettyCashText: '5. Caja Chica por Local',
+  costsDashTitle: 'Tablero Financiero & Liquidez Global',
+  costsDashSubtitle: 'Cruce en tiempo real de ventas CRM, costos fijos/variables, cartera de cheques y saldos de caja chica.',
+  costsBackBtnText: 'Volver al Hub',
+
+  // 13. Chat Interno
+  chatTitle: 'Chat Interno Pampero',
+  chatSubtitle: 'Mensajería directa en tiempo real con administradores, empleados y clientes.',
+  chatInputPlaceholder: 'Escribí un mensaje directo...',
+  chatSendBtnText: 'Enviar',
+  chatNavBtnText: 'Chat / Mensajes',
 };
 
 export const AdminSiteTextsTab: React.FC<AdminSiteTextsTabProps> = ({
@@ -271,6 +331,9 @@ export const AdminSiteTextsTab: React.FC<AdminSiteTextsTabProps> = ({
     { id: 'crm', label: '8. Gestión / CRM', icon: Kanban },
     { id: 'corporate', label: '9. Corporativo', icon: Briefcase },
     { id: 'footer', label: '10. Footer & Contacto', icon: MapPin },
+    { id: 'rrhh', label: '11. RRHH', icon: Users },
+    { id: 'costs', label: '12. Costos & Finanzas', icon: Wallet },
+    { id: 'chat', label: '13. Chat Interno', icon: MessageSquare },
   ];
 
   return (
@@ -284,7 +347,7 @@ export const AdminSiteTextsTab: React.FC<AdminSiteTextsTabProps> = ({
             </div>
             <div>
               <h3 className="font-bold text-base text-[#18231C] uppercase tracking-wider">
-                Textos de la Interfaz & Mensajes (10 Secciones)
+                Textos de la Interfaz & Mensajes (13 Secciones)
               </h3>
               <p className="text-xs text-[#6F6860] mt-0.5">
                 Personalizá títulos, pestañas, botones, tarjetas del Hub, enlaces de acceso, placeholders y pie de página sin modificar código.
@@ -475,6 +538,8 @@ export const AdminSiteTextsTab: React.FC<AdminSiteTextsTabProps> = ({
             {renderInput('Subtítulo barra Hub', 'hubHeaderSub', 'Pampero Gran Mendoza · Sistema Operativo')}
             {renderInput('Título principal del Hub', 'hubTitle', 'Hub de Trabajo Interno')}
             {renderInput('Botón Salir del Hub', 'hubLogoutBtnText', 'Salir')}
+            {renderInput('Etiqueta rol Super Administrador', 'hubRoleAdminText', 'Super Administrador')}
+            {renderInput('Etiqueta rol Encargado General', 'hubRoleEmployeeText', 'Encargado General · Todos los Locales')}
             {renderInput('Subtítulo personalizado Hub (opcional)', 'hubSubtitle', 'Dejá vacío para mostrar el saludo dinámico con el nombre del operador.', 'Si se deja vacío muestra el saludo automático con el nombre.', false, true)}
 
             {renderInput('Tarjeta CRM — Título', 'hubCrmCardText', 'Gestión / CRM')}
@@ -484,6 +549,14 @@ export const AdminSiteTextsTab: React.FC<AdminSiteTextsTabProps> = ({
             {renderInput('Tarjeta RRHH — Título', 'hubRrhhCardText', 'RRHH')}
             {renderInput('Tarjeta RRHH — Botón', 'hubRrhhBtnText', 'Ir a RRHH')}
             {renderInput('Tarjeta RRHH — Descripción', 'hubRrhhCardDesc', DEFAULT_SITE_TEXTS.hubRrhhCardDesc || '', undefined, true, true)}
+
+            {renderInput('Tarjeta Costos — Título', 'hubCostsCardText', 'Costos & Finanzas')}
+            {renderInput('Tarjeta Costos — Botón', 'hubCostsBtnText', 'Ir a Costos')}
+            {renderInput('Tarjeta Costos — Descripción', 'hubCostsCardDesc', DEFAULT_SITE_TEXTS.hubCostsCardDesc || '', undefined, true, true)}
+
+            {renderInput('Tarjeta Chat Interno — Título', 'hubChatCardText', 'Chat Interno')}
+            {renderInput('Tarjeta Chat Interno — Botón', 'hubChatBtnText', 'Abrir Chat')}
+            {renderInput('Tarjeta Chat Interno — Descripción', 'hubChatCardDesc', DEFAULT_SITE_TEXTS.hubChatCardDesc || '', undefined, true, true)}
 
             {renderInput('Tarjeta Panel de Control — Título', 'hubAdminCardText', 'Panel de Control')}
             {renderInput('Tarjeta Panel de Control — Botón', 'hubAdminBtnText', 'Panel de Control')}
@@ -502,7 +575,7 @@ export const AdminSiteTextsTab: React.FC<AdminSiteTextsTabProps> = ({
           <div className="border-b border-[#DCD4C9] pb-3">
             <h4 className="font-bold text-xs uppercase tracking-widest text-[#18231C] flex items-center gap-2">
               <Kanban className="w-4 h-4 text-[#FDB813]" />
-              Módulo Gestión Pampero (CRM, Pestañas y Tableros)
+              Módulo Gestión Pampero (CRM, Pestañas, Sub-vistas y Tableros)
             </h4>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -519,6 +592,22 @@ export const AdminSiteTextsTab: React.FC<AdminSiteTextsTabProps> = ({
             {renderInput('Etiqueta columna Cotización', 'crmColCotizacionText', 'Cotización Recibida')}
             {renderInput('Etiqueta columna Producción', 'crmColProduccionText', 'En Producción')}
             {renderInput('Etiqueta columna Listo', 'crmColListoText', 'Listo para Retiro')}
+            {renderInput('Botón Notificaciones CRM', 'crmNotifBtnText', 'Notificaciones')}
+            {renderInput('Título modal Notificaciones', 'crmNotifTitle', 'Centro de Alertas & Notificaciones')}
+            {renderInput('Botón Faltantes', 'crmShortagesBtnText', 'Faltantes')}
+            {renderInput('Título modal Faltantes', 'crmShortagesTitle', 'Faltantes & Pedido a Proveedor')}
+            {renderInput('Botón Observaciones', 'crmObservationsBtnText', 'Observaciones')}
+            {renderInput('Visitas — Título', 'crmVisitsTitle', 'Visitas Comerciales')}
+            {renderInput('Visitas — Botón nueva visita', 'crmNewVisitBtnText', 'Registrar Visita')}
+            {renderInput('Visitas — Subtítulo', 'crmVisitsSubtitle', DEFAULT_SITE_TEXTS.crmVisitsSubtitle || '', undefined, true, true)}
+            {renderInput('Tareas — Título', 'crmTasksTitle', 'Tablero de Tareas Operativas')}
+            {renderInput('Tareas — Botón nueva tarea', 'crmNewTaskBtnText', 'Nueva Tarea')}
+            {renderInput('Tareas — Subtítulo', 'crmTasksSubtitle', DEFAULT_SITE_TEXTS.crmTasksSubtitle || '', undefined, true, true)}
+            {renderInput('Calendario — Título', 'crmCalendarTitle', 'Calendario Comercial & Vencimientos')}
+            {renderInput('Calendario — Botón nuevo evento', 'crmNewEventBtnText', 'Nuevo Evento / Recordatorio')}
+            {renderInput('Calendario — Subtítulo', 'crmCalendarSubtitle', DEFAULT_SITE_TEXTS.crmCalendarSubtitle || '', undefined, true, true)}
+            {renderInput('Proveedores — Título', 'crmSuppliersTitle', 'Pedidos a Proveedores & Stock')}
+            {renderInput('Proveedores — Subtítulo', 'crmSuppliersSubtitle', DEFAULT_SITE_TEXTS.crmSuppliersSubtitle || '', undefined, true, true)}
           </div>
         </div>
       )}
@@ -561,6 +650,72 @@ export const AdminSiteTextsTab: React.FC<AdminSiteTextsTabProps> = ({
             {renderInput('Lema o Frase Institucional (Tagline)', 'footerTagline', DEFAULT_SITE_TEXTS.footerTagline || '', undefined, false, true)}
             {renderInput('Dirección / Sucursales resumen', 'footerAddress', DEFAULT_SITE_TEXTS.footerAddress || '', undefined, false, true)}
             {renderInput('Párrafo institucional sobre la marca', 'footerAbout', DEFAULT_SITE_TEXTS.footerAbout || '', undefined, true, true)}
+          </div>
+        </div>
+      )}
+
+      {/* SECTION 11: RRHH */}
+      {activeSection === 'rrhh' && (
+        <div className="bg-white p-5 rounded-xs border border-[#DCD4C9] space-y-5 animate-fadeIn">
+          <div className="border-b border-[#DCD4C9] pb-3">
+            <h4 className="font-bold text-xs uppercase tracking-widest text-[#18231C] flex items-center gap-2">
+              <Users className="w-4 h-4 text-emerald-700" />
+              Módulo Recursos Humanos (Fichaje GPS, Legajo y Cronograma)
+            </h4>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {renderInput('Título cabecera RRHH', 'rrhhTitle', 'Recursos Humanos')}
+            {renderInput('Botón Volver al Hub', 'rrhhBackBtnText', 'Volver al Hub')}
+            {renderInput('Subtítulo cabecera RRHH', 'rrhhSubtitle', DEFAULT_SITE_TEXTS.rrhhSubtitle || '', undefined, true, true)}
+            {renderInput('Pestaña 1 (Fichaje GPS)', 'rrhhFichajeTabText', '1. Fichaje GPS')}
+            {renderInput('Pestaña 2 (Mi Legajo)', 'rrhhLegajoTabText', '2. Mi Legajo & Horarios')}
+            {renderInput('Título tarjeta de fichaje', 'rrhhFichajeCardTitle', 'Fichaje de Llegada al Local')}
+            {renderInput('Botón principal de fichaje', 'rrhhFichajeBtnText', 'Registrar Llegada Ahora')}
+            {renderInput('Subtítulo tarjeta de fichaje', 'rrhhFichajeCardSubtitle', DEFAULT_SITE_TEXTS.rrhhFichajeCardSubtitle || '', undefined, true, true)}
+            {renderInput('Botón Configurar en Panel', 'rrhhAdminBtnText', 'Configurar en Panel')}
+          </div>
+        </div>
+      )}
+
+      {/* SECTION 12: COSTOS & FINANZAS */}
+      {activeSection === 'costs' && (
+        <div className="bg-white p-5 rounded-xs border border-[#DCD4C9] space-y-5 animate-fadeIn">
+          <div className="border-b border-[#DCD4C9] pb-3">
+            <h4 className="font-bold text-xs uppercase tracking-widest text-[#18231C] flex items-center gap-2">
+              <Wallet className="w-4 h-4 text-[#FDB813]" />
+              Módulo Costos & Finanzas (Dashboard, Facturas, Cheques, Caja Chica)
+            </h4>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {renderInput('Título cabecera Costos', 'costsTitle', 'Costos & Finanzas')}
+            {renderInput('Botón Volver al Hub', 'costsBackBtnText', 'Volver al Hub')}
+            {renderInput('Subtítulo cabecera Costos', 'costsSubtitle', DEFAULT_SITE_TEXTS.costsSubtitle || '', undefined, false, true)}
+            {renderInput('Pestaña 1 (Dashboard)', 'costsTabDashboardText', '1. Dashboard & Liquidez')}
+            {renderInput('Pestaña 2 (Costos y Ventas)', 'costsTabCostsText', '2. Costos y Ventas')}
+            {renderInput('Pestaña 3 (Facturas & Gastos)', 'costsTabInvoicesText', '3. Facturas & Gastos')}
+            {renderInput('Pestaña 4 (Cheques)', 'costsTabChecksText', '4. Cheques Emitidos y Recibidos')}
+            {renderInput('Pestaña 5 (Caja Chica)', 'costsTabPettyCashText', '5. Caja Chica por Local')}
+            {renderInput('Título Dashboard Liquidez', 'costsDashTitle', 'Tablero Financiero & Liquidez Global')}
+            {renderInput('Subtítulo Dashboard Liquidez', 'costsDashSubtitle', DEFAULT_SITE_TEXTS.costsDashSubtitle || '', undefined, true, true)}
+          </div>
+        </div>
+      )}
+
+      {/* SECTION 13: CHAT INTERNO */}
+      {activeSection === 'chat' && (
+        <div className="bg-white p-5 rounded-xs border border-[#DCD4C9] space-y-5 animate-fadeIn">
+          <div className="border-b border-[#DCD4C9] pb-3">
+            <h4 className="font-bold text-xs uppercase tracking-widest text-[#18231C] flex items-center gap-2">
+              <MessageSquare className="w-4 h-4 text-[#FDB813]" />
+              Chat Interno & Mensajería en Tiempo Real
+            </h4>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {renderInput('Título ventana de Chat', 'chatTitle', 'Chat Interno Pampero')}
+            {renderInput('Botón de menú / acceso rápido', 'chatNavBtnText', 'Chat / Mensajes')}
+            {renderInput('Subtítulo ventana de Chat', 'chatSubtitle', DEFAULT_SITE_TEXTS.chatSubtitle || '', undefined, true, true)}
+            {renderInput('Placeholder cuadro de mensaje', 'chatInputPlaceholder', 'Escribí un mensaje directo...')}
+            {renderInput('Botón Enviar mensaje', 'chatSendBtnText', 'Enviar')}
           </div>
         </div>
       )}

@@ -56,6 +56,9 @@ import {
   Lock,
   Unlock,
   Wand2,
+  Filter,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 
 interface AdminRRHHTabProps {
@@ -101,6 +104,8 @@ export const AdminRRHHTab: React.FC<AdminRRHHTabProps> = ({
   const [search, setSearch] = useState('');
   const [branchFilter, setBranchFilter] = useState('Todas');
   const [dateFilter, setDateFilter] = useState('');
+  const [checkInStatusFilter, setCheckInStatusFilter] = useState<'all' | 'on_time' | 'late' | 'wrong_branch'>('all');
+  const [vacationStatusFilter, setVacationStatusFilter] = useState<'all' | 'aprobada' | 'pendiente' | 'finalizada'>('all');
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
 
@@ -109,10 +114,15 @@ export const AdminRRHHTab: React.FC<AdminRRHHTabProps> = ({
   const [legajoModalTab, setLegajoModalTab] = useState<'datos' | 'calendario'>('datos');
 
   // Calendar Tab state
+  const [calendarViewMode, setCalendarViewMode] = useState<'team' | 'employee'>('team');
   const [calendarEmployeeId, setCalendarEmployeeId] = useState<string>('');
   const [teamRosterDate, setTeamRosterDate] = useState<string>(
     new Date().toISOString().split('T')[0]
   );
+  const [teamMonthDate, setTeamMonthDate] = useState<Date>(() => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), 1);
+  });
 
   // Add/Edit Vacation Modal
   const [vacationModalOpen, setVacationModalOpen] = useState(false);
@@ -289,7 +299,7 @@ export const AdminRRHHTab: React.FC<AdminRRHHTabProps> = ({
       });
     });
     return rows
-      .filter(({ legajo }) => {
+      .filter(({ legajo, vacation }) => {
         const q = search.trim().toLowerCase();
         const recBranch = resolveConfiguredBranchName(
           legajo.assignedBranch,
@@ -298,14 +308,16 @@ export const AdminRRHHTab: React.FC<AdminRRHHTabProps> = ({
         );
         const matchesBranch =
           branchFilter === 'Todas' || recBranch.toLowerCase() === branchFilter.toLowerCase();
+        const matchesStatus =
+          vacationStatusFilter === 'all' || vacation.status === vacationStatusFilter;
         const matchesSearch =
           !q ||
           legajo.fullName.toLowerCase().includes(q) ||
           legajo.email.toLowerCase().includes(q);
-        return matchesBranch && matchesSearch;
+        return matchesBranch && matchesStatus && matchesSearch;
       })
       .sort((a, b) => (b.vacation.startDate || '').localeCompare(a.vacation.startDate || ''));
-  }, [mergedRoster, search, branchFilter, configuredBranches]);
+  }, [mergedRoster, search, branchFilter, vacationStatusFilter, configuredBranches]);
 
   const filteredCheckIns = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -316,14 +328,16 @@ export const AdminRRHHTab: React.FC<AdminRRHHTabProps> = ({
         cBranch.toLowerCase() === branchFilter.toLowerCase() ||
         (c.branch || '').toLowerCase() === branchFilter.toLowerCase();
       const matchesDate = !dateFilter || c.dateStr === dateFilter;
+      const matchesStatus =
+        checkInStatusFilter === 'all' || c.status === checkInStatusFilter;
       const matchesSearch =
         !q ||
         c.employeeName.toLowerCase().includes(q) ||
         c.employeeEmail.toLowerCase().includes(q) ||
         c.branch.toLowerCase().includes(q);
-      return matchesBranch && matchesDate && matchesSearch;
+      return matchesBranch && matchesDate && matchesStatus && matchesSearch;
     });
-  }, [checkIns, search, branchFilter, dateFilter, configuredBranches]);
+  }, [checkIns, search, branchFilter, dateFilter, checkInStatusFilter, configuredBranches]);
 
   const handleSaveLegajo = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -557,9 +571,70 @@ export const AdminRRHHTab: React.FC<AdminRRHHTabProps> = ({
   );
 
   const selectedCalendarLegajo = useMemo(
-    () => mergedRoster.find((r) => r.id === calendarEmployeeId) || mergedRoster[0] || null,
-    [mergedRoster, calendarEmployeeId]
+    () =>
+      filteredRoster.find((r) => r.id === calendarEmployeeId) ||
+      mergedRoster.find((r) => r.id === calendarEmployeeId) ||
+      filteredRoster[0] ||
+      mergedRoster[0] ||
+      null,
+    [filteredRoster, mergedRoster, calendarEmployeeId]
   );
+
+  // Grilla mensual para "Vista Equipo (Mes)"
+  const teamCalendarCells = useMemo(() => {
+    const y = teamMonthDate.getFullYear();
+    const m = teamMonthDate.getMonth();
+    const firstDay = new Date(y, m, 1);
+    const daysInMonth = new Date(y, m + 1, 0).getDate();
+    const startOffset = (firstDay.getDay() + 6) % 7;
+
+    const cells: Array<{ dateStr: string; dayNum: number; inCurrentMonth: boolean }> = [];
+    const prevLast = new Date(y, m, 0).getDate();
+    for (let i = startOffset - 1; i >= 0; i--) {
+      const d = new Date(y, m - 1, prevLast - i);
+      cells.push({
+        dateStr: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
+          d.getDate()
+        ).padStart(2, '0')}`,
+        dayNum: d.getDate(),
+        inCurrentMonth: false,
+      });
+    }
+    for (let d = 1; d <= daysInMonth; d++) {
+      cells.push({
+        dateStr: `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`,
+        dayNum: d,
+        inCurrentMonth: true,
+      });
+    }
+    let nextD = 1;
+    while (cells.length % 7 !== 0) {
+      const d = new Date(y, m + 1, nextD++);
+      cells.push({
+        dateStr: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
+          d.getDate()
+        ).padStart(2, '0')}`,
+        dayNum: d.getDate(),
+        inCurrentMonth: false,
+      });
+    }
+    return cells;
+  }, [teamMonthDate]);
+
+  const MONTH_NAMES_ES = [
+    'Enero',
+    'Febrero',
+    'Marzo',
+    'Abril',
+    'Mayo',
+    'Junio',
+    'Julio',
+    'Agosto',
+    'Septiembre',
+    'Octubre',
+    'Noviembre',
+    'Diciembre',
+  ];
 
   return (
     <div className={`${embeddedInHub ? 'space-y-5' : 'p-4 sm:p-6 space-y-6'} animate-fadeIn`}>
@@ -668,44 +743,6 @@ export const AdminRRHHTab: React.FC<AdminRRHHTabProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-2 pb-2.5">
-            {subTab !== 'settings' && subTab !== 'calendar' && (
-              <>
-                <div className="relative">
-                  <Search className="w-3.5 h-3.5 text-[#6F6860] absolute left-2.5 top-2" />
-                  <input
-                    type="text"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Buscar colaborador..."
-                    className="pl-8 pr-3 py-1.5 text-xs bg-white border border-[#DCD4C9] rounded-xs outline-none w-44 sm:w-48"
-                  />
-                </div>
-
-                <select
-                  value={branchFilter}
-                  onChange={(e) => setBranchFilter(e.target.value)}
-                  className="px-2.5 py-1.5 text-xs bg-white border border-[#DCD4C9] rounded-xs outline-none font-semibold text-[#18231C] cursor-pointer"
-                >
-                  <option value="Todas">Sucursal: Todas</option>
-                  {branchChoices.map((b) => (
-                    <option key={b} value={b}>
-                      {b}
-                    </option>
-                  ))}
-                </select>
-              </>
-            )}
-
-            {subTab === 'checkins' && (
-              <input
-                type="date"
-                value={dateFilter}
-                onChange={(e) => setDateFilter(e.target.value)}
-                className="px-2.5 py-1.5 text-xs bg-white border border-[#DCD4C9] rounded-xs outline-none font-mono"
-                title="Filtrar por fecha"
-              />
-            )}
-
             {subTab === 'vacations' && (
               <button
                 type="button"
@@ -746,6 +783,175 @@ export const AdminRRHHTab: React.FC<AdminRRHHTabProps> = ({
             )}
           </div>
         </div>
+
+        {/* Barra de Filtros Color-Coded (unificada en Legajos, Calendario, Vacaciones y Fichajes) */}
+        {subTab !== 'settings' && (
+          <div className="px-4 py-3 border-b border-[#DCD4C9] bg-white flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+            {/* Color-coded Branch Filter Chips */}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <Filter className="w-3.5 h-3.5 text-[#8C827A] mr-1 shrink-0" />
+              <button
+                type="button"
+                onClick={() => setBranchFilter('Todas')}
+                className={`px-2.5 py-1 text-[11px] font-bold rounded-xs border transition-colors cursor-pointer flex items-center gap-1.5 ${
+                  branchFilter === 'Todas'
+                    ? 'bg-[#18231C] text-white border-[#18231C]'
+                    : 'bg-[#FAF8F5] text-[#18231C] border-[#DCD4C9] hover:bg-neutral-100'
+                }`}
+              >
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    branchFilter === 'Todas' ? 'bg-[#FDB813]' : 'bg-[#18231C]'
+                  }`}
+                />
+                <span>Todas las Sucursales</span>
+              </button>
+
+              {branchChoices.map((b) => {
+                const active = branchFilter === b;
+                const bColor = getBranchColor(b, rrhhConfig.branchColors, configuredBranches);
+                return (
+                  <button
+                    key={b}
+                    type="button"
+                    onClick={() => setBranchFilter(b)}
+                    className="px-2.5 py-1 text-[11px] font-bold rounded-xs border transition-colors cursor-pointer flex items-center gap-1.5"
+                    style={
+                      active
+                        ? {
+                            backgroundColor: bColor,
+                            borderColor: bColor,
+                            color: '#FFFFFF',
+                          }
+                        : {
+                            backgroundColor: `${bColor}12`,
+                            borderColor: `${bColor}45`,
+                            color: '#18231C',
+                          }
+                    }
+                  >
+                    <span
+                      className="w-2 h-2 rounded-full shrink-0"
+                      style={{ backgroundColor: active ? '#FFFFFF' : bColor }}
+                    />
+                    <span>{b}</span>
+                  </button>
+                );
+              })}
+
+              {/* Status filters context-specific */}
+              {subTab === 'checkins' && (
+                <div className="flex items-center gap-1 pl-2 ml-1 border-l border-[#DCD4C9] flex-wrap">
+                  {[
+                    { key: 'all' as const, label: 'Todos', color: '#4A453F' },
+                    { key: 'on_time' as const, label: 'En horario', color: '#059669' },
+                    { key: 'late' as const, label: 'Tarde', color: '#DC2626' },
+                    { key: 'wrong_branch' as const, label: 'Otro local', color: '#D97706' },
+                  ].map((st) => {
+                    const isSt = checkInStatusFilter === st.key;
+                    return (
+                      <button
+                        key={st.key}
+                        type="button"
+                        onClick={() => setCheckInStatusFilter(st.key)}
+                        className="px-2 py-1 text-[10px] font-bold rounded-xs border cursor-pointer transition-colors"
+                        style={
+                          isSt
+                            ? { backgroundColor: st.color, borderColor: st.color, color: '#FFFFFF' }
+                            : {
+                                backgroundColor: `${st.color}10`,
+                                borderColor: `${st.color}40`,
+                                color: '#18231C',
+                              }
+                        }
+                      >
+                        {st.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {subTab === 'vacations' && (
+                <div className="flex items-center gap-1 pl-2 ml-1 border-l border-[#DCD4C9] flex-wrap">
+                  {[
+                    { key: 'all' as const, label: 'Todas', color: '#4A453F' },
+                    { key: 'aprobada' as const, label: 'Aprobadas', color: '#059669' },
+                    { key: 'pendiente' as const, label: 'Pendientes', color: '#D97706' },
+                    { key: 'finalizada' as const, label: 'Finalizadas', color: '#6B7280' },
+                  ].map((st) => {
+                    const isSt = vacationStatusFilter === st.key;
+                    return (
+                      <button
+                        key={st.key}
+                        type="button"
+                        onClick={() => setVacationStatusFilter(st.key)}
+                        className="px-2 py-1 text-[10px] font-bold rounded-xs border cursor-pointer transition-colors"
+                        style={
+                          isSt
+                            ? { backgroundColor: st.color, borderColor: st.color, color: '#FFFFFF' }
+                            : {
+                                backgroundColor: `${st.color}10`,
+                                borderColor: `${st.color}40`,
+                                color: '#18231C',
+                              }
+                        }
+                      >
+                        {st.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Search & Date inputs */}
+            <div className="flex flex-wrap items-center gap-2">
+              {subTab === 'checkins' && (
+                <div className="flex items-center gap-1">
+                  <input
+                    type="date"
+                    value={dateFilter}
+                    onChange={(e) => setDateFilter(e.target.value)}
+                    className="px-2.5 py-1.5 text-xs bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs outline-none font-mono"
+                    title="Filtrar por fecha"
+                  />
+                  {dateFilter && (
+                    <button
+                      type="button"
+                      onClick={() => setDateFilter('')}
+                      className="p-1.5 text-[#6F6860] hover:text-[#18231C] border border-[#DCD4C9] rounded-xs cursor-pointer"
+                      title="Quitar filtro de fecha"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              )}
+
+              <div className="relative min-w-[200px] flex-1 sm:flex-initial">
+                <Search className="w-3.5 h-3.5 text-[#6F6860] absolute left-2.5 top-2" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Buscar colaborador, email o DNI..."
+                  className="w-full sm:w-56 pl-8 pr-7 py-1.5 text-xs bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs outline-none focus:border-[#B9522F]"
+                />
+                {search && (
+                  <button
+                    type="button"
+                    onClick={() => setSearch('')}
+                    className="absolute right-2 top-2 text-[#6F6860] hover:text-[#18231C] cursor-pointer"
+                    title="Limpiar búsqueda"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* SUBTAB 1: LEGAJOS Y HORARIOS */}
         {subTab === 'legajos' && (
@@ -904,119 +1110,421 @@ export const AdminRRHHTab: React.FC<AdminRRHHTabProps> = ({
 
         {/* SUBTAB 2: CALENDARIO DE TURNOS POR LOCAL */}
         {subTab === 'calendar' && (
-          <div className="p-4 sm:p-5 space-y-6">
-            {/* Employee Picker */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-[#DCD4C9]">
-              <div>
-                <h4 className="font-bold text-xs uppercase tracking-wider text-[#18231C]">
-                  Editor de Calendario Mensual por Colaborador
-                </h4>
-                <p className="text-[11px] text-[#6F6860]">
-                  Seleccioná un empleado, elegí el Local (con su color) y horario, y hacé clic en los días o en la plantilla semanal para guardar al instante.
-                </p>
+          <div className="p-4 sm:p-5 space-y-5 bg-[#FAF8F5]/50">
+            {/* View Mode Toggle + Employee Quick Picker */}
+            <div className="bg-white p-3.5 rounded-xs border border-[#DCD4C9] flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div className="flex items-center gap-1.5 bg-[#FAF8F5] p-1 border border-[#DCD4C9] rounded-xs w-fit">
+                <button
+                  type="button"
+                  onClick={() => setCalendarViewMode('team')}
+                  className={`px-3 py-1.5 rounded-xs text-xs font-bold uppercase tracking-wider cursor-pointer transition-colors flex items-center gap-1.5 ${
+                    calendarViewMode === 'team'
+                      ? 'bg-[#18231C] text-[#FDB813]'
+                      : 'text-[#6F6860] hover:text-[#18231C]'
+                  }`}
+                >
+                  <Users className="w-3.5 h-3.5" />
+                  <span>Vista Equipo (Mes)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCalendarViewMode('employee')}
+                  className={`px-3 py-1.5 rounded-xs text-xs font-bold uppercase tracking-wider cursor-pointer transition-colors flex items-center gap-1.5 ${
+                    calendarViewMode === 'employee'
+                      ? 'bg-[#18231C] text-[#FDB813]'
+                      : 'text-[#6F6860] hover:text-[#18231C]'
+                  }`}
+                >
+                  <Calendar className="w-3.5 h-3.5" />
+                  <span>Editar por Colaborador</span>
+                </button>
               </div>
-              <div className="flex flex-wrap gap-1.5">
-                {mergedRoster.map((emp) => {
-                  const selected = selectedCalendarLegajo?.id === emp.id;
-                  const bColor = getBranchColor(
-                    emp.assignedBranch || branchChoices[0] || '',
-                    rrhhConfig.branchColors,
-                    configuredBranches
-                  );
-                  return (
-                    <button
-                      key={emp.id}
-                      type="button"
-                      onClick={() => setCalendarEmployeeId(emp.id)}
-                      className={`px-3 py-1.5 rounded-xs border text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors ${
-                        selected
-                          ? 'bg-[#18231C] border-[#18231C] text-[#FDB813]'
-                          : 'bg-[#FAF8F5] border-[#DCD4C9] text-[#18231C] hover:bg-white'
-                      }`}
-                    >
-                      <span
-                        className="w-2 h-2 rounded-xs inline-block shrink-0"
-                        style={{ backgroundColor: bColor }}
-                      />
-                      <span>{emp.fullName}</span>
-                    </button>
-                  );
-                })}
-              </div>
+
+              {calendarViewMode === 'employee' && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-[#6F6860]">
+                    Colaborador:
+                  </span>
+                  <select
+                    value={selectedCalendarLegajo?.id || ''}
+                    onChange={(e) => setCalendarEmployeeId(e.target.value)}
+                    className="px-3 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs font-bold text-[#18231C] cursor-pointer outline-none"
+                  >
+                    {(filteredRoster.length > 0 ? filteredRoster : mergedRoster).map((emp) => (
+                      <option key={emp.id} value={emp.id}>
+                        {emp.fullName} ({emp.assignedBranch || branchChoices[0] || ''})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {calendarViewMode === 'team' && (
+                <div className="text-[11px] text-[#6F6860]">
+                  Mostrando{' '}
+                  <strong className="text-[#18231C]">
+                    {(filteredRoster.length > 0 || search || branchFilter !== 'Todas'
+                      ? filteredRoster
+                      : mergedRoster
+                    ).length}
+                  </strong>{' '}
+                  colaboradores · Hacé clic en un día para ver la cobertura por sucursal.
+                </div>
+              )}
             </div>
 
-            {selectedCalendarLegajo ? (
+            {calendarViewMode === 'team' ? (
+              <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+                {/* Left 2/3: Monthly Team Calendar */}
+                <div className="xl:col-span-2 bg-white rounded-xs border border-[#DCD4C9] flex flex-col overflow-hidden">
+                  <div className="p-3.5 border-b border-[#DCD4C9] flex items-center justify-between bg-[#FAF8F5]">
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setTeamMonthDate(
+                            (prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1)
+                          )
+                        }
+                        className="p-1.5 bg-white border border-[#DCD4C9] rounded-xs hover:bg-[#ECE5DC] text-[#18231C] cursor-pointer"
+                        title="Mes anterior"
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                      </button>
+                      <h4 className="font-display font-bold text-sm sm:text-base uppercase tracking-wider text-[#18231C] min-w-[165px] text-center">
+                        {MONTH_NAMES_ES[teamMonthDate.getMonth()]} {teamMonthDate.getFullYear()}
+                      </h4>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setTeamMonthDate(
+                            (prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1)
+                          )
+                        }
+                        className="p-1.5 bg-white border border-[#DCD4C9] rounded-xs hover:bg-[#ECE5DC] text-[#18231C] cursor-pointer"
+                        title="Mes siguiente"
+                      >
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const nowD = new Date();
+                        setTeamMonthDate(new Date(nowD.getFullYear(), nowD.getMonth(), 1));
+                        setTeamRosterDate(todayStr);
+                      }}
+                      className="px-3 py-1.5 bg-white hover:bg-[#ECE5DC] border border-[#DCD4C9] rounded-xs text-xs font-bold text-[#18231C] uppercase cursor-pointer"
+                    >
+                      Hoy
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-7 border-b border-[#DCD4C9] bg-[#ECE5DC]/40">
+                    {ALL_WEEK_DAYS.map((wd) => (
+                      <div
+                        key={wd}
+                        className="py-2 text-center text-[10px] font-black uppercase tracking-wider text-[#6F6860]"
+                      >
+                        {wd}
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="grid grid-cols-7 flex-1 auto-rows-fr">
+                    {teamCalendarCells.map((cell) => {
+                      const isToday = cell.dateStr === todayStr;
+                      const isSelected = cell.dateStr === teamRosterDate;
+                      const q = search.trim().toLowerCase();
+
+                      const dayAssignments = mergedRoster
+                        .map((rec) => ({
+                          rec,
+                          res: resolveDayScheduleEntry(rec, cell.dateStr, configuredBranches),
+                        }))
+                        .filter(({ rec, res }) => {
+                          if (res.entry.isOffDay && res.source !== 'vacation') return false;
+                          const matchesQ =
+                            !q ||
+                            rec.fullName.toLowerCase().includes(q) ||
+                            rec.email.toLowerCase().includes(q);
+                          if (!matchesQ) return false;
+                          if (branchFilter !== 'Todas') {
+                            return (
+                              res.entry.branch.toLowerCase() === branchFilter.toLowerCase() ||
+                              (res.source === 'vacation' &&
+                                resolveConfiguredBranchName(
+                                  rec.assignedBranch,
+                                  configuredBranches,
+                                  true
+                                ).toLowerCase() === branchFilter.toLowerCase())
+                            );
+                          }
+                          return true;
+                        });
+
+                      return (
+                        <button
+                          key={cell.dateStr}
+                          type="button"
+                          onClick={() => {
+                            setTeamRosterDate(cell.dateStr);
+                            if (!cell.inCurrentMonth) {
+                              const dt = new Date(`${cell.dateStr}T12:00:00`);
+                              if (!isNaN(dt.getTime())) {
+                                setTeamMonthDate(new Date(dt.getFullYear(), dt.getMonth(), 1));
+                              }
+                            }
+                          }}
+                          className={`min-h-[92px] p-1.5 border-b border-r border-[#DCD4C9]/70 text-left flex flex-col justify-between transition-colors cursor-pointer ${
+                            isSelected
+                              ? 'bg-amber-50/90 ring-2 ring-inset ring-[#B9522F]'
+                              : cell.inCurrentMonth
+                                ? 'bg-white hover:bg-[#FAF8F5]'
+                                : 'bg-neutral-50/70 text-neutral-400 hover:bg-neutral-100'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between w-full mb-1">
+                            <span
+                              className={`text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full tabular-nums ${
+                                isToday
+                                  ? 'bg-[#B9522F] text-white font-black'
+                                  : isSelected
+                                    ? 'bg-[#18231C] text-white'
+                                    : cell.inCurrentMonth
+                                      ? 'text-[#18231C]'
+                                      : 'text-neutral-400'
+                              }`}
+                            >
+                              {cell.dayNum}
+                            </span>
+                            {dayAssignments.length > 0 && (
+                              <span className="text-[9px] font-mono font-bold text-[#6F6860]">
+                                {dayAssignments.length}
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="space-y-0.5 w-full overflow-hidden">
+                            {dayAssignments.slice(0, 3).map(({ rec, res }) => {
+                              const isVac = res.source === 'vacation';
+                              const col = isVac
+                                ? '#059669'
+                                : getBranchColor(
+                                    res.entry.branch,
+                                    rrhhConfig.branchColors,
+                                    configuredBranches
+                                  );
+                              return (
+                                <div
+                                  key={rec.id}
+                                  className="text-[9px] font-bold px-1 py-0.5 rounded-xs border truncate flex items-center gap-1"
+                                  style={{
+                                    backgroundColor: `${col}15`,
+                                    borderColor: `${col}45`,
+                                    color: '#18231C',
+                                  }}
+                                  title={`${rec.fullName} · ${isVac ? 'Vacaciones' : `${res.entry.branch} (${res.entry.startTime}-${res.entry.endTime})`}`}
+                                >
+                                  <span
+                                    className="w-1.5 h-1.5 rounded-full shrink-0"
+                                    style={{ backgroundColor: col }}
+                                  />
+                                  <span className="truncate">
+                                    {rec.fullName.split(' ')[0]}{' '}
+                                    {isVac ? '(Vac)' : res.entry.startTime || ''}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                            {dayAssignments.length > 3 && (
+                              <div className="text-[9px] font-black text-[#B9522F] pl-1">
+                                +{dayAssignments.length - 3} más...
+                              </div>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Right 1/3: Cobertura del Día por Sucursal */}
+                <div className="bg-white rounded-xs border border-[#DCD4C9] flex flex-col overflow-hidden">
+                  <div className="p-3.5 border-b border-[#DCD4C9] bg-[#18231C] text-white flex items-center justify-between gap-2">
+                    <div>
+                      <span className="text-[10px] uppercase tracking-widest text-[#FDB813] font-bold block">
+                        Cobertura del Día
+                      </span>
+                      <h4 className="font-bold text-sm uppercase tracking-wider mt-0.5">
+                        {teamRosterDate === todayStr ? `Hoy · ${teamRosterDate}` : teamRosterDate}
+                      </h4>
+                    </div>
+                    <input
+                      type="date"
+                      value={teamRosterDate}
+                      onChange={(e) => {
+                        if (!e.target.value) return;
+                        setTeamRosterDate(e.target.value);
+                        const dt = new Date(`${e.target.value}T12:00:00`);
+                        if (!isNaN(dt.getTime())) {
+                          setTeamMonthDate(new Date(dt.getFullYear(), dt.getMonth(), 1));
+                        }
+                      }}
+                      className="px-2 py-1 bg-white/10 border border-white/20 text-white rounded-xs text-[11px] font-mono outline-none"
+                    />
+                  </div>
+
+                  <div className="p-3.5 flex-1 overflow-y-auto space-y-3 bg-[#FAF8F5] text-xs">
+                    {configuredBranches
+                      .filter(
+                        (b) => branchFilter === 'Todas' || b.name === branchFilter
+                      )
+                      .map((branchObj) => {
+                        const bColor = getBranchColor(
+                          branchObj.name,
+                          rrhhConfig.branchColors,
+                          configuredBranches
+                        );
+                        const staffInBranch = mergedRoster
+                          .map((rec) => ({
+                            rec,
+                            res: resolveDayScheduleEntry(rec, teamRosterDate, configuredBranches),
+                          }))
+                          .filter(
+                            ({ res }) =>
+                              res.source !== 'vacation' &&
+                              !res.entry.isOffDay &&
+                              res.entry.branch.toLowerCase() === branchObj.name.toLowerCase()
+                          );
+
+                        return (
+                          <div
+                            key={branchObj.id || branchObj.name}
+                            className="bg-white rounded-xs border border-[#DCD4C9] overflow-hidden"
+                            style={{ borderTopWidth: '3px', borderTopColor: bColor }}
+                          >
+                            <div className="px-3 py-2 bg-[#FAF8F5] border-b border-[#ECE5DC] flex items-center justify-between gap-2">
+                              <span
+                                className="font-black text-xs uppercase flex items-center gap-1.5"
+                                style={{ color: bColor }}
+                              >
+                                <Building2 className="w-3.5 h-3.5" />
+                                <span>{branchObj.name}</span>
+                              </span>
+                              <span className="px-1.5 py-0.5 bg-white border border-[#DCD4C9] rounded-xs font-mono text-[10px] font-bold text-[#18231C]">
+                                {staffInBranch.length} asignados
+                              </span>
+                            </div>
+                            <div className="px-3 py-1.5 bg-white border-b border-[#ECE5DC] text-[10px] text-[#6F6860]">
+                              <strong className="text-[#18231C]">Horario local: </strong>
+                              {branchObj.openingHours || branchObj.hours || 'Según sucursal'}
+                            </div>
+                            <div className="divide-y divide-[#ECE5DC]">
+                              {staffInBranch.length === 0 ? (
+                                <div className="p-2.5 text-[11px] text-[#6F6860] italic">
+                                  Sin personal asignado para esta fecha.
+                                </div>
+                              ) : (
+                                staffInBranch.map(({ rec, res }) => (
+                                  <div
+                                    key={rec.id}
+                                    className="px-3 py-2 flex items-center justify-between gap-2 hover:bg-[#FAF8F5]"
+                                  >
+                                    <div className="min-w-0">
+                                      <div className="font-bold text-[#18231C] truncate">
+                                        {rec.fullName}
+                                      </div>
+                                      <div className="font-mono text-[10px] text-[#B9522F] font-semibold tabular-nums">
+                                        {res.entry.startTime} - {res.entry.endTime} hs
+                                      </div>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setCalendarEmployeeId(rec.id);
+                                        setCalendarViewMode('employee');
+                                      }}
+                                      className="px-2 py-1 bg-[#FAF8F5] hover:bg-[#18231C] hover:text-[#FDB813] border border-[#DCD4C9] rounded-xs text-[10px] font-bold uppercase cursor-pointer transition-colors shrink-0"
+                                    >
+                                      Editar
+                                    </button>
+                                  </div>
+                                ))
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                    {/* Francos y Vacaciones del día */}
+                    {(() => {
+                      const offOrVac = mergedRoster
+                        .map((rec) => ({
+                          rec,
+                          res: resolveDayScheduleEntry(rec, teamRosterDate, configuredBranches),
+                        }))
+                        .filter(({ res }) => res.source === 'vacation' || res.entry.isOffDay);
+
+                      if (offOrVac.length === 0) return null;
+                      return (
+                        <div className="bg-white rounded-xs border border-[#DCD4C9] overflow-hidden">
+                          <div className="px-3 py-2 bg-[#FAF8F5] border-b border-[#ECE5DC] font-black text-[11px] uppercase text-[#4A453F]">
+                            Francos y Vacaciones ({offOrVac.length})
+                          </div>
+                          <div className="divide-y divide-[#ECE5DC]">
+                            {offOrVac.map(({ rec, res }) => (
+                              <div
+                                key={rec.id}
+                                className="px-3 py-2 flex items-center justify-between gap-2"
+                              >
+                                <span className="font-semibold text-[#18231C] truncate">
+                                  {rec.fullName}
+                                </span>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <span
+                                    className={`px-2 py-0.5 rounded-xs text-[10px] font-bold border ${
+                                      res.source === 'vacation'
+                                        ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                                        : 'bg-neutral-100 border-neutral-300 text-neutral-600'
+                                    }`}
+                                  >
+                                    {res.source === 'vacation' ? 'Vacaciones' : 'Franco'}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setCalendarEmployeeId(rec.id);
+                                      setCalendarViewMode('employee');
+                                    }}
+                                    className="px-2 py-0.5 bg-white hover:bg-[#18231C] hover:text-[#FDB813] border border-[#DCD4C9] rounded-xs text-[10px] font-bold uppercase cursor-pointer"
+                                  >
+                                    Editar
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+              </div>
+            ) : selectedCalendarLegajo ? (
               <RRHHScheduleCalendar
                 legajo={selectedCalendarLegajo}
                 config={rrhhConfig}
                 branches={configuredBranches}
                 editable={true}
+                externalBranchFilter={branchFilter}
                 onUpdateLegajo={handleCalendarTabLegajoUpdate}
               />
             ) : (
-              <div className="p-8 text-center text-xs text-[#6F6860]">
-                No hay colaboradores cargados todavía.
+              <div className="p-8 text-center text-xs text-[#6F6860] bg-white border border-[#DCD4C9] rounded-xs">
+                No hay colaboradores que coincidan con el filtro actual.
               </div>
             )}
-
-            {/* Team Daily Overview Matrix */}
-            <div className="bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs p-4 space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <h4 className="font-bold text-xs uppercase tracking-wider text-[#18231C]">
-                    Distribución del Equipo en la Fecha
-                  </h4>
-                  <p className="text-[11px] text-[#6F6860]">
-                    Vista rápida de en qué sucursal y horario trabaja cada colaborador en un día específico.
-                  </p>
-                </div>
-                <input
-                  type="date"
-                  value={teamRosterDate}
-                  onChange={(e) => setTeamRosterDate(e.target.value)}
-                  className="px-3 py-1.5 bg-white border border-[#DCD4C9] rounded-xs text-xs font-mono font-bold outline-none"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                {mergedRoster.map((rec) => {
-                  const dayRes = resolveDayScheduleEntry(rec, teamRosterDate, configuredBranches);
-                  const bName = dayRes.source === 'vacation' ? 'Vacaciones' : dayRes.entry.branch;
-                  const bColor =
-                    dayRes.source === 'vacation'
-                      ? '#059669'
-                      : getBranchColor(bName, rrhhConfig.branchColors, configuredBranches);
-                  return (
-                    <div
-                      key={rec.id}
-                      onClick={() => setCalendarEmployeeId(rec.id)}
-                      className="p-3 bg-white border border-[#DCD4C9] rounded-xs flex items-center justify-between gap-2 cursor-pointer hover:border-[#18231C]"
-                      style={{ borderLeftWidth: '4px', borderLeftColor: bColor }}
-                    >
-                      <div className="min-w-0">
-                        <div className="font-bold text-xs text-[#18231C] truncate">
-                          {rec.fullName}
-                        </div>
-                        <div className="text-[11px] font-bold mt-0.5" style={{ color: bColor }}>
-                          {bName}
-                        </div>
-                      </div>
-                      <div className="text-right shrink-0">
-                        {dayRes.source === 'vacation' || dayRes.entry.isOffDay ? (
-                          <span className="text-[10px] font-bold uppercase px-2 py-0.5 bg-neutral-100 border border-[#DCD4C9] rounded-xs text-[#6F6860]">
-                            {dayRes.source === 'vacation' ? 'Vacaciones' : 'Franco'}
-                          </span>
-                        ) : (
-                          <span className="font-mono text-xs font-bold text-[#18231C] tabular-nums">
-                            {dayRes.entry.startTime} - {dayRes.entry.endTime}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
           </div>
         )}
 
@@ -1358,7 +1866,7 @@ export const AdminRRHHTab: React.FC<AdminRRHHTabProps> = ({
                     className="w-32 px-3 py-2 bg-white border border-[#DCD4C9] rounded-xs font-mono font-bold outline-none"
                   />
                   <span className="block text-[11px] text-[#6F6860] mt-1">
-                    Si el empleado ficha más allá de su hora de ingreso + esta tolerancia, se marca como "Tarde".
+                    Si el empleado registra su fichaje más allá de su hora de ingreso + esta tolerancia, se marca como "Tarde".
                   </span>
                 </div>
 

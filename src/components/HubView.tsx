@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { UserSession, ThemeConfig } from '../types';
-import { LayoutDashboard, Settings, ShoppingBag, LogOut, ShieldCheck, User, ArrowRight, Bell, Users } from 'lucide-react';
+import { UserSession, ThemeConfig, InternalChatThread } from '../types';
+import { LayoutDashboard, Settings, ShoppingBag, LogOut, ShieldCheck, User, ArrowRight, Bell, Users, Wallet, MessageSquare } from 'lucide-react';
 import { subscribeToCRMOrders, subscribeToFirestoreEmployees } from '../services/firebase';
-import { hasAdminPanelAccess, hasCRMAccess, hasRRHHAccess } from '../utils/permissions';
+import { hasAdminPanelAccess, hasCRMAccess, hasRRHHAccess, hasCostsAccess } from '../utils/permissions';
 import { PamperoLogo } from './PamperoLogo';
 import { isColorDark } from '../context/ThemeContext';
 
@@ -11,10 +11,14 @@ interface HubViewProps {
   theme?: ThemeConfig;
   onOpenCRM: () => void;
   onOpenRRHH?: () => void;
+  onOpenCosts?: () => void;
   onOpenAdmin: () => void;
   onOpenCatalog: () => void;
   onLogout: () => void;
   onOpenProfile?: () => void;
+  unreadChatCount?: number;
+  unreadChatThreads?: InternalChatThread[];
+  onOpenChat?: (threadId?: string) => void;
 }
 
 export const HubView: React.FC<HubViewProps> = ({
@@ -22,10 +26,14 @@ export const HubView: React.FC<HubViewProps> = ({
   theme,
   onOpenCRM,
   onOpenRRHH,
+  onOpenCosts,
   onOpenAdmin,
   onOpenCatalog,
   onLogout,
   onOpenProfile,
+  unreadChatCount = 0,
+  unreadChatThreads = [],
+  onOpenChat,
 }) => {
   const accent = theme?.accentColor || '#FDB813';
   // Hub Pampero oficial: Verde profundo #18231C con acentos dorados
@@ -57,20 +65,25 @@ export const HubView: React.FC<HubViewProps> = ({
   void livePermTick;
   const canSeeCRM = hasCRMAccess(userSession);
   const canSeeRRHH = hasRRHHAccess(userSession) && Boolean(onOpenRRHH);
+  const canSeeCosts = hasCostsAccess(userSession) && Boolean(onOpenCosts);
   const canSeeAdminPanel = hasAdminPanelAccess(userSession);
 
   const visibleCardsCount =
     (canSeeCRM ? 1 : 0) +
     (canSeeRRHH ? 1 : 0) +
+    (canSeeCosts ? 1 : 0) +
     (canSeeAdminPanel ? 1 : 0) +
+    (onOpenChat ? 1 : 0) +
     1; // Catálogo Público siempre visible
 
   const gridColsClass =
-    visibleCardsCount >= 4
-      ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 sm:gap-6'
-      : visibleCardsCount === 3
-        ? 'grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8'
-        : 'grid-cols-1 md:grid-cols-2 gap-6 sm:gap-8 max-w-3xl mx-auto w-full';
+    visibleCardsCount >= 5
+      ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6'
+      : visibleCardsCount === 4
+        ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 sm:gap-6'
+        : visibleCardsCount === 3
+          ? 'grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8'
+          : 'grid-cols-1 md:grid-cols-2 gap-6 sm:gap-8 max-w-3xl mx-auto w-full';
 
   const operatorName =
     userSession.clientData?.fullName ||
@@ -112,9 +125,9 @@ export const HubView: React.FC<HubViewProps> = ({
                 </p>
                 <p className={`text-[10px] ${isHubDark ? 'text-neutral-300' : 'text-[#6F6860]'}`}>
                   {userSession.role === 'admin'
-                    ? 'Super Administrador'
+                    ? (st?.hubRoleAdminText || 'Super Administrador')
                     : userSession.sellerRole === 'encargado'
-                      ? 'Encargado General · Todos los Locales'
+                      ? (st?.hubRoleEmployeeText || 'Encargado General · Todos los Locales')
                       : `Sucursal: ${operatorBranch}`}
                 </p>
               </div>
@@ -129,6 +142,23 @@ export const HubView: React.FC<HubViewProps> = ({
                 )}
               </div>
             </div>
+
+            {onOpenChat && (
+              <button
+                type="button"
+                onClick={() => onOpenChat()}
+                className="relative flex items-center gap-1.5 px-3 py-1.5 rounded-xs bg-white/10 hover:bg-white/20 text-white text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer border border-white/20"
+                title={st?.chatTitle || 'Abrir Chat Interno'}
+              >
+                <MessageSquare className="w-3.5 h-3.5 text-amber-300" />
+                <span className="hidden sm:inline">{st?.chatNavBtnText || 'Chat'}</span>
+                {unreadChatCount > 0 && (
+                  <span className="px-1.5 py-0.2 rounded-full bg-red-600 text-white text-[10px] font-black tabular-nums animate-pulse">
+                    {unreadChatCount}
+                  </span>
+                )}
+              </button>
+            )}
 
             {onOpenProfile && (
               <button
@@ -171,6 +201,38 @@ export const HubView: React.FC<HubViewProps> = ({
             )}
           </p>
         </div>
+
+        {/* Notificación Banner de Mensajes Nuevos en Chat Interno */}
+        {onOpenChat && unreadChatCount > 0 && (
+          <div className="mb-6 p-4 bg-emerald-50 border-2 border-emerald-600 rounded-xs shadow-md flex flex-col sm:flex-row items-center justify-between gap-4 animate-fadeIn">
+            <div className="flex items-center gap-3 text-center sm:text-left">
+              <div className="w-10 h-10 rounded-full bg-emerald-700 text-white flex items-center justify-center shrink-0 font-black shadow-xs">
+                <MessageSquare className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-display font-bold text-sm sm:text-base text-[#18231C] uppercase tracking-wider flex items-center gap-2 justify-center sm:justify-start">
+                  <span>Mensajes nuevos en Chat Interno</span>
+                  <span className="px-2 py-0.5 bg-red-600 text-white text-[10px] rounded-full font-black shadow-xs tabular-nums">
+                    {unreadChatCount} {unreadChatCount === 1 ? 'sin leer' : 'sin leer'}
+                  </span>
+                </h3>
+                <p className="text-xs text-[#6F6860] mt-0.5">
+                  {unreadChatThreads.length > 0
+                    ? unreadChatThreads.slice(0, 2).map((t) => `${t.lastSenderName || 'Contacto'}: "${(t.lastMessage || '').slice(0, 45)}"`).join(' · ')
+                    : 'Tenés mensajes directos esperando respuesta en el Chat Interno.'}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => onOpenChat(unreadChatThreads[0]?.id)}
+              className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xs text-xs font-black uppercase tracking-wider whitespace-nowrap cursor-pointer transition-all shadow-xs flex items-center gap-1.5 shrink-0"
+            >
+              <span>Responder Ahora</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          </div>
+        )}
 
         {/* Notificación Banner de Nuevo Pedido en el CRM */}
         {canSeeCRM && newQuotesCount > 0 && (
@@ -252,6 +314,59 @@ export const HubView: React.FC<HubViewProps> = ({
                 className="w-full py-3.5 px-4 rounded-xs bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-black uppercase tracking-[0.15em] transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer border border-emerald-700"
               >
                 <span>{st?.hubRrhhBtnText || 'Ir a RRHH'}</span>
+                <ArrowRight className="w-4 h-4 shrink-0 text-white group-hover:translate-x-1 transition-transform" />
+              </button>
+            </div>
+          )}
+
+          {/* 2B. Costos & Finanzas (Solo Administradores y Encargados autorizados) */}
+          {canSeeCosts && onOpenCosts && (
+            <div className="bg-white rounded-xs border-2 border-[#DCD4C9] hover:border-[#18231C] shadow-sm hover:shadow-xl transition-all duration-200 flex flex-col p-6 text-center group relative">
+              <div className="w-16 h-16 rounded-xs bg-[#FAF8F5] text-[#18231C] flex items-center justify-center mx-auto mb-5 group-hover:scale-105 transition-transform border border-[#DCD4C9]">
+                <Wallet className="w-8 h-8" />
+              </div>
+              <h2 className="text-lg font-black text-[#18231C] uppercase tracking-wider mb-2">
+                {st?.hubCostsCardText || 'Costos & Finanzas'}
+              </h2>
+              <p className="text-xs text-[#6F6860] leading-relaxed mb-6 flex-1">
+                {st?.hubCostsCardDesc || 'Dashboard de situación y liquidez, cheques emitidos y recibidos, caja chica por local y control de costos.'}
+              </p>
+              <button
+                type="button"
+                id="btn-hub-costs"
+                onClick={onOpenCosts}
+                className="w-full py-3.5 px-4 rounded-xs bg-[#18231C] hover:bg-black text-[#F5F2EC] text-xs font-black uppercase tracking-[0.15em] transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer border border-[#18231C]"
+              >
+                <span>{st?.hubCostsBtnText || 'Ir a Costos'}</span>
+                <ArrowRight className="w-4 h-4 shrink-0 text-[#FDB813] group-hover:translate-x-1 transition-transform" />
+              </button>
+            </div>
+          )}
+
+          {/* 2C. Chat Interno (Mensajería directa Administradores / Empleados / Clientes) */}
+          {onOpenChat && (
+            <div className="bg-white rounded-xs border-2 border-[#DCD4C9] hover:border-blue-700 shadow-sm hover:shadow-xl transition-all duration-200 flex flex-col p-6 text-center group relative">
+              <div className="relative w-16 h-16 rounded-xs bg-blue-50 text-blue-700 flex items-center justify-center mx-auto mb-5 group-hover:scale-105 transition-transform border border-blue-200">
+                <MessageSquare className="w-8 h-8" />
+                {unreadChatCount > 0 && (
+                  <span className="absolute -top-2 -right-2 px-2 py-0.5 rounded-full bg-red-600 text-white text-[10px] font-black uppercase tracking-wider shadow-md border-2 border-white tabular-nums">
+                    {unreadChatCount}
+                  </span>
+                )}
+              </div>
+              <h2 className="text-lg font-black text-[#18231C] uppercase tracking-wider mb-2">
+                {st?.hubChatCardText || 'Chat Interno'}
+              </h2>
+              <p className="text-xs text-[#6F6860] leading-relaxed mb-6 flex-1">
+                {st?.hubChatCardDesc || 'Mensajería directa en tiempo real entre administradores, empleados de locales y clientes registrados.'}
+              </p>
+              <button
+                type="button"
+                id="btn-hub-chat"
+                onClick={() => onOpenChat()}
+                className="w-full py-3.5 px-4 rounded-xs bg-blue-700 hover:bg-blue-800 text-white text-xs font-black uppercase tracking-[0.15em] transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer border border-blue-700"
+              >
+                <span>{st?.hubChatBtnText || 'Abrir Chat'}</span>
                 <ArrowRight className="w-4 h-4 shrink-0 text-white group-hover:translate-x-1 transition-transform" />
               </button>
             </div>

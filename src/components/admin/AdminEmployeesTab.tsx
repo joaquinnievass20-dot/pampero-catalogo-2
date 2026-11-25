@@ -30,6 +30,7 @@ interface AdminEmployeesTabProps {
 export const AVAILABLE_TABS_FOR_EMPLOYEE = [
   { id: 'crm', label: 'Tablero de Gestión / CRM (Pedidos y Empresas)' },
   { id: 'rrhh', label: 'Módulo RRHH (Fichaje de Llegada, Horarios y Legajo)' },
+  { id: 'costs', label: 'Módulo Costos & Finanzas (Liquidez, Cheques y Caja Chica — Uso Restringido)' },
   ...ADMIN_PANEL_TAB_DEFINITIONS.map((t) => ({ id: t.key, label: `Panel · ${t.label}` })),
 ];
 
@@ -124,7 +125,7 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
   };
 
   const handleSelectAllTabs = () => {
-    setAllowedTabs(AVAILABLE_TABS_FOR_EMPLOYEE.map((t) => t.id));
+    setAllowedTabs(AVAILABLE_TABS_FOR_EMPLOYEE.filter((t) => t.id !== 'costs').map((t) => t.id));
   };
 
   const handleDeselectAllTabs = () => {
@@ -229,7 +230,7 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
           panelTabsConfigured: true,
           rrhhConfigured: true,
           canManageRRHH: allowedTabs.includes('rrhh_admin'),
-          crmTabs: ['visits', 'board', 'tasks', 'calendar', 'suppliers', 'costs'],
+          crmTabs: ['visits', 'board', 'tasks', 'calendar', 'suppliers'],
         };
 
         const authResult = await createFirebaseAuthAndFirestoreUser(newUserPayload, passClean, { allowRestoreRevoked: true });
@@ -251,7 +252,7 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
           sellerName: sellerName.trim() || name.trim(),
           crmScope,
           canControlTasks,
-          crmTabs: ['visits', 'board', 'tasks', 'calendar', 'suppliers', 'costs'],
+          crmTabs: ['visits', 'board', 'tasks', 'calendar', 'suppliers'],
           allowedTabs,
           panelTabsConfigured: true,
           rrhhConfigured: true,

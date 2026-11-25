@@ -1330,6 +1330,114 @@ export const AdminThemeTab: React.FC<AdminThemeTabProps> = ({
                   </div>
                 </div>
 
+                {/* [17] Barra Lateral: Color de Fondo */}
+                <div
+                  className="p-3 bg-emerald-50/40 border border-emerald-200 rounded-xs space-y-2 hover:border-[#18231C] transition-colors"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-[#18231C] uppercase flex items-center gap-1.5">
+                      <span className="size-4 rounded-full bg-emerald-700 text-white text-[9px] grid place-items-center">17</span>
+                      Fondo Barra Lateral (Interna)
+                    </span>
+                    <span className="text-[10px] font-mono text-[#6F6860]">{currentTheme.sidebarBgColor || currentTheme.primaryColor || '#18231C'}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={currentTheme.sidebarBgColor || currentTheme.primaryColor || '#18231C'}
+                      onChange={(e) => applyLiveChange('sidebarBgColor', e.target.value)}
+                      className="size-8 rounded-xs cursor-pointer border border-[#DCD4C9]"
+                    />
+                    <input
+                      type="text"
+                      value={currentTheme.sidebarBgColor || currentTheme.primaryColor || '#18231C'}
+                      onChange={(e) => applyLiveChange('sidebarBgColor', e.target.value)}
+                      className="flex-1 px-2 py-1 bg-white border border-[#DCD4C9] rounded-xs text-xs font-mono"
+                    />
+                  </div>
+                </div>
+
+                {/* [18] Barra Lateral: Color de Texto */}
+                <div
+                  className="p-3 bg-emerald-50/40 border border-emerald-200 rounded-xs space-y-2 hover:border-[#18231C] transition-colors"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-[#18231C] uppercase flex items-center gap-1.5">
+                      <span className="size-4 rounded-full bg-emerald-700 text-white text-[9px] grid place-items-center">18</span>
+                      Texto Barra Lateral (Interna)
+                    </span>
+                    <span className="text-[10px] font-mono text-[#6F6860]">{currentTheme.sidebarTextColor || '#DCD4C9'}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={currentTheme.sidebarTextColor || '#DCD4C9'}
+                      onChange={(e) => applyLiveChange('sidebarTextColor', e.target.value)}
+                      className="size-8 rounded-xs cursor-pointer border border-[#DCD4C9]"
+                    />
+                    <input
+                      type="text"
+                      value={currentTheme.sidebarTextColor || '#DCD4C9'}
+                      onChange={(e) => applyLiveChange('sidebarTextColor', e.target.value)}
+                      className="flex-1 px-2 py-1 bg-white border border-[#DCD4C9] rounded-xs text-xs font-mono"
+                    />
+                  </div>
+                </div>
+
+                {/* [19] Barra Lateral: Fondo Pestaña Activa */}
+                <div
+                  className="p-3 bg-emerald-50/40 border border-emerald-200 rounded-xs space-y-2 hover:border-[#18231C] transition-colors"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-[#18231C] uppercase flex items-center gap-1.5">
+                      <span className="size-4 rounded-full bg-emerald-700 text-white text-[9px] grid place-items-center">19</span>
+                      Fondo Ítem Activo Barra Lateral
+                    </span>
+                    <span className="text-[10px] font-mono text-[#6F6860]">{currentTheme.sidebarActiveBgColor || '#2B3B30'}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={currentTheme.sidebarActiveBgColor || '#2B3B30'}
+                      onChange={(e) => applyLiveChange('sidebarActiveBgColor', e.target.value)}
+                      className="size-8 rounded-xs cursor-pointer border border-[#DCD4C9]"
+                    />
+                    <input
+                      type="text"
+                      value={currentTheme.sidebarActiveBgColor || '#2B3B30'}
+                      onChange={(e) => applyLiveChange('sidebarActiveBgColor', e.target.value)}
+                      className="flex-1 px-2 py-1 bg-white border border-[#DCD4C9] rounded-xs text-xs font-mono"
+                    />
+                  </div>
+                </div>
+
+                {/* [20] Barra Lateral: Color de Acento / Íconos */}
+                <div
+                  className="p-3 bg-emerald-50/40 border border-emerald-200 rounded-xs space-y-2 hover:border-[#18231C] transition-colors"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-[#18231C] uppercase flex items-center gap-1.5">
+                      <span className="size-4 rounded-full bg-emerald-700 text-white text-[9px] grid place-items-center">20</span>
+                      Acento Barra Lateral (Interna)
+                    </span>
+                    <span className="text-[10px] font-mono text-[#6F6860]">{currentTheme.sidebarAccentColor || currentTheme.accentColor || '#FDB813'}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={currentTheme.sidebarAccentColor || currentTheme.accentColor || '#FDB813'}
+                      onChange={(e) => applyLiveChange('sidebarAccentColor', e.target.value)}
+                      className="size-8 rounded-xs cursor-pointer border border-[#DCD4C9]"
+                    />
+                    <input
+                      type="text"
+                      value={currentTheme.sidebarAccentColor || currentTheme.accentColor || '#FDB813'}
+                      onChange={(e) => applyLiveChange('sidebarAccentColor', e.target.value)}
+                      className="flex-1 px-2 py-1 bg-white border border-[#DCD4C9] rounded-xs text-xs font-mono"
+                    />
+                  </div>
+                </div>
+
               </div>
 
               {/* Botón Guardar Cambios al pie de edición manual */}
