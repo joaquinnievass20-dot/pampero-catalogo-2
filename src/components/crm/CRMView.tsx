@@ -161,6 +161,24 @@ class CRMTabErrorBoundary extends React.Component<
   }
 }
 
+export interface DynamicBoardColumn {
+  id: string;
+  label: string;
+  color: string;
+  bgColor: string;
+}
+
+export interface BoardFieldConfig {
+  showOrderNumber: boolean;
+  showSeller: boolean;
+  showBranch: boolean;
+  showEstimatedUnits: boolean;
+  showEstimatedAmount: boolean;
+  showObservations: boolean;
+  showDeliveryDate: boolean;
+  showEmbroideryNotes: boolean;
+}
+
 interface CRMViewProps {
   userSession: UserSession | null;
   onClose: () => void;

@@ -37,7 +37,7 @@ import {
 interface InternalChatModalProps {
   isOpen: boolean;
   onClose: () => void;
-  userSession: UserSession;
+  userSession: UserSession | null;
   threads: InternalChatThread[];
   initialThreadId?: string | null;
   theme?: ThemeConfig;
@@ -268,7 +268,7 @@ export const InternalChatModal: React.FC<InternalChatModalProps> = ({
     [threads, myKey]
   );
 
-  if (!isOpen) return null;
+  if (!isOpen || !userSession) return null;
 
   const getOtherParticipant = (thread: InternalChatThread): ChatParticipantInfo => {
     return (

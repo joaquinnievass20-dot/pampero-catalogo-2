@@ -517,10 +517,10 @@ export default function App() {
 
   const myChatKey = userSession ? getChatParticipantKey(userSession) : '';
   const unreadChatThreads = myChatKey
-    ? chatThreads.filter((t) => (t.unreadBy?.[myChatKey] || 0) > 0)
+    ? chatThreads.filter((t) => ((t.unreadCounts?.[myChatKey] ?? (t as any).unreadBy?.[myChatKey]) || 0) > 0)
     : [];
   const unreadChatCount = myChatKey
-    ? chatThreads.reduce((sum, t) => sum + (t.unreadBy?.[myChatKey] || 0), 0)
+    ? chatThreads.reduce((sum, t) => sum + ((t.unreadCounts?.[myChatKey] ?? (t as any).unreadBy?.[myChatKey]) || 0), 0)
     : 0;
 
   // Lookbook State - initializes empty to avoid ghost images, rendered exclusively from Firestore
@@ -1468,14 +1468,16 @@ export default function App() {
       />
 
       {/* Real-time Internal Chat Modal */}
-      <InternalChatModal
-        isOpen={isChatOpen}
-        onClose={() => setIsChatOpen(false)}
-        userSession={userSession}
-        threads={chatThreads}
-        initialThreadId={chatInitialThreadId}
-        theme={theme}
-      />
+      {userSession && isChatOpen && (
+        <InternalChatModal
+          isOpen={isChatOpen}
+          onClose={() => setIsChatOpen(false)}
+          userSession={userSession}
+          threads={chatThreads}
+          initialThreadId={chatInitialThreadId}
+          theme={theme}
+        />
+      )}
 
     </div>
     </AppErrorBoundary>

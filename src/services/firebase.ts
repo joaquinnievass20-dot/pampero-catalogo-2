@@ -6328,7 +6328,15 @@ export function getChatParticipantKey(input?: { email?: string; id?: string } | 
   return rawId;
 }
 
-export function getChatParticipantInfoFromSession(session: UserSession): ChatParticipantInfo {
+export function getChatParticipantInfoFromSession(session?: UserSession | null): ChatParticipantInfo {
+  if (!session) {
+    return {
+      id: '',
+      name: 'Invitado',
+      role: 'client',
+      subLabel: 'Sin sesión',
+    };
+  }
   const key = getChatParticipantKey(session);
   const role: ChatParticipantRole =
     session.role === 'admin'

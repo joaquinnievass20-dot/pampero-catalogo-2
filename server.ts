@@ -58,18 +58,26 @@ async function startServer() {
     try {
       if (fs.existsSync(filePath)) {
         const raw = fs.readFileSync(filePath, 'utf-8');
+        if (!raw || !raw.trim()) {
+          return fallback;
+        }
         return JSON.parse(raw);
       }
     } catch (e) {
-      console.error(`Error reading ${filePath}:`, e);
+      console.warn(`Warning reading ${filePath}, falling back to defaults:`, e);
     }
     return fallback;
   }
 
   function writeJsonSafe(filePath: string, data: any): void {
+    const tmpPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
     try {
-      fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
+      fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), 'utf-8');
+      fs.renameSync(tmpPath, filePath);
     } catch (e) {
+      try {
+        if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+      } catch {}
       console.error(`Error writing ${filePath}:`, e);
     }
   }

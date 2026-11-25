@@ -1,5 +1,6 @@
-import { track } from '@vercel/analytics';
 import { Product } from '../types';
+
+const track = (..._args: any[]) => {};
 
 export interface FunnelMetrics {
   productClicks: number;

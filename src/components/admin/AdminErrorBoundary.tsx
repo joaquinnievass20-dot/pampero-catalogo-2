@@ -13,10 +13,19 @@ interface State {
 }
 
 export class AdminErrorBoundary extends Component<Props, State> {
-  public state: State = {
-    hasError: false,
-    error: null,
-  };
+  declare props: Props;
+  declare state: State;
+  declare setState: (
+    next: Partial<State> | ((prev: State) => Partial<State>)
+  ) => void;
+
+  constructor(props: Props) {
+    super(props);
+    this.state = {
+      hasError: false,
+      error: null,
+    };
+  }
 
   public static getDerivedStateFromError(error: Error): State {
     return { hasError: true, error };

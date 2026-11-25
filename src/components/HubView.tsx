@@ -218,7 +218,7 @@ export const HubView: React.FC<HubViewProps> = ({
                 </h3>
                 <p className="text-xs text-[#6F6860] mt-0.5">
                   {unreadChatThreads.length > 0
-                    ? unreadChatThreads.slice(0, 2).map((t) => `${t.lastSenderName || 'Contacto'}: "${(t.lastMessage || '').slice(0, 45)}"`).join(' · ')
+                    ? unreadChatThreads.slice(0, 2).map((t) => `${t.lastSenderName || 'Contacto'}: "${(t.lastMessageText || (t as any).lastMessage || '').slice(0, 45)}"`).join(' · ')
                     : 'Tenés mensajes directos esperando respuesta en el Chat Interno.'}
                 </p>
               </div>
