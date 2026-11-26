@@ -26,6 +26,7 @@ import {
   createFirebaseAuthAndFirestoreUser,
   recordAuditLog
 } from '../services/firebase';
+import { useConfiguredBranches } from '../utils/useConfiguredBranches';
 
 interface AuthViewProps {
   onLogin: (session: UserSession) => void;
@@ -69,8 +70,9 @@ export const AuthView: React.FC<AuthViewProps> = ({
   const [phone, setPhone] = useState('');
   const [street, setStreet] = useState('');
   const [streetNumber, setStreetNumber] = useState('');
+  const { branchNames: configuredBranchNames, resolveBranch: resolveConfiguredBranch } = useConfiguredBranches();
   const [postalCode, setPostalCode] = useState('');
-  const [nearestBranch, setNearestBranch] = useState('Maipú');
+  const [nearestBranch, setNearestBranch] = useState(() => configuredBranchNames[0] || 'Pampero Maipú');
   const [companyLocation, setCompanyLocation] = useState('');
   const [locationUrl, setLocationUrl] = useState('');
 
@@ -189,7 +191,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
       cuitOrDni: cuit.trim(),
       address: `${street.trim()} ${streetNumber.trim()}`.trim(),
       city: 'Gran Mendoza',
-      nearestBranch: nearestBranch || 'Maipú',
+      nearestBranch: resolveConfiguredBranch(nearestBranch, false),
       companyLocation: companyLocation.trim() || undefined,
       locationUrl: locationUrl.trim() || undefined,
       createdAt: new Date().toISOString().split('T')[0],
@@ -214,7 +216,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
         email: cleanEmail,
         role: 'client',
         clientType: accountType,
-        branch: nearestBranch || 'Maipú',
+        branch: resolveConfiguredBranch(nearestBranch, false),
         clientData: {
           fullName: fullName.trim() || cleanEmail.split('@')[0],
           companyName: companyName.trim(),
@@ -222,7 +224,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
           phone: phone.trim(),
           address: `${street.trim()} ${streetNumber.trim()}`.trim(),
           postalCode: postalCode.trim(),
-          nearestBranch: nearestBranch || 'Maipú',
+          nearestBranch: resolveConfiguredBranch(nearestBranch, false),
           companyLocation: companyLocation.trim() || undefined,
           locationUrl: locationUrl.trim() || undefined,
         },
@@ -964,9 +966,11 @@ export const AuthView: React.FC<AuthViewProps> = ({
                             onChange={(e) => setNearestBranch(e.target.value)}
                             className="w-full px-3.5 py-2.5 bg-white border border-[#DCD4C9] rounded-xs text-sm text-[#18231C] focus:outline-none focus:border-[#FDB813]"
                           >
-                            <option value="Maipú">Maipú</option>
-                            <option value="Ciudad">Ciudad (Mendoza)</option>
-                            <option value="Luján">Luján de Cuyo</option>
+                            {configuredBranchNames.map((b) => (
+                              <option key={b} value={b}>
+                                {b}
+                              </option>
+                            ))}
                           </select>
                         </div>
                       </div>

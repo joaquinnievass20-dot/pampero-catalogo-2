@@ -38,12 +38,21 @@ import {
   subscribeToFirestoreBranches,
   subscribeToReadNotifications,
   saveReadNotifications,
+  subscribeToKanbanColumns,
+  DEFAULT_COMPANY_COLUMNS,
+  KanbanColumnConfig,
 } from '../../services/firebase';
 import { CRMCostsTab } from '../crm/CRMCostsTab';
 import { PamperoLogo } from '../PamperoLogo';
 import { isColorDark } from '../../context/ThemeContext';
 import { CostsChartsSection } from './CostsChartsSection';
 import { fixUtf8Encoding, sanitizeObjectEncoding } from '../../utils/encodingUtils';
+import {
+  branchMatches,
+  getConfiguredBranchNames,
+  resolveConfiguredBranchName,
+} from '../../utils/rrhhBranches';
+import { resolveEmployeeRecord } from '../../utils/permissions';
 import {
   Wallet,
   LayoutDashboard,
@@ -166,6 +175,16 @@ export const CostsHubView: React.FC<CostsHubViewProps> = ({
   const [pettyCash, setPettyCash] = useState<PettyCashMovement[]>([]);
   const [invoices, setInvoices] = useState<ExpenseInvoiceRecord[]>([]);
   const [remoteBranches, setRemoteBranches] = useState<BranchLocation[]>(propBranches || []);
+  const [companyColumns, setCompanyColumns] = useState<KanbanColumnConfig[]>(() => {
+    try {
+      const saved = localStorage.getItem('pampero_kanban_company_cols');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return DEFAULT_COMPANY_COLUMNS;
+  });
 
   // Notifications state
   const notifUserKey = `fin_${(userSession?.email || userSession?.id || 'admin').toLowerCase().trim()}`;
@@ -176,6 +195,7 @@ export const CostsHubView: React.FC<CostsHubViewProps> = ({
   const currentMonthStr = new Date().toISOString().slice(0, 7);
   const [dashMonth, setDashMonth] = useState<string>(currentMonthStr);
   const [dashBranch, setDashBranch] = useState<string>('todas');
+  const [pipelineStageFilter, setPipelineStageFilter] = useState<string>('activos');
 
   const todayIso = new Date().toISOString().split('T')[0];
 
@@ -199,7 +219,7 @@ export const CostsHubView: React.FC<CostsHubViewProps> = ({
   const [invCuit, setInvCuit] = useState('');
   const [invCategory, setInvCategory] = useState(DEFAULT_COST_CATEGORIES[0]?.name || 'Alquiler y expensas');
   const [invCostType, setInvCostType] = useState<ExpenseType>('Fijo');
-  const [invBranch, setInvBranch] = useState('Maipú');
+  const [invBranch, setInvBranch] = useState('Pampero Maipú');
   const [invIssueDate, setInvIssueDate] = useState(todayIso);
   const [invDueDate, setInvDueDate] = useState(todayIso);
   const [invAmount, setInvAmount] = useState('');
@@ -239,7 +259,7 @@ export const CostsHubView: React.FC<CostsHubViewProps> = ({
   const [chkDueDate, setChkDueDate] = useState(todayIso);
   const [chkPartyName, setChkPartyName] = useState('');
   const [chkCuit, setChkCuit] = useState('');
-  const [chkBranch, setChkBranch] = useState('Maipú');
+  const [chkBranch, setChkBranch] = useState('Pampero Maipú');
   const [chkAmount, setChkAmount] = useState('');
   const [chkStatus, setChkStatus] = useState<FinancialCheckStatus>('en_cartera');
   const [chkNotes, setChkNotes] = useState('');
@@ -254,7 +274,7 @@ export const CostsHubView: React.FC<CostsHubViewProps> = ({
   const [confirmDeletePcId, setConfirmDeletePcId] = useState<string | null>(null);
 
   // Petty Cash Form State
-  const [pcBranch, setPcBranch] = useState('Maipú');
+  const [pcBranch, setPcBranch] = useState('Pampero Maipú');
   const [pcDate, setPcDate] = useState(todayIso);
   const [pcType, setPcType] = useState<PettyCashMovementType>('egreso');
   const [pcCategory, setPcCategory] = useState(PETTY_CASH_CATEGORIES[1]);
@@ -289,6 +309,11 @@ export const CostsHubView: React.FC<CostsHubViewProps> = ({
     const unsubBranches = subscribeToFirestoreBranches((list) => {
       if (Array.isArray(list) && list.length > 0) setRemoteBranches(list);
     });
+    const unsubKanban = subscribeToKanbanColumns((data) => {
+      if (Array.isArray(data.companies) && data.companies.length > 0) {
+        setCompanyColumns(data.companies);
+      }
+    });
     const unsubReads = subscribeToReadNotifications(notifUserKey, setReadNotifIds);
     return () => {
       unsubExp();
@@ -299,32 +324,14 @@ export const CostsHubView: React.FC<CostsHubViewProps> = ({
       unsubPc();
       unsubInv();
       unsubBranches();
+      unsubKanban();
       unsubReads();
     };
   }, [notifUserKey]);
 
   const branchOptions = useMemo(() => {
     const source = (remoteBranches && remoteBranches.length > 0 ? remoteBranches : propBranches) || [];
-    const seen = new Map<string, string>();
-    source.forEach((b) => {
-      const candidate = fixUtf8Encoding(b.zone || b.name || '').trim();
-      const key = normalizeBranchKey(candidate);
-      if (key && !seen.has(key)) {
-        const cleanLabel =
-          candidate.toLowerCase().includes('maipu') || key === 'maipu'
-            ? 'Maipú'
-            : candidate.toLowerCase().includes('ciudad') || key === 'ciudad'
-              ? 'Ciudad'
-              : candidate.toLowerCase().includes('lujan') || key === 'lujan'
-                ? 'Luján'
-                : candidate;
-        seen.set(key, cleanLabel);
-      }
-    });
-    if (seen.size === 0) {
-      return ['Maipú', 'Ciudad', 'Luján'];
-    }
-    return Array.from(seen.values());
+    return getConfiguredBranchNames(source);
   }, [remoteBranches, propBranches]);
 
   const branchMatches = (recordBranch: string | undefined, targetBranch: string): boolean => {
@@ -339,10 +346,16 @@ export const CostsHubView: React.FC<CostsHubViewProps> = ({
     userSession.clientData?.fullName ||
     (userSession.role === 'admin' ? 'Administrador General' : userSession.email?.split('@')[0] || 'Encargado');
 
-  // --- LIVE FINANCIAL NOTIFICATIONS (Facturas + Cheques) ---
+  // --- LIVE FINANCIAL NOTIFICATIONS (Facturas + Cheques + Pedidos sin Monto) ---
   interface FinancialAlertItem {
     id: string;
-    kind: 'invoice_overdue' | 'invoice_soon' | 'check_overdue' | 'check_soon' | 'check_rejected';
+    kind:
+      | 'invoice_overdue'
+      | 'invoice_soon'
+      | 'check_overdue'
+      | 'check_soon'
+      | 'check_rejected'
+      | 'missing_order_amount';
     severity: 'high' | 'medium';
     title: string;
     detail: string;
@@ -352,8 +365,76 @@ export const CostsHubView: React.FC<CostsHubViewProps> = ({
     invoiceRef?: ExpenseInvoiceRecord;
   }
 
+  const normalizeColKey = (val?: string): string =>
+    (val || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim();
+
+  const resolveOrderColumnId = (ord: CRMOrder): string => {
+    const raw = String((ord as any).columnId || ord.status || '').trim();
+    const normRaw = normalizeColKey(raw);
+    if (normRaw === 'cancelado') return 'cancelado';
+    const matched = companyColumns.find(
+      (c) => c.id === raw || normalizeColKey(c.id) === normRaw || normalizeColKey(c.label) === normRaw
+    );
+    return matched ? matched.id : (companyColumns[0]?.id || 'cotizacion');
+  };
+
+  const approvedStartIndex = useMemo(() => {
+    const idx = companyColumns.findIndex((c) => {
+      const idN = normalizeColKey(c.id);
+      const lbN = normalizeColKey(c.label);
+      return idN.includes('sena') || idN.includes('aprob') || lbN.includes('sena') || lbN.includes('aprob');
+    });
+    return idx >= 0 ? idx : Math.min(1, Math.max(0, companyColumns.length - 1));
+  }, [companyColumns]);
+
+  const userAssignedBranch = useMemo(() => {
+    const emp = resolveEmployeeRecord(userSession);
+    const raw = String((userSession as any)?.branch || emp?.branch || '').trim();
+    if (!raw) return '';
+    const norm = raw
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim();
+    const roleKind = (userSession as any)?.sellerRole || emp?.sellerRole;
+    if (
+      ['todas', 'todos', 'all', 'administracion central', 'gran mendoza'].includes(norm) ||
+      roleKind === 'encargado'
+    ) {
+      return '';
+    }
+    return resolveConfiguredBranchName(raw, remoteBranches, false);
+  }, [userSession, remoteBranches]);
+
   const financialAlerts = useMemo<FinancialAlertItem[]>(() => {
     const list: FinancialAlertItem[] = [];
+
+    // Pedidos desde Aprobado / SEÑA 50% inclusive en adelante sin monto cargado
+    // Solo se notifica a la sucursal encargada del pedido (o administración general sin sucursal fija)
+    orders.forEach((ord) => {
+      if (userAssignedBranch && !branchMatches(ord.branch, userAssignedBranch)) return;
+      const colId = resolveOrderColumnId(ord);
+      if (colId === 'cancelado') return;
+      const stageIdx = companyColumns.findIndex((c) => c.id === colId);
+      if (stageIdx < approvedStartIndex) return;
+      if ((Number(ord.totalEstimated) || 0) > 0) return;
+      const stageLabel = fixUtf8Encoding(companyColumns[stageIdx]?.label || colId);
+      const code = ord.trackingCode || ord.orderNumber || `#${ord.id.slice(-6)}`;
+      list.push({
+        id: `ord_no_amt_${ord.id}_${colId}`,
+        kind: 'missing_order_amount',
+        severity: stageIdx > approvedStartIndex ? 'high' : 'medium',
+        title: `Cargar monto de pedido: ${fixUtf8Encoding(ord.clientName)} (${code})`,
+        detail: `Etapa: ${stageLabel} · Sucursal: ${fixUtf8Encoding(resolveConfiguredBranchName(ord.branch, remoteBranches, false))} · Asesor: ${ord.seller || 'Sin asignar'}`,
+        date: (ord.date || todayIso).slice(0, 10),
+        amount: 0,
+        targetTab: 'dashboard',
+      });
+    });
 
     invoices.forEach((inv) => {
       if (inv.status !== 'pendiente' || !inv.dueDate) return;
@@ -442,7 +523,7 @@ export const CostsHubView: React.FC<CostsHubViewProps> = ({
       if (a.severity !== b.severity) return a.severity === 'high' ? -1 : 1;
       return (a.date || '').localeCompare(b.date || '');
     });
-  }, [invoices, checks, todayIso]);
+  }, [orders, companyColumns, approvedStartIndex, remoteBranches, invoices, checks, todayIso]);
 
   const unreadAlertsCount = useMemo(
     () => financialAlerts.filter((a) => !readNotifIds.includes(a.id)).length,
@@ -512,13 +593,36 @@ export const CostsHubView: React.FC<CostsHubViewProps> = ({
     const netLiquidity =
       totalPettyCashBalance + receivedActiveChecks - issuedPendingChecks - pendingInvoicesTotal + operatingResult;
 
-    // Pipeline CRM
-    const activeOrders = orders.filter(
-      (o) =>
-        o.status !== 'entregado' &&
-        o.status !== 'cancelado' &&
-        branchMatches(o.branch, dashBranch)
+    // Pipeline CRM (desglose por pasos de Seguimiento de Pedidos)
+    const branchFilteredOrders = orders.filter(
+      (o) => resolveOrderColumnId(o) !== 'cancelado' && branchMatches(o.branch, dashBranch)
     );
+
+    const pipelineStages = companyColumns.map((col, idx) => {
+      const stageOrders = branchFilteredOrders.filter((o) => resolveOrderColumnId(o) === col.id);
+      const totalAmount = stageOrders.reduce((acc, o) => acc + (Number(o.totalEstimated) || 0), 0);
+      const missingAmountCount = stageOrders.filter((o) => !(Number(o.totalEstimated) > 0)).length;
+      const isClosedCol =
+        normalizeColKey(col.id) === 'entregado' ||
+        normalizeColKey(col.label).includes('entregado') ||
+        normalizeColKey(col.label).includes('cerrado');
+      return {
+        id: col.id,
+        label: fixUtf8Encoding(col.label),
+        color: col.color || '#18231C',
+        count: stageOrders.length,
+        totalAmount,
+        missingAmountCount,
+        isClosedCol,
+        isApprovedOrLater: idx >= approvedStartIndex,
+      };
+    });
+
+    const activeOrders = branchFilteredOrders.filter((o) => {
+      const colId = resolveOrderColumnId(o);
+      const stg = pipelineStages.find((s) => s.id === colId);
+      return !stg?.isClosedCol;
+    });
     const pipelineTotal = activeOrders.reduce((acc, o) => acc + (Number(o.totalEstimated) || 0), 0);
 
     // Branch breakdown
@@ -629,10 +733,13 @@ export const CostsHubView: React.FC<CostsHubViewProps> = ({
       netLiquidity,
       activeOrdersCount: activeOrders.length,
       pipelineTotal,
+      pipelineStages,
+      allOrdersCount: branchFilteredOrders.length,
+      allOrdersTotal: branchFilteredOrders.reduce((acc, o) => acc + (Number(o.totalEstimated) || 0), 0),
       branchBreakdown,
       upcomingMaturities,
     };
-  }, [sales, expenses, orders, checks, pettyCash, invoices, dashMonth, dashBranch, branchOptions, todayIso]);
+  }, [sales, expenses, orders, checks, pettyCash, invoices, dashMonth, dashBranch, branchOptions, companyColumns, approvedStartIndex, todayIso]);
 
   // --- INVOICE HANDLERS ---
   const openNewInvoiceModal = () => {
@@ -644,7 +751,7 @@ export const CostsHubView: React.FC<CostsHubViewProps> = ({
     const firstCat = costCategories[0]?.name || 'Alquiler y expensas';
     setInvCategory(firstCat);
     setInvCostType(costCategories[0]?.defaultType || 'Fijo');
-    setInvBranch(branchOptions[0] || 'Maipú');
+    setInvBranch(branchOptions[0] || 'Pampero Maipú');
     setInvIssueDate(todayIso);
     setInvDueDate(todayIso);
     setInvAmount('');
@@ -668,7 +775,7 @@ export const CostsHubView: React.FC<CostsHubViewProps> = ({
     setInvCuit(inv.cuit || '');
     setInvCategory(inv.category || costCategories[0]?.name || 'Otros Gastos');
     setInvCostType(inv.costType || 'Fijo');
-    setInvBranch(inv.branch || branchOptions[0] || 'Maipú');
+    setInvBranch(resolveConfiguredBranchName(inv.branch, remoteBranches, false) || branchOptions[0] || 'Pampero Maipú');
     setInvIssueDate(inv.issueDate || todayIso);
     setInvDueDate(inv.dueDate || todayIso);
     setInvAmount(String(inv.amount || ''));
@@ -931,7 +1038,7 @@ export const CostsHubView: React.FC<CostsHubViewProps> = ({
     setChkDueDate(todayIso);
     setChkPartyName('');
     setChkCuit('');
-    setChkBranch(branchOptions[0] || 'Maipú');
+    setChkBranch(branchOptions[0] || 'Pampero Maipú');
     setChkAmount('');
     setChkStatus(defaultDir === 'emitido' ? 'pendiente_debito' : 'en_cartera');
     setChkNotes('');
@@ -948,7 +1055,7 @@ export const CostsHubView: React.FC<CostsHubViewProps> = ({
     setChkDueDate(c.dueDate);
     setChkPartyName(c.partyName);
     setChkCuit(c.cuitOrDni || '');
-    setChkBranch(c.branch || branchOptions[0] || 'Maipú');
+    setChkBranch(resolveConfiguredBranchName(c.branch, remoteBranches, false) || branchOptions[0] || 'Pampero Maipú');
     setChkAmount(String(c.amount || ''));
     setChkStatus(c.status);
     setChkNotes(c.notes || '');
@@ -970,7 +1077,7 @@ export const CostsHubView: React.FC<CostsHubViewProps> = ({
         dueDate: chkDueDate || chkIssueDate || todayIso,
         partyName: chkPartyName.trim(),
         cuitOrDni: chkCuit.trim() || undefined,
-        branch: chkBranch || 'Administración Central',
+        branch: resolveConfiguredBranchName(chkBranch, remoteBranches, false) || branchOptions[0] || 'Pampero Maipú',
         amount: Math.max(0, Number(chkAmount) || 0),
         status: chkStatus,
         notes: chkNotes.trim() || undefined,
@@ -1026,7 +1133,13 @@ export const CostsHubView: React.FC<CostsHubViewProps> = ({
   // --- PETTY CASH HANDLERS ---
   const openNewPcModal = (defaultType: PettyCashMovementType, branchOverride?: string) => {
     setEditingPc(null);
-    setPcBranch(branchOverride || (pcBranchFilter !== 'todas' ? pcBranchFilter : branchOptions[0] || 'Maipú'));
+    setPcBranch(
+      resolveConfiguredBranchName(
+        branchOverride || (pcBranchFilter !== 'todas' ? pcBranchFilter : branchOptions[0]),
+        remoteBranches,
+        false
+      ) || branchOptions[0] || 'Pampero Maipú'
+    );
     setPcDate(todayIso);
     setPcType(defaultType);
     setPcCategory(defaultType === 'ingreso' ? 'Reposición de Caja' : PETTY_CASH_CATEGORIES[1]);
@@ -1040,7 +1153,7 @@ export const CostsHubView: React.FC<CostsHubViewProps> = ({
 
   const openEditPcModal = (m: PettyCashMovement) => {
     setEditingPc(m);
-    setPcBranch(m.branch);
+    setPcBranch(resolveConfiguredBranchName(m.branch, remoteBranches, false) || branchOptions[0] || 'Pampero Maipú');
     setPcDate(m.date);
     setPcType(m.movementType);
     setPcCategory(m.category);
@@ -1621,19 +1734,114 @@ export const CostsHubView: React.FC<CostsHubViewProps> = ({
               {/* Pipeline & Quick Financial Actions */}
               <div className="bg-white border border-[#DCD4C9] rounded-xs p-4 flex flex-col justify-between space-y-4">
                 <div className="space-y-3">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-[#18231C] border-b border-[#ECE5DC] pb-2.5">
-                    Pipeline Comercial Activo (CRM)
-                  </h4>
-                  <div className="p-3.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs space-y-1">
-                    <span className="text-[10px] font-bold uppercase text-[#6F6860] block">
-                      Pedidos en Cotización / Taller / Listos
-                    </span>
-                    <div className="text-xl font-bold font-mono tabular-nums text-[#18231C]">
-                      {formatARS(dashboardStats.pipelineTotal)}
-                    </div>
-                    <span className="text-[11px] text-[#6F6860] tabular-nums">
-                      {dashboardStats.activeOrdersCount} operación(es) activa(s) en curso
-                    </span>
+                  <div className="flex flex-col gap-2 border-b border-[#ECE5DC] pb-2.5">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-[#18231C]">
+                      Pipeline Comercial Activo (CRM)
+                    </h4>
+                    <select
+                      value={pipelineStageFilter}
+                      onChange={(e) => setPipelineStageFilter(e.target.value)}
+                      className="w-full px-2.5 py-1.5 text-xs font-bold text-[#18231C] bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs outline-none cursor-pointer focus:border-[#B9522F]"
+                      aria-label="Filtrar pipeline por etapa de seguimiento de pedidos"
+                    >
+                      <option value="activos">
+                        Todas las etapas activas ({dashboardStats.activeOrdersCount})
+                      </option>
+                      {dashboardStats.pipelineStages.map((stg) => (
+                        <option key={stg.id} value={stg.id}>
+                          {stg.label} ({stg.count})
+                        </option>
+                      ))}
+                      <option value="todas">
+                        Todas las etapas incl. Entregado ({dashboardStats.allOrdersCount})
+                      </option>
+                    </select>
+                  </div>
+
+                  {(() => {
+                    const selectedStage =
+                      pipelineStageFilter !== 'activos' && pipelineStageFilter !== 'todas'
+                        ? dashboardStats.pipelineStages.find((s) => s.id === pipelineStageFilter)
+                        : null;
+                    const displayAmount = selectedStage
+                      ? selectedStage.totalAmount
+                      : pipelineStageFilter === 'todas'
+                        ? dashboardStats.allOrdersTotal
+                        : dashboardStats.pipelineTotal;
+                    const displayCount = selectedStage
+                      ? selectedStage.count
+                      : pipelineStageFilter === 'todas'
+                        ? dashboardStats.allOrdersCount
+                        : dashboardStats.activeOrdersCount;
+                    const displayMissing = selectedStage
+                      ? selectedStage.missingAmountCount
+                      : dashboardStats.pipelineStages
+                          .filter((s) => (pipelineStageFilter === 'todas' || !s.isClosedCol) && s.isApprovedOrLater)
+                          .reduce((acc, s) => acc + s.missingAmountCount, 0);
+
+                    return (
+                      <div className="p-3.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs space-y-1">
+                        <span className="text-[10px] font-bold uppercase text-[#6F6860] block">
+                          {selectedStage
+                            ? selectedStage.label
+                            : pipelineStageFilter === 'todas'
+                              ? 'Total Seguimiento de Pedidos'
+                              : 'Pedidos en Cotización / Taller / Listos'}
+                        </span>
+                        <div className="text-xl font-bold font-mono tabular-nums text-[#18231C]">
+                          {formatARS(displayAmount)}
+                        </div>
+                        <div className="flex items-center justify-between gap-2 text-[11px] text-[#6F6860] tabular-nums">
+                          <span>
+                            {displayCount} operación(es) {selectedStage ? 'en esta etapa' : 'en curso'}
+                          </span>
+                          {displayMissing > 0 && (
+                            <span className="text-amber-700 font-semibold">
+                              {displayMissing} sin monto ($ 0)
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Desglose resumido por cada paso de Seguimiento de Pedidos */}
+                  <div className="space-y-1">
+                    {dashboardStats.pipelineStages.map((stg) => {
+                      const isSelected = pipelineStageFilter === stg.id;
+                      return (
+                        <button
+                          key={stg.id}
+                          type="button"
+                          onClick={() =>
+                            setPipelineStageFilter((prev) => (prev === stg.id ? 'activos' : stg.id))
+                          }
+                          className={`w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-xs text-[11px] border transition-colors cursor-pointer ${
+                            isSelected
+                              ? 'bg-[#18231C] text-white border-[#18231C]'
+                              : 'bg-white hover:bg-[#FAF8F5] text-[#18231C] border-[#ECE5DC]'
+                          }`}
+                        >
+                          <span className="flex items-center gap-1.5 min-w-0">
+                            <span
+                              className="w-2 h-2 rounded-full shrink-0"
+                              style={{ backgroundColor: stg.color }}
+                            />
+                            <span className="truncate font-semibold">{stg.label}</span>
+                            <span
+                              className={`text-[10px] font-mono tabular-nums ${
+                                isSelected ? 'text-white/75' : 'text-[#6F6860]'
+                              }`}
+                            >
+                              ({stg.count})
+                            </span>
+                          </span>
+                          <span className="font-mono font-bold tabular-nums shrink-0">
+                            {formatARS(stg.totalAmount)}
+                          </span>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -2556,7 +2764,7 @@ export const CostsHubView: React.FC<CostsHubViewProps> = ({
                     Centro de Alertas y Vencimientos Financieros
                   </h4>
                   <span className="text-[11px] text-[#DCD4C9] block">
-                    Facturas de costos/servicios vencidas o próximas a vencer y vencimientos de cheques
+                    Facturas vencidas o por vencer, cheques y pedidos aprobados sin monto
                   </span>
                 </div>
               </div>
@@ -2615,7 +2823,9 @@ export const CostsHubView: React.FC<CostsHubViewProps> = ({
                           <div className="text-xs font-bold text-[#18231C]">{alert.title}</div>
                           <div className="text-[11px] text-[#4A453F] mt-0.5">{alert.detail}</div>
                           <div className="text-xs font-mono font-bold tabular-nums text-[#18231C] mt-1">
-                            Monto: {formatARS(alert.amount)}
+                            {alert.kind === 'missing_order_amount'
+                              ? 'Monto pendiente de carga ($ 0)'
+                              : `Monto: ${formatARS(alert.amount)}`}
                           </div>
                         </div>
                       </div>
@@ -2644,7 +2854,7 @@ export const CostsHubView: React.FC<CostsHubViewProps> = ({
                           }}
                           className="px-2.5 py-1.5 bg-white hover:bg-[#FAF8F5] border border-[#DCD4C9] text-[#18231C] text-[10px] font-bold uppercase rounded-xs cursor-pointer"
                         >
-                          Ir al listado
+                          {alert.kind === 'missing_order_amount' ? 'Ver en Pipeline' : 'Ir al listado'}
                         </button>
                         {!isRead && (
                           <button

@@ -61,7 +61,6 @@ import {
   Bell, 
   Truck, 
   Shirt, 
-  Sparkles, 
   CheckCircle2, 
   MessageCircle, 
   Calendar,
@@ -98,6 +97,8 @@ import { CRMCalendarTab } from './CRMCalendarTab';
 import { CRMSupplierOrdersTab } from './CRMSupplierOrdersTab';
 import { CRMObservationsModal } from './CRMObservationsModal';
 import { CRMOrderShortagesModal } from './CRMOrderShortagesModal';
+import { useConfiguredBranches } from '../../utils/useConfiguredBranches';
+import { branchMatches } from '../../utils/rrhhBranches';
 
 interface CRMTabErrorBoundaryProps {
   tabKey: string;
@@ -251,16 +252,28 @@ export const CRMView: React.FC<CRMViewProps> = ({
   const hasCrmPermission = userSession?.role === 'admin' || (currentEmployee?.allowedTabs ? currentEmployee.allowedTabs.includes('crm') : true);
   const canAccess = Boolean(isStaff && hasCrmPermission);
 
-  const assignedBranch = (userSession as any)?.branch || currentEmployee?.branch || 'Maipú';
+  const { branchNames: configuredBranchNames, resolveBranch: resolveConfiguredBranch } = useConfiguredBranches();
+
+  const rawAssignedBranch = String((userSession as any)?.branch || currentEmployee?.branch || '').trim();
+  const isAllBranchesUser =
+    !rawAssignedBranch ||
+    ['todas', 'todos', 'all', 'administracion central', 'administración central', 'gran mendoza'].includes(
+      rawAssignedBranch
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim()
+    );
+  const assignedBranch = isAllBranchesUser ? '' : resolveConfiguredBranch(rawAssignedBranch, false);
   const effectiveSellerRole = (userSession as any)?.sellerRole || currentEmployee?.sellerRole;
 
-  // CRM Visibility Scope: 'admin' o empleado con rol 'encargado' o crmScope === 'all' ven todos los locales
+  // CRM Visibility Scope: 'admin' o empleado con rol 'encargado' o crmScope === 'all' ven tablero completo
   const crmScope: 'all' | 'branch_only' | 'own_only' =
     userSession?.role === 'admin' ||
     effectiveSellerRole === 'encargado' ||
     (userSession as any)?.crmScope === 'all' ||
     currentEmployee?.crmScope === 'all' ||
-    String(assignedBranch || '').toLowerCase() === 'todas'
+    isAllBranchesUser
       ? 'all'
       : ((userSession as any)?.crmScope || currentEmployee?.crmScope || 'branch_only');
 
@@ -277,9 +290,9 @@ export const CRMView: React.FC<CRMViewProps> = ({
       }
     } catch {}
     return [
-      { id: 'sel-1', name: 'Itatí', branch: 'Maipú', active: true },
-      { id: 'sel-2', name: 'Guada', branch: 'Ciudad', active: true },
-      { id: 'sel-3', name: 'Carolina', branch: 'Luján', active: true },
+      { id: 'sel-1', name: 'Itatí', branch: 'Pampero Maipú', active: true },
+      { id: 'sel-2', name: 'Guada', branch: 'Pampero Ciudad de Mendoza', active: true },
+      { id: 'sel-3', name: 'Carolina', branch: 'Pampero Luján de Cuyo', active: true },
     ];
   }, []);
 
@@ -430,7 +443,7 @@ export const CRMView: React.FC<CRMViewProps> = ({
     }
   };
   const [branchFilter, setBranchFilter] = useState(() => {
-    if (crmScope !== 'all' && assignedBranch) return assignedBranch.toLowerCase();
+    if (crmScope !== 'all' && assignedBranch) return assignedBranch;
     return 'todos';
   });
   const [searchQuery, setSearchQuery] = useState('');
@@ -628,6 +641,7 @@ export const CRMView: React.FC<CRMViewProps> = ({
       notifyStaleOrders: true,
       notifyBlockedOrders: true,
       notifyPendingVisits: true,
+      notifyMissingOrderAmounts: true,
     };
     try {
       const saved = localStorage.getItem('pampero_notification_settings');
@@ -636,37 +650,67 @@ export const CRMView: React.FC<CRMViewProps> = ({
     return defaults;
   }, []);
 
+  const normalizeColKey = (val?: string): string =>
+    (val || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim();
+
+  const resolveOrderColumnId = React.useCallback(
+    (ord: CRMOrder): string => {
+      const raw = String((ord as any).columnId || ord.status || '').trim();
+      const normRaw = normalizeColKey(raw);
+      if (normRaw === 'cancelado') return 'cancelado';
+      const matched = companyColumns.find(
+        (c) => c.id === raw || normalizeColKey(c.id) === normRaw || normalizeColKey(c.label) === normRaw
+      );
+      return matched ? matched.id : (companyColumns[0]?.id || 'cotizacion');
+    },
+    [companyColumns]
+  );
+
+  const approvedStartIndex = React.useMemo(() => {
+    const idx = companyColumns.findIndex((c) => {
+      const idN = normalizeColKey(c.id);
+      const lbN = normalizeColKey(c.label);
+      return idN.includes('sena') || idN.includes('aprob') || lbN.includes('sena') || lbN.includes('aprob');
+    });
+    return idx >= 0 ? idx : Math.min(1, Math.max(0, companyColumns.length - 1));
+  }, [companyColumns]);
+
   const scopedOrdersForNotif = React.useMemo(() => {
     return orders.filter((o) => {
-      if (crmScope === 'branch_only' && assignedBranch) {
-        return (o.branch || '').toLowerCase() === assignedBranch.toLowerCase();
+      if (assignedBranch && effectiveSellerRole !== 'encargado' && !branchMatches(o.branch, assignedBranch)) {
+        return false;
       }
       if (crmScope === 'own_only' && assignedSellerName) {
         return (o.seller || '').toLowerCase() === assignedSellerName.toLowerCase();
       }
       return true;
     });
-  }, [orders, crmScope, assignedBranch, assignedSellerName]);
+  }, [orders, crmScope, assignedBranch, effectiveSellerRole, assignedSellerName]);
 
   const scopedVisitsForNotif = React.useMemo(() => {
     return visits.filter((v) => {
-      if (crmScope === 'branch_only' && assignedBranch) {
-        return (v.branch || '').toLowerCase() === assignedBranch.toLowerCase();
+      if (assignedBranch && effectiveSellerRole !== 'encargado' && !branchMatches(v.branch, assignedBranch)) {
+        return false;
       }
       if (crmScope === 'own_only' && assignedSellerName) {
         return (v.seller || '').toLowerCase() === assignedSellerName.toLowerCase();
       }
       return true;
     });
-  }, [visits, crmScope, assignedBranch, assignedSellerName]);
+  }, [visits, crmScope, assignedBranch, effectiveSellerRole, assignedSellerName]);
 
   const delayedOrdersCount = React.useMemo(() => {
     if (!notifSettings.notifyStaleOrders) return 0;
     return scopedOrdersForNotif.filter((o) => {
       const daysOld = Math.floor((Date.now() - new Date(o.date).getTime()) / (1000 * 60 * 60 * 24));
-      return daysOld >= notifSettings.staleQuoteDays && (o.status === 'cotizacion' || o.status === 'sena_50');
+      const colNorm = normalizeColKey(resolveOrderColumnId(o));
+      return daysOld >= notifSettings.staleQuoteDays && (colNorm === 'cotizacion' || colNorm === 'sena_50');
     }).length;
-  }, [scopedOrdersForNotif, notifSettings]);
+  }, [scopedOrdersForNotif, notifSettings, resolveOrderColumnId]);
 
   const blockedOrdersCount = React.useMemo(() => {
     if (!notifSettings.notifyBlockedOrders) return 0;
@@ -804,8 +848,52 @@ export const CRMView: React.FC<CRMViewProps> = ({
       });
     }
 
+    // 7. Pedidos aprobados (desde Seña 50% inclusive en adelante) sin monto cargado ($ 0)
+    // Solo se notifica a la sucursal encargada del pedido (o administración general sin sucursal fija)
+    if (notifSettings.notifyMissingOrderAmounts !== false) {
+      scopedOrdersForNotif.forEach((o) => {
+        const colId = resolveOrderColumnId(o);
+        if (colId === 'cancelado') return;
+        const stageIdx = companyColumns.findIndex((c) => c.id === colId);
+        if (stageIdx < approvedStartIndex) return;
+        if (Number(o.totalEstimated) > 0) return;
+
+        const stageLabel = fixUtf8Encoding(companyColumns[stageIdx]?.label || colId);
+        const code = o.trackingCode || o.orderNumber || `#${o.id.slice(-6)}`;
+        items.unshift({
+          id: `missing-amt-${o.id}-${colId}`,
+          category: 'missing_amount',
+          title: `${fixUtf8Encoding(o.clientName)} (${code})`,
+          subtitle: `Pedido en "${stageLabel}" con presupuesto aceptado sin monto cargado ($ 0). Cargá el importe para actualizar el Pipeline.`,
+          meta: `Sucursal: ${fixUtf8Encoding(resolveConfiguredBranch(o.branch, false))} · Vendedor: ${o.seller || 'Sin asignar'}`,
+          badgeText: 'Cargar Monto',
+          badgeClass: 'bg-emerald-50 border-emerald-400 text-emerald-900',
+          order: o,
+        });
+      });
+    }
+
+    // 8. Nuevas cotizaciones recibidas (en la campanita, solo para la sucursal encargada del pedido)
+    if (notifSettings.notifyNewQuotes) {
+      scopedOrdersForNotif
+        .filter((o) => normalizeColKey(resolveOrderColumnId(o)) === 'cotizacion')
+        .forEach((o) => {
+          const code = o.trackingCode || o.orderNumber || `#${o.id.slice(-6)}`;
+          items.push({
+            id: `new-quote-${o.id}`,
+            category: 'new_quote',
+            title: `${fixUtf8Encoding(o.clientName)} (${code})`,
+            subtitle: 'Nueva solicitud en Cotización esperando presupuesto oficial y asignación.',
+            meta: `Sucursal: ${fixUtf8Encoding(resolveConfiguredBranch(o.branch, false))} · Vendedor: ${o.seller || 'Sin asignar'}`,
+            badgeText: 'Nueva Cotización',
+            badgeClass: 'bg-amber-50 border-amber-300 text-amber-900',
+            order: o,
+          });
+        });
+    }
+
     return items;
-  }, [scopedOrdersForNotif, scopedVisitsForNotif, notifSettings, unreadChatThreads, userSession]);
+  }, [scopedOrdersForNotif, scopedVisitsForNotif, notifSettings, unreadChatThreads, userSession, companyColumns, approvedStartIndex, resolveOrderColumnId, resolveConfiguredBranch]);
 
   const readNotifSet = React.useMemo(() => new Set(readNotifIds), [readNotifIds]);
   const unreadNotificationsCount = React.useMemo(
@@ -831,7 +919,7 @@ export const CRMView: React.FC<CRMViewProps> = ({
   const filteredOrders = orders.filter((o) => {
     // 1. RBAC Branch & Seller Scope Enforcements
     if (crmScope === 'branch_only' && assignedBranch) {
-      if ((o.branch || '').toLowerCase() !== assignedBranch.toLowerCase()) {
+      if (!branchMatches(o.branch, assignedBranch)) {
         return false;
       }
     } else if (crmScope === 'own_only' && assignedSellerName) {
@@ -842,7 +930,7 @@ export const CRMView: React.FC<CRMViewProps> = ({
 
     // 2. Interactive UI Filters
     const matchesSeller = sellerFilter === 'todos' || (o.seller || '').toLowerCase().includes(sellerFilter.toLowerCase());
-    const matchesBranch = branchFilter === 'todos' || (o.branch || '').toLowerCase().includes(branchFilter.toLowerCase());
+    const matchesBranch = branchFilter === 'todos' || branchMatches(o.branch, branchFilter);
     const matchesSearch =
       !searchQuery ||
       (o.clientName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -852,7 +940,8 @@ export const CRMView: React.FC<CRMViewProps> = ({
       (o.id || '').toLowerCase().includes(searchQuery.toLowerCase());
 
     const daysOld = Math.floor((Date.now() - new Date(o.date).getTime()) / (1000 * 60 * 60 * 24));
-    const isDelayed = daysOld > 7 && (o.status === 'cotizacion' || o.status === 'sena_50');
+    const colNorm = normalizeColKey(resolveOrderColumnId(o));
+    const isDelayed = daysOld > 7 && (colNorm === 'cotizacion' || colNorm === 'sena_50');
 
     if (filterDelayedOnly && !isDelayed && !o.blockReason) return false;
 
@@ -879,7 +968,7 @@ export const CRMView: React.FC<CRMViewProps> = ({
     try {
       const firstColId = companyColumns[0]?.id || 'cotizacion';
       const { number: orderNum } = await getNextCorrelativeOrderNumber();
-      const targetBranch = formData.branch || assignedBranch || 'Maipú';
+      const targetBranch = resolveConfiguredBranch(formData.branch || assignedBranch || '', false);
       const targetClientType = formData.clientType || 'empresa';
       const trackingCode = await getNextStructuredTrackingCode(targetClientType, targetBranch);
       const orderId = `PED-${orderNum}`;
@@ -1306,38 +1395,6 @@ export const CRMView: React.FC<CRMViewProps> = ({
         {/* === TAB 1: KANBAN BOARD === */}
         {activeTab === 'board' && (
           <div className="flex flex-col h-full space-y-4">
-            {/* Phase 1 User Request: Notificación visual de nuevo pedido para cotizar recibido */}
-            {orders.filter((o) => (o.columnId || o.status) === 'cotizacion').length > 0 && (
-              <div className="bg-amber-50/70 border border-[#FDB813]/70 p-3.5 rounded-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-amber-950 shadow-2xs animate-fadeIn">
-                <div className="flex items-center gap-2.5">
-                  <div className="p-2 bg-[#FDB813] text-[#18231C] rounded-xs font-black">
-                    <Sparkles className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h5 className="font-bold text-xs uppercase tracking-wider text-amber-950 flex items-center gap-2">
-                      <span>¡Nuevo pedido para cotizar recibido!</span>
-                      <span className="px-1.5 py-0.5 bg-[#18231C] text-[#FDB813] rounded-xs text-[10px] font-black uppercase font-mono">
-                        {orders.filter((o) => (o.columnId || o.status) === 'cotizacion').length} pendientes
-                      </span>
-                    </h5>
-                    <p className="text-[11px] text-amber-900 mt-0.5">
-                      Hay cotizaciones entrantes registradas desde WhatsApp, Excel o la tienda web esperando cotización oficial y asignación de asesor.
-                    </p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const firstCot = orders.find((o) => (o.columnId || o.status) === 'cotizacion');
-                    if (firstCot) setSelectedOrderForDetail(firstCot);
-                  }}
-                  className="px-3 py-1.5 bg-[#18231C] hover:bg-black text-[#FDB813] rounded-xs text-xs font-bold uppercase tracking-wider whitespace-nowrap cursor-pointer transition-colors shadow-2xs"
-                >
-                  Ver Primera Cotización
-                </button>
-              </div>
-            )}
-
             {/* Urgent Alerts Banner */}
             {(delayedOrdersCount > 0 || blockedOrdersCount > 0) && (
               <div className="bg-red-50/70 border border-red-200 p-3.5 rounded-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-red-950">
@@ -1413,9 +1470,11 @@ export const CRMView: React.FC<CRMViewProps> = ({
                   title={crmScope !== 'all' ? `Restringido a sucursal ${assignedBranch}` : 'Filtrar por sucursal'}
                 >
                   {crmScope === 'all' && <option value="todos">Sucursal: Todas</option>}
-                  <option value="maipú">Sucursal Maipú</option>
-                  <option value="ciudad">Sucursal Ciudad</option>
-                  <option value="luján">Sucursal Luján</option>
+                  {configuredBranchNames.map((b) => (
+                    <option key={b} value={b}>
+                      {b}
+                    </option>
+                  ))}
                 </select>
                 {crmScope === 'branch_only' && (
                   <span className="text-[10px] bg-blue-100 text-blue-900 font-bold px-1.5 py-0.5 rounded-xs border border-blue-300">
@@ -1533,12 +1592,7 @@ export const CRMView: React.FC<CRMViewProps> = ({
 
                 <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar flex-1 py-0.5">
                   {companyColumns.map((col) => {
-                    const colCount = filteredOrders.filter((o) => {
-                      const effectiveColId = (o as any).columnId || o.status || companyColumns[0]?.id;
-                      if (effectiveColId === col.id) return true;
-                      const existsInBoard = companyColumns.some((c) => c.id === effectiveColId);
-                      return !existsInBoard && col.id === companyColumns[0]?.id;
-                    }).length;
+                    const colCount = filteredOrders.filter((o) => resolveOrderColumnId(o) === col.id).length;
                     return (
                       <button
                         key={col.id}
@@ -1617,13 +1671,7 @@ export const CRMView: React.FC<CRMViewProps> = ({
                 style={{ gridTemplateColumns: `repeat(${companyColumns.length}, minmax(260px, 1fr))` }}
               >
                 {companyColumns.map((col) => {
-                  const columnOrders = filteredOrders.filter((o) => {
-                    const effectiveColId = (o as any).columnId || o.status || companyColumns[0]?.id;
-                    if (effectiveColId === col.id) return true;
-                    const existsInBoard = companyColumns.some((c) => c.id === effectiveColId);
-                    if (!existsInBoard && col.id === companyColumns[0]?.id) return true;
-                    return false;
-                  });
+                  const columnOrders = filteredOrders.filter((o) => resolveOrderColumnId(o) === col.id);
                   const isDragOver = dragOverColumn === col.id;
                   return (
                     <div
@@ -1858,7 +1906,7 @@ export const CRMView: React.FC<CRMViewProps> = ({
                                 </div>
 
                                 {(() => {
-                                  const currentOrderCol = (order as any).columnId || order.status;
+                                  const currentOrderCol = resolveOrderColumnId(order);
                                   const currentIndex = companyColumns.findIndex((c) => c.id === currentOrderCol);
                                   const nextCol = currentIndex >= 0 && currentIndex < companyColumns.length - 1 ? companyColumns[currentIndex + 1] : null;
                                   if (!nextCol) return null;
@@ -1992,7 +2040,14 @@ export const CRMView: React.FC<CRMViewProps> = ({
         readIds={readNotifIds}
         onMarkAsRead={handleMarkNotifAsRead}
         onMarkAllAsRead={handleMarkAllNotifsAsRead}
-        onSelectOrder={(ord) => setViewingOrder(ord)}
+        onSelectOrder={(ord) => {
+          const isMissingAmt = (Number(ord.totalEstimated) || 0) <= 0;
+          if (isMissingAmt) {
+            setSelectedOrderForDetail(ord);
+          } else {
+            setViewingOrder(ord);
+          }
+        }}
         onGoToVisits={() => setActiveTab('visits')}
         onOpenChat={onOpenChat}
         theme={theme}
@@ -2291,6 +2346,9 @@ export const CRMView: React.FC<CRMViewProps> = ({
           theme={theme}
           activeStaffUser={activeStaffUser}
           sellersList={sellersList}
+          companyColumns={companyColumns}
+          branchOptions={configuredBranchNames}
+          resolveBranch={(val) => resolveConfiguredBranch(val, true)}
           onSave={async (updated) => {
             const cleanUpdated = sanitizeObjectEncoding(updated);
             setOrders((prev) => [cleanUpdated, ...prev.filter((o) => o.id !== cleanUpdated.id)]);
@@ -2347,6 +2405,7 @@ export const CRMView: React.FC<CRMViewProps> = ({
           onClose={() => setShowNewOrderModal(false)}
           onSave={handleCreateManualOrder}
           accent={accent}
+          branchOptions={configuredBranchNames}
         />
       )}
     </div>
@@ -2364,10 +2423,25 @@ const OrderDetailModal: React.FC<{
   theme?: ThemeConfig;
   activeStaffUser?: string;
   sellersList?: Seller[];
-}> = ({ order, onClose, onSave, onDelete, theme, activeStaffUser = 'Personal Pampero', sellersList = [] }) => {
-  const [status, setStatus] = useState<CRMOrderStatus>(order.status);
+  companyColumns: KanbanColumnConfig[];
+  branchOptions: string[];
+  resolveBranch: (val?: string) => string;
+}> = ({ order, onClose, onSave, onDelete, theme, activeStaffUser = 'Personal Pampero', sellersList = [], companyColumns, branchOptions, resolveBranch }) => {
+  const resolveCol = (raw?: string): string => {
+    const val = String(raw || '').trim();
+    const norm = val.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+    if (norm === 'cancelado') return 'cancelado';
+    const match = companyColumns.find(
+      (c) =>
+        c.id === val ||
+        c.id.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim() === norm ||
+        c.label.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim() === norm
+    );
+    return match ? match.id : (companyColumns[0]?.id || 'cotizacion');
+  };
+  const [status, setStatus] = useState<string>(() => resolveCol((order as any).columnId || order.status));
   const [seller, setSeller] = useState(order.seller || 'Sin asignar');
-  const [branch, setBranch] = useState(order.branch || 'Ciudad');
+  const [branch, setBranch] = useState(() => resolveBranch(order.branch) || branchOptions[0] || 'Pampero Ciudad de Mendoza');
   const [companyLocation, setCompanyLocation] = useState(order.companyLocation || '');
   const [locationUrl, setLocationUrl] = useState(order.locationUrl || '');
   const [totalEstimated, setTotalEstimated] = useState(String(order.totalEstimated || ''));
@@ -2434,12 +2508,13 @@ const OrderDetailModal: React.FC<{
 
     onSave({
       ...order,
-      status,
+      status: status as CRMOrderStatus,
+      columnId: status,
       seller: seller.trim() || 'Sin asignar',
       branch,
       companyLocation: companyLocation.trim() || undefined,
       locationUrl: locationUrl.trim() || undefined,
-      totalEstimated: Number(totalEstimated) || order.totalEstimated,
+      totalEstimated: totalEstimated.trim() === '' ? (order.totalEstimated || 0) : Math.max(0, Number(totalEstimated) || 0),
       blockReason: blockReason.trim() || undefined,
       observations: cleanObs || undefined,
       observationDate: cleanObs || activeReminderDate ? (observationDate || new Date().toISOString().split('T')[0]) : undefined,
@@ -2501,14 +2576,14 @@ const OrderDetailModal: React.FC<{
               </label>
               <select
                 value={status}
-                onChange={(e) => setStatus(e.target.value as any)}
+                onChange={(e) => setStatus(e.target.value)}
                 className="w-full px-2.5 py-1.5 text-xs border border-[#DCD4C9] rounded-xs bg-[#FAF8F5] outline-none font-bold text-[#18231C]"
               >
-                <option value="cotizacion">Cotización Recibida</option>
-                <option value="sena_50">Aprobado / Seña 50%</option>
-                <option value="produccion">En Bordados / Taller</option>
-                <option value="listo">Listo para Retirar</option>
-                <option value="entregado">Entregado / Cerrado</option>
+                {companyColumns.map((col) => (
+                  <option key={col.id} value={col.id}>
+                    {fixUtf8Encoding(col.label)}
+                  </option>
+                ))}
                 <option value="cancelado">Cancelado</option>
               </select>
             </div>
@@ -2571,10 +2646,11 @@ const OrderDetailModal: React.FC<{
                 onChange={(e) => setBranch(e.target.value)}
                 className="w-full px-2.5 py-1.5 text-xs border border-[#DCD4C9] rounded-xs bg-white text-[#18231C] font-semibold outline-none focus:border-[#FDB813]"
               >
-                <option value="Ciudad">Ciudad (San Martín 1500)</option>
-                <option value="Maipú">Maipú (Pescara 149)</option>
-                <option value="Luján">Luján de Cuyo (Sáenz Peña)</option>
-                <option value="Luján de Cuyo">Luján de Cuyo</option>
+                {branchOptions.map((b) => (
+                  <option key={b} value={b}>
+                    {b}
+                  </option>
+                ))}
                 <option value="Todas">Todas las sucursales</option>
               </select>
             </div>
@@ -2892,11 +2968,12 @@ const NewOrderModal: React.FC<{
   onClose: () => void;
   onSave: (data: any) => void;
   accent: string;
-}> = ({ onClose, onSave }) => {
+  branchOptions: string[];
+}> = ({ onClose, onSave, branchOptions }) => {
   const [clientName, setClientName] = useState('');
   const [clientType, setClientType] = useState<'empresa' | 'consumidor_final'>('empresa');
   const [seller, setSeller] = useState('Itatí');
-  const [branch, setBranch] = useState('Maipú');
+  const [branch, setBranch] = useState(branchOptions[0] || 'Pampero Maipú');
   const [companyLocation, setCompanyLocation] = useState('');
   const [locationUrl, setLocationUrl] = useState('');
   const [totalUnits, setTotalUnits] = useState('');
@@ -3023,9 +3100,11 @@ const NewOrderModal: React.FC<{
                 onChange={(e) => setBranch(e.target.value)}
                 className="w-full px-3 py-2 text-xs border border-[#DCD4C9] rounded-xs outline-none bg-white"
               >
-                <option value="Ciudad">Ciudad</option>
-                <option value="Maipú">Maipú</option>
-                <option value="Luján">Luján</option>
+                {branchOptions.map((b) => (
+                  <option key={b} value={b}>
+                    {b}
+                  </option>
+                ))}
               </select>
             </div>
             <div>

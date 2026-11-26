@@ -1,5 +1,6 @@
 import { CRMOrder, LeadVisit, SupplierOrder } from '../types';
 import { fixUtf8Encoding, sanitizeObjectEncoding } from './encodingUtils';
+import { resolveConfiguredBranchName } from './rrhhBranches';
 
 export function safeCellString(val: any): string {
   if (val === null || val === undefined) return '';
@@ -103,7 +104,7 @@ export function normalizeLeadVisit(raw: any, indexFallback?: number): LeadVisit 
     companyLocation: safeCellString(sanitized.companyLocation) || undefined,
     locationUrl: safeCellString(sanitized.locationUrl) || undefined,
     seller: safeCellString(sanitized.seller) || 'Sin asignar',
-    branch: safeCellString(sanitized.branch) || 'Maipú',
+    branch: resolveConfiguredBranchName(safeCellString(sanitized.branch) || 'Pampero Maipú', undefined, false),
     status: (safeCellString(sanitized.status) || statusValue) as any,
     columnId: safeCellString(sanitized.columnId) || resolvedStep,
     step: safeCellString(sanitized.step) || resolvedStep,
@@ -146,7 +147,7 @@ export function normalizeCRMOrder(raw: any, indexFallback?: number): CRMOrder {
     status: statusStr as any,
     columnId: safeCellString(sanitized.columnId) || statusStr,
     seller: safeCellString(sanitized.seller) || 'Sin asignar',
-    branch: safeCellString(sanitized.branch) || 'Maipú',
+    branch: resolveConfiguredBranchName(safeCellString(sanitized.branch) || 'Pampero Maipú', undefined, false),
     totalUnits: Math.max(0, Math.round(safeCellNumber(sanitized.totalUnits))),
     totalEstimated: Math.max(0, Math.round(safeCellNumber(sanitized.totalEstimated))),
     observations: safeCellString(sanitized.observations),
@@ -178,7 +179,7 @@ export function normalizeSupplierOrder(raw: any, indexFallback?: number): Suppli
     totalAmount: Math.max(0, Math.round(safeCellNumber(sanitized.totalAmount))),
     itemsDescription: safeCellString(sanitized.itemsDescription),
     trackingNumber: safeCellString(sanitized.trackingNumber) || undefined,
-    branchDestination: safeCellString(sanitized.branchDestination) || 'Maipú',
+    branchDestination: resolveConfiguredBranchName(safeCellString(sanitized.branchDestination) || 'Pampero Maipú', undefined, false),
     responsibleStaff: safeCellString(sanitized.responsibleStaff) || 'Itatí',
     notes: safeCellString(sanitized.notes),
     createdAt: safeCellString(sanitized.createdAt) || new Date().toISOString(),

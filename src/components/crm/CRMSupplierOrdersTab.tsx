@@ -15,6 +15,7 @@ import {
   saveCRMOrder,
 } from '../../services/firebase';
 import { fixUtf8Encoding, sanitizeObjectEncoding } from '../../utils/encodingUtils';
+import { useConfiguredBranches } from '../../utils/useConfiguredBranches';
 import {
   Plus,
   Search,
@@ -63,6 +64,7 @@ export const CRMSupplierOrdersTab: React.FC<CRMSupplierOrdersTabProps> = ({
   theme,
 }) => {
   const st = theme?.siteTexts;
+  const { branchNames: configuredBranchNames, resolveBranch: resolveConfiguredBranch } = useConfiguredBranches();
   const [subTab, setSubTab] = useState<'shortages' | 'orders'>('shortages');
   const [supplierFilter, setSupplierFilter] = useState('todos');
   const [statusFilter, setStatusFilter] = useState('todos');
@@ -134,7 +136,7 @@ export const CRMSupplierOrdersTab: React.FC<CRMSupplierOrdersTabProps> = ({
   const [totalAmount, setTotalAmount] = useState('');
   const [itemsDescription, setItemsDescription] = useState('');
   const [trackingNumber, setTrackingNumber] = useState('');
-  const [branchDestination, setBranchDestination] = useState('Ciudad');
+  const [branchDestination, setBranchDestination] = useState(() => configuredBranchNames[0] || 'Pampero Ciudad de Mendoza');
   const [responsibleStaff, setResponsibleStaff] = useState('Itatí');
   const [notes, setNotes] = useState('');
   const [excelNotice, setExcelNotice] = useState<string | null>(null);
@@ -192,7 +194,7 @@ export const CRMSupplierOrdersTab: React.FC<CRMSupplierOrdersTabProps> = ({
     setTotalAmount('');
     setItemsDescription(prefill?.itemsDescription || '');
     setTrackingNumber('');
-    setBranchDestination(prefill?.branchDestination || 'Ciudad');
+    setBranchDestination(resolveConfiguredBranch(prefill?.branchDestination, false));
     setResponsibleStaff('Itatí');
     setNotes(
       prefill?.shortageIds?.length
@@ -216,7 +218,7 @@ export const CRMSupplierOrdersTab: React.FC<CRMSupplierOrdersTabProps> = ({
     setTotalAmount(String(o.totalAmount || ''));
     setItemsDescription(o.itemsDescription || '');
     setTrackingNumber(o.trackingNumber || '');
-    setBranchDestination(o.branchDestination);
+    setBranchDestination(resolveConfiguredBranch(o.branchDestination, false));
     setResponsibleStaff(o.responsibleStaff);
     setNotes(o.notes || '');
     setShowModal(true);
@@ -896,9 +898,11 @@ export const CRMSupplierOrdersTab: React.FC<CRMSupplierOrdersTabProps> = ({
                     onChange={(e) => setBranchDestination(e.target.value)}
                     className="w-full px-2.5 py-2 text-xs border border-[#DCD4C9] rounded-xs outline-none bg-white"
                   >
-                    <option value="Ciudad">Ciudad</option>
-                    <option value="Maipú">Maipú</option>
-                    <option value="Luján">Luján</option>
+                    {configuredBranchNames.map((b) => (
+                      <option key={b} value={b}>
+                        {b}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div>

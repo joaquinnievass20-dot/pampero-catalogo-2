@@ -1,26 +1,35 @@
 import { BranchLocation, RRHHEmployeeRecord, RRHHScheduleEntry } from '../types';
 
+export const DEFAULT_UNIFIED_BRANCH_NAMES = [
+  'Pampero Ciudad de Mendoza',
+  'Pampero Luján de Cuyo',
+  'Pampero Maipú',
+] as const;
+
 const FALLBACK_BRANCHES: BranchLocation[] = [
   {
-    id: 'fallback-maipu',
-    name: 'Pampero Maipú',
-    address: 'Pescara 250',
-    phone: '261 527-6713',
-    openingHours: 'Lunes a Viernes 08:30 a 13:00 y 16:30 a 20:30, Sábados 09:00 a 13:30',
-  },
-  {
-    id: 'fallback-ciudad',
+    id: 'mza-ciudad',
     name: 'Pampero Ciudad de Mendoza',
     address: 'San Martín 477',
+    zone: 'Ciudad de Mendoza',
     phone: '261 527-6713',
     openingHours: 'Lunes a Viernes 08:30 a 13:00 y 16:30 a 20:30, Sábados 09:00 a 13:30',
   },
   {
-    id: 'fallback-lujan',
+    id: 'mza-lujan',
     name: 'Pampero Luján de Cuyo',
     address: 'Patricios 384',
+    zone: 'Luján de Cuyo',
     phone: '261 527-6713',
     openingHours: 'Lunes a Viernes 08:30 a 12:30 y 16:30 a 20:30, Sábados 09:00 a 13:00',
+  },
+  {
+    id: 'mza-maipu',
+    name: 'Pampero Maipú',
+    address: 'Pescara 250',
+    zone: 'Maipú',
+    phone: '261 527-6713',
+    openingHours: 'Lunes a Viernes 08:30 a 13:00 y 16:30 a 20:30, Sábados 09:00 a 13:30',
   },
 ];
 
@@ -32,15 +41,44 @@ function stripAccents(str: string): string {
     .trim();
 }
 
+export function normalizeBranchKey(raw?: string): string {
+  return stripAccents(raw || '')
+    .replace(/pampero/g, '')
+    .replace(/\bde\s+mendoza\b/g, '')
+    .replace(/\bde\s+cuyo\b/g, '')
+    .replace(/\bgran\s+mendoza\b/g, '')
+    .replace(/\bsucursal\b/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export function branchMatches(recordBranch?: string, targetBranch?: string): boolean {
+  const target = (targetBranch || '').trim();
+  if (!target || ['todas', 'todos', 'all'].includes(target.toLowerCase())) return true;
+  const a = normalizeBranchKey(recordBranch);
+  const b = normalizeBranchKey(target);
+  if (!a || !b) return false;
+  return a === b || a.includes(b) || b.includes(a);
+}
+
+function normalizeKnownCase(rawName: string): string {
+  const key = normalizeBranchKey(rawName);
+  if (key === 'maipu') return 'Pampero Maipú';
+  if (key === 'ciudad' || key === 'mendoza' || key === 'capital') return 'Pampero Ciudad de Mendoza';
+  if (key === 'lujan') return 'Pampero Luján de Cuyo';
+  return rawName.trim();
+}
+
 export function getConfiguredBranchList(branches?: BranchLocation[]): BranchLocation[] {
   const source = Array.isArray(branches) && branches.length > 0 ? branches : FALLBACK_BRANCHES;
   const seen = new Set<string>();
   const unique: BranchLocation[] = [];
 
   source.forEach((b) => {
-    const cleanName = (b.name || '').trim();
-    if (!cleanName) return;
-    const key = stripAccents(cleanName);
+    const rawName = (b.name || (b as any).branchName || b.zone || '').trim();
+    if (!rawName) return;
+    const cleanName = normalizeKnownCase(rawName);
+    const key = normalizeBranchKey(cleanName) || stripAccents(cleanName);
     if (seen.has(key)) return;
     seen.add(key);
     unique.push({ ...b, name: cleanName });
@@ -54,7 +92,7 @@ export function getConfiguredBranchNames(branches?: BranchLocation[]): string[] 
 }
 
 /**
- * Mapea nombres heredados ('Maipú', 'Ciudad', 'Luján') al nombre exacto cargado en Sucursales
+ * Mapea nombres heredados ('Maipú', 'Ciudad', 'Luján', 'PAMPERO MAIPU') al nombre exacto cargado en Sucursales
  * sin duplicar sucursales en listas ni leyendas.
  */
 export function resolveConfiguredBranchName(
@@ -68,7 +106,7 @@ export function resolveConfiguredBranchName(
 
   const norm = stripAccents(trimmed);
   if (norm === 'franco' || norm === 'vacaciones') return trimmed;
-  if (norm === 'todas') {
+  if (norm === 'todas' || norm === 'todos') {
     return allowTodas ? 'Todas' : list[0]?.name || 'Pampero Maipú';
   }
 
@@ -76,7 +114,17 @@ export function resolveConfiguredBranchName(
   const exact = list.find((b) => stripAccents(b.name) === norm);
   if (exact) return exact.name;
 
-  // 2. Coincidencia por palabra clave o inclusión (ej: "Maipú" -> "PAMPERO MAIPU")
+  // 2. Coincidencia por clave normalizada de sucursal
+  const rawKey = normalizeBranchKey(trimmed);
+  if (rawKey) {
+    const byKey = list.find((b) => {
+      const bKey = normalizeBranchKey(b.name) || normalizeBranchKey(b.zone || b.city);
+      return bKey === rawKey || bKey.includes(rawKey) || rawKey.includes(bKey);
+    });
+    if (byKey) return byKey.name;
+  }
+
+  // 3. Coincidencia por palabra clave o inclusión (ej: "Maipú" -> "Pampero Maipú")
   const tokens = norm
     .replace(/^pampero\s+/i, '')
     .split(/\s+/)

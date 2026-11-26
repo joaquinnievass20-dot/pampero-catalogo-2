@@ -13,14 +13,13 @@ import {
   subscribeToCRMExpenses,
   subscribeToCostCategories,
   DEFAULT_COST_CATEGORIES,
-  fetchFirestoreStoreConfig,
-  fetchFirestoreBranches,
-  subscribeToFirestoreBranches,
   subscribeToCRMSales,
   saveCRMSale,
   deleteCRMSale,
 } from '../../services/firebase';
 import { fixUtf8Encoding, sanitizeObjectEncoding } from '../../utils/encodingUtils';
+import { useConfiguredBranches } from '../../utils/useConfiguredBranches';
+import { branchMatches } from '../../utils/rrhhBranches';
 import { 
   DollarSign, 
   Building2, 
@@ -66,20 +65,7 @@ export const CRMCostsTab: React.FC<CRMCostsTabProps> = ({
 }) => {
   const isAdmin = userRole === 'admin';
 
-  // Dynamic Branches from Firestore collection ('branches') and config
-  const [dynamicBranches, setDynamicBranches] = useState<string[]>(() => {
-    try {
-      const saved = localStorage.getItem('pampero_catalog_branches');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const names = parsed.map((b: any) => b.name || b.branchName || b.zone).filter(Boolean);
-          if (names.length > 0) return Array.from(new Set(names));
-        }
-      }
-    } catch {}
-    return ['Pampero Maipú', 'Pampero Ciudad de Mendoza', 'Pampero Luján de Cuyo', 'Maipú', 'Ciudad', 'Luján'];
-  });
+  const { branchNames: dynamicBranches, resolveBranch } = useConfiguredBranches();
 
   // Dynamic Cost Categories from Firestore
   const [costCategories, setCostCategories] = useState<CostCategoryConfig[]>(DEFAULT_COST_CATEGORIES);
@@ -111,7 +97,7 @@ export const CRMCostsTab: React.FC<CRMCostsTabProps> = ({
           const updatedItem: CRMSale = {
             id: res.id,
             date: sale.date || new Date().toISOString().split('T')[0],
-            branch: sale.branch || 'Maipú',
+            branch: resolveBranch(sale.branch, false),
             period: sale.period || 'Diario',
             amount: cleanAmt,
             totalDaily: cleanAmt,
@@ -170,9 +156,7 @@ export const CRMCostsTab: React.FC<CRMCostsTabProps> = ({
   // Form state (Used by both Admin and Employee)
   const [isEditingId, setIsEditingId] = useState<string | null>(null);
   const [formDate, setFormDate] = useState(() => new Date().toISOString().split('T')[0]);
-  const [formBranch, setFormBranch] = useState<string>(() => {
-    return defaultBranch || 'Pampero Maipú';
-  });
+  const [formBranch, setFormBranch] = useState<string>(() => resolveBranch(defaultBranch, false));
   const [formType, setFormType] = useState<ExpenseType>('Fijo');
   const [formCategory, setFormCategory] = useState<string>('Alquiler y expensas');
   const [formAmount, setFormAmount] = useState<string>('');
@@ -181,24 +165,15 @@ export const CRMCostsTab: React.FC<CRMCostsTabProps> = ({
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [feedbackNotice, setFeedbackNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
-  // 1. Load dynamic branches from Firestore 'branches' collection & store_config in real time
+  // Sync formBranch whenever configured branches update
   useEffect(() => {
-    const unsub = subscribeToFirestoreBranches((remoteBranches) => {
-      if (Array.isArray(remoteBranches) && remoteBranches.length > 0) {
-        const rawNames = remoteBranches.map((b) => b.name || (b as any).branchName || b.zone).filter(Boolean);
-        const uniqueNames = Array.from(new Set(rawNames));
-        if (uniqueNames.length > 0) {
-          setDynamicBranches(uniqueNames);
-          setFormBranch((current) => {
-            if (uniqueNames.includes(current)) return current;
-            const maipu = uniqueNames.find((n) => n.toLowerCase().includes('maipú') || n.toLowerCase().includes('maipu'));
-            return maipu || uniqueNames[0];
-          });
-        }
-      }
-    });
-    return () => unsub();
-  }, []);
+    if (dynamicBranches.length > 0) {
+      setFormBranch((current) => {
+        if (dynamicBranches.includes(current)) return current;
+        return resolveBranch(current, false);
+      });
+    }
+  }, [dynamicBranches, resolveBranch]);
 
   // 2. Subscribe to dynamic cost categories from Firestore
   useEffect(() => {
@@ -225,12 +200,6 @@ export const CRMCostsTab: React.FC<CRMCostsTabProps> = ({
         setExpenses(remoteExpenses.map(sanitizeObjectEncoding));
         setIsLoading(false);
         setSyncError(null);
-
-        // Also incorporate any branch name present in expenses
-        const expenseBranches = remoteExpenses.map((e) => e.branch).filter(Boolean);
-        if (expenseBranches.length > 0) {
-          setDynamicBranches((prev) => Array.from(new Set([...prev, ...expenseBranches])));
-        }
       },
       (err) => {
         console.warn('[CRMCostsTab] Modo local activo para gastos:', err?.message || err);
@@ -248,10 +217,6 @@ export const CRMCostsTab: React.FC<CRMCostsTabProps> = ({
     const unsubscribe = subscribeToCRMSales(
       (remoteSales) => {
         setSales(remoteSales);
-        const salesBranches = remoteSales.map((s) => s.branch).filter(Boolean);
-        if (salesBranches.length > 0) {
-          setDynamicBranches((prev) => Array.from(new Set([...prev, ...salesBranches])));
-        }
       },
       (err) => {
         console.warn('[CRMCostsTab] Modo local activo para crm_sales:', err?.message || err);
@@ -295,9 +260,7 @@ export const CRMCostsTab: React.FC<CRMCostsTabProps> = ({
   const filteredExpenses = useMemo(() => {
     if (!isAdmin) return [];
     return expenses.filter((item) => {
-      const expBranchNorm = (item.branch || '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-      const selBranchNorm = selectedBranch.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-      const matchBranch = selectedBranch === 'todas' || expBranchNorm === selBranchNorm || expBranchNorm.includes(selBranchNorm) || selBranchNorm.includes(expBranchNorm);
+      const matchBranch = selectedBranch === 'todas' || branchMatches(item.branch, selectedBranch);
       const matchMonth = selectedMonthYear === 'todos' || (item.date && item.date.startsWith(selectedMonthYear));
       const matchSearch = !searchDetail.trim() || 
         (item.detail || '').toLowerCase().includes(searchDetail.toLowerCase()) ||
@@ -310,9 +273,7 @@ export const CRMCostsTab: React.FC<CRMCostsTabProps> = ({
   const filteredSales = useMemo(() => {
     if (!isAdmin) return [];
     return sales.filter((item) => {
-      const saleBranchNorm = (item.branch || '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-      const selBranchNorm = selectedBranch.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-      const matchBranch = selectedBranch === 'todas' || saleBranchNorm === selBranchNorm || saleBranchNorm.includes(selBranchNorm) || selBranchNorm.includes(saleBranchNorm);
+      const matchBranch = selectedBranch === 'todas' || branchMatches(item.branch, selectedBranch);
       const matchMonth = selectedMonthYear === 'todos' || (item.date && item.date.startsWith(selectedMonthYear));
       return matchBranch && matchMonth;
     });
@@ -321,9 +282,7 @@ export const CRMCostsTab: React.FC<CRMCostsTabProps> = ({
   // Filtered Orders for Bloque 1 (Ingresos por Ventas de respaldo)
   const filteredOrders = useMemo(() => {
     return allOrdersList.filter((ord) => {
-      const ordBranchNorm = (ord.branch || '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-      const selBranchNorm = selectedBranch.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-      const matchBranch = selectedBranch === 'todas' || ordBranchNorm === selBranchNorm || ordBranchNorm.includes(selBranchNorm) || selBranchNorm.includes(ordBranchNorm);
+      const matchBranch = selectedBranch === 'todas' || branchMatches(ord.branch, selectedBranch);
       const matchMonth = selectedMonthYear === 'todos' || (ord.date && ord.date.startsWith(selectedMonthYear));
       return matchBranch && matchMonth;
     });
@@ -611,7 +570,7 @@ export const CRMCostsTab: React.FC<CRMCostsTabProps> = ({
     if (!isAdmin) return;
     setIsEditingId(item.id);
     setFormDate(item.date || new Date().toISOString().split('T')[0]);
-    setFormBranch(item.branch || 'Maipú');
+    setFormBranch(resolveBranch(item.branch, false));
     setFormType(item.type || 'Fijo');
     setFormCategory(item.category as ExpenseCategory || 'Alquiler');
     setFormAmount(String(item.amount || ''));
@@ -1418,7 +1377,7 @@ export const CRMCostsTab: React.FC<CRMCostsTabProps> = ({
                       </td>
                       <td className="py-2 px-3 font-bold text-[#18231C] whitespace-nowrap">
                         <span className="px-1.5 py-0.5 rounded-xs bg-neutral-100 border border-neutral-200">
-                          {fixUtf8Encoding(exp.branch)}
+                          {fixUtf8Encoding(resolveBranch(exp.branch, false))}
                         </span>
                       </td>
                       <td className="py-2 px-3 whitespace-nowrap">

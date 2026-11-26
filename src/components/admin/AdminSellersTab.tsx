@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { db, getFirebaseDb } from '../../services/firebase';
 import { collection, doc, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
+import { branchMatches, getConfiguredBranchNames, resolveConfiguredBranchName } from '../../utils/rrhhBranches';
 
 interface AdminSellersTabProps {
   branches: BranchLocation[];
@@ -37,14 +38,15 @@ export interface SellerRecord extends Seller {
 }
 
 export const INITIAL_SELLERS_DATA: SellerRecord[] = [
-  { id: 'sel-1', name: 'Itatí', branch: 'Maipú', phone: '261 527-6713', email: 'itati@pamperomaipu.com.ar', role: 'local', active: true },
-  { id: 'sel-2', name: 'Guada', branch: 'Ciudad', phone: '261 423-1122', email: 'guada@pampero.com.ar', role: 'local', active: true },
-  { id: 'sel-3', name: 'Carolina', branch: 'Luján', phone: '261 498-5544', email: 'carolina@pampero.com.ar', role: 'local', active: true },
-  { id: 'sel-4', name: 'Gustavo', branch: 'Maipú', phone: '261 527-6713', email: 'gustavo@pampero.com.ar', role: 'vendedor', active: true },
-  { id: 'sel-5', name: 'Martín', branch: 'Ciudad', phone: '261 423-1122', email: 'martin@pampero.com.ar', role: 'vendedor', active: true },
+  { id: 'sel-1', name: 'Itatí', branch: 'Pampero Maipú', phone: '261 527-6713', email: 'itati@pamperomaipu.com.ar', role: 'local', active: true },
+  { id: 'sel-2', name: 'Guada', branch: 'Pampero Ciudad de Mendoza', phone: '261 423-1122', email: 'guada@pampero.com.ar', role: 'local', active: true },
+  { id: 'sel-3', name: 'Carolina', branch: 'Pampero Luján de Cuyo', phone: '261 498-5544', email: 'carolina@pampero.com.ar', role: 'local', active: true },
+  { id: 'sel-4', name: 'Gustavo', branch: 'Pampero Maipú', phone: '261 527-6713', email: 'gustavo@pampero.com.ar', role: 'vendedor', active: true },
+  { id: 'sel-5', name: 'Martín', branch: 'Pampero Ciudad de Mendoza', phone: '261 423-1122', email: 'martin@pampero.com.ar', role: 'vendedor', active: true },
 ];
 
 export const AdminSellersTab: React.FC<AdminSellersTabProps> = ({ branches, triggerSaveNotice, userSession }) => {
+  const configuredBranchNames = React.useMemo(() => getConfiguredBranchNames(branches), [branches]);
   const [sellers, setSellers] = useState<SellerRecord[]>(() => {
     try {
       const saved = localStorage.getItem('pampero_sellers');
@@ -73,7 +75,7 @@ export const AdminSellersTab: React.FC<AdminSellersTabProps> = ({ branches, trig
     const email = userSession?.email?.toLowerCase() || '';
     const match = sellers.find((s) => s.email?.toLowerCase() === email);
     if (match?.branch) return match.branch;
-    return (userSession as any)?.branch || branches[0]?.name || 'Maipú';
+    return resolveConfiguredBranchName((userSession as any)?.branch || configuredBranchNames[0] || '', branches, false);
   })();
 
   const [simulatedBranch, setSimulatedBranch] = useState<string>(userAssignedBranch);
@@ -87,7 +89,7 @@ export const AdminSellersTab: React.FC<AdminSellersTabProps> = ({ branches, trig
 
   // Form states
   const [name, setName] = useState('');
-  const [branch, setBranch] = useState(branches[0]?.name || 'Maipú');
+  const [branch, setBranch] = useState(configuredBranchNames[0] || 'Pampero Maipú');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [sellerRole, setSellerRole] = useState<StaffRole>('vendedor');
@@ -139,7 +141,7 @@ export const AdminSellersTab: React.FC<AdminSellersTabProps> = ({ branches, trig
     setIsEditing(null);
     setName('');
     // If role is local, branch is strictly locked to their local
-    setBranch(activeRole === 'local' ? currentBranchContext : (branches[0]?.name || 'Maipú'));
+    setBranch(activeRole === 'local' ? currentBranchContext : (configuredBranchNames[0] || 'Pampero Maipú'));
     setPhone('');
     setEmail('');
     setSellerRole('vendedor');
@@ -263,12 +265,12 @@ export const AdminSellersTab: React.FC<AdminSellersTabProps> = ({ branches, trig
     }
 
     if (activeRole === 'local') {
-      return (s.branch || '').toLowerCase() === currentBranchContext.toLowerCase();
+      return branchMatches(s.branch, currentBranchContext);
     }
 
     // Admin y Encargado General ven todos los locales y pueden filtrar por sucursal
     if (selectedBranchFilter !== 'todas') {
-      if ((s.branch || '').toLowerCase() !== selectedBranchFilter.toLowerCase()) return false;
+      if (!branchMatches(s.branch, selectedBranchFilter)) return false;
     }
 
     return true;
@@ -366,9 +368,11 @@ export const AdminSellersTab: React.FC<AdminSellersTabProps> = ({ branches, trig
                 onChange={(e) => setSimulatedBranch(e.target.value)}
                 className="text-xs bg-white border border-neutral-300 rounded-xs px-2 py-1 font-bold outline-none cursor-pointer"
               >
-                <option value="Maipú">Local Maipú</option>
-                <option value="Ciudad">Local Ciudad</option>
-                <option value="Luján">Local Luján</option>
+                {configuredBranchNames.map((b) => (
+                  <option key={b} value={b}>
+                    {b}
+                  </option>
+                ))}
               </select>
             )}
           </div>
@@ -397,8 +401,8 @@ export const AdminSellersTab: React.FC<AdminSellersTabProps> = ({ branches, trig
               className="text-xs border border-[#DCD4C9] rounded-xs px-2.5 py-1.5 bg-white outline-none font-bold text-[#18231C]"
             >
               <option value="todas">Todos los Locales</option>
-              {branches.map((b) => (
-                <option key={b.id} value={b.name}>{b.name}</option>
+              {configuredBranchNames.map((b) => (
+                <option key={b} value={b}>{b}</option>
               ))}
             </select>
           </div>

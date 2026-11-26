@@ -10,7 +10,12 @@ export const AdminNotificationsTab: React.FC<AdminNotificationsTabProps> = ({ tr
   const [settings, setSettings] = useState<NotificationSettings>(() => {
     try {
       const saved = localStorage.getItem('pampero_notification_settings');
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        return {
+          notifyMissingOrderAmounts: true,
+          ...JSON.parse(saved),
+        };
+      }
     } catch {}
     return {
       staleQuoteDays: 7,
@@ -18,6 +23,7 @@ export const AdminNotificationsTab: React.FC<AdminNotificationsTabProps> = ({ tr
       notifyStaleOrders: true,
       notifyBlockedOrders: true,
       notifyPendingVisits: true,
+      notifyMissingOrderAmounts: true,
     };
   });
 
@@ -160,6 +166,24 @@ export const AdminNotificationsTab: React.FC<AdminNotificationsTabProps> = ({ tr
                 </span>
                 <span className="text-[11px] text-[#6F6860] block mt-0.5">
                   Avisa al vendedor responsable sobre reuniones o visitas a empresas presupuestadas que no se han cerrado.
+                </span>
+              </div>
+            </label>
+
+            {/* Toggle 5: Pedidos Aprobados sin Monto */}
+            <label className="flex items-start gap-3 p-3 rounded-xs border border-[#ECE5DC] hover:border-[#DCD4C9] cursor-pointer transition-colors bg-[#FAF8F5]">
+              <input
+                type="checkbox"
+                checked={settings.notifyMissingOrderAmounts !== false}
+                onChange={(e) => setSettings({ ...settings, notifyMissingOrderAmounts: e.target.checked })}
+                className="mt-0.5 rounded text-[#18231C] focus:ring-[#FDB813]"
+              />
+              <div>
+                <span className="text-xs font-bold text-[#18231C] block">
+                  Notificar Pedidos Aprobados / Seña 50% en adelante sin Monto ($ 0)
+                </span>
+                <span className="text-[11px] text-[#6F6860] block mt-0.5">
+                  Alerta para cargar el monto del presupuesto aceptado en fichas desde Aprobado / Seña 50% inclusive en adelante.
                 </span>
               </div>
             </label>

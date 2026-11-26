@@ -30,12 +30,14 @@ import {
   subscribeToCRMTaskConfig
 } from '../../services/firebase';
 import { sanitizeObjectEncoding } from '../../utils/encodingUtils';
+import { useConfiguredBranches } from '../../utils/useConfiguredBranches';
 
 interface AdminKanbanConfigTabProps {
   triggerSaveNotice?: () => void;
 }
 
 export const AdminKanbanConfigTab: React.FC<AdminKanbanConfigTabProps> = ({ triggerSaveNotice }) => {
+  const { branchNames: configuredBranchNames, resolveBranch: resolveConfiguredBranch } = useConfiguredBranches();
   const [activeBoard, setActiveBoard] = useState<'visits' | 'companies' | 'tasks' | 'templates' | 'tags'>('visits');
   const [visitColumns, setVisitColumns] = useState<KanbanColumnConfig[]>(DEFAULT_VISIT_COLUMNS);
   const [companyColumns, setCompanyColumns] = useState<KanbanColumnConfig[]>(DEFAULT_COMPANY_COLUMNS);
@@ -689,9 +691,11 @@ export const AdminKanbanConfigTab: React.FC<AdminKanbanConfigTabProps> = ({ trig
                     className="w-full px-2.5 py-1.5 text-xs bg-white border border-[#DCD4C9] rounded-xs outline-none"
                   >
                     <option value="Todas">Todas</option>
-                    <option value="Maipú">Maipú</option>
-                    <option value="Ciudad">Ciudad</option>
-                    <option value="Luján">Luján</option>
+                    {configuredBranchNames.map((b) => (
+                      <option key={b} value={b}>
+                        {b}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -784,7 +788,7 @@ export const AdminKanbanConfigTab: React.FC<AdminKanbanConfigTabProps> = ({ trig
                   </select>
 
                   <select
-                    value={tpl.defaultBranch || 'Todas'}
+                    value={tpl.defaultBranch ? resolveConfiguredBranch(tpl.defaultBranch, true) : 'Todas'}
                     onChange={(e) => {
                       const val = e.target.value;
                       setTaskTemplates((prev) =>
@@ -794,9 +798,11 @@ export const AdminKanbanConfigTab: React.FC<AdminKanbanConfigTabProps> = ({ trig
                     className="px-2 py-1 text-[11px] bg-white border border-[#DCD4C9] rounded-xs outline-none"
                   >
                     <option value="Todas">Todas</option>
-                    <option value="Maipú">Maipú</option>
-                    <option value="Ciudad">Ciudad</option>
-                    <option value="Luján">Luján</option>
+                    {configuredBranchNames.map((b) => (
+                      <option key={b} value={b}>
+                        {b}
+                      </option>
+                    ))}
                   </select>
 
                   <input

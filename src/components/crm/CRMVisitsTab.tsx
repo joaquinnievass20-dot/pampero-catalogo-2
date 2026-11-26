@@ -45,6 +45,8 @@ import {
 import { exportVisitsToExcel, importVisitsFromExcel } from '../../utils/kanbanExcelUtils';
 import { normalizeLeadVisit } from '../../utils/crmNormalizers';
 import { CRMObservationsModal } from './CRMObservationsModal';
+import { useConfiguredBranches } from '../../utils/useConfiguredBranches';
+import { branchMatches } from '../../utils/rrhhBranches';
 
 interface CRMVisitsTabProps {
   visits: LeadVisit[];
@@ -101,6 +103,7 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({
   theme,
 }) => {
   const st = theme?.siteTexts;
+  const { branchNames: configuredBranchNames, resolveBranch: resolveConfiguredBranch } = useConfiguredBranches();
   const [columns, setColumns] = useState<KanbanColumnConfig[]>(() => {
     try {
       const saved = localStorage.getItem('pampero_kanban_visits_cols');
@@ -262,7 +265,7 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({
   const [companyLocation, setCompanyLocation] = useState('');
   const [locationUrl, setLocationUrl] = useState('');
   const [seller, setSeller] = useState('Itatí');
-  const [branch, setBranch] = useState('Maipú');
+  const [branch, setBranch] = useState(() => configuredBranchNames[0] || 'Pampero Maipú');
   const [step, setStep] = useState<VisitKanbanStep>('primer_contacto');
   const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [objective, setObjective] = useState('');
@@ -304,7 +307,7 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({
     setCompanyLocation('');
     setLocationUrl('');
     setSeller('Itatí');
-    setBranch('Maipú');
+    setBranch(configuredBranchNames[0] || 'Pampero Maipú');
     setStep(targetStep as any);
     setDate(todayIso);
     setObjective('');
@@ -329,7 +332,7 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({
     setCompanyLocation(v.companyLocation || '');
     setLocationUrl(v.locationUrl || '');
     setSeller(v.seller || 'Sin asignar');
-    setBranch(v.branch || 'Maipú');
+    setBranch(resolveConfiguredBranch(v.branch, false));
     setStep(getVisitStep(v) as any);
     setDate(v.date || new Date().toISOString().split('T')[0]);
     setObjective(v.objective || '');
@@ -356,7 +359,7 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({
     const resolvedTracking =
       editingVisit?.trackingCode && isValidStructuredTrackingCode(editingVisit.trackingCode)
         ? editingVisit.trackingCode
-        : await getNextStructuredTrackingCode('empresa', branch || 'Maipú', validRegDate);
+        : await getNextStructuredTrackingCode('empresa', resolveConfiguredBranch(branch, false), validRegDate);
 
     const visitId = editingVisit ? editingVisit.id : `VIS-${Date.now().toString().slice(-6)}`;
     const activeReminderDate = generateReminder && reminderDate.trim() ? reminderDate.trim() : undefined;
@@ -500,7 +503,7 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({
 
   // Filter visits from localVisits (con coerción segura a string y alcance RBAC)
   const filteredVisits = localVisits.filter((v) => {
-    if (crmScope === 'branch_only' && assignedBranch && String(v.branch ?? '').toLowerCase() !== assignedBranch.toLowerCase()) {
+    if (crmScope === 'branch_only' && assignedBranch && !branchMatches(v.branch, assignedBranch)) {
       return false;
     }
     if (crmScope === 'own_only' && assignedSellerName && String(v.seller ?? '').toLowerCase() !== assignedSellerName.toLowerCase()) {
@@ -508,7 +511,7 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({
     }
     const q = searchQuery.toLowerCase();
     const matchesSeller = sellerFilter === 'todos' || String(v.seller ?? '').toLowerCase() === sellerFilter.toLowerCase();
-    const matchesBranch = branchFilter === 'todos' || String(v.branch ?? '').toLowerCase() === branchFilter.toLowerCase();
+    const matchesBranch = branchFilter === 'todos' || branchMatches(v.branch, branchFilter);
     const matchesQuery =
       !q.trim() ||
       String(v.companyName ?? '').toLowerCase().includes(q) ||
@@ -637,10 +640,11 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({
             className="text-xs border border-[#DCD4C9] rounded-xs px-2.5 py-1.5 outline-none font-medium bg-white text-[#18231C]"
           >
             <option value="todos">Local: Todos</option>
-            <option value="Maipú">Maipú</option>
-            <option value="Ciudad">Ciudad</option>
-            <option value="Luján">Luján</option>
-            <option value="Godoy Cruz">Godoy Cruz</option>
+            {configuredBranchNames.map((b) => (
+              <option key={b} value={b}>
+                {b}
+              </option>
+            ))}
           </select>
         </div>
 
@@ -1313,10 +1317,11 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({
                     onChange={(e) => setBranch(e.target.value)}
                     className="w-full px-2.5 py-2 border border-[#DCD4C9] rounded-xs bg-white outline-none"
                   >
-                    <option value="Maipú">Maipú</option>
-                    <option value="Ciudad">Ciudad</option>
-                    <option value="Luján">Luján</option>
-                    <option value="Godoy Cruz">Godoy Cruz</option>
+                    {configuredBranchNames.map((b) => (
+                      <option key={b} value={b}>
+                        {b}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div>

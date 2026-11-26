@@ -7,6 +7,7 @@ import {
   deleteFirestoreEmployee,
   createFirebaseAuthAndFirestoreUser,
 } from '../../services/firebase';
+import { useConfiguredBranches } from '../../utils/useConfiguredBranches';
 import { 
   UserCheck, 
   UserPlus, 
@@ -77,6 +78,7 @@ export const INITIAL_EMPLOYEES: EmployeeAccount[] = [
 ];
 
 export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSaveNotice }) => {
+  const { branchNames: configuredBranchNames, resolveBranch: resolveConfiguredBranch } = useConfiguredBranches();
   const [employees, setEmployees] = useState<EmployeeAccount[]>(() => {
     try {
       const saved = localStorage.getItem('pampero_employees');
@@ -111,7 +113,7 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [branch, setBranch] = useState('Maipú');
+  const [branch, setBranch] = useState(() => configuredBranchNames[0] || 'Pampero Maipú');
   const [sellerName, setSellerName] = useState('');
   const [sellerRole, setSellerRole] = useState<'encargado' | 'local' | 'vendedor'>('vendedor');
   const [crmScope, setCrmScope] = useState<'all' | 'branch_only' | 'own_only'>('branch_only');
@@ -145,7 +147,7 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
     setName('');
     setEmail('');
     setPassword('Pampero2026');
-    setBranch('Maipú');
+    setBranch(configuredBranchNames[0] || 'Pampero Maipú');
     setSellerName('');
     setSellerRole('vendedor');
     setCrmScope('branch_only');
@@ -160,7 +162,7 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
     setName(emp.name);
     setEmail(emp.email);
     setPassword(emp.password || '');
-    setBranch(emp.branch || 'Maipú');
+    setBranch(resolveConfiguredBranch(emp.branch, true));
     setSellerName(emp.sellerName || '');
     setSellerRole(
       emp.sellerRole === 'encargado'
@@ -552,9 +554,11 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
                     onChange={(e) => setBranch(e.target.value)}
                     className="w-full px-3 py-2 text-xs bg-[#FAF8F5] rounded-xs border border-[#DCD4C9] outline-none cursor-pointer"
                   >
-                    <option value="Maipú">Maipú</option>
-                    <option value="Ciudad">Ciudad</option>
-                    <option value="Luján">Luján de Cuyo</option>
+                    {configuredBranchNames.map((b) => (
+                      <option key={b} value={b}>
+                        {b}
+                      </option>
+                    ))}
                     <option value="Todas">Todas (Supervisor / Gerente)</option>
                   </select>
                 </div>
@@ -574,11 +578,11 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
                         setCanControlTasks(true);
                       } else if (next === 'local') {
                         setCrmScope('branch_only');
-                        if (branch === 'Todas') setBranch('Maipú');
+                        if (branch === 'Todas') setBranch(configuredBranchNames[0] || 'Pampero Maipú');
                         setCanControlTasks(true);
                       } else {
                         setCrmScope('branch_only');
-                        if (branch === 'Todas') setBranch('Maipú');
+                        if (branch === 'Todas') setBranch(configuredBranchNames[0] || 'Pampero Maipú');
                       }
                     }}
                     className="w-full px-3 py-2 text-xs bg-[#FAF8F5] rounded-xs border border-[#DCD4C9] outline-none cursor-pointer font-semibold"

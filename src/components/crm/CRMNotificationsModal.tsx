@@ -12,11 +12,13 @@ import {
   Check,
   CheckCheck,
   ArrowRight,
+  DollarSign,
+  Sparkles,
 } from 'lucide-react';
 
 export interface CRMNotificationItem {
   id: string;
-  category: 'reminder' | 'blocked' | 'delayed' | 'visit' | 'chat';
+  category: 'reminder' | 'blocked' | 'delayed' | 'visit' | 'chat' | 'missing_amount' | 'new_quote';
   title: string;
   subtitle: string;
   meta: string;
@@ -88,6 +90,10 @@ export const CRMNotificationsModal: React.FC<CRMNotificationsModalProps> = ({
         return <CheckCircle2 className="w-4 h-4 text-purple-600 shrink-0" />;
       case 'chat':
         return <MessageSquare className="w-4 h-4 text-blue-600 shrink-0" />;
+      case 'missing_amount':
+        return <DollarSign className="w-4 h-4 text-emerald-700 shrink-0" />;
+      case 'new_quote':
+        return <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />;
     }
   };
 
@@ -267,7 +273,7 @@ export const CRMNotificationsModal: React.FC<CRMNotificationsModalProps> = ({
                         }}
                         className="px-2.5 py-1 bg-[#18231C] hover:bg-black text-white text-[10px] font-bold uppercase tracking-wider rounded-xs inline-flex items-center gap-1 cursor-pointer"
                       >
-                        <span>Abrir Ficha</span>
+                        <span>{item.category === 'missing_amount' ? 'Cargar Monto' : 'Abrir Ficha'}</span>
                         <ArrowRight className="w-3 h-3" />
                       </button>
                     )}

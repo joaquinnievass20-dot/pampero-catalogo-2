@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { CRMSale } from '../../types';
 import { fixUtf8Encoding } from '../../utils/encodingUtils';
+import { branchMatches, DEFAULT_UNIFIED_BRANCH_NAMES, resolveConfiguredBranchName } from '../../utils/rrhhBranches';
 
 interface CRMSalesModalProps {
   isOpen: boolean;
@@ -34,18 +35,24 @@ export const CRMSalesModal: React.FC<CRMSalesModalProps> = ({
   onClose,
   sales,
   accentColor = '#FDB813',
-  branches = ['Maipú', 'Ciudad', 'Luján'],
+  branches = [...DEFAULT_UNIFIED_BRANCH_NAMES],
   onSaveSale,
   onDeleteSale,
 }) => {
-  // Normalize standard branches
-  const standardBranches = ['Maipú', 'Ciudad', 'Luján'];
-  const allBranches = Array.from(new Set([...standardBranches, ...branches.map(b => b.replace('Pampero ', '').trim())]));
+  // Active configured branches only (deduplicated)
+  const allBranches = Array.from(
+    new Set(
+      (branches && branches.length > 0 ? branches : [...DEFAULT_UNIFIED_BRANCH_NAMES])
+        .map((b) => fixUtf8Encoding(b).trim())
+        .filter(Boolean)
+    )
+  );
+  const defaultBranch = allBranches[0] || DEFAULT_UNIFIED_BRANCH_NAMES[0];
 
   // Form states
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formDate, setFormDate] = useState(() => new Date().toISOString().split('T')[0]);
-  const [formBranch, setFormBranch] = useState<string>('Maipú');
+  const [formBranch, setFormBranch] = useState<string>(defaultBranch);
   const [formPeriod, setFormPeriod] = useState<'Diario' | 'Semanal' | 'Mensual'>('Diario');
   const [formAmount, setFormAmount] = useState<string>('');
   const [formDetail, setFormDetail] = useState<string>('');
@@ -61,7 +68,7 @@ export const CRMSalesModal: React.FC<CRMSalesModalProps> = ({
   const resetForm = () => {
     setEditingId(null);
     setFormDate(new Date().toISOString().split('T')[0]);
-    setFormBranch('Maipú');
+    setFormBranch(defaultBranch);
     setFormPeriod('Diario');
     setFormAmount('');
     setFormDetail('');
@@ -80,9 +87,9 @@ export const CRMSalesModal: React.FC<CRMSalesModalProps> = ({
     setFormDate(sale.date || new Date().toISOString().split('T')[0]);
     
     // Match branch cleanly
-    const bName = sale.branch || 'Maipú';
-    const foundBranch = allBranches.find(b => b.toLowerCase() === bName.toLowerCase() || bName.toLowerCase().includes(b.toLowerCase()));
-    setFormBranch(foundBranch || bName);
+    const bName = sale.branch || defaultBranch;
+    const foundBranch = allBranches.find((b) => branchMatches(bName, b));
+    setFormBranch(foundBranch || resolveConfiguredBranchName(bName, undefined, false));
 
     setFormPeriod((sale.period as any) || 'Diario');
     setFormAmount(String(sale.amount ?? sale.totalDaily ?? ''));
@@ -163,12 +170,7 @@ export const CRMSalesModal: React.FC<CRMSalesModalProps> = ({
 
   // Filtered sales for history table inside modal
   const modalFilteredSales = sales.filter((item) => {
-    const itemBranchNorm = (item.branch || '').toLowerCase();
-    const filterBranchNorm = tableBranchFilter.toLowerCase();
-    const matchBranch = tableBranchFilter === 'todas' || 
-      itemBranchNorm === filterBranchNorm || 
-      itemBranchNorm.includes(filterBranchNorm) || 
-      filterBranchNorm.includes(itemBranchNorm);
+    const matchBranch = tableBranchFilter === 'todas' || branchMatches(item.branch, tableBranchFilter);
 
     const matchSearch = !searchFilter.trim() || 
       (item.detail || '').toLowerCase().includes(searchFilter.toLowerCase()) ||
@@ -450,7 +452,7 @@ export const CRMSalesModal: React.FC<CRMSalesModalProps> = ({
                           </td>
                           <td className="px-3.5 py-2.5 whitespace-nowrap">
                             <span className="font-bold text-[#18231C] px-1.5 py-0.5 rounded-xs bg-[#FAF8F5] border border-[#DCD4C9] text-[11px]">
-                              {fixUtf8Encoding(s.branch || 'Maipú')}
+                              {fixUtf8Encoding(resolveConfiguredBranchName(s.branch, undefined, false))}
                             </span>
                           </td>
                           <td className="px-3.5 py-2.5 whitespace-nowrap">

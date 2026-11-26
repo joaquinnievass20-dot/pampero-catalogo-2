@@ -12,6 +12,7 @@ import {
 } from '../services/firebase';
 import { formatDateTime } from '../utils/dateUtils';
 import { QRCodeSVG } from 'qrcode.react';
+import { useConfiguredBranches } from '../utils/useConfiguredBranches';
 import { 
   User, 
   Mail, 
@@ -63,6 +64,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   const accent = theme?.accentColor || '#FDB813';
   const isCompany = userSession?.clientType === 'empresa';
   const d = userSession?.clientData || {};
+  const { branchNames: configuredBranchNames, resolveBranch: resolveConfiguredBranch } = useConfiguredBranches();
 
   const [activeTab, setActiveTab] = useState<'profile' | 'quotes' | 'security'>(initialTab);
   const [quoteHistory, setQuoteHistory] = useState<any[]>([]);
@@ -99,7 +101,9 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   const [street, setStreet] = useState(initialStreet);
   const [streetNumber, setStreetNumber] = useState(initialNumber);
   const [city, setCity] = useState(initialCity);
-  const [nearestBranch, setNearestBranch] = useState(d.nearestBranch || userSession?.branch || 'Maipú');
+  const [nearestBranch, setNearestBranch] = useState(() =>
+    resolveConfiguredBranch(d.nearestBranch || userSession?.branch || '', false)
+  );
   const [companyLocation, setCompanyLocation] = useState(d.companyLocation || '');
   const [locationUrl, setLocationUrl] = useState(d.locationUrl || '');
   const [savedSuccess, setSavedSuccess] = useState(false);
@@ -150,7 +154,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
     setStreet(nextStreet);
     setStreetNumber(nextNumber);
     setCity(nextCity);
-    setNearestBranch(data.nearestBranch || userSession.branch || 'Maipú');
+    setNearestBranch(resolveConfiguredBranch(data.nearestBranch || userSession.branch || '', false));
     setCompanyLocation(data.companyLocation || '');
     setLocationUrl(data.locationUrl || '');
     setAvatarUrl(userSession.avatarUrl || '');
@@ -840,9 +844,11 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                   onChange={(e) => setNearestBranch(e.target.value)}
                   className="w-full px-3 py-2 text-xs bg-white rounded-xs border border-[#DCD4C9] outline-none focus:border-[#FDB813]"
                 >
-                  <option value="Maipú">Maipú</option>
-                  <option value="Ciudad">Ciudad (Mendoza)</option>
-                  <option value="Luján">Luján de Cuyo</option>
+                  {configuredBranchNames.map((b) => (
+                    <option key={b} value={b}>
+                      {b}
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>

@@ -97,6 +97,7 @@ export interface NotificationSettings {
   notifyStaleOrders: boolean; // default true
   notifyBlockedOrders: boolean; // default true
   notifyPendingVisits: boolean; // default true
+  notifyMissingOrderAmounts?: boolean; // default true
 }
 
 export interface ReceivedQuote {

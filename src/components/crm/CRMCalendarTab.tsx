@@ -26,6 +26,7 @@ import {
   subscribeToCRMTasks,
 } from '../../services/firebase';
 import { fixUtf8Encoding, sanitizeObjectEncoding } from '../../utils/encodingUtils';
+import { useConfiguredBranches } from '../../utils/useConfiguredBranches';
 import {
   AlertTriangle,
   Building2,
@@ -214,9 +215,12 @@ export const CRMCalendarTab: React.FC<CRMCalendarTabProps> = ({
   const [eventTitle, setEventTitle] = useState('');
   const [eventDescription, setEventDescription] = useState('');
   const [eventDate, setEventDate] = useState(todayStr);
+  const { branchNames: configuredBranchNames, resolveBranch: resolveConfiguredBranch } = useConfiguredBranches();
   const [eventTime, setEventTime] = useState('');
   const [eventType, setEventType] = useState<CRMCalendarEventType>('vencimiento');
-  const [eventBranch, setEventBranch] = useState(assignedBranch || 'Maipú');
+  const [eventBranch, setEventBranch] = useState(() =>
+    resolveConfiguredBranch(assignedBranch || '', true) || configuredBranchNames[0] || 'Pampero Maipú'
+  );
   const [visibilityType, setVisibilityType] = useState<'all' | 'branch' | 'custom'>('all');
   const [visibleToUsers, setVisibleToUsers] = useState<string[]>([]);
   const [isSavingEvent, setIsSavingEvent] = useState(false);
@@ -675,7 +679,7 @@ export const CRMCalendarTab: React.FC<CRMCalendarTabProps> = ({
     setEventDate(prefillDate || selectedDate || todayStr);
     setEventTime('');
     setEventType('vencimiento');
-    setEventBranch(assignedBranch || 'Maipú');
+    setEventBranch(resolveConfiguredBranch(assignedBranch || '', true) || configuredBranchNames[0] || 'Pampero Maipú');
     setVisibilityType(calendarConfig.defaultVisibilityType || 'all');
     setVisibleToUsers([]);
     setShowEventModal(true);
@@ -1269,9 +1273,11 @@ export const CRMCalendarTab: React.FC<CRMCalendarTabProps> = ({
                   onChange={(e) => setEventBranch(e.target.value)}
                   className="w-full px-3 py-2 border border-[#DCD4C9] rounded-xs bg-white outline-none"
                 >
-                  <option value="Maipú">Maipú</option>
-                  <option value="Ciudad">Ciudad</option>
-                  <option value="Luján">Luján</option>
+                  {configuredBranchNames.map((b) => (
+                    <option key={b} value={b}>
+                      {b}
+                    </option>
+                  ))}
                   <option value="Todas">Todas las Sucursales</option>
                 </select>
               </div>

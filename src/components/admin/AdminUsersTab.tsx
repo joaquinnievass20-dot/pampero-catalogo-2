@@ -10,6 +10,8 @@ import {
   sendUserPasswordResetEmail,
   syncAllRegisteredUsersToFirebase,
 } from '../../services/firebase';
+import { useConfiguredBranches } from '../../utils/useConfiguredBranches';
+import { branchMatches } from '../../utils/rrhhBranches';
 import { 
   Users, 
   Building2, 
@@ -80,6 +82,12 @@ export const INITIAL_REGISTERED_USERS: RegisteredUser[] = [
 ];
 
 export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice, branches }) => {
+  const { branchNames: configuredBranchNames, resolveBranch: resolveConfiguredBranch } = useConfiguredBranches();
+  const branchOptions = useMemo(
+    () => (configuredBranchNames.length > 0 ? configuredBranchNames : (branches || []).map((b) => b.name).filter(Boolean)),
+    [configuredBranchNames, branches]
+  );
+
   // Sincronización completa con Firestore y Local Storage (sin regenerar cuentas ficticias)
   const [users, setUsers] = useState<RegisteredUser[]>(() => {
     try {
@@ -112,7 +120,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
   const [newAccountCity, setNewAccountCity] = useState('Gran Mendoza');
   const [newAccountLocation, setNewAccountLocation] = useState('');
   const [newAccountLocationUrl, setNewAccountLocationUrl] = useState('');
-  const [newAccountBranch, setNewAccountBranch] = useState(branches?.[0]?.name || 'Maipú');
+  const [newAccountBranch, setNewAccountBranch] = useState(() => branchOptions[0] || 'Pampero Maipú');
   const [newAccountPassword, setNewAccountPassword] = useState('Pampero2026');
   const [showPassword, setShowPassword] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -383,10 +391,10 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
       cuitOrDni: newAccountCuit.trim() || 'Sin registrar',
       address: newAccountAddress.trim() || 'Gran Mendoza',
       city: newAccountCity.trim() || 'Gran Mendoza',
-      nearestBranch: isEncargado ? 'Todas' : (newAccountBranch || 'Maipú'),
+      nearestBranch: isEncargado ? 'Todas' : resolveConfiguredBranch(newAccountBranch, false),
       companyLocation: newAccountLocation.trim() || undefined,
       locationUrl: newAccountLocationUrl.trim() || undefined,
-      branch: isEncargado ? 'Todas' : (newAccountType === 'empleado' ? newAccountBranch : (newAccountType === 'admin' ? 'Administración Central' : newAccountBranch)),
+      branch: isEncargado ? 'Todas' : (newAccountType === 'empleado' ? resolveConfiguredBranch(newAccountBranch, false) : (newAccountType === 'admin' ? 'Administración Central' : resolveConfiguredBranch(newAccountBranch, false))),
       sellerRole: isEncargado ? 'encargado' : (newAccountType === 'empleado' ? 'vendedor' : undefined),
       crmScope: isEncargado ? 'all' : (newAccountType === 'empleado' ? 'branch_only' : undefined),
       canControlTasks: isEncargado ? true : undefined,
@@ -500,7 +508,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
 
       // Filtro de sucursal
       if (filterBranch !== 'todas') {
-        if (u.branch && u.branch.toLowerCase() !== filterBranch.toLowerCase()) return false;
+        if (!u.branch || !branchMatches(u.branch, filterBranch)) return false;
       }
 
       // Filtro de búsqueda (sin incluir contraseñas)
@@ -768,9 +776,11 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
             className="px-2.5 py-1 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs font-semibold text-[#18231C] outline-none cursor-pointer"
           >
             <option value="todas">Todas las sucursales</option>
-            <option value="Maipú">Sucursal Maipú</option>
-            <option value="Ciudad">Sucursal Ciudad</option>
-            <option value="Luján">Sucursal Luján</option>
+            {branchOptions.map((b) => (
+              <option key={b} value={b}>
+                {b}
+              </option>
+            ))}
           </select>
         </div>
       </div>
@@ -1277,9 +1287,11 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
                           onChange={(e) => setNewAccountBranch(e.target.value)}
                           className="w-full px-3 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs font-semibold text-[#18231C] outline-none focus:border-[#B9522F]"
                         >
-                          <option value="Maipú">Sucursal Maipú</option>
-                          <option value="Ciudad">Sucursal Ciudad</option>
-                          <option value="Luján">Sucursal Luján</option>
+                          {branchOptions.map((b) => (
+                            <option key={b} value={b}>
+                              {b}
+                            </option>
+                          ))}
                         </select>
                       </div>
                     ) : null}
@@ -1355,9 +1367,11 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
                           onChange={(e) => setNewAccountBranch(e.target.value)}
                           className="w-full px-3 py-1.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs text-xs text-[#18231C] outline-none focus:border-[#B9522F]"
                         >
-                          <option value="Maipú">Maipú</option>
-                          <option value="Ciudad">Ciudad</option>
-                          <option value="Luján">Luján</option>
+                          {branchOptions.map((b) => (
+                            <option key={b} value={b}>
+                              {b}
+                            </option>
+                          ))}
                         </select>
                       </div>
                       <div>

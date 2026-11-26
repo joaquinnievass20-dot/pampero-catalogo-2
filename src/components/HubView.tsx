@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { UserSession, ThemeConfig, InternalChatThread } from '../types';
-import { LayoutDashboard, Settings, ShoppingBag, LogOut, ShieldCheck, User, ArrowRight, Bell, Users, Wallet, MessageSquare } from 'lucide-react';
-import { subscribeToCRMOrders, subscribeToFirestoreEmployees } from '../services/firebase';
+import { LayoutDashboard, Settings, ShoppingBag, LogOut, ShieldCheck, User, ArrowRight, Users, Wallet, MessageSquare } from 'lucide-react';
+import { subscribeToFirestoreEmployees } from '../services/firebase';
 import { hasAdminPanelAccess, hasCRMAccess, hasRRHHAccess, hasCostsAccess } from '../utils/permissions';
 import { PamperoLogo } from './PamperoLogo';
 import { isColorDark } from '../context/ThemeContext';
@@ -43,16 +43,7 @@ export const HubView: React.FC<HubViewProps> = ({
   const isHubDark = isColorDark(hubBg);
   const hubText = theme?.hubTextColor || (isHubDark ? '#F5F2EC' : '#18231C');
 
-  const [newQuotesCount, setNewQuotesCount] = useState<number>(0);
   const [livePermTick, setLivePermTick] = useState(0);
-
-  useEffect(() => {
-    const unsub = subscribeToCRMOrders((orders) => {
-      const pending = orders.filter((o) => (o.columnId || o.status) === 'cotizacion').length;
-      setNewQuotesCount(pending);
-    });
-    return () => unsub();
-  }, []);
 
   useEffect(() => {
     if (userSession.role !== 'employee') return;
@@ -234,36 +225,6 @@ export const HubView: React.FC<HubViewProps> = ({
           </div>
         )}
 
-        {/* Notificación Banner de Nuevo Pedido en el CRM */}
-        {canSeeCRM && newQuotesCount > 0 && (
-          <div className="mb-8 p-4 bg-amber-50 border-2 border-[#FDB813] rounded-xs shadow-md flex flex-col sm:flex-row items-center justify-between gap-4 animate-fadeIn">
-            <div className="flex items-center gap-3 text-center sm:text-left">
-              <div className="w-10 h-10 rounded-full bg-[#FDB813] text-[#18231C] flex items-center justify-center shrink-0 font-black shadow-xs">
-                <Bell className="w-5 h-5 text-[#18231C]" />
-              </div>
-              <div>
-                <h3 className="font-display font-bold text-sm sm:text-base text-[#18231C] uppercase tracking-wider flex items-center gap-2 justify-center sm:justify-start">
-                  <span>¡Nuevo pedido para cotizar recibido!</span>
-                  <span className="px-2 py-0.5 bg-red-600 text-white text-[10px] rounded-full font-black shadow-xs tabular-nums">
-                    +{newQuotesCount} {newQuotesCount === 1 ? 'nuevo' : 'nuevos'}
-                  </span>
-                </h3>
-                <p className="text-xs text-[#6F6860] mt-0.5">
-                  Hay cotizaciones entrantes registradas desde la plataforma esperando armado de cotización oficial y asignación de asesor.
-                </p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={onOpenCRM}
-              className="px-4 py-2 bg-[#18231C] hover:bg-black text-[#FDB813] rounded-xs text-xs font-black uppercase tracking-wider whitespace-nowrap cursor-pointer transition-all shadow-xs flex items-center gap-1.5 shrink-0"
-            >
-              <span>Atender en CRM</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
-          </div>
-        )}
-
         {/* Dynamic Action Cards */}
         <div className={`grid ${gridColsClass}`}>
           {/* 1. Gestión / CRM */}
@@ -271,11 +232,6 @@ export const HubView: React.FC<HubViewProps> = ({
             <div className="bg-white rounded-xs border-2 border-[#DCD4C9] hover:border-[#B9522F] shadow-sm hover:shadow-xl transition-all duration-200 flex flex-col p-6 text-center group relative">
               <div className="relative w-16 h-16 rounded-xs bg-amber-50 text-[#B9522F] flex items-center justify-center mx-auto mb-5 group-hover:scale-105 transition-transform border border-amber-200">
                 <LayoutDashboard className="w-8 h-8" />
-                {newQuotesCount > 0 && (
-                  <span className="absolute -top-2 -right-2 px-2 py-0.5 rounded-full bg-red-600 text-white text-[10px] font-black uppercase tracking-wider shadow-md border-2 border-white tabular-nums">
-                    +{newQuotesCount}
-                  </span>
-                )}
               </div>
               <h2 className="text-lg font-black text-[#18231C] uppercase tracking-wider mb-2">
                 {st?.hubCrmCardText || 'Gestión / CRM'}

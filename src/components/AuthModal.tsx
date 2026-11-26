@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { authenticateDualUser } from '../services/firebase';
 import { UserSession, ClientType, ConsumerClient, CompanyClient } from '../types';
 import { PamperoLogo } from './PamperoLogo';
+import { useConfiguredBranches } from '../utils/useConfiguredBranches';
 import { 
   User, 
   Building2, 
@@ -29,6 +30,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   onClose,
   canClose = false,
 }) => {
+  const { branchNames: configuredBranchNames, resolveBranch: resolveConfiguredBranch } = useConfiguredBranches();
+  const defaultBranch = configuredBranchNames[0] || 'Pampero Maipú';
   const [authTab, setAuthTab] = useState<'client' | 'admin'>('client');
   const [clientType, setClientType] = useState<ClientType>('consumidor_final');
 
@@ -37,7 +40,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     fullName: '',
     email: '',
     phone: '',
-    nearestBranch: 'Maipú',
+    nearestBranch: defaultBranch,
     companyLocation: '',
     locationUrl: '',
     address: {
@@ -55,7 +58,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     cuit: '',
     institutionalEmail: '',
     institutionalPhone: '',
-    nearestBranch: 'Maipú',
+    nearestBranch: defaultBranch,
     companyLocation: '',
     locationUrl: '',
     address: {
@@ -501,13 +504,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
                       <select
-                        value={consumerData.nearestBranch || 'Maipú'}
+                        value={resolveConfiguredBranch(consumerData.nearestBranch, false)}
                         onChange={(e) => setConsumerData({ ...consumerData, nearestBranch: e.target.value })}
                         className="w-full px-3 py-2 rounded-lg border border-neutral-300 focus:border-[#E52421] text-xs font-medium bg-white"
                       >
-                        <option value="Maipú">Local más cercano: Maipú</option>
-                        <option value="Ciudad">Local más cercano: Ciudad</option>
-                        <option value="Luján">Local más cercano: Luján de Cuyo</option>
+                        {configuredBranchNames.map((b) => (
+                          <option key={b} value={b}>
+                            Local más cercano: {b}
+                          </option>
+                        ))}
                       </select>
                       <input
                         type="text"
@@ -697,13 +702,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2">
                       <select
-                        value={companyData.nearestBranch || 'Maipú'}
+                        value={resolveConfiguredBranch(companyData.nearestBranch, false)}
                         onChange={(e) => setCompanyData({ ...companyData, nearestBranch: e.target.value })}
                         className="w-full px-3 py-2 rounded-lg border border-neutral-300 focus:border-[#E52421] text-xs font-medium bg-white"
                       >
-                        <option value="Maipú">Local cercano: Maipú</option>
-                        <option value="Ciudad">Local cercano: Ciudad</option>
-                        <option value="Luján">Local cercano: Luján de Cuyo</option>
+                        {configuredBranchNames.map((b) => (
+                          <option key={b} value={b}>
+                            Local cercano: {b}
+                          </option>
+                        ))}
                       </select>
                       <input
                         type="text"

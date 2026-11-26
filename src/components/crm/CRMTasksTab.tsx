@@ -26,6 +26,8 @@ import {
 } from '../../services/firebase';
 import { fixUtf8Encoding, sanitizeObjectEncoding } from '../../utils/encodingUtils';
 import { formatDateTime } from '../../utils/dateUtils';
+import { useConfiguredBranches } from '../../utils/useConfiguredBranches';
+import { branchMatches } from '../../utils/rrhhBranches';
 import {
   AlertTriangle,
   ArrowRight,
@@ -280,6 +282,7 @@ export const CRMTasksTab: React.FC<CRMTasksTabProps> = ({
   crmScope,
   theme,
 }) => {
+  const { branchNames: configuredBranchNames, resolveBranch: resolveConfiguredBranch } = useConfiguredBranches();
   const [columns, setColumns] = useState<KanbanColumnConfig[]>(() => {
     try {
       const saved = localStorage.getItem('pampero_kanban_tasks_cols');
@@ -356,8 +359,8 @@ export const CRMTasksTab: React.FC<CRMTasksTabProps> = ({
   // Filtros
   const [assigneeFilter, setAssigneeFilter] = useState('todos');
   const [branchFilter, setBranchFilter] = useState(() => {
-    if (userSession?.role !== 'admin' && assignedBranch && assignedBranch !== 'Todas') {
-      return assignedBranch.toLowerCase();
+    if (userSession?.role !== 'admin' && assignedBranch && assignedBranch.toLowerCase() !== 'todas') {
+      return resolveConfiguredBranch(assignedBranch, true);
     }
     return 'todos';
   });
@@ -385,7 +388,11 @@ export const CRMTasksTab: React.FC<CRMTasksTabProps> = ({
   const [importance, setImportance] = useState<CRMTaskImportance>('media');
   const [assignedToList, setAssignedToList] = useState<string[]>([currentUserLabel]);
   const [customAssigneeInput, setCustomAssigneeInput] = useState('');
-  const [branch, setBranch] = useState(assignedBranch && assignedBranch !== 'Todas' ? assignedBranch : 'Maipú');
+  const [branch, setBranch] = useState(() =>
+    assignedBranch && assignedBranch.toLowerCase() !== 'todas'
+      ? resolveConfiguredBranch(assignedBranch, true)
+      : configuredBranchNames[0] || 'Pampero Maipú'
+  );
   const [dueDate, setDueDate] = useState('');
   const [dueTime, setDueTime] = useState('');
   const [requiredAdvance, setRequiredAdvance] = useState('');
@@ -424,7 +431,7 @@ export const CRMTasksTab: React.FC<CRMTasksTabProps> = ({
 
       if (isManager || hasControlPermission) {
         if (!myBranch || myBranch === 'todas' || taskBranch === 'todas') return true;
-        return taskBranch === myBranch;
+        return branchMatches(t.branch, assignedBranch);
       }
 
       if (crmScope === 'all') return true;
@@ -448,7 +455,7 @@ export const CRMTasksTab: React.FC<CRMTasksTabProps> = ({
       if (crmScope === 'own_only') return isMine;
 
       if (!myBranch || myBranch === 'todas' || taskBranch === 'todas') return true;
-      return taskBranch === myBranch || isMine;
+      return branchMatches(t.branch, assignedBranch) || isMine;
     });
   }, [tasks, userSession?.role, userSession?.email, isManager, hasControlPermission, assignedBranch, crmScope, currentUserLabel]);
 
@@ -526,7 +533,9 @@ export const CRMTasksTab: React.FC<CRMTasksTabProps> = ({
         assigneeFilter === 'todos' || assignees.some((a) => a === assigneeFilter.toLowerCase());
       const matchesBranch =
         branchFilter === 'todos' ||
-        (t.branch || '').toLowerCase().includes(branchFilter.toLowerCase());
+        (branchFilter.toLowerCase() === 'todas'
+          ? (t.branch || '').toLowerCase() === 'todas'
+          : branchMatches(t.branch, branchFilter));
       const matchesImportance =
         importanceFilter === 'todas' || t.importance === importanceFilter;
       const matchesTag =
@@ -574,7 +583,7 @@ export const CRMTasksTab: React.FC<CRMTasksTabProps> = ({
     if (tpl.defaultRequiredAdvance) setRequiredAdvance(fixUtf8Encoding(tpl.defaultRequiredAdvance));
     if (tpl.defaultTargetProgressPercent) setTargetProgressPercent(tpl.defaultTargetProgressPercent);
     if (tpl.defaultBranch && (userSession?.role === 'admin' || !assignedBranch || assignedBranch === 'Todas')) {
-      setBranch(tpl.defaultBranch);
+      setBranch(resolveConfiguredBranch(tpl.defaultBranch, true));
     }
   };
 
@@ -587,7 +596,11 @@ export const CRMTasksTab: React.FC<CRMTasksTabProps> = ({
     setImportance('media');
     setAssignedToList([currentUserLabel]);
     setCustomAssigneeInput('');
-    setBranch(assignedBranch && assignedBranch !== 'Todas' ? assignedBranch : 'Maipú');
+    setBranch(
+      assignedBranch && assignedBranch.toLowerCase() !== 'todas'
+        ? resolveConfiguredBranch(assignedBranch, true)
+        : configuredBranchNames[0] || 'Pampero Maipú'
+    );
     setDueDate('');
     setDueTime('');
     setRequiredAdvance('');
@@ -625,7 +638,7 @@ export const CRMTasksTab: React.FC<CRMTasksTabProps> = ({
     );
     setAssignedToList(initialList.length > 0 ? initialList : [currentUserLabel]);
     setCustomAssigneeInput('');
-    setBranch(fixUtf8Encoding(task.branch || assignedBranch || 'Maipú'));
+    setBranch(resolveConfiguredBranch(task.branch || assignedBranch || '', true));
     setDueDate(task.dueDate || '');
     setDueTime(task.dueTime || '');
     setRequiredAdvance(fixUtf8Encoding(task.requiredAdvance || ''));
@@ -803,7 +816,7 @@ export const CRMTasksTab: React.FC<CRMTasksTabProps> = ({
       assignedToList: finalAssignees,
       createdBy: editingTask ? editingTask.createdBy : currentUserLabel,
       createdByEmail: editingTask ? editingTask.createdByEmail : userSession?.email,
-      branch: branch || 'Maipú',
+      branch: resolveConfiguredBranch(branch, true),
       dueDate: effectiveDueDate,
       dueTime: effectiveDueTime,
       requiredAdvance: effectiveRequiredAdvance,
@@ -1069,9 +1082,11 @@ export const CRMTasksTab: React.FC<CRMTasksTabProps> = ({
           }`}
         >
           {userSession?.role === 'admin' && <option value="todos">Local: Todos</option>}
-          <option value="maipú">Local Maipú</option>
-          <option value="ciudad">Local Ciudad</option>
-          <option value="luján">Local Luján</option>
+          {configuredBranchNames.map((b) => (
+            <option key={b} value={b}>
+              {b}
+            </option>
+          ))}
           <option value="todas">Todos los locales</option>
         </select>
 
@@ -1595,9 +1610,11 @@ export const CRMTasksTab: React.FC<CRMTasksTabProps> = ({
                     onChange={(e) => setBranch(e.target.value)}
                     className="w-full px-2.5 py-2 border border-[#DCD4C9] rounded-xs bg-white outline-none disabled:bg-neutral-100"
                   >
-                    <option value="Maipú">Maipú</option>
-                    <option value="Ciudad">Ciudad</option>
-                    <option value="Luján">Luján</option>
+                    {configuredBranchNames.map((b) => (
+                      <option key={b} value={b}>
+                        {b}
+                      </option>
+                    ))}
                     <option value="Todas">Todas</option>
                   </select>
                 </div>
