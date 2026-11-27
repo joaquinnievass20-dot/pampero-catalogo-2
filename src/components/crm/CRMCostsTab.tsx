@@ -679,7 +679,7 @@ export const CRMCostsTab: React.FC<CRMCostsTabProps> = ({
                       ? 'bg-emerald-50 border-emerald-300 text-emerald-800' 
                       : 'bg-amber-50 border-amber-300 text-amber-800'
                   }`}>
-                    {isAdmin ? 'Dashboard Administrador' : 'Empleado · Carga Directa (Write-Only)'}
+                    {isAdmin ? 'Dashboard Administrador' : 'Colaborador · Carga Directa (Write-Only)'}
                   </span>
                 </div>
                 <p className="text-xs text-[#6F6860] mt-0.5">

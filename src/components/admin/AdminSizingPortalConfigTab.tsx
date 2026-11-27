@@ -195,7 +195,7 @@ export const AdminSizingPortalConfigTab: React.FC<AdminSizingPortalConfigTabProp
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-[#DCD4C9]">
           <div>
-            <label className="block font-bold text-neutral-700 mb-1">WhatsApp de Soporte para Empleados</label>
+            <label className="block font-bold text-neutral-700 mb-1">WhatsApp de Soporte para Colaboradores</label>
             <input
               type="text"
               value={config.contactSupportPhone}

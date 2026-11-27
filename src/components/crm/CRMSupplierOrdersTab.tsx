@@ -73,6 +73,7 @@ export const CRMSupplierOrdersTab: React.FC<CRMSupplierOrdersTabProps> = ({
   const [showModal, setShowModal] = useState(false);
   const [editingOrder, setEditingOrder] = useState<SupplierOrder | null>(null);
   const [linkedShortageIds, setLinkedShortageIds] = useState<string[]>([]);
+  const [receivedShortageIds, setReceivedShortageIds] = useState<string[]>([]);
 
   // Standalone shortages collection subscription
   const [collectionShortages, setCollectionShortages] = useState<CRMOrderShortageItem[]>([]);
@@ -207,7 +208,9 @@ export const CRMSupplierOrdersTab: React.FC<CRMSupplierOrdersTabProps> = ({
 
   const openEditModal = (o: SupplierOrder) => {
     setEditingOrder(o);
-    setLinkedShortageIds([]);
+    const matchedShortages = allShortages.filter((s) => s.supplierOrderId === o.id);
+    setLinkedShortageIds(matchedShortages.map((s) => s.id));
+    setReceivedShortageIds(matchedShortages.filter((s) => s.status === 'recibido').map((s) => s.id));
     setOrderNumber(o.orderNumber);
     setSupplierName(o.supplierName);
     setOrderDate(o.orderDate);
@@ -250,13 +253,17 @@ export const CRMSupplierOrdersTab: React.FC<CRMSupplierOrdersTabProps> = ({
     e.preventDefault();
     if (!orderNumber.trim()) return;
 
+    const isReceivedStatus = status === 'recibido_completo' || status === 'recibido_incompleto';
+    const resolvedActualArrival =
+      actualArrivalDate || (isReceivedStatus ? new Date().toISOString().split('T')[0] : undefined);
+
     const data: SupplierOrder = {
       id: editingOrder ? editingOrder.id : `SUP-${Date.now().toString().slice(-6)}`,
       orderNumber: orderNumber.trim(),
       supplierName: supplierName.trim() || 'Macata',
       orderDate,
       estimatedArrivalDate: estimatedArrivalDate || orderDate,
-      actualArrivalDate: actualArrivalDate || undefined,
+      actualArrivalDate: resolvedActualArrival,
       status,
       itemsCount: Number(itemsCount) || 0,
       totalAmount: Number(totalAmount) || 0,
@@ -271,41 +278,76 @@ export const CRMSupplierOrdersTab: React.FC<CRMSupplierOrdersTabProps> = ({
 
     await saveSupplierOrder(data);
 
-    // Mark linked shortages as 'pedido'
-    if (linkedShortageIds.length > 0) {
-      const idSet = new Set(linkedShortageIds);
+    // Sync shortages both on creation and when updating status (e.g. recibido_completo / recibido_incompleto)
+    const idSet = new Set<string>(linkedShortageIds);
+    allShortages.forEach((s) => {
+      if (s.supplierOrderId === data.id) idSet.add(s.id);
+    });
+
+    if (idSet.size > 0) {
+      const receivedSet = new Set<string>(receivedShortageIds);
       const affectedItems = allShortages.filter((s) => idSet.has(s.id));
+
+      const nextStatusForShortage = (s: CRMOrderShortageItem): ShortageStatus => {
+        if (status === 'recibido_completo') return 'recibido';
+        if (status === 'recibido_incompleto') {
+          return receivedSet.has(s.id) ? 'recibido' : 'pedido';
+        }
+        return 'pedido';
+      };
+
+      const updatedMap = new Map<string, CRMOrderShortageItem>();
       for (const item of affectedItems) {
         const updatedItem: CRMOrderShortageItem = {
           ...item,
-          status: 'pedido',
+          status: nextStatusForShortage(item),
           supplierOrderId: data.id,
         };
+        updatedMap.set(item.id, updatedItem);
         await saveCRMOrderShortage(updatedItem);
       }
 
+      setCollectionShortages((prev) =>
+        prev.map((s) => updatedMap.get(s.id) || s)
+      );
+
       const ordersToUpdate = crmOrders.filter(
-        (ord) => Array.isArray(ord.shortages) && ord.shortages.some((s) => idSet.has(s.id))
+        (ord) =>
+          Array.isArray(ord.shortages) &&
+          ord.shortages.some((s) => idSet.has(s.id) || s.supplierOrderId === data.id)
       );
       for (const ord of ordersToUpdate) {
         const nextOrd: CRMOrder = sanitizeObjectEncoding({
           ...ord,
-          shortages: (ord.shortages || []).map((s) =>
-            idSet.has(s.id) ? { ...s, status: 'pedido', supplierOrderId: data.id } : s
-          ),
+          shortages: (ord.shortages || []).map((s) => {
+            if (!idSet.has(s.id) && s.supplierOrderId !== data.id) return s;
+            return {
+              ...s,
+              status: nextStatusForShortage(s),
+              supplierOrderId: data.id,
+            };
+          }),
           updatedAt: new Date().toISOString(),
         });
         if (onUpdateCrmOrder) onUpdateCrmOrder(nextOrd);
         await saveCRMOrder(nextOrd);
       }
 
-      setExcelNotice(
-        `Orden ${data.orderNumber} creada y ${affectedItems.length} faltantes marcados como "Pedido".`
-      );
-      setTimeout(() => setExcelNotice(null), 5000);
+      if (status === 'recibido_completo' || status === 'recibido_incompleto') {
+        const recCount = Array.from(updatedMap.values()).filter((x) => x.status === 'recibido').length;
+        setExcelNotice(
+          `Orden ${data.orderNumber} actualizada (${SUPPLIER_STATUS_LABELS[status].label}). ${recCount} de ${affectedItems.length} faltantes marcados como "Recibido" en las fichas de empresas.`
+        );
+      } else {
+        setExcelNotice(
+          `Orden ${data.orderNumber} guardada y ${affectedItems.length} faltantes vinculados como "Pedido".`
+        );
+      }
+      setTimeout(() => setExcelNotice(null), 6000);
     }
 
     setLinkedShortageIds([]);
+    setReceivedShortageIds([]);
     setShowModal(false);
     setSubTab('orders');
   };
@@ -929,6 +971,62 @@ export const CRMSupplierOrdersTab: React.FC<CRMSupplierOrdersTabProps> = ({
                   />
                 </div>
               </div>
+
+              {linkedShortageIds.length > 0 && (
+                <div className="p-3 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-bold uppercase text-[#18231C]">
+                      Faltantes de Empresas Vinculados ({linkedShortageIds.length})
+                    </span>
+                    {status === 'recibido_completo' && (
+                      <span className="text-[10px] font-bold text-emerald-700">
+                        Se marcarán todos como Recibido al guardar
+                      </span>
+                    )}
+                    {status === 'recibido_incompleto' && (
+                      <span className="text-[10px] font-bold text-amber-800">
+                        Marcá cuáles llegaron
+                      </span>
+                    )}
+                  </div>
+                  <div className="max-h-32 overflow-y-auto space-y-1">
+                    {allShortages
+                      .filter((s) => linkedShortageIds.includes(s.id))
+                      .map((s) => {
+                        const checked = status === 'recibido_completo' || receivedShortageIds.includes(s.id);
+                        return (
+                          <label
+                            key={s.id}
+                            className="flex items-center justify-between gap-2 text-[11px] bg-white px-2 py-1 border border-[#ECE5DC] rounded-xs cursor-pointer"
+                          >
+                            <span className="flex items-center gap-1.5 min-w-0">
+                              {status === 'recibido_incompleto' && (
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={(e) =>
+                                    setReceivedShortageIds((prev) =>
+                                      e.target.checked
+                                        ? [...prev, s.id]
+                                        : prev.filter((id) => id !== s.id)
+                                    )
+                                  }
+                                  className="accent-emerald-600 cursor-pointer"
+                                />
+                              )}
+                              <span className="truncate font-semibold text-[#18231C]">
+                                {fixUtf8Encoding(s.productName)} ({s.size}) · {fixUtf8Encoding(s.clientName)}
+                              </span>
+                            </span>
+                            <span className="font-mono font-bold text-[#6F6860] shrink-0">
+                              {s.quantity} u.
+                            </span>
+                          </label>
+                        );
+                      })}
+                  </div>
+                </div>
+              )}
 
               <div>
                 <label className="block text-[10px] text-[#6F6860] uppercase font-bold mb-1">Notas Internas</label>

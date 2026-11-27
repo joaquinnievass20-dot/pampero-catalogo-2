@@ -334,7 +334,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
         newRoleType === 'admin'
           ? 'Cuenta con permisos de Administrador'
           : isEncargado
-          ? 'Encargado General (Empleado con visibilidad en todos los locales)'
+          ? 'Encargado General (Colaborador con visibilidad en todos los locales)'
           : user.notes,
     };
     setUsers((prev) => prev.map((u) => (u.id === user.id ? updatedUser : u)));
@@ -409,7 +409,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
       notes: newAccountType === 'admin' 
         ? 'Cuenta administradora con acceso y permisos totales' 
         : isEncargado
-        ? 'Encargado General (Empleado con acceso a todos los locales, sin permisos admin)'
+        ? 'Encargado General (Colaborador con acceso a todos los locales, sin permisos admin)'
         : (newAccountType === 'empleado' ? `Operador en sucursal ${newAccountBranch}` : 'Cuenta creada por administrador'),
     };
 
@@ -551,7 +551,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
                 </span>
               </div>
               <p className="text-xs text-[#6F6860] mt-0.5">
-                Tabla unificada en tiempo real de todos los usuarios registrados: Administradores, Vendedores, Empleados y Clientes (Empresas y Particulares).
+                Tabla unificada en tiempo real de todos los usuarios registrados: Administradores, Vendedores, Colaboradores y Clientes (Empresas y Particulares).
               </p>
             </div>
           </div>
@@ -923,7 +923,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
                             >
                               <option value="admin">Cambiar a: Administrador</option>
                               <option value="encargado">Cambiar a: Encargado (Todos los locales)</option>
-                              <option value="empleado">Cambiar a: Empleado/Ventas</option>
+                              <option value="empleado">Cambiar a: Colaborador/Ventas</option>
                               <option value="empresa">Cambiar a: Cliente Empresa</option>
                               <option value="consumidor">Cambiar a: Consumidor Final</option>
                             </select>
@@ -1211,7 +1211,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
                       }`}
                     >
                       <UserCheck className="w-5 h-5 text-amber-700" />
-                      <span className="text-[11px] leading-tight">Empleado / Ventas</span>
+                      <span className="text-[11px] leading-tight">Colaborador / Ventas</span>
                     </button>
 
                     <button
@@ -1242,7 +1242,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({ triggerSaveNotice,
                   </div>
                   {newAccountType === 'encargado' && (
                     <p className="text-[11px] text-indigo-900 bg-indigo-50 border border-indigo-200 rounded-xs p-2 mt-2">
-                      <strong>Rol Encargado (Empleado):</strong> Ingresa en categoría Empleado con permisos de empleado, pero visualiza y gestiona información de <strong>todos los locales</strong> (sin privilegios de Administrador).
+                      <strong>Rol Encargado (Colaborador):</strong> Ingresa en categoría Colaborador con permisos de colaborador, pero visualiza y gestiona información de <strong>todos los locales</strong> (sin privilegios de Administrador).
                     </p>
                   )}
                 </div>

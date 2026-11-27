@@ -53,7 +53,7 @@ const ROLE_META: Record<
     icon: ShieldCheck,
   },
   employee: {
-    label: 'Empleado',
+    label: 'Colaborador',
     badgeClass: 'bg-amber-50 text-amber-900 border-amber-200',
     icon: Users,
   },
@@ -185,10 +185,10 @@ export const InternalChatModal: React.FC<InternalChatModalProps> = ({
       const isEmpAdmin = emp.sellerRole === 'admin';
       upsert({
         id: getChatParticipantKey(emp),
-        name: fixUtf8Encoding(emp.sellerName || emp.name || emp.email?.split('@')[0] || 'Empleado'),
+        name: fixUtf8Encoding(emp.sellerName || emp.name || emp.email?.split('@')[0] || 'Colaborador'),
         email: emp.email,
         role: isEmpAdmin ? 'admin' : 'employee',
-        subLabel: `${emp.sellerRole === 'encargado' ? 'Encargado' : isEmpAdmin ? 'Administrador' : 'Empleado'}${emp.branch ? ` · ${fixUtf8Encoding(emp.branch)}` : ''}`,
+        subLabel: `${emp.sellerRole === 'encargado' ? 'Encargado' : isEmpAdmin ? 'Administrador' : 'Colaborador'}${emp.branch ? ` · ${fixUtf8Encoding(emp.branch)}` : ''}`,
       });
     });
 
@@ -208,7 +208,7 @@ export const InternalChatModal: React.FC<InternalChatModalProps> = ({
         uRole === 'admin'
           ? 'Administrador'
           : uRole === 'employee'
-          ? `${u.sellerRole === 'encargado' ? 'Encargado' : 'Empleado'}${u.branch ? ` · ${fixUtf8Encoding(u.branch)}` : ''}`
+          ? `${u.sellerRole === 'encargado' ? 'Encargado' : 'Colaborador'}${u.branch ? ` · ${fixUtf8Encoding(u.branch)}` : ''}`
           : u.type === 'empresa'
           ? `Empresa${u.repName ? ` · ${fixUtf8Encoding(u.repName)}` : ''}`
           : 'Cliente Consumidor Final';
@@ -330,8 +330,8 @@ export const InternalChatModal: React.FC<InternalChatModalProps> = ({
                 )}
               </div>
               <p className="text-[11px] text-[#DCD4C9]/80 truncate">
-                {st?.chatSubtitle ||
-                  'Mensajería en tiempo real entre Administradores, Empleados y Clientes registrados'}
+                {(st?.chatSubtitle ||
+                  'Mensajería en tiempo real entre Administradores, Colaboradores y Clientes registrados').replace(/\bempleados\b/gi, 'colaboradores')}
               </p>
             </div>
           </div>
@@ -395,7 +395,7 @@ export const InternalChatModal: React.FC<InternalChatModalProps> = ({
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder={
-                    leftTab === 'chats' ? 'Buscar conversación...' : 'Buscar admin, empleado o cliente...'
+                    leftTab === 'chats' ? 'Buscar conversación...' : 'Buscar admin, colaborador o cliente...'
                   }
                   className="w-full pl-8 pr-3 py-1.5 text-xs bg-white border border-[#DCD4C9] rounded-xs outline-none focus:border-[#18231C]"
                 />
@@ -408,7 +408,7 @@ export const InternalChatModal: React.FC<InternalChatModalProps> = ({
                     [
                       { id: 'all', label: 'Todos' },
                       { id: 'admin', label: 'Administradores' },
-                      { id: 'employee', label: 'Empleados' },
+                      { id: 'employee', label: 'Colaboradores' },
                       { id: 'client', label: 'Clientes' },
                     ] as const
                   ).map((rf) => {
@@ -446,7 +446,7 @@ export const InternalChatModal: React.FC<InternalChatModalProps> = ({
                     </div>
                     <p className="text-xs font-bold text-[#18231C]">Todavía no hay conversaciones</p>
                     <p className="text-[11px] text-[#6F6860]">
-                      Elegí un administrador, empleado o cliente para iniciar un chat en tiempo real.
+                      Elegí un administrador, colaborador o cliente para iniciar un chat en tiempo real.
                     </p>
                     <button
                       type="button"
@@ -680,7 +680,7 @@ export const InternalChatModal: React.FC<InternalChatModalProps> = ({
                   Seleccioná una conversación o contacto
                 </h4>
                 <p className="text-xs text-[#6F6860] max-w-sm">
-                  Podés chatear de forma directa con Administradores, Empleados del equipo o Clientes registrados en la plataforma.
+                  Podés chatear de forma directa con Administradores, Colaboradores del equipo o Clientes registrados en la plataforma.
                 </p>
                 <button
                   type="button"

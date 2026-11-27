@@ -117,7 +117,7 @@ export const AdminStaffHub: React.FC<AdminStaffHubProps> = ({
               </div>
               <div className="text-left text-xs leading-tight">
                 <span className="font-bold text-white block">{staffName}</span>
-                <span className="text-[10px] text-amber-300 font-semibold">{isAdmin ? 'Administrador' : 'Empleado'}</span>
+                <span className="text-[10px] text-amber-300 font-semibold">{isAdmin ? 'Administrador' : 'Colaborador'}</span>
               </div>
             </div>
 
@@ -176,10 +176,10 @@ export const AdminStaffHub: React.FC<AdminStaffHubProps> = ({
                   type="button"
                   onClick={() => onStartSimulation('employee')}
                   className="px-3 py-1.5 bg-white border border-[#DCD4C9] hover:bg-neutral-100 text-[#18231C] rounded-xs text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer"
-                  title="Entrar a ver la web con vista restringida de Empleado"
+                  title="Entrar a ver la web con vista restringida de Colaborador"
                 >
                   <Users className="w-3.5 h-3.5 text-[#B9522F]" />
-                  <span>Simular Empleado</span>
+                  <span>Simular Colaborador</span>
                 </button>
               </div>
             </div>

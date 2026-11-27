@@ -150,6 +150,21 @@ export function normalizeCRMOrder(raw: any, indexFallback?: number): CRMOrder {
     branch: resolveConfiguredBranchName(safeCellString(sanitized.branch) || 'Pampero Maipú', undefined, false),
     totalUnits: Math.max(0, Math.round(safeCellNumber(sanitized.totalUnits))),
     totalEstimated: Math.max(0, Math.round(safeCellNumber(sanitized.totalEstimated))),
+    totalInvoiced:
+      sanitized.totalInvoiced !== undefined && sanitized.totalInvoiced !== null && sanitized.totalInvoiced !== ''
+        ? Math.max(0, Math.round(safeCellNumber(sanitized.totalInvoiced)))
+        : undefined,
+    billingStatus:
+      sanitized.billingStatus === 'facturado_total' ||
+      sanitized.billingStatus === 'facturado_parcial' ||
+      sanitized.billingStatus === 'sin_facturar'
+        ? sanitized.billingStatus
+        : undefined,
+    invoicePdfUrl: safeCellString(sanitized.invoicePdfUrl) || undefined,
+    invoicePdfName: safeCellString(sanitized.invoicePdfName) || undefined,
+    invoicePdfUploadedAt: safeCellString(sanitized.invoicePdfUploadedAt) || undefined,
+    invoicePdfUploadedBy: safeCellString(sanitized.invoicePdfUploadedBy) || undefined,
+    prepTags: Array.isArray(sanitized.prepTags) ? sanitized.prepTags : undefined,
     observations: safeCellString(sanitized.observations),
     observationDate: safeCellString(sanitized.observationDate) || undefined,
     reminderDate: safeCellString(sanitized.reminderDate) || undefined,

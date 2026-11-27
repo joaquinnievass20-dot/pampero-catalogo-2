@@ -617,7 +617,7 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
                 Automatización Empresas
               </span>
               <h3 className="font-display font-bold text-xl uppercase tracking-wider text-[#18231C] group-hover:text-[#18231C] transition-colors">
-                Portal de Talles para Empleados
+                Portal de Talles para Colaboradores
               </h3>
               <p className="text-xs text-[#6F6860] leading-relaxed">
                 Enlace digital único por empresa para que tus trabajadores carguen sus talles de calzado, pantalón y abrigo sin planillas.

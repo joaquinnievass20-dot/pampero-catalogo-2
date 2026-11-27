@@ -70,6 +70,7 @@ import {
   ChatParticipantRole,
   InternalChatThread,
   InternalChatMessage,
+  CRMContactRecord,
 } from '../types';
 import {
   DEFAULT_ARGENTINA_MENDOZA_DATES,
@@ -4252,6 +4253,13 @@ export async function saveCRMTask(task: CRMTask): Promise<{ success: boolean; id
     evidencePhotos: Array.isArray(task.evidencePhotos) ? task.evidencePhotos : [],
     scheduleType: task.scheduleType || 'immediate',
     activationMonths: Array.isArray(task.activationMonths) ? task.activationMonths : [],
+    recurrenceWeekdays: Array.isArray(task.recurrenceWeekdays)
+      ? Array.from(new Set(task.recurrenceWeekdays.map(Number).filter((d) => d >= 0 && d <= 6)))
+      : [],
+    taskScope: task.taskScope || (task.branch && task.branch.toLowerCase() === 'todas' ? 'local' : undefined),
+    targetBranches: Array.isArray(task.targetBranches) ? task.targetBranches : [],
+    multiBranchMode: task.multiBranchMode || undefined,
+    branchProgress: task.branchProgress || undefined,
     isActivated: task.isActivated !== undefined ? Boolean(task.isActivated) : true,
     progressPercent: Math.max(0, Math.min(100, Number(task.progressPercent) || 0)),
     targetProgressPercent:
@@ -4331,6 +4339,13 @@ export function subscribeToCRMTasks(
       evidencePhotos: Array.isArray(raw?.evidencePhotos) ? raw.evidencePhotos : [],
       scheduleType: raw?.scheduleType || 'immediate',
       activationMonths: Array.isArray(raw?.activationMonths) ? raw.activationMonths : [],
+      recurrenceWeekdays: Array.isArray(raw?.recurrenceWeekdays)
+        ? raw.recurrenceWeekdays.map(Number).filter((d: number) => d >= 0 && d <= 6)
+        : [],
+      taskScope: raw?.taskScope || undefined,
+      targetBranches: Array.isArray(raw?.targetBranches) ? raw.targetBranches : [],
+      multiBranchMode: raw?.multiBranchMode || undefined,
+      branchProgress: raw?.branchProgress && typeof raw.branchProgress === 'object' ? raw.branchProgress : undefined,
       isActivated: raw?.isActivated !== undefined ? Boolean(raw.isActivated) : true,
       progressPercent: Math.max(0, Math.min(100, Number(raw?.progressPercent) || 0)),
     }) as CRMTask;
@@ -6644,6 +6659,105 @@ export async function markChatThreadRead(threadId: string, participantKey: strin
     }
   } catch {}
 }
+
+// ==========================================
+// DIRECTORIO UNIFICADO DE CONTACTOS (crm_contacts)
+// ==========================================
+const CRM_CONTACTS_LS_KEY = 'pampero_crm_contacts';
+
+export function subscribeToCRMContacts(
+  onUpdate: (contacts: CRMContactRecord[]) => void
+): () => void {
+  try {
+    const raw = localStorage.getItem(CRM_CONTACTS_LS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) onUpdate(parsed.map(sanitizeObjectEncoding));
+    }
+  } catch {}
+
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return () => {};
+
+  try {
+    return onSnapshot(
+      collection(firestoreDb, 'crm_contacts'),
+      (snap) => {
+        const list: CRMContactRecord[] = snap.docs
+          .map((d) =>
+            sanitizeObjectEncoding({
+              ...(d.data() as CRMContactRecord),
+              id: d.id,
+            })
+          )
+          .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+        try {
+          localStorage.setItem(CRM_CONTACTS_LS_KEY, JSON.stringify(list));
+        } catch {}
+        onUpdate(list);
+      },
+      (err) => console.warn('[FIREBASE CONTACTS] Listener notice:', err?.message || err)
+    );
+  } catch {
+    return () => {};
+  }
+}
+
+export async function saveCRMContact(
+  contact: CRMContactRecord
+): Promise<{ success: boolean; id: string; error?: string }> {
+  const docId = contact.id || `CNT-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const payload: CRMContactRecord = sanitizeObjectEncoding({
+    ...contact,
+    id: docId,
+    createdAt: contact.createdAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
+
+  try {
+    const local: CRMContactRecord[] = JSON.parse(localStorage.getItem(CRM_CONTACTS_LS_KEY) || '[]');
+    const updated = [payload, ...local.filter((c) => c.id !== docId)].sort((a, b) =>
+      (a.name || '').localeCompare(b.name || '')
+    );
+    localStorage.setItem(CRM_CONTACTS_LS_KEY, JSON.stringify(updated));
+  } catch {}
+
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return { success: true, id: docId };
+
+  try {
+    const cleaned = JSON.parse(JSON.stringify(payload, (_k, v) => (v === undefined ? null : v)));
+    await setDoc(doc(firestoreDb, 'crm_contacts', docId), cleaned, { merge: true });
+    recordAuditLog({
+      module: 'Contactos',
+      action: contact.id ? 'Actualizar Contacto' : 'Crear Contacto',
+      details: `Contacto "${payload.name}" (${payload.category}${payload.subCategory ? ` · ${payload.subCategory}` : ''}) guardado.`,
+      targetId: docId,
+    }).catch(() => {});
+    return { success: true, id: docId };
+  } catch (err: any) {
+    console.warn('[FIREBASE CONTACTS] Error guardando contacto:', err?.message || err);
+    return { success: false, id: docId, error: err?.message || String(err) };
+  }
+}
+
+export async function deleteCRMContact(id: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const local: CRMContactRecord[] = JSON.parse(localStorage.getItem(CRM_CONTACTS_LS_KEY) || '[]');
+    localStorage.setItem(CRM_CONTACTS_LS_KEY, JSON.stringify(local.filter((c) => c.id !== id)));
+  } catch {}
+
+  const firestoreDb = db || getFirebaseDb();
+  if (!firestoreDb) return { success: true };
+
+  try {
+    await deleteDoc(doc(firestoreDb, 'crm_contacts', id));
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message || String(err) };
+  }
+}
+
 
 
 

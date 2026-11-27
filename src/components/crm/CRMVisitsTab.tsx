@@ -40,7 +40,9 @@ import {
   Upload,
   CheckCircle2,
   Bell,
-  MessageSquarePlus
+  MessageSquarePlus,
+  ArrowUp,
+  ArrowDown,
 } from 'lucide-react';
 import { exportVisitsToExcel, importVisitsFromExcel } from '../../utils/kanbanExcelUtils';
 import { normalizeLeadVisit } from '../../utils/crmNormalizers';
@@ -180,6 +182,7 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({
   const [editingVisit, setEditingVisit] = useState<LeadVisit | null>(null);
   const [viewingVisit, setViewingVisit] = useState<LeadVisit | null>(null);
   const [showVisitObsModal, setShowVisitObsModal] = useState(false);
+  const [colSortDir, setColSortDir] = useState<Record<string, 'desc' | 'asc'>>({});
   const [draggedVisitId, setDraggedVisitId] = useState<string | null>(null);
   const [dragOverCol, setDragOverCol] = useState<string | null>(null);
   const [excelNotice, setExcelNotice] = useState<string | null>(null);
@@ -421,8 +424,12 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({
       updatedAt: new Date().toISOString(),
     });
 
-    // Immediate local React state update
-    setLocalVisits((prev) => [updatedVisit, ...prev.filter((v) => v.id !== updatedVisit.id)]);
+    // Immediate local React state & parent state update (so Calendar & Overview reflect instantly)
+    setLocalVisits((prev) => {
+      const next = [updatedVisit, ...prev.filter((v) => v.id !== updatedVisit.id)];
+      if (onVisitsUpdated) onVisitsUpdated(next);
+      return next;
+    });
 
     try {
       await saveLeadVisit(updatedVisit);
@@ -459,8 +466,12 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({
       updatedAt: new Date().toISOString(),
     });
 
-    // Immediate optimistic local update
-    setLocalVisits((prev) => [updated, ...prev.filter((v) => v.id !== updated.id)]);
+    // Immediate optimistic local update + parent state sync
+    setLocalVisits((prev) => {
+      const next = [updated, ...prev.filter((v) => v.id !== updated.id)];
+      if (onVisitsUpdated) onVisitsUpdated(next);
+      return next;
+    });
 
     try {
       await saveLeadVisit(updated);
@@ -477,7 +488,11 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({
   const handleDelete = async (id: string) => {
     if (confirm('¿Eliminar esta visita comercial?')) {
       // Force immediate local update to unblock UI
-      setLocalVisits((prev) => prev.filter((v) => v.id !== id));
+      setLocalVisits((prev) => {
+        const next = prev.filter((v) => v.id !== id);
+        if (onVisitsUpdated) onVisitsUpdated(next);
+        return next;
+      });
       try {
         await deleteLeadVisit(id);
       } catch (err) {
@@ -684,7 +699,14 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({
           style={{ gridTemplateColumns: `repeat(${columns.length}, minmax(240px, 1fr))` }}
         >
           {columns.map((col) => {
-            const colVisits = filteredVisits.filter((v) => getVisitStep(v) === col.id);
+            const sortDir = colSortDir[col.id] || 'desc';
+            const colVisits = filteredVisits
+              .filter((v) => getVisitStep(v) === col.id)
+              .sort((a, b) => {
+                const ta = new Date(a.date || a.createdAt || 0).getTime() || 0;
+                const tb = new Date(b.date || b.createdAt || 0).getTime() || 0;
+                return sortDir === 'desc' ? tb - ta : ta - tb;
+              });
             const isDragTarget = dragOverCol === col.id;
 
             return (
@@ -709,9 +731,32 @@ export const CRMVisitsTab: React.FC<CRMVisitsTabProps> = ({
                         {fixUtf8Encoding(col.label)}
                       </h4>
                     </div>
-                    <span className="px-2 py-0.5 rounded-xs bg-[#FAF8F5] border border-[#DCD4C9] text-[#18231C] text-[11px] font-mono font-bold tabular-nums shrink-0">
-                      {colVisits.length}
-                    </span>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setColSortDir((prev) => ({
+                            ...prev,
+                            [col.id]: sortDir === 'desc' ? 'asc' : 'desc',
+                          }))
+                        }
+                        className="p-1 rounded-xs bg-[#FAF8F5] hover:bg-[#ECE5DC] border border-[#DCD4C9] text-[#18231C] cursor-pointer transition-colors"
+                        title={
+                          sortDir === 'desc'
+                            ? 'Orden: Más nuevo a más viejo (clic para invertir)'
+                            : 'Orden: Más viejo a más nuevo (clic para invertir)'
+                        }
+                      >
+                        {sortDir === 'desc' ? (
+                          <ArrowDown className="w-3 h-3" />
+                        ) : (
+                          <ArrowUp className="w-3 h-3" />
+                        )}
+                      </button>
+                      <span className="px-2 py-0.5 rounded-xs bg-[#FAF8F5] border border-[#DCD4C9] text-[#18231C] text-[11px] font-mono font-bold tabular-nums">
+                        {colVisits.length}
+                      </span>
+                    </div>
                   </div>
                   {col.description && (
                     <p className="text-[10px] text-[#6F6860] leading-tight truncate">

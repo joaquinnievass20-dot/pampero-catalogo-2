@@ -14,7 +14,8 @@ import {
   Product,
   CRMOrderShortageItem,
   CategoryHierarchyItem,
-  InternalChatThread
+  InternalChatThread,
+  CRMTask
 } from '../../types';
 import { 
   subscribeToCRMOrders, 
@@ -30,6 +31,8 @@ import {
   saveEmployeeSizeEntry,
   subscribeToKanbanColumns,
   DEFAULT_COMPANY_COLUMNS,
+  DEFAULT_VISIT_COLUMNS,
+  DEFAULT_TASK_COLUMNS,
   KanbanColumnConfig,
   getNextCorrelativeOrderNumber,
   getNextStructuredTrackingCode,
@@ -41,6 +44,8 @@ import {
   saveReadNotifications,
   saveCRMOrderShortage,
   deleteCRMOrderShortage,
+  subscribeToCRMTasks,
+  subscribeToCRMOrderShortages,
   getChatParticipantKey,
 } from '../../services/firebase';
 import { isColorDark } from '../../context/ThemeContext';
@@ -83,14 +88,18 @@ import {
   ChevronRight,
   ChevronLeft,
   ArrowLeft,
+  ArrowUp,
+  ArrowDown,
   MessageSquare,
   PanelLeftClose,
-  PanelLeftOpen
+  PanelLeftOpen,
+  Receipt
 } from 'lucide-react';
 import { exportOrdersToExcel, importOrdersFromExcel } from '../../utils/kanbanExcelUtils';
 import { normalizeCRMOrder, normalizeLeadVisit, normalizeSupplierOrder } from '../../utils/crmNormalizers';
 import { PamperoLogo } from '../PamperoLogo';
 import { CRMNotificationsModal, CRMNotificationItem } from './CRMNotificationsModal';
+import { CRMOverviewTab } from './CRMOverviewTab';
 import { CRMVisitsTab } from './CRMVisitsTab';
 import { CRMTasksTab } from './CRMTasksTab';
 import { CRMCalendarTab } from './CRMCalendarTab';
@@ -212,10 +221,14 @@ export const CRMView: React.FC<CRMViewProps> = ({
   const [orders, setOrders] = useState<CRMOrder[]>([]);
   const [visits, setVisits] = useState<LeadVisit[]>([]);
   const [supplierOrders, setSupplierOrders] = useState<SupplierOrder[]>([]);
+  const [tasks, setTasks] = useState<CRMTask[]>([]);
+  const [allShortages, setAllShortages] = useState<CRMOrderShortageItem[]>([]);
   const [sizingCampaigns, setSizingCampaigns] = useState<SizingCampaign[]>([]);
   const [employeeSizes, setEmployeeSizes] = useState<EmployeeSizeEntry[]>([]);
 
-  // Dynamic Kanban Columns for Seguimiento Empresas
+  // Dynamic Kanban Columns for Visitas, Seguimiento Empresas & Tareas
+  const [visitColumns, setVisitColumns] = useState<KanbanColumnConfig[]>(DEFAULT_VISIT_COLUMNS);
+  const [taskColumns, setTaskColumns] = useState<KanbanColumnConfig[]>(DEFAULT_TASK_COLUMNS);
   const [companyColumns, setCompanyColumns] = useState<KanbanColumnConfig[]>(() => {
     try {
       const saved = localStorage.getItem('pampero_kanban_company_cols');
@@ -226,8 +239,14 @@ export const CRMView: React.FC<CRMViewProps> = ({
 
   useEffect(() => {
     const unsub = subscribeToKanbanColumns((data) => {
+      if (Array.isArray(data.visits) && data.visits.length > 0) {
+        setVisitColumns(data.visits);
+      }
       if (Array.isArray(data.companies) && data.companies.length > 0) {
         setCompanyColumns(data.companies);
+      }
+      if (Array.isArray(data.tasks) && data.tasks.length > 0) {
+        setTaskColumns(data.tasks);
       }
     });
     return () => unsub();
@@ -327,19 +346,20 @@ export const CRMView: React.FC<CRMViewProps> = ({
   const crmTabsStr = currentEmployee?.crmTabs?.join(',') || '';
   const crmTasksConfigured = Boolean(currentEmployee?.crmTasksConfigured);
   const crmCalendarConfigured = Boolean(currentEmployee?.crmCalendarConfigured);
-  const allowedCrmTabs: ('visits' | 'board' | 'tasks' | 'calendar' | 'suppliers')[] = React.useMemo(() => {
-    if (userSession?.role === 'admin') return ['visits', 'board', 'tasks', 'calendar', 'suppliers'];
+  const allowedCrmTabs: ('overview' | 'visits' | 'board' | 'tasks' | 'calendar' | 'suppliers')[] = React.useMemo(() => {
+    if (userSession?.role === 'admin') return ['overview', 'visits', 'board', 'tasks', 'calendar', 'suppliers'];
     if (currentEmployee?.crmTabs && Array.isArray(currentEmployee.crmTabs) && currentEmployee.crmTabs.length > 0) {
-      const nextTabs = currentEmployee.crmTabs.filter((t) => t !== 'costs');
+      const nextTabs: string[] = currentEmployee.crmTabs.filter((t) => t !== 'costs');
       if (!crmTasksConfigured && !nextTabs.includes('tasks')) {
         nextTabs.push('tasks');
       }
       if (!crmCalendarConfigured && !nextTabs.includes('calendar')) {
         nextTabs.push('calendar');
       }
-      return nextTabs as ('visits' | 'board' | 'tasks' | 'calendar' | 'suppliers')[];
+      const withOverview = nextTabs.includes('overview') ? nextTabs : ['overview', ...nextTabs];
+      return withOverview as ('overview' | 'visits' | 'board' | 'tasks' | 'calendar' | 'suppliers')[];
     }
-    return ['visits', 'board', 'tasks', 'calendar', 'suppliers'];
+    return ['overview', 'visits', 'board', 'tasks', 'calendar', 'suppliers'];
   }, [userSession?.role, crmTabsStr, crmTasksConfigured, crmCalendarConfigured]);
 
   const canControlTasks = Boolean(
@@ -349,7 +369,8 @@ export const CRMView: React.FC<CRMViewProps> = ({
     currentEmployee?.canControlTasks
   );
 
-  const [activeTab, setActiveTab] = useState<'visits' | 'board' | 'tasks' | 'calendar' | 'suppliers'>('visits');
+  const [activeTab, setActiveTab] = useState<'overview' | 'visits' | 'board' | 'tasks' | 'calendar' | 'suppliers'>('overview');
+  const [colSortDir, setColSortDir] = useState<Record<string, 'desc' | 'asc'>>({});
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isDesktopSidebarCollapsed, setIsDesktopSidebarCollapsed] = useState(false);
   const boardBodyScrollRef = React.useRef<HTMLDivElement>(null);
@@ -545,6 +566,8 @@ export const CRMView: React.FC<CRMViewProps> = ({
     const unsubSuppliers = subscribeToSupplierOrders((fetched) =>
       setSupplierOrders(fetched.map((o, idx) => normalizeSupplierOrder(o, idx)))
     );
+    const unsubTasks = subscribeToCRMTasks((fetched) => setTasks(fetched.map(sanitizeObjectEncoding)));
+    const unsubShortages = subscribeToCRMOrderShortages((fetched) => setAllShortages(fetched.map(sanitizeObjectEncoding)));
     const unsubCampaigns = subscribeToSizingCampaigns((fetched) => setSizingCampaigns(fetched.map(sanitizeObjectEncoding)));
     const unsubSizes = subscribeToEmployeeSizeEntries('all', (fetched) => setEmployeeSizes(fetched.map(sanitizeObjectEncoding)));
 
@@ -552,6 +575,8 @@ export const CRMView: React.FC<CRMViewProps> = ({
       unsubOrders();
       unsubVisits();
       unsubSuppliers();
+      unsubTasks();
+      unsubShortages();
       unsubCampaigns();
       unsubSizes();
     };
@@ -833,7 +858,7 @@ export const CRMView: React.FC<CRMViewProps> = ({
           otherMeta?.role === 'admin'
             ? 'Administrador'
             : otherMeta?.role === 'employee'
-              ? 'Empleado'
+              ? 'Colaborador'
               : 'Cliente';
         items.unshift({
           id: `chat-unread-${thread.id}-${thread.lastMessageAt || unread}`,
@@ -1086,11 +1111,17 @@ export const CRMView: React.FC<CRMViewProps> = ({
   }
 
   const crmNavItems: Array<{
-    key: 'visits' | 'board' | 'tasks' | 'calendar' | 'suppliers';
+    key: 'overview' | 'visits' | 'board' | 'tasks' | 'calendar' | 'suppliers';
     label: string;
     category: string;
     icon: any;
   }> = [
+    {
+      key: 'overview',
+      label: (theme?.siteTexts as any)?.crmTabOverviewText || 'Tablero General',
+      category: 'Resumen General',
+      icon: LayoutDashboard,
+    },
     {
       key: 'visits',
       label: theme?.siteTexts?.crmTabVisitsText || '1. Visitas Comerciales',
@@ -1125,12 +1156,60 @@ export const CRMView: React.FC<CRMViewProps> = ({
   const visibleCrmNavItems = crmNavItems.filter((tab) => allowedCrmTabs.includes(tab.key));
   const activeCrmMeta = visibleCrmNavItems.find((t) => t.key === activeTab) || visibleCrmNavItems[0] || crmNavItems[0];
   const ActiveCrmIcon = activeCrmMeta.icon;
-  const crmNavGroups = ['Embudo Comercial', 'Operación & Agenda']
+  const crmNavGroups = ['Resumen General', 'Embudo Comercial', 'Operación & Agenda']
     .map((groupName) => ({
       title: groupName,
       items: visibleCrmNavItems.filter((t) => t.category === groupName),
     }))
     .filter((g) => g.items.length > 0);
+
+  const getOrderShortagesList = (ord: CRMOrder): CRMOrderShortageItem[] => {
+    const map = new Map<string, CRMOrderShortageItem>();
+    (Array.isArray(ord.shortages) ? ord.shortages : []).forEach((s) => map.set(s.id, s));
+    allShortages
+      .filter((s) => s.orderId === ord.id)
+      .forEach((s) => map.set(s.id, s));
+    return Array.from(map.values());
+  };
+
+  const isOrderApprovedOrLater = (ord: CRMOrder): boolean => {
+    const colId = resolveOrderColumnId(ord);
+    if (colId === 'cancelado') return false;
+    const idx = companyColumns.findIndex((c) => c.id === colId);
+    return idx >= approvedStartIndex;
+  };
+
+  const isOrderInPrepStage = (ord: CRMOrder): boolean => {
+    const colNorm = normalizeColKey(resolveOrderColumnId(ord));
+    const colLabelNorm = normalizeColKey(companyColumns.find((c) => c.id === resolveOrderColumnId(ord))?.label);
+    return (
+      colNorm.includes('produccion') ||
+      colNorm.includes('bordad') ||
+      colNorm.includes('taller') ||
+      colNorm.includes('prepar') ||
+      colLabelNorm.includes('bordad') ||
+      colLabelNorm.includes('taller') ||
+      colLabelNorm.includes('prepar')
+    );
+  };
+
+  const getOrderMoneyInfo = (ord: CRMOrder) => {
+    const isApproved = isOrderApprovedOrLater(ord);
+    const hasInvoicedNum = (Number(ord.totalInvoiced) || 0) > 0;
+    const hasInvoice = Boolean(ord.invoicePdfUrl || hasInvoicedNum || (ord.billingStatus && ord.billingStatus !== 'sin_facturar'));
+    const displayAmount = hasInvoice && hasInvoicedNum ? Number(ord.totalInvoiced) : (ord.totalEstimated || 0);
+    const amountLabel = hasInvoice ? 'Monto Facturado' : isApproved ? 'Monto Cotizado' : 'Monto Estimado';
+    const shortTag = hasInvoice ? 'Facturado' : isApproved ? 'Cotizado' : 'Est.';
+    const billingLabel =
+      ord.billingStatus === 'facturado_total'
+        ? 'Facturado Total'
+        : ord.billingStatus === 'facturado_parcial'
+          ? 'Facturado Parcial'
+          : hasInvoice
+            ? 'Factura Cargada'
+            : null;
+    return { isApproved, hasInvoice, displayAmount, amountLabel, shortTag, billingLabel };
+  };
 
   const st = theme?.siteTexts;
   const sidebarBg = theme?.sidebarBgColor || theme?.primaryColor || '#18231C';
@@ -1367,7 +1446,7 @@ export const CRMView: React.FC<CRMViewProps> = ({
               )}
             </button>
 
-            {(activeTab === 'visits' || activeTab === 'board') && (
+            {activeTab === 'board' && (
               <button
                 type="button"
                 onClick={() => setShowNewOrderModal(true)}
@@ -1392,44 +1471,30 @@ export const CRMView: React.FC<CRMViewProps> = ({
         {/* Main Content Viewport */}
         <div className="flex-1 overflow-y-scroll min-w-0">
           <div className="w-full max-w-[1700px] mx-auto p-4 sm:p-6 min-h-full flex flex-col">
+        {/* === OVERVIEW: TABLERO GENERAL === */}
+        {activeTab === 'overview' && (
+          <CRMOverviewTab
+            orders={orders}
+            visits={visits}
+            tasks={tasks}
+            shortages={allShortages}
+            supplierOrders={supplierOrders}
+            visitColumns={visitColumns}
+            companyColumns={companyColumns}
+            taskColumns={taskColumns}
+            crmScope={crmScope}
+            assignedBranch={assignedBranch}
+            assignedSellerName={assignedSellerName}
+            allowedCrmTabs={allowedCrmTabs}
+            staleQuoteDays={notifSettings.staleQuoteDays}
+            onNavigateTab={(tab) => setActiveTab(tab)}
+            onSelectOrder={(ord) => setViewingOrder(ord)}
+          />
+        )}
+
         {/* === TAB 1: KANBAN BOARD === */}
         {activeTab === 'board' && (
           <div className="flex flex-col h-full space-y-4">
-            {/* Urgent Alerts Banner */}
-            {(delayedOrdersCount > 0 || blockedOrdersCount > 0) && (
-              <div className="bg-red-50/70 border border-red-200 p-3.5 rounded-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-red-950">
-                <div className="flex items-center gap-2.5">
-                  <div className="p-1.5 bg-red-600 text-white rounded-xs shrink-0">
-                    <AlertTriangle className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h5 className="font-bold text-xs uppercase tracking-wider text-red-900">
-                      Atención Requerida · Pedidos con Alerta ({delayedOrdersCount + blockedOrdersCount})
-                    </h5>
-                    <p className="text-[11px] text-red-800">
-                      Hay <strong>{delayedOrdersCount} pedidos demorados</strong> (&gt;{notifSettings.staleQuoteDays} días en cotización/seña) y <strong>{blockedOrdersCount} bloqueados</strong> que requieren resolución hoy.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setFilterDelayedOnly(!filterDelayedOnly)}
-                    className="px-3 py-1.5 bg-white border border-red-300 text-red-700 hover:bg-red-100 rounded-xs text-xs font-bold uppercase transition-colors cursor-pointer"
-                  >
-                    {filterDelayedOnly ? 'Mostrar Todos' : 'Filtrar Solo Alertas'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowNotificationsModal(true)}
-                    className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-xs text-xs font-bold uppercase transition-colors cursor-pointer"
-                  >
-                    Ver Notificaciones ({totalAlertsCount})
-                  </button>
-                </div>
-              </div>
-            )}
 
             {/* Filters Bar */}
             <div className="flex flex-wrap items-center gap-3 bg-white p-3 rounded-xs border border-[#DCD4C9] shadow-xs">
@@ -1576,9 +1641,9 @@ export const CRMView: React.FC<CRMViewProps> = ({
               </div>
             )}
 
-            {/* Top Dynamic Navigation & Synchronized Horizontal Scrollbar for Kanban */}
-            <div className="bg-white border border-[#DCD4C9] rounded-xs px-3 py-2 space-y-1.5 shadow-2xs">
-              <div className="flex items-center justify-between gap-2">
+            {/* Top Horizontal Scrollbar Controls for Kanban */}
+            <div className="bg-white border border-[#DCD4C9] rounded-xs px-3 py-2 shadow-2xs">
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() =>
@@ -1590,34 +1655,22 @@ export const CRMView: React.FC<CRMViewProps> = ({
                   <ChevronLeft className="w-4 h-4" />
                 </button>
 
-                <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar flex-1 py-0.5">
-                  {companyColumns.map((col) => {
-                    const colCount = filteredOrders.filter((o) => resolveOrderColumnId(o) === col.id).length;
-                    return (
-                      <button
-                        key={col.id}
-                        type="button"
-                        onClick={() => {
-                          const target = boardBodyScrollRef.current?.querySelector(
-                            `[data-board-col-id="${col.id}"]`
-                          ) as HTMLElement | null;
-                          if (target && boardBodyScrollRef.current) {
-                            target.scrollIntoView({ behavior: 'smooth', inline: 'start', block: 'nearest' });
-                          }
-                        }}
-                        className="px-2.5 py-1 bg-[#FAF8F5] hover:bg-[#ECE5DC] border border-[#DCD4C9] rounded-xs text-[11px] font-bold text-[#18231C] flex items-center gap-1.5 shrink-0 cursor-pointer transition-colors"
-                      >
-                        <span
-                          className="w-2 h-2 rounded-full shrink-0"
-                          style={{ backgroundColor: col.color }}
-                        />
-                        <span className="truncate max-w-[140px]">{fixUtf8Encoding(col.label)}</span>
-                        <span className="px-1 bg-white border border-[#DCD4C9] rounded-xs text-[10px] font-mono tabular-nums">
-                          {colCount}
-                        </span>
-                      </button>
-                    );
-                  })}
+                <div
+                  ref={boardTopScrollRef}
+                  onScroll={() => {
+                    if (isSyncingBoardScrollRef.current) return;
+                    if (boardBodyScrollRef.current && boardTopScrollRef.current) {
+                      isSyncingBoardScrollRef.current = true;
+                      boardBodyScrollRef.current.scrollLeft = boardTopScrollRef.current.scrollLeft;
+                      requestAnimationFrame(() => {
+                        isSyncingBoardScrollRef.current = false;
+                      });
+                    }
+                  }}
+                  className="overflow-x-auto overflow-y-hidden h-3 bg-[#FAF8F5] rounded-xs border border-[#ECE5DC] flex-1"
+                  title="Barra de desplazamiento horizontal del tablero"
+                >
+                  <div style={{ width: `${boardScrollContentWidth}px`, height: '1px' }} />
                 </div>
 
                 <button
@@ -1630,24 +1683,6 @@ export const CRMView: React.FC<CRMViewProps> = ({
                 >
                   <ChevronRight className="w-4 h-4" />
                 </button>
-              </div>
-
-              <div
-                ref={boardTopScrollRef}
-                onScroll={() => {
-                  if (isSyncingBoardScrollRef.current) return;
-                  if (boardBodyScrollRef.current && boardTopScrollRef.current) {
-                    isSyncingBoardScrollRef.current = true;
-                    boardBodyScrollRef.current.scrollLeft = boardTopScrollRef.current.scrollLeft;
-                    requestAnimationFrame(() => {
-                      isSyncingBoardScrollRef.current = false;
-                    });
-                  }
-                }}
-                className="overflow-x-auto overflow-y-hidden h-3 bg-[#FAF8F5] rounded-xs border border-[#ECE5DC]"
-                title="Barra de desplazamiento horizontal del tablero"
-              >
-                <div style={{ width: `${boardScrollContentWidth}px`, height: '1px' }} />
               </div>
             </div>
 
@@ -1671,7 +1706,14 @@ export const CRMView: React.FC<CRMViewProps> = ({
                 style={{ gridTemplateColumns: `repeat(${companyColumns.length}, minmax(260px, 1fr))` }}
               >
                 {companyColumns.map((col) => {
-                  const columnOrders = filteredOrders.filter((o) => resolveOrderColumnId(o) === col.id);
+                  const sortDir = colSortDir[col.id] || 'desc';
+                  const columnOrders = filteredOrders
+                    .filter((o) => resolveOrderColumnId(o) === col.id)
+                    .sort((a, b) => {
+                      const ta = new Date(a.date || a.createdAt || 0).getTime() || 0;
+                      const tb = new Date(b.date || b.createdAt || 0).getTime() || 0;
+                      return sortDir === 'desc' ? tb - ta : ta - tb;
+                    });
                   const isDragOver = dragOverColumn === col.id;
                   return (
                     <div
@@ -1687,7 +1729,7 @@ export const CRMView: React.FC<CRMViewProps> = ({
                       onDrop={(e) => handleDrop(e, col.id as CRMOrderStatus)}
                     >
                       {/* Clean Column Header */}
-                      <div className="px-3.5 py-2.5 border-b border-[#DCD4C9] rounded-t-sm font-bold text-xs uppercase tracking-wider text-[#18231C] flex justify-between items-center bg-white">
+                      <div className="px-3.5 py-2.5 border-b border-[#DCD4C9] rounded-t-sm font-bold text-xs uppercase tracking-wider text-[#18231C] flex justify-between items-center gap-1.5 bg-white">
                         <div className="flex items-center gap-2 min-w-0">
                           <span
                             className="w-2.5 h-2.5 rounded-full shrink-0"
@@ -1695,9 +1737,32 @@ export const CRMView: React.FC<CRMViewProps> = ({
                           />
                           <span className="truncate">{fixUtf8Encoding(col.label)}</span>
                         </div>
-                        <span className="px-2 py-0.5 rounded-xs bg-[#FAF8F5] border border-[#DCD4C9] text-[#18231C] text-[11px] font-mono font-bold tabular-nums shrink-0">
-                          {columnOrders.length}
-                        </span>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setColSortDir((prev) => ({
+                                ...prev,
+                                [col.id]: sortDir === 'desc' ? 'asc' : 'desc',
+                              }))
+                            }
+                            className="p-1 rounded-xs bg-[#FAF8F5] hover:bg-[#ECE5DC] border border-[#DCD4C9] text-[#6F6860] hover:text-[#18231C] cursor-pointer transition-colors"
+                            title={
+                              sortDir === 'desc'
+                                ? 'Ordenado: Más nuevo primero (clic para cambiar a más viejo primero)'
+                                : 'Ordenado: Más viejo primero (clic para cambiar a más nuevo primero)'
+                            }
+                          >
+                            {sortDir === 'desc' ? (
+                              <ArrowDown className="w-3 h-3" />
+                            ) : (
+                              <ArrowUp className="w-3 h-3" />
+                            )}
+                          </button>
+                          <span className="px-2 py-0.5 rounded-xs bg-[#FAF8F5] border border-[#DCD4C9] text-[#18231C] text-[11px] font-mono font-bold tabular-nums shrink-0">
+                            {columnOrders.length}
+                          </span>
+                        </div>
                       </div>
 
                       {/* Cards */}
@@ -1743,12 +1808,26 @@ export const CRMView: React.FC<CRMViewProps> = ({
                             );
                           }
 
+                          const orderShortages = getOrderShortagesList(order);
+                          const pendingShortagesCount = orderShortages.filter((s) => s.status !== 'recibido').length;
+                          const allShortagesArrived = orderShortages.length > 0 && pendingShortagesCount === 0;
+                          const inPrepStage = isOrderInPrepStage(order);
+                          const effectivePrepTags = Array.from(
+                            new Set([
+                              ...(Array.isArray(order.prepTags) ? order.prepTags : []),
+                              ...(pendingShortagesCount > 0 ? ['esperando_pedido'] : []),
+                            ])
+                          );
+                          const moneyInfo = getOrderMoneyInfo(order);
+
                           const hasCalmDetails = Boolean(
                             order.companyLocation ||
                             order.locationUrl ||
                             order.blockReason ||
                             order.observations ||
-                            order.reminderDate
+                            order.reminderDate ||
+                            orderShortages.length > 0 ||
+                            moneyInfo.billingLabel
                           );
 
                           return (
@@ -1789,6 +1868,11 @@ export const CRMView: React.FC<CRMViewProps> = ({
                                       PDF
                                     </span>
                                   )}
+                                  {order.invoicePdfUrl && (
+                                    <span className="text-emerald-800 font-bold" title="Factura adjunta">
+                                      FAC
+                                    </span>
+                                  )}
                                   {order.clientApprovalStatus === 'aprobada' && (
                                     <span className="text-emerald-700 font-bold">✓ Aprobada</span>
                                   )}
@@ -1817,15 +1901,63 @@ export const CRMView: React.FC<CRMViewProps> = ({
                                     {fixUtf8Encoding(order.seller || 'Sin asignar')}
                                     {order.branch ? ` · ${fixUtf8Encoding(order.branch)}` : ''}
                                   </span>
-                                  <span className="font-mono font-bold text-[#18231C] tabular-nums shrink-0">
-                                    $ {(order.totalEstimated || 0).toLocaleString('es-AR')}
+                                  <span className="font-mono font-bold text-[#18231C] tabular-nums shrink-0" title={moneyInfo.amountLabel}>
+                                    <span className="text-[9px] font-sans uppercase text-[#6F6860] mr-1">
+                                      {moneyInfo.shortTag}
+                                    </span>
+                                    $ {moneyInfo.displayAmount.toLocaleString('es-AR')}
                                   </span>
                                 </div>
+
+                                {/* Prep tags in En Bordados / Taller / Preparación */}
+                                {(inPrepStage || effectivePrepTags.length > 0) && effectivePrepTags.length > 0 && (
+                                  <div className="flex flex-wrap gap-1 mt-1.5">
+                                    {effectivePrepTags.includes('en_taller') && (
+                                      <span className="px-1.5 py-0.5 rounded-xs text-[9px] font-bold uppercase bg-indigo-50 border border-indigo-200 text-indigo-900">
+                                        En taller
+                                      </span>
+                                    )}
+                                    {effectivePrepTags.includes('en_bordados') && (
+                                      <span className="px-1.5 py-0.5 rounded-xs text-[9px] font-bold uppercase bg-purple-50 border border-purple-200 text-purple-900">
+                                        En bordados
+                                      </span>
+                                    )}
+                                    {effectivePrepTags.includes('esperando_pedido') && (
+                                      <span className="px-1.5 py-0.5 rounded-xs text-[9px] font-bold uppercase bg-amber-50 border border-amber-300 text-amber-950">
+                                        Esperando pedido
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
                               </div>
 
-                              {/* Line 3: Single Quiet Neutral Details Block (Preserves ALL info cleanly) */}
+                              {/* Line 3: Single Quiet Neutral Details Block */}
                               {hasCalmDetails && (
                                 <div className="bg-[#FAF8F5] border border-[#ECE5DC] rounded-xs px-2.5 py-2 space-y-1 text-[11px] text-[#4A453F]">
+                                  {moneyInfo.billingLabel && (
+                                    <div className="flex items-center justify-between gap-1.5 text-[10px] font-bold text-emerald-800">
+                                      <span className="flex items-center gap-1">
+                                        <Receipt className="w-3 h-3 shrink-0" />
+                                        <span>{moneyInfo.billingLabel}</span>
+                                      </span>
+                                      {order.invoicePdfUrl && <span>PDF adjunto</span>}
+                                    </div>
+                                  )}
+
+                                  {allShortagesArrived && (
+                                    <div className="flex items-center gap-1.5 text-emerald-700 font-bold text-[10px]">
+                                      <CheckCircle2 className="w-3 h-3 shrink-0" />
+                                      <span>Mercadería faltante recibida ({orderShortages.length})</span>
+                                    </div>
+                                  )}
+
+                                  {pendingShortagesCount > 0 && (
+                                    <div className="flex items-center gap-1.5 text-amber-900 font-semibold text-[10px]">
+                                      <PackageX className="w-3 h-3 shrink-0 text-amber-700" />
+                                      <span>{pendingShortagesCount} faltante(s) pendiente(s) de arribo</span>
+                                    </div>
+                                  )}
+
                                   {(order.companyLocation || order.locationUrl) && (
                                     <div className="flex items-center justify-between gap-1.5">
                                       <span className="truncate flex items-center gap-1.5">
@@ -1893,7 +2025,7 @@ export const CRMView: React.FC<CRMViewProps> = ({
                                     <span>Ficha</span>
                                   </button>
                                   <a
-                                    href={`https://wa.me/?text=${encodeURIComponent(`Hola ${order.clientName}, te escribimos de Pampero Gran Mendoza para actualizarte sobre tu pedido ${order.trackingCode || order.orderNumber || `#${order.id.slice(-6)}`} (Estado: ${col.label}). Total: $${(order.totalEstimated || 0).toLocaleString('es-AR')}. ¿Tenés alguna consulta?`)}`}
+                                    href={`https://wa.me/?text=${encodeURIComponent(`Hola ${order.clientName}, te escribimos de Pampero Gran Mendoza para actualizarte sobre tu pedido ${order.trackingCode || order.orderNumber || `#${order.id.slice(-6)}`} (Estado: ${col.label}). ${moneyInfo.amountLabel}: $${moneyInfo.displayAmount.toLocaleString('es-AR')}. ¿Tenés alguna consulta?`)}`}
                                     target="_blank"
                                     rel="noreferrer"
                                     onClick={(e) => e.stopPropagation()}
@@ -2106,10 +2238,70 @@ export const CRMView: React.FC<CRMViewProps> = ({
                   <span className="font-bold text-[#18231C]">{viewingOrder.totalUnits || 0} unidades</span>
                 </div>
                 <div>
-                  <span className="text-[10px] font-bold uppercase text-[#8C827A] block">Monto Estimado</span>
-                  <span className="font-bold text-emerald-700">$ {(viewingOrder.totalEstimated || 0).toLocaleString('es-AR')}</span>
+                  {(() => {
+                    const mi = getOrderMoneyInfo(viewingOrder);
+                    return (
+                      <>
+                        <span className="text-[10px] font-bold uppercase text-[#8C827A] block">{mi.amountLabel}</span>
+                        <span className="font-bold text-emerald-700">$ {mi.displayAmount.toLocaleString('es-AR')}</span>
+                        {mi.billingLabel && (
+                          <span className="block text-[10px] font-bold text-emerald-800 mt-0.5">{mi.billingLabel}</span>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
+
+              {(() => {
+                const viewShortages = getOrderShortagesList(viewingOrder);
+                const pendingCount = viewShortages.filter((s) => s.status !== 'recibido').length;
+                const viewPrepTags = Array.from(
+                  new Set([
+                    ...(Array.isArray(viewingOrder.prepTags) ? viewingOrder.prepTags : []),
+                    ...(pendingCount > 0 ? ['esperando_pedido'] : []),
+                  ])
+                );
+                return (
+                  <>
+                    {viewPrepTags.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {viewPrepTags.includes('en_taller') && (
+                          <span className="px-2 py-0.5 rounded-xs text-[10px] font-bold uppercase bg-indigo-50 border border-indigo-200 text-indigo-900">
+                            En taller
+                          </span>
+                        )}
+                        {viewPrepTags.includes('en_bordados') && (
+                          <span className="px-2 py-0.5 rounded-xs text-[10px] font-bold uppercase bg-purple-50 border border-purple-200 text-purple-900">
+                            En bordados
+                          </span>
+                        )}
+                        {viewPrepTags.includes('esperando_pedido') && (
+                          <span className="px-2 py-0.5 rounded-xs text-[10px] font-bold uppercase bg-amber-50 border border-amber-300 text-amber-950">
+                            Esperando pedido
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    {viewShortages.length > 0 && (
+                      <div className={`p-2.5 rounded-xs border text-[11px] space-y-1 ${pendingCount === 0 ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-amber-50 border-amber-200 text-amber-950'}`}>
+                        <div className="font-bold uppercase text-[10px] flex items-center justify-between">
+                          <span>{pendingCount === 0 ? '✓ Faltantes recibidos en sucursal' : `Faltantes (${pendingCount} pendiente/s)`}</span>
+                          <span>Total: {viewShortages.length}</span>
+                        </div>
+                        {viewShortages.slice(0, 4).map((sh) => (
+                          <div key={sh.id} className="flex items-center justify-between text-[10px]">
+                            <span className="truncate">{sh.quantity}x {sh.productName} ({sh.size}/{sh.color})</span>
+                            <span className={`font-bold uppercase ${sh.status === 'recibido' ? 'text-emerald-700' : 'text-amber-800'}`}>
+                              {sh.status === 'recibido' ? 'Recibido' : sh.status === 'pedido' ? 'Pedido' : 'Pendiente'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
 
               {(viewingOrder.companyLocation || viewingOrder.locationUrl) && (
                 <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-xs space-y-1.5">
@@ -2174,7 +2366,7 @@ export const CRMView: React.FC<CRMViewProps> = ({
 
               {viewingOrder.quotePdfUrl && (
                 <div className="p-2.5 bg-purple-50 border border-purple-200 rounded-xs flex items-center justify-between">
-                  <span className="font-bold text-purple-950 truncate">{viewingOrder.quotePdfName || 'Cotizacion_Oficial.pdf'}</span>
+                  <span className="font-bold text-purple-950 truncate">Cotización: {viewingOrder.quotePdfName || 'Cotizacion_Oficial.pdf'}</span>
                   <a
                     href={viewingOrder.quotePdfUrl}
                     target="_blank"
@@ -2183,6 +2375,21 @@ export const CRMView: React.FC<CRMViewProps> = ({
                     className="px-2.5 py-1 bg-white border border-purple-300 rounded-xs font-bold text-purple-900 shrink-0"
                   >
                     Ver PDF
+                  </a>
+                </div>
+              )}
+
+              {viewingOrder.invoicePdfUrl && (
+                <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xs flex items-center justify-between">
+                  <span className="font-bold text-emerald-950 truncate">Factura: {viewingOrder.invoicePdfName || 'Factura.pdf'}</span>
+                  <a
+                    href={viewingOrder.invoicePdfUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    download={viewingOrder.invoicePdfName || 'Factura.pdf'}
+                    className="px-2.5 py-1 bg-white border border-emerald-300 rounded-xs font-bold text-emerald-900 shrink-0"
+                  >
+                    Ver Factura
                   </a>
                 </div>
               )}
@@ -2224,12 +2431,12 @@ export const CRMView: React.FC<CRMViewProps> = ({
                 >
                   <PackageX className="w-3.5 h-3.5 text-[#18231C]" />
                   <span className="tabular-nums">
-                    {st?.crmShortagesBtnText || 'Faltantes'} ({Array.isArray(viewingOrder.shortages) ? viewingOrder.shortages.filter((s) => s.status !== 'recibido').length : 0})
+                    {st?.crmShortagesBtnText || 'Faltantes'} ({getOrderShortagesList(viewingOrder).filter((s) => s.status !== 'recibido').length})
                   </span>
                 </button>
 
                 <a
-                  href={`https://wa.me/${viewingOrder.clientPhone ? String(viewingOrder.clientPhone).replace(/\D/g, '') : ''}?text=${encodeURIComponent(`Hola ${viewingOrder.clientName}, te escribimos de Pampero Gran Mendoza por tu pedido ${viewingOrder.trackingCode || viewingOrder.orderNumber || `#${viewingOrder.id.slice(-6)}`}. Total estimado: $${(viewingOrder.totalEstimated || 0).toLocaleString('es-AR')}.`)}`}
+                  href={`https://wa.me/${viewingOrder.clientPhone ? String(viewingOrder.clientPhone).replace(/\D/g, '') : ''}?text=${encodeURIComponent(`Hola ${viewingOrder.clientName}, te escribimos de Pampero Gran Mendoza por tu pedido ${viewingOrder.trackingCode || viewingOrder.orderNumber || `#${viewingOrder.id.slice(-6)}`}. ${getOrderMoneyInfo(viewingOrder).amountLabel}: $${getOrderMoneyInfo(viewingOrder).displayAmount.toLocaleString('es-AR')}.`)}`}
                   target="_blank"
                   rel="noreferrer"
                   className="px-3 py-2 bg-[#FAF8F5] hover:bg-[#ECE5DC] border border-[#DCD4C9] text-[#18231C] text-xs font-bold uppercase rounded-xs flex items-center gap-1.5 cursor-pointer transition-colors"
@@ -2439,12 +2646,29 @@ const OrderDetailModal: React.FC<{
     );
     return match ? match.id : (companyColumns[0]?.id || 'cotizacion');
   };
+  const [clientName, setClientName] = useState(order.clientName || '');
+  const [clientType, setClientType] = useState<'empresa' | 'consumidor_final'>(order.clientType || 'empresa');
+  const [clientPhone, setClientPhone] = useState(order.clientPhone || '');
+  const [clientEmail, setClientEmail] = useState(order.clientEmail || '');
+  const [totalUnits, setTotalUnits] = useState(String(order.totalUnits || ''));
+  const [orderDateInput, setOrderDateInput] = useState(() => {
+    const raw = String(order.date || '').trim();
+    if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
+    return new Date().toISOString().split('T')[0];
+  });
   const [status, setStatus] = useState<string>(() => resolveCol((order as any).columnId || order.status));
   const [seller, setSeller] = useState(order.seller || 'Sin asignar');
   const [branch, setBranch] = useState(() => resolveBranch(order.branch) || branchOptions[0] || 'Pampero Ciudad de Mendoza');
   const [companyLocation, setCompanyLocation] = useState(order.companyLocation || '');
   const [locationUrl, setLocationUrl] = useState(order.locationUrl || '');
   const [totalEstimated, setTotalEstimated] = useState(String(order.totalEstimated || ''));
+  const [totalInvoiced, setTotalInvoiced] = useState(String(order.totalInvoiced || ''));
+  const [billingStatus, setBillingStatus] = useState<'sin_facturar' | 'facturado_parcial' | 'facturado_total'>(
+    order.billingStatus || 'sin_facturar'
+  );
+  const [prepTags, setPrepTags] = useState<('en_taller' | 'en_bordados' | 'esperando_pedido')[]>(
+    Array.isArray(order.prepTags) ? order.prepTags : []
+  );
   const [blockReason, setBlockReason] = useState(order.blockReason || '');
   const [observations, setObservations] = useState(order.observations || '');
   const [observationDate, setObservationDate] = useState(order.observationDate || new Date().toISOString().split('T')[0]);
@@ -2454,8 +2678,20 @@ const OrderDetailModal: React.FC<{
   const [generateReminder, setGenerateReminder] = useState(Boolean(order.reminderDate));
   const [quotePdfUrl, setQuotePdfUrl] = useState<string | undefined>(order.quotePdfUrl);
   const [quotePdfName, setQuotePdfName] = useState<string | undefined>(order.quotePdfName);
+  const [invoicePdfUrl, setInvoicePdfUrl] = useState<string | undefined>(order.invoicePdfUrl);
+  const [invoicePdfName, setInvoicePdfName] = useState<string | undefined>(order.invoicePdfName);
   const [clientApprovalStatus, setClientApprovalStatus] = useState<'pendiente' | 'aprobada' | 'rechazada'>(order.clientApprovalStatus || 'pendiente');
   const [clientRejectionReason, setClientRejectionReason] = useState<string>(order.clientRejectionReason || '');
+
+  const stageIndex = companyColumns.findIndex((c) => c.id === status);
+  const approvedIdx = (() => {
+    const idx = companyColumns.findIndex((c) => {
+      const k = (c.id + ' ' + c.label).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      return k.includes('sena') || k.includes('aprob');
+    });
+    return idx >= 0 ? idx : 1;
+  })();
+  const isApprovedOrLater = status !== 'cancelado' && stageIndex >= approvedIdx;
 
   const handlePdfFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -2473,6 +2709,28 @@ const OrderDetailModal: React.FC<{
       setQuotePdfUrl(reader.result as string);
       setQuotePdfName(file.name);
       setClientApprovalStatus('pendiente');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleInvoicePdfChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+      alert('Por favor seleccioná un archivo en formato PDF.');
+      return;
+    }
+    if (file.size > 12 * 1024 * 1024) {
+      alert('El archivo PDF no debe superar los 12MB.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setInvoicePdfUrl(reader.result as string);
+      setInvoicePdfName(file.name);
+      if (billingStatus === 'sin_facturar') {
+        setBillingStatus('facturado_total');
+      }
     };
     reader.readAsDataURL(file);
   };
@@ -2506,8 +2764,16 @@ const OrderDetailModal: React.FC<{
           ]
         : prevHistory;
 
+    const nextDateIso = orderDateInput ? `${orderDateInput}T12:00:00.000Z` : order.date;
+
     onSave({
       ...order,
+      clientName: clientName.trim() || order.clientName,
+      clientType,
+      clientPhone: clientPhone.trim() || undefined,
+      clientEmail: clientEmail.trim() || undefined,
+      totalUnits: totalUnits.trim() === '' ? (order.totalUnits || 0) : Math.max(0, Number(totalUnits) || 0),
+      date: nextDateIso,
       status: status as CRMOrderStatus,
       columnId: status,
       seller: seller.trim() || 'Sin asignar',
@@ -2515,6 +2781,9 @@ const OrderDetailModal: React.FC<{
       companyLocation: companyLocation.trim() || undefined,
       locationUrl: locationUrl.trim() || undefined,
       totalEstimated: totalEstimated.trim() === '' ? (order.totalEstimated || 0) : Math.max(0, Number(totalEstimated) || 0),
+      totalInvoiced: totalInvoiced.trim() === '' ? (order.totalInvoiced || undefined) : Math.max(0, Number(totalInvoiced) || 0),
+      billingStatus,
+      prepTags,
       blockReason: blockReason.trim() || undefined,
       observations: cleanObs || undefined,
       observationDate: cleanObs || activeReminderDate ? (observationDate || new Date().toISOString().split('T')[0]) : undefined,
@@ -2526,6 +2795,10 @@ const OrderDetailModal: React.FC<{
       quotePdfName,
       quotePdfUploadedAt: quotePdfUrl ? (order.quotePdfUploadedAt || new Date().toISOString()) : undefined,
       quotePdfUploadedBy: quotePdfUrl ? (order.quotePdfUploadedBy || activeStaffUser) : undefined,
+      invoicePdfUrl,
+      invoicePdfName,
+      invoicePdfUploadedAt: invoicePdfUrl ? (order.invoicePdfUploadedAt || new Date().toISOString()) : undefined,
+      invoicePdfUploadedBy: invoicePdfUrl ? (order.invoicePdfUploadedBy || activeStaffUser) : undefined,
       clientApprovalStatus,
       clientRejectionReason: clientRejectionReason.trim() || undefined,
       updatedAt: new Date().toISOString(),
@@ -2534,7 +2807,7 @@ const OrderDetailModal: React.FC<{
 
   const handleContactWhatsApp = () => {
     const text = encodeURIComponent(
-      `Hola ${order.clientName}, nos comunicamos de Pampero Mendoza respecto a la cotización / pedido ${order.trackingCode || order.orderNumber || `#${order.id.slice(-6)}`}. ¿Cómo podemos ayudarte?`
+      `Hola ${clientName || order.clientName}, nos comunicamos de Pampero Mendoza respecto a la cotización / pedido ${order.trackingCode || order.orderNumber || `#${order.id.slice(-6)}`}. ¿Cómo podemos ayudarte?`
     );
     window.open(`https://wa.me/?text=${text}`, '_blank');
   };
@@ -2557,7 +2830,7 @@ const OrderDetailModal: React.FC<{
             <h3 className="font-bold text-sm uppercase tracking-wider flex items-center gap-2">
               <span className="font-mono text-[#FDB813]">{order.trackingCode || order.orderNumber || `#${order.id.slice(-6)}`}</span>
               <span>·</span>
-              <span className="truncate max-w-[200px]">{order.clientName}</span>
+              <span className="truncate max-w-[200px]">{clientName || order.clientName}</span>
             </h3>
             <p className="text-[11px] text-[#DCD4C9]/80 font-mono mt-0.5">
               Registrado el {formatDateTime(order.date)}
@@ -2569,6 +2842,78 @@ const OrderDetailModal: React.FC<{
         </div>
 
         <form onSubmit={handleUpdate} className="p-6 space-y-4 overflow-y-auto flex-1 text-xs">
+          {/* Datos principales editables del Pedido */}
+          <div className="p-3 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs space-y-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              <div className="sm:col-span-2">
+                <label className="block text-[10px] text-[#6F6860] uppercase font-bold mb-1">
+                  Empresa / Cliente *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={clientName}
+                  onChange={(e) => setClientName(e.target.value)}
+                  className="w-full px-2.5 py-1.5 text-xs border border-[#DCD4C9] rounded-xs bg-white outline-none font-bold text-[#18231C]"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] text-[#6F6860] uppercase font-bold mb-1">Tipo</label>
+                <select
+                  value={clientType}
+                  onChange={(e) => setClientType(e.target.value as any)}
+                  className="w-full px-2 py-1.5 text-xs border border-[#DCD4C9] rounded-xs bg-white outline-none font-semibold"
+                >
+                  <option value="empresa">Empresa</option>
+                  <option value="consumidor_final">Consumidor Final</option>
+                </select>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              <div>
+                <label className="block text-[10px] text-[#6F6860] uppercase font-bold mb-1">Teléfono</label>
+                <input
+                  type="text"
+                  value={clientPhone}
+                  onChange={(e) => setClientPhone(e.target.value)}
+                  placeholder="261..."
+                  className="w-full px-2.5 py-1.5 text-xs border border-[#DCD4C9] rounded-xs bg-white outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] text-[#6F6860] uppercase font-bold mb-1">Email</label>
+                <input
+                  type="email"
+                  value={clientEmail}
+                  onChange={(e) => setClientEmail(e.target.value)}
+                  placeholder="correo@empresa.com"
+                  className="w-full px-2.5 py-1.5 text-xs border border-[#DCD4C9] rounded-xs bg-white outline-none"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-1.5">
+                <div>
+                  <label className="block text-[10px] text-[#6F6860] uppercase font-bold mb-1">Prendas</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={totalUnits}
+                    onChange={(e) => setTotalUnits(e.target.value)}
+                    className="w-full px-2 py-1.5 text-xs border border-[#DCD4C9] rounded-xs bg-white outline-none font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] text-[#6F6860] uppercase font-bold mb-1">Fecha</label>
+                  <input
+                    type="date"
+                    value={orderDateInput}
+                    onChange={(e) => setOrderDateInput(e.target.value)}
+                    className="w-full px-1.5 py-1.5 text-[11px] border border-[#DCD4C9] rounded-xs bg-white outline-none"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-[10px] text-[#6F6860] uppercase font-bold mb-1">
@@ -2589,7 +2934,7 @@ const OrderDetailModal: React.FC<{
             </div>
             <div>
               <label className="block text-[10px] text-[#6F6860] uppercase font-bold mb-1">
-                Monto $ Total Estimado
+                {isApprovedOrLater ? 'Monto Cotizado $' : 'Monto Estimado $'}
               </label>
               <input
                 type="number"
@@ -2597,6 +2942,43 @@ const OrderDetailModal: React.FC<{
                 onChange={(e) => setTotalEstimated(e.target.value)}
                 className="w-full px-2.5 py-1.5 text-xs border border-[#DCD4C9] rounded-xs bg-[#FAF8F5] outline-none font-bold text-emerald-700"
               />
+            </div>
+          </div>
+
+          {/* Etiquetas de Preparación / Taller / Bordados */}
+          <div className="p-2.5 bg-purple-50/60 border border-purple-200 rounded-xs space-y-1.5">
+            <span className="block text-[10px] text-purple-950 uppercase font-bold">
+              Etiquetas de Preparación (Taller / Bordado / Proveedor)
+            </span>
+            <div className="flex flex-wrap gap-2">
+              {(
+                [
+                  { key: 'en_taller', label: 'En taller' },
+                  { key: 'en_bordados', label: 'En bordados' },
+                  { key: 'esperando_pedido', label: 'Esperando pedido' },
+                ] as const
+              ).map((tag) => {
+                const active = prepTags.includes(tag.key);
+                return (
+                  <button
+                    key={tag.key}
+                    type="button"
+                    onClick={() =>
+                      setPrepTags((prev) =>
+                        active ? prev.filter((t) => t !== tag.key) : [...prev, tag.key]
+                      )
+                    }
+                    className={`px-2.5 py-1 rounded-xs text-[11px] font-bold border cursor-pointer transition-colors ${
+                      active
+                        ? 'bg-[#18231C] text-[#FDB813] border-[#18231C]'
+                        : 'bg-white text-[#18231C] border-purple-200 hover:bg-purple-100'
+                    }`}
+                  >
+                    {active ? '✓ ' : '+ '}
+                    {tag.label}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -2809,6 +3191,92 @@ const OrderDetailModal: React.FC<{
                   Cargá el archivo PDF generado desde tus planillas de Google para que el cliente pueda revisarlo y confirmar el pedido.
                 </p>
               </div>
+            )}
+          </div>
+
+          {/* Facturación: Monto Facturado, Estado y PDF de Factura */}
+          <div className="pt-3 border-t border-[#ECE5DC] space-y-2.5">
+            <div className="flex items-center justify-between">
+              <label className="block text-[10px] text-[#6F6860] uppercase font-bold flex items-center gap-1.5">
+                <Receipt className="w-3.5 h-3.5 text-emerald-700" />
+                <span>Facturación y Comprobante PDF</span>
+              </label>
+              {invoicePdfUrl && (
+                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-xs flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3" /> Factura Cargada
+                </span>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <div>
+                <label className="block text-[10px] text-[#6F6860] uppercase font-bold mb-1">
+                  Estado de Facturación
+                </label>
+                <select
+                  value={billingStatus}
+                  onChange={(e) => setBillingStatus(e.target.value as any)}
+                  className="w-full px-2.5 py-1.5 text-xs border border-[#DCD4C9] rounded-xs bg-white outline-none font-bold text-[#18231C]"
+                >
+                  <option value="sin_facturar">Sin facturar</option>
+                  <option value="facturado_parcial">Facturado parcial</option>
+                  <option value="facturado_total">Facturado el total</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-[10px] text-[#6F6860] uppercase font-bold mb-1">
+                  Monto Facturado $ (opcional)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  value={totalInvoiced}
+                  onChange={(e) => setTotalInvoiced(e.target.value)}
+                  placeholder="Si difiere del cotizado"
+                  className="w-full px-2.5 py-1.5 text-xs border border-[#DCD4C9] rounded-xs bg-white outline-none font-bold text-emerald-700"
+                />
+              </div>
+            </div>
+
+            {invoicePdfUrl ? (
+              <div className="p-2.5 bg-emerald-50/70 rounded-xs border border-emerald-200 flex items-center justify-between gap-2">
+                <span className="text-xs font-bold text-emerald-950 truncate font-mono">
+                  {invoicePdfName || 'Factura.pdf'}
+                </span>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <a
+                    href={invoicePdfUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    download={invoicePdfName || 'Factura.pdf'}
+                    className="px-2 py-1 bg-white border border-emerald-300 rounded-xs text-[11px] font-bold text-emerald-900"
+                  >
+                    Descargar
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setInvoicePdfUrl(undefined);
+                      setInvoicePdfName(undefined);
+                    }}
+                    className="p-1 text-red-600 hover:bg-red-50 rounded-xs cursor-pointer"
+                    title="Quitar factura PDF"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <label className="w-full py-2 px-3 bg-[#FAF8F5] hover:bg-[#ECE5DC] border-2 border-dashed border-[#DCD4C9] rounded-xs text-xs font-bold text-[#18231C] uppercase flex items-center justify-center gap-2 cursor-pointer transition-colors">
+                <Upload className="w-4 h-4 text-emerald-700" />
+                <span>Subir PDF de Factura</span>
+                <input
+                  type="file"
+                  accept=".pdf,application/pdf"
+                  className="hidden"
+                  onChange={handleInvoicePdfChange}
+                />
+              </label>
             )}
           </div>
 

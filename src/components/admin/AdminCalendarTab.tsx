@@ -333,7 +333,7 @@ export const AdminCalendarTab: React.FC<AdminCalendarTabProps> = ({
             },
             {
               key: 'allowStaffCreateEvents' as const,
-              label: 'Permitir que empleados creen eventos',
+              label: 'Permitir que colaboradores creen eventos',
               desc: 'Los vendedores pueden agendar vencimientos con permisos',
             },
           ].map((opt) => {

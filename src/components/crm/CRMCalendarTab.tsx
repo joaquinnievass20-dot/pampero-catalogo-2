@@ -27,6 +27,7 @@ import {
 } from '../../services/firebase';
 import { fixUtf8Encoding, sanitizeObjectEncoding } from '../../utils/encodingUtils';
 import { useConfiguredBranches } from '../../utils/useConfiguredBranches';
+import { branchMatches } from '../../utils/rrhhBranches';
 import {
   AlertTriangle,
   Building2,
@@ -162,6 +163,8 @@ const toIsoDateOnly = (raw?: string): string | null => {
   const trimmed = String(raw).trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
   if (/^\d{4}-\d{2}-\d{2}T/.test(trimmed)) return trimmed.slice(0, 10);
+  const slashMatch = trimmed.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (slashMatch) return `${slashMatch[3]}-${slashMatch[2]}-${slashMatch[1]}`;
   const parsed = new Date(trimmed);
   if (Number.isNaN(parsed.getTime())) return null;
   const y = parsed.getFullYear();
@@ -203,6 +206,13 @@ export const CRMCalendarTab: React.FC<CRMCalendarTabProps> = ({
   });
   const [selectedDate, setSelectedDate] = useState<string>(todayStr);
   const [sourceFilter, setSourceFilter] = useState<CalendarSourceKind>('all');
+  const { branchNames: configuredBranchNames, resolveBranch: resolveConfiguredBranch } = useConfiguredBranches();
+  const [branchFilter, setBranchFilter] = useState<string>(() => {
+    if (userSession?.role !== 'admin' && crmScope === 'branch_only' && assignedBranch && assignedBranch.toLowerCase() !== 'todas') {
+      return resolveConfiguredBranch(assignedBranch, false);
+    }
+    return 'todos';
+  });
   const [searchQuery, setSearchQuery] = useState('');
 
   const [tasks, setTasks] = useState<CRMTask[]>([]);
@@ -215,11 +225,10 @@ export const CRMCalendarTab: React.FC<CRMCalendarTabProps> = ({
   const [eventTitle, setEventTitle] = useState('');
   const [eventDescription, setEventDescription] = useState('');
   const [eventDate, setEventDate] = useState(todayStr);
-  const { branchNames: configuredBranchNames, resolveBranch: resolveConfiguredBranch } = useConfiguredBranches();
   const [eventTime, setEventTime] = useState('');
   const [eventType, setEventType] = useState<CRMCalendarEventType>('vencimiento');
   const [eventBranch, setEventBranch] = useState(() =>
-    resolveConfiguredBranch(assignedBranch || '', true) || configuredBranchNames[0] || 'Pampero Maipú'
+    resolveConfiguredBranch(assignedBranch || '', true) || configuredBranchNames[0] || 'Pampero Ciudad de Mendoza'
   );
   const [visibilityType, setVisibilityType] = useState<'all' | 'branch' | 'custom'>('all');
   const [visibleToUsers, setVisibleToUsers] = useState<string[]>([]);
@@ -299,8 +308,8 @@ export const CRMCalendarTab: React.FC<CRMCalendarTabProps> = ({
     if (ev.visibilityType === 'all') return true;
 
     if (ev.visibilityType === 'branch') {
-      if (userSession?.role === 'admin') return true;
-      return normalizeStr(ev.branch) === normalizeStr(assignedBranch);
+      if (userSession?.role === 'admin' || isManager) return true;
+      return branchMatches(ev.branch, assignedBranch);
     }
 
     if (ev.visibilityType === 'custom') {
@@ -314,16 +323,20 @@ export const CRMCalendarTab: React.FC<CRMCalendarTabProps> = ({
   // Consolidar todos los eventos de Tareas, Visitas, Seguimiento y Eventos Propios
   const allEntries: UnifiedCalendarEntry[] = useMemo(() => {
     const list: UnifiedCalendarEntry[] = [];
+    const viewedYear = currentMonthDate.getFullYear();
+    const viewedMonth = currentMonthDate.getMonth();
+    const daysInViewedMonth = new Date(viewedYear, viewedMonth + 1, 0).getDate();
 
-    // 1. Tareas (vencimientos + activaciones futuras)
+    // 1. Tareas (vencimientos + activaciones futuras + días semanales)
     tasks.forEach((task) => {
-      // Respetar alcance por local si no es admin
       if (
         userSession?.role !== 'admin' &&
         crmScope === 'branch_only' &&
         assignedBranch &&
         task.branch &&
-        normalizeStr(task.branch) !== normalizeStr(assignedBranch)
+        task.branch.toLowerCase() !== 'todas' &&
+        !branchMatches(task.branch, assignedBranch) &&
+        !(Array.isArray(task.targetBranches) && task.targetBranches.some((tb) => branchMatches(tb, assignedBranch)))
       ) {
         return;
       }
@@ -345,7 +358,7 @@ export const CRMCalendarTab: React.FC<CRMCalendarTabProps> = ({
           : task.assignedTo;
 
       const due = toIsoDateOnly(task.dueDate);
-      const isDone = task.columnId === 'completado' || Number(task.progressPercent || 0) >= 100;
+      const isDone = task.columnId === 'completado' || task.columnId === 'completada' || Number(task.progressPercent || 0) >= 100;
 
       if (due) {
         list.push({
@@ -388,16 +401,48 @@ export const CRMCalendarTab: React.FC<CRMCalendarTabProps> = ({
           borderClass: 'border-red-300',
         });
       }
+
+      if (
+        task.scheduleType === 'weekdays' &&
+        Array.isArray(task.recurrenceWeekdays) &&
+        task.recurrenceWeekdays.length > 0 &&
+        !isDone
+      ) {
+        for (let dNum = 1; dNum <= daysInViewedMonth; dNum++) {
+          const dt = new Date(viewedYear, viewedMonth, dNum);
+          if (task.recurrenceWeekdays.includes(dt.getDay())) {
+            const iso = `${viewedYear}-${String(viewedMonth + 1).padStart(2, '0')}-${String(dNum).padStart(2, '0')}`;
+            if (iso !== due) {
+              list.push({
+                uid: `task-wd-${task.id}-${iso}`,
+                source: 'task',
+                eventType: 'tarea',
+                date: iso,
+                time: task.dueTime,
+                title: `[Semanal] ${fixUtf8Encoding(task.title)}`,
+                subtitle: task.description ? fixUtf8Encoding(task.description) : 'Tarea periódica semanal',
+                branch: task.branch,
+                responsible: fixUtf8Encoding(respDisplay),
+                badgeText: 'Tarea Semanal',
+                colorHex: '#DC2626',
+                bgClass: 'bg-red-50',
+                textClass: 'text-red-900',
+                borderClass: 'border-red-300',
+              });
+            }
+          }
+        }
+      }
     });
 
-    // 2. Visitas Comerciales (próximo paso / fecha visita)
+    // 2. Visitas Comerciales (fecha de visita Y próximo paso)
     (visits || []).forEach((visit) => {
       if (
         userSession?.role !== 'admin' &&
         crmScope === 'branch_only' &&
         assignedBranch &&
         visit.branch &&
-        normalizeStr(visit.branch) !== normalizeStr(assignedBranch)
+        !branchMatches(visit.branch, assignedBranch)
       ) {
         return;
       }
@@ -412,28 +457,46 @@ export const CRMCalendarTab: React.FC<CRMCalendarTabProps> = ({
 
       const nextDate = toIsoDateOnly(visit.nextStepDate);
       const visitDate = toIsoDateOnly(visit.date);
-      const targetDate = nextDate || visitDate;
-      if (!targetDate) return;
 
-      list.push({
-        uid: `visit-${visit.id}-${targetDate}`,
-        source: 'visit',
-        eventType: 'visita',
-        date: targetDate,
-        title: `${fixUtf8Encoding(visit.companyName)}${visit.trackingCode ? ` (${visit.trackingCode})` : ''}`,
-        subtitle: nextDate
-          ? `Próximo paso: ${fixUtf8Encoding(visit.nextStep || visit.objective || 'Seguimiento comercial')}`
-          : fixUtf8Encoding(visit.objective || visit.nextStep || 'Visita / Contacto comercial'),
-        branch: visit.branch,
-        responsible: fixUtf8Encoding(visit.seller || 'Sin asignar'),
-        badgeText: nextDate ? 'Próx. Paso Visita' : 'Visita Comercial',
-        colorHex: '#7C3AED',
-        bgClass: 'bg-purple-50',
-        textClass: 'text-purple-900',
-        borderClass: 'border-purple-300',
-        locationText: visit.companyLocation,
-        locationUrl: visit.locationUrl,
-      });
+      if (visitDate) {
+        list.push({
+          uid: `visit-main-${visit.id}-${visitDate}`,
+          source: 'visit',
+          eventType: 'visita',
+          date: visitDate,
+          title: `${fixUtf8Encoding(visit.companyName)}${visit.trackingCode ? ` (${visit.trackingCode})` : ''}`,
+          subtitle: fixUtf8Encoding(visit.objective || visit.nextStep || 'Visita / Contacto comercial'),
+          branch: visit.branch,
+          responsible: fixUtf8Encoding(visit.seller || 'Sin asignar'),
+          badgeText: 'Visita Comercial',
+          colorHex: '#7C3AED',
+          bgClass: 'bg-purple-50',
+          textClass: 'text-purple-900',
+          borderClass: 'border-purple-300',
+          locationText: visit.companyLocation,
+          locationUrl: visit.locationUrl,
+        });
+      }
+
+      if (nextDate && nextDate !== visitDate) {
+        list.push({
+          uid: `visit-next-${visit.id}-${nextDate}`,
+          source: 'visit',
+          eventType: 'visita',
+          date: nextDate,
+          title: `${fixUtf8Encoding(visit.companyName)}${visit.trackingCode ? ` (${visit.trackingCode})` : ''}`,
+          subtitle: `Próximo paso: ${fixUtf8Encoding(visit.nextStep || visit.objective || 'Seguimiento comercial')}`,
+          branch: visit.branch,
+          responsible: fixUtf8Encoding(visit.seller || 'Sin asignar'),
+          badgeText: 'Próx. Paso Visita',
+          colorHex: '#7C3AED',
+          bgClass: 'bg-purple-50',
+          textClass: 'text-purple-900',
+          borderClass: 'border-purple-300',
+          locationText: visit.companyLocation,
+          locationUrl: visit.locationUrl,
+        });
+      }
     });
 
     // 3. Seguimiento Empresas (pedidos activos)
@@ -444,7 +507,7 @@ export const CRMCalendarTab: React.FC<CRMCalendarTabProps> = ({
         crmScope === 'branch_only' &&
         assignedBranch &&
         order.branch &&
-        normalizeStr(order.branch) !== normalizeStr(assignedBranch)
+        !branchMatches(order.branch, assignedBranch)
       ) {
         return;
       }
@@ -518,7 +581,6 @@ export const CRMCalendarTab: React.FC<CRMCalendarTabProps> = ({
     });
 
     // 5. Feriados y Fechas Importantes (Argentina, Mendoza, Ciudad, Maipú, Luján de Cuyo y Comerciales)
-    const viewedYear = currentMonthDate.getFullYear();
     const candidateYears = Array.from(new Set([viewedYear - 1, viewedYear, viewedYear + 1]));
     let promosCache: Promotion[] = [];
     try {
@@ -594,6 +656,20 @@ export const CRMCalendarTab: React.FC<CRMCalendarTabProps> = ({
     const q = searchQuery.toLowerCase().trim();
     return allEntries.filter((item) => {
       if (sourceFilter !== 'all' && item.source !== sourceFilter) return false;
+      if (branchFilter !== 'todos') {
+        const b = String(item.branch || '').trim();
+        const bLow = b.toLowerCase();
+        // National/Provincial holidays apply across all stores unless local holiday
+        if (item.source === 'holiday') {
+          if (bLow !== 'nacional' && bLow !== 'mendoza' && !branchMatches(b, branchFilter)) {
+            return false;
+          }
+        } else if (b && bLow !== 'todas' && !branchMatches(b, branchFilter)) {
+          return false;
+        } else if (!b) {
+          return false;
+        }
+      }
       if (
         q &&
         !item.title.toLowerCase().includes(q) &&
@@ -605,7 +681,7 @@ export const CRMCalendarTab: React.FC<CRMCalendarTabProps> = ({
       }
       return true;
     });
-  }, [allEntries, sourceFilter, searchQuery]);
+  }, [allEntries, sourceFilter, branchFilter, searchQuery]);
 
   // Agrupar entradas por fecha YYYY-MM-DD
   const entriesByDate = useMemo(() => {
@@ -875,15 +951,32 @@ export const CRMCalendarTab: React.FC<CRMCalendarTabProps> = ({
             })}
         </div>
 
-        <div className="relative min-w-[220px] flex-1 max-w-xs">
-          <Search className="w-3.5 h-3.5 text-neutral-400 absolute left-2.5 top-2.5" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Buscar evento, empresa o responsable..."
-            className="w-full pl-8 pr-3 py-1.5 text-xs border border-[#DCD4C9] rounded-xs outline-none focus:border-[#B9522F]"
-          />
+        <div className="flex items-center gap-2 flex-wrap">
+          <select
+            value={branchFilter}
+            disabled={userSession?.role !== 'admin' && !isManager && crmScope === 'branch_only' && Boolean(assignedBranch) && assignedBranch.toLowerCase() !== 'todas'}
+            onChange={(e) => setBranchFilter(e.target.value)}
+            className="text-xs border border-[#DCD4C9] rounded-xs px-2.5 py-1.5 outline-none font-semibold bg-white text-[#18231C] cursor-pointer disabled:bg-neutral-100"
+            title="Filtrar eventos del calendario por local"
+          >
+            <option value="todos">Todos los locales</option>
+            {configuredBranchNames.map((b) => (
+              <option key={b} value={b}>
+                {b}
+              </option>
+            ))}
+          </select>
+
+          <div className="relative min-w-[200px] flex-1 max-w-xs">
+            <Search className="w-3.5 h-3.5 text-neutral-400 absolute left-2.5 top-2.5" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Buscar evento, empresa, tarea..."
+              className="w-full pl-8 pr-3 py-1.5 text-xs border border-[#DCD4C9] rounded-xs outline-none focus:border-[#B9522F]"
+            />
+          </div>
         </div>
       </div>
 

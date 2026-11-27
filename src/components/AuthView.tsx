@@ -277,7 +277,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
         // SEGREGACIÓN ESTRICTA: Bloqueo de personal/admin en portal de clientes
         if (authResult.session.role === 'admin' || authResult.session.role === 'employee') {
           setErrorMessage(
-            'Esta cuenta corresponde al personal de Administración / Empleados. Para ingresar a tu área de trabajo, por favor utilizá el acceso exclusivo para Empleados/Admin al pie de la página.'
+            'Esta cuenta corresponde al personal de Administración / Colaboradores. Para ingresar a tu área de trabajo, por favor utilizá el acceso exclusivo para Colaboradores/Admin al pie de la página.'
           );
           setRedirectSuggestion('admin');
           recordAuditLog({
@@ -327,7 +327,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
     if (adminLoginMethod === 'password') {
       const passClean = adminPass.trim();
       if (!passClean) {
-        setErrorMessage('Ingresá tu contraseña de administrador o empleado.');
+        setErrorMessage('Ingresá tu contraseña de administrador o colaborador.');
         return;
       }
     } else {
@@ -352,7 +352,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
           recordAuditLog({
             module: 'Autenticación',
             action: 'Intento de Acceso Cliente por Portal Admin',
-            details: `La cuenta de cliente "${userClean}" intentó ingresar por el portal exclusivo de Administración/Empleados. Acceso bloqueado.`,
+            details: `La cuenta de cliente "${userClean}" intentó ingresar por el portal exclusivo de Administración/Colaboradores. Acceso bloqueado.`,
             userEmail: authResult.session.email || userClean,
             userRole: 'client',
           }).catch(() => {});
@@ -487,7 +487,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
             <div className="mt-12 pt-6 border-t border-[#DCD4C9]/60">
               {tab !== 'admin' ? (
                 <p className="text-xs text-[#6F6860]">
-                  ¿Sos administrador o empleado?{' '}
+                  ¿Sos administrador o colaborador?{' '}
                   <button
                     type="button"
                     onClick={() => switchTab('admin')}
@@ -536,10 +536,10 @@ export const AuthView: React.FC<AuthViewProps> = ({
                     style={{ color: text, fontFamily: theme?.fontFamily || 'Bebas Neue' }}
                     className="text-4xl uppercase tracking-wide font-bold"
                   >
-                    {theme?.siteTexts?.authStaffTitle || 'ADMINISTRACIÓN Y EMPLEADOS'}
+                    {(theme?.siteTexts?.authStaffTitle || 'ADMINISTRACIÓN Y COLABORADORES').replace(/EMPLEADOS/g, 'COLABORADORES')}
                   </h2>
                   <p className="text-xs text-[#6F6860] mt-1 mb-6">
-                    {theme?.siteTexts?.authStaffSubtitle || 'Ingresá con tu usuario o email y contraseña autorizada (Administrador o Empleado) para acceder al panel de control.'}
+                    {(theme?.siteTexts?.authStaffSubtitle || 'Ingresá con tu usuario o email y contraseña autorizada (Administrador o Colaborador) para acceder al panel de control.').replace(/\bEmpleado\b/g, 'Colaborador')}
                   </p>
 
                   {errorMessage && (
@@ -757,7 +757,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
                             }}
                             className="mt-2.5 px-3 py-1.5 bg-[#18231C] hover:bg-black text-[#FDB813] text-[11px] font-bold uppercase tracking-wider rounded-xs flex items-center gap-1.5 cursor-pointer transition-all shadow-xs"
                           >
-                            <span>Ir al acceso de Empleados / Admin →</span>
+                            <span>Ir al acceso de Colaboradores / Admin →</span>
                           </button>
                         )}
                       </div>
@@ -1033,7 +1033,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
                             onClick={() => switchTab('admin')}
                             className="hover:text-[#18231C] underline font-medium cursor-pointer transition-colors"
                           >
-                            {theme?.siteTexts?.authToStaffLinkText || 'Acceso para Empleados/Admin'}
+                            {(theme?.siteTexts?.authToStaffLinkText || 'Acceso para Colaboradores/Admin').replace(/Empleados/g, 'Colaboradores')}
                           </button>
                         </p>
                       </div>
@@ -1218,7 +1218,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
                             onClick={() => switchTab('admin')}
                             className="hover:text-[#18231C] underline font-medium cursor-pointer transition-colors"
                           >
-                            {theme?.siteTexts?.authToStaffLinkText || 'Acceso para Empleados/Admin'}
+                            {(theme?.siteTexts?.authToStaffLinkText || 'Acceso para Colaboradores/Admin').replace(/Empleados/g, 'Colaboradores')}
                           </button>
                         </p>
                       </div>

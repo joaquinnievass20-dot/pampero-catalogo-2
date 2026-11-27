@@ -90,10 +90,10 @@ const DEFAULT_SITE_TEXTS: SiteTextsConfig = {
   authLoginBtnText: 'INGRESAR',
   authRegisterTitle: 'ACCESO AL CATÁLOGO',
   authRegisterSubtitle: 'Elegí el tipo de cuenta según cómo comprás: consumidor final o empresa. Los datos se usan solo para identificar tu cuenta y para el contacto comercial.',
-  authStaffTitle: 'ADMINISTRACIÓN Y EMPLEADOS',
-  authStaffSubtitle: 'Ingresá con tu usuario o email y contraseña autorizada (Administrador o Empleado) para acceder al panel de control.',
+  authStaffTitle: 'ADMINISTRACIÓN Y COLABORADORES',
+  authStaffSubtitle: 'Ingresá con tu usuario o email y contraseña autorizada (Administrador o Colaborador) para acceder al panel de control.',
   authToRegisterLinkText: 'Regístrate',
-  authToStaffLinkText: 'Acceso para Empleados/Admin',
+  authToStaffLinkText: 'Acceso para Colaboradores/Admin',
 
   // 7. Hub de Trabajo Interno
   hubHeaderTag: 'HUB DE TRABAJO INTERNO',
@@ -112,7 +112,7 @@ const DEFAULT_SITE_TEXTS: SiteTextsConfig = {
   hubCostsCardDesc: 'Dashboard de situación y liquidez, cheques emitidos y recibidos, caja chica por local y control de costos.',
   hubCostsBtnText: 'Ir a Costos',
   hubChatCardText: 'Chat Interno',
-  hubChatCardDesc: 'Mensajería directa en tiempo real entre administradores, empleados de locales y clientes registrados.',
+  hubChatCardDesc: 'Mensajería directa en tiempo real entre administradores, colaboradores de locales y clientes registrados.',
   hubChatBtnText: 'Abrir Chat',
   hubAdminCardText: 'Panel de Control',
   hubAdminCardDesc: 'Administración de catálogo, precios, promociones, operadores, locales y configuración integral.',
@@ -196,7 +196,7 @@ const DEFAULT_SITE_TEXTS: SiteTextsConfig = {
 
   // 13. Chat Interno
   chatTitle: 'Chat Interno Pampero',
-  chatSubtitle: 'Mensajería directa en tiempo real con administradores, empleados y clientes.',
+  chatSubtitle: 'Mensajería directa en tiempo real con administradores, colaboradores y clientes.',
   chatInputPlaceholder: 'Escribí un mensaje directo...',
   chatSendBtnText: 'Enviar',
   chatNavBtnText: 'Chat / Mensajes',
@@ -517,9 +517,9 @@ export const AdminSiteTextsTab: React.FC<AdminSiteTextsTabProps> = ({
             {renderInput('Etiqueta superior Registro', 'authRegisterTitle', 'ACCESO AL CATÁLOGO')}
             {renderInput('Texto enlace Ir a Registro', 'authToRegisterLinkText', 'Regístrate')}
             {renderInput('Bajada descriptiva Registro', 'authRegisterSubtitle', DEFAULT_SITE_TEXTS.authRegisterSubtitle || '', undefined, true, true)}
-            {renderInput('Título acceso Empleados & Admin', 'authStaffTitle', 'ADMINISTRACIÓN Y EMPLEADOS')}
-            {renderInput('Texto enlace Acceso Empleados/Admin', 'authToStaffLinkText', 'Acceso para Empleados/Admin')}
-            {renderInput('Bajada acceso Empleados & Admin', 'authStaffSubtitle', DEFAULT_SITE_TEXTS.authStaffSubtitle || '', undefined, true, true)}
+            {renderInput('Título acceso Colaboradores & Admin', 'authStaffTitle', 'ADMINISTRACIÓN Y COLABORADORES')}
+            {renderInput('Texto enlace Acceso Colaboradores/Admin', 'authToStaffLinkText', 'Acceso para Colaboradores/Admin')}
+            {renderInput('Bajada acceso Colaboradores & Admin', 'authStaffSubtitle', DEFAULT_SITE_TEXTS.authStaffSubtitle || '', undefined, true, true)}
           </div>
         </div>
       )}

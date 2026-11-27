@@ -95,7 +95,7 @@ export const SYSTEM_SECTIONS: SectionDefinition[] = [
     name: '6. Hub de Trabajo / Menú Principal Interno',
     shortLabel: 'Hub Interno',
     icon: Layers,
-    description: 'Menú principal de bienvenida para Administradores y Empleados autorizados con accesos a CRM, Panel y Catálogo.',
+    description: 'Menú principal de bienvenida para Administradores y Colaboradores autorizados con accesos a CRM, Panel y Catálogo.',
     badge: 'Interno'
   },
   {
@@ -151,7 +151,7 @@ export const SYSTEM_SECTIONS: SectionDefinition[] = [
     name: '13. Chat Interno & Mensajería',
     shortLabel: 'Chat Interno',
     icon: MessageSquare,
-    description: 'Títulos, botones y placeholders del chat en tiempo real entre administradores, empleados y clientes.',
+    description: 'Títulos, botones y placeholders del chat en tiempo real entre administradores, colaboradores y clientes.',
     badge: 'Mensajería'
   }
 ];
@@ -848,10 +848,10 @@ export const SectionThemeEditor: React.FC<SectionThemeEditorProps> = ({
                 {renderTextField('Texto de Botón Principal "Ingresar"', 'authLoginBtnText', siteTexts.authLoginBtnText, 'INGRESAR')}
                 {renderTextField('Título de Formulario de Registro', 'authRegisterTitle', siteTexts.authRegisterTitle, 'ACCESO AL CATÁLOGO')}
                 {renderTextField('Bajada de Formulario de Registro', 'authRegisterSubtitle', siteTexts.authRegisterSubtitle, 'Registrate para solicitar presupuestos y seguimiento comercial', true)}
-                {renderTextField('Título Acceso Empleados / Admin', 'authStaffTitle', siteTexts.authStaffTitle, 'ADMINISTRACIÓN Y EMPLEADOS')}
-                {renderTextField('Bajada Acceso Empleados / Admin', 'authStaffSubtitle', siteTexts.authStaffSubtitle, 'Ingresá con tu usuario o email y contraseña autorizada.', true)}
-                {renderTextField('Enlace para Ir a Registro', 'authToRegisterLinkText', siteTexts.authToRegisterLinkText, 'Regístrate')}
-                {renderTextField('Enlace para Acceso Empleados / Admin', 'authToStaffLinkText', siteTexts.authToStaffLinkText, 'Acceso para Empleados/Admin')}
+                {renderTextField('Título Acceso Colaboradores / Admin', 'authStaffTitle', siteTexts.authStaffTitle, 'ADMINISTRACIÓN Y COLABORADORES')}
+                {renderTextField('Bajada Acceso Colaboradores / Admin', 'authStaffSubtitle', siteTexts.authStaffSubtitle, 'Ingresá con tu usuario o email y contraseña autorizada.', true)}
+                {renderTextField('Enlace para ir a Registro', 'authToRegisterLinkText', siteTexts.authToRegisterLinkText, 'Regístrate')}
+                {renderTextField('Enlace para Acceso Colaboradores / Admin', 'authToStaffLinkText', siteTexts.authToStaffLinkText, 'Acceso para Colaboradores/Admin')}
               </>
             )}
 
@@ -874,7 +874,7 @@ export const SectionThemeEditor: React.FC<SectionThemeEditorProps> = ({
                 {renderTextField('Descripción Tarjeta Costos', 'hubCostsCardDesc', siteTexts.hubCostsCardDesc, 'Dashboard financiero y de liquidez, cheques, caja chica por local y costos.', true)}
                 {renderTextField('Botón Tarjeta Costos', 'hubCostsBtnText', siteTexts.hubCostsBtnText, 'Ir a Costos')}
                 {renderTextField('Título Tarjeta Chat Interno', 'hubChatCardText', siteTexts.hubChatCardText, 'Chat Interno')}
-                {renderTextField('Descripción Tarjeta Chat', 'hubChatCardDesc', siteTexts.hubChatCardDesc, 'Mensajería directa en tiempo real con administradores, empleados y clientes.', true)}
+                {renderTextField('Descripción Tarjeta Chat', 'hubChatCardDesc', siteTexts.hubChatCardDesc, 'Mensajería directa en tiempo real con administradores, colaboradores y clientes.', true)}
                 {renderTextField('Botón Tarjeta Chat', 'hubChatBtnText', siteTexts.hubChatBtnText, 'Abrir Chat')}
                 {renderTextField('Título Tarjeta Panel de Control', 'hubAdminCardText', siteTexts.hubAdminCardText, 'Panel de Control')}
                 {renderTextField('Descripción Tarjeta Panel', 'hubAdminCardDesc', siteTexts.hubAdminCardDesc, 'Administración de catálogo, precios, promociones y locales.', true)}
@@ -992,7 +992,7 @@ export const SectionThemeEditor: React.FC<SectionThemeEditorProps> = ({
             {selectedSection === 'chat' && (
               <>
                 {renderTextField('Título Ventana Chat', 'chatTitle', siteTexts.chatTitle, 'Chat Interno Pampero')}
-                {renderTextField('Subtítulo Ventana Chat', 'chatSubtitle', siteTexts.chatSubtitle, 'Mensajería directa en tiempo real con administradores, empleados y clientes.', true)}
+                {renderTextField('Subtítulo Ventana Chat', 'chatSubtitle', siteTexts.chatSubtitle, 'Mensajería directa en tiempo real con administradores, colaboradores y clientes.', true)}
                 {renderTextField('Botón Menú / Acceso Chat', 'chatNavBtnText', siteTexts.chatNavBtnText, 'Chat / Mensajes')}
                 {renderTextField('Placeholder Caja de Mensaje', 'chatInputPlaceholder', siteTexts.chatInputPlaceholder, 'Escribí un mensaje directo...')}
                 {renderTextField('Botón Enviar', 'chatSendBtnText', siteTexts.chatSendBtnText, 'Enviar')}

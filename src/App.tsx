@@ -64,6 +64,7 @@ import { AdminPanel } from './components/AdminPanel';
 import { CRMView } from './components/crm/CRMView';
 import { RRHHView } from './components/rrhh/RRHHView';
 import { CostsHubView } from './components/costs/CostsHubView';
+import { ContactsHubView } from './components/contacts/ContactsHubView';
 import { ClientUniformSimulatorView } from './components/client/ClientUniformSimulatorView';
 import { ClientSizingPortalView } from './components/client/ClientSizingPortalView';
 import { ClientOrderStatusView } from './components/client/ClientOrderStatusView';
@@ -591,10 +592,10 @@ export default function App() {
   // 'sizing_portal'     -> Client digital employee sizing portal
   // 'order_tracking'    -> Client live order status view (Kanban phase tracking)
   // 'hub'               -> Internal staff & admin hub with large action cards
-  const [viewMode, setViewMode] = useState<'landing' | 'auth' | 'catalog' | 'product_detail' | 'admin' | 'lookbook' | 'crm' | 'rrhh' | 'costs' | 'uniform_simulator' | 'sizing_portal' | 'order_tracking' | 'hub'>(() => {
+  const [viewMode, setViewMode] = useState<'landing' | 'auth' | 'catalog' | 'product_detail' | 'admin' | 'lookbook' | 'crm' | 'rrhh' | 'costs' | 'contacts' | 'uniform_simulator' | 'sizing_portal' | 'order_tracking' | 'hub'>(() => {
     try {
       const saved = sessionStorage.getItem('pampero_active_view');
-      if (saved && ['landing', 'auth', 'catalog', 'product_detail', 'admin', 'lookbook', 'crm', 'rrhh', 'costs', 'uniform_simulator', 'sizing_portal', 'order_tracking', 'hub'].includes(saved)) {
+      if (saved && ['landing', 'auth', 'catalog', 'product_detail', 'admin', 'lookbook', 'crm', 'rrhh', 'costs', 'contacts', 'uniform_simulator', 'sizing_portal', 'order_tracking', 'hub'].includes(saved)) {
         return saved as any;
       }
     } catch {}
@@ -856,6 +857,7 @@ export default function App() {
         'crm',
         'rrhh',
         'costs',
+        'contacts',
         'catalog',
         'landing',
         'product_detail',
@@ -874,7 +876,7 @@ export default function App() {
         setViewMode('hub');
       }
     } else {
-      const restrictedInternalViews: Array<typeof viewMode> = ['hub', 'admin', 'crm', 'rrhh', 'costs'];
+      const restrictedInternalViews: Array<typeof viewMode> = ['hub', 'admin', 'crm', 'rrhh', 'costs', 'contacts'];
       if (restrictedInternalViews.includes(viewMode)) {
         setViewMode(userSession ? 'catalog' : 'landing');
       }
@@ -1348,6 +1350,15 @@ export default function App() {
             />
           )}
 
+          {/* VIEW 10D: CONTACTOS (Base Unificada: Colaboradores, Clientes, Proveedores, Cuentas Importantes) */}
+          {viewMode === 'contacts' && userSession && (userSession.role === 'admin' || userSession.role === 'employee') && (
+            <ContactsHubView
+              userSession={userSession}
+              theme={theme}
+              onClose={() => setViewMode('hub')}
+            />
+          )}
+
           {/* VIEW 11: HUB DE TRABAJO (Admin & Employee Work Hub) */}
           {viewMode === 'hub' && userSession && (
             <HubView
@@ -1356,6 +1367,7 @@ export default function App() {
               onOpenCRM={() => setViewMode('crm')}
               onOpenRRHH={() => setViewMode('rrhh')}
               onOpenCosts={() => setViewMode('costs')}
+              onOpenContacts={() => setViewMode('contacts')}
               onOpenAdmin={() => {
                 setAdminInitialTab(undefined);
                 setViewMode('admin');
@@ -1370,8 +1382,8 @@ export default function App() {
           )}
         </main>
 
-      {/* Footer (only shown on public storefront / client views, hidden on internal Hub/CRM/RRHH/Costs/Admin workspaces) */}
-      {!(viewMode === 'hub' || viewMode === 'crm' || viewMode === 'rrhh' || viewMode === 'costs' || viewMode === 'admin') && (
+      {/* Footer (only shown on public storefront / client views, hidden on internal Hub/CRM/RRHH/Costs/Contacts/Admin workspaces) */}
+      {!(viewMode === 'hub' || viewMode === 'crm' || viewMode === 'rrhh' || viewMode === 'costs' || viewMode === 'contacts' || viewMode === 'admin') && (
         <Footer
           theme={theme}
           branches={branches}
@@ -1393,7 +1405,7 @@ export default function App() {
       )}
 
       {/* Admin Floating Quick Access Button (only outside internal workspaces) */}
-      {userSession?.role === 'admin' && !(viewMode === 'admin' || viewMode === 'hub' || viewMode === 'crm' || viewMode === 'rrhh' || viewMode === 'costs') && (
+      {userSession?.role === 'admin' && !(viewMode === 'admin' || viewMode === 'hub' || viewMode === 'crm' || viewMode === 'rrhh' || viewMode === 'costs' || viewMode === 'contacts') && (
         <button
           id="btn-admin-floating-quick"
           type="button"
@@ -1429,7 +1441,7 @@ export default function App() {
       )}
 
       {/* Floating WhatsApp Contact Button (public storefront / client views only) */}
-      {!(viewMode === 'hub' || viewMode === 'crm' || viewMode === 'rrhh' || viewMode === 'costs' || viewMode === 'admin') && (
+      {!(viewMode === 'hub' || viewMode === 'crm' || viewMode === 'rrhh' || viewMode === 'costs' || viewMode === 'contacts' || viewMode === 'admin') && (
         <a
           href={`https://wa.me/5492615276713?text=Hola%20Pampero%20Gran%20Mendoza,%20quisiera%20hacer%20una%20consulta%20directa%20sobre%20su%20cat%C3%A1logo.`}
           target="_blank"

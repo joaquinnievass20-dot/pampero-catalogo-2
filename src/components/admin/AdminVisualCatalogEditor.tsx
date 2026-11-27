@@ -292,7 +292,7 @@ export const AdminVisualCatalogEditor: React.FC<AdminVisualCatalogEditorProps> =
     { key: 'lookbook', label: '11. Lookbook Campaña', icon: ImageIcon, targetView: 'lookbook' },
     { key: 'order_tracking', label: '12. Estado de Pedido', icon: Package, targetView: 'quote' },
     { key: 'auth_modal', label: '13. Modal Login / Acceso', icon: Lock, targetView: 'login' },
-    { key: 'hub_admin', label: '14. Hub Empleados / Admin', icon: Compass, targetView: 'hub' },
+    { key: 'hub_admin', label: '14. Hub Colaboradores / Admin', icon: Compass, targetView: 'hub' },
     { key: 'crm_board', label: '15. Tablero & Cabecera CRM', icon: Kanban, targetView: 'crm' },
     { key: 'crm_card', label: '16. Ficha de Pedido en CRM', icon: FileText, targetView: 'crm' },
     { key: 'footer', label: '17. Pie de Página (Footer)', icon: MapPin, targetView: 'catalog' },
@@ -1125,7 +1125,7 @@ export const AdminVisualCatalogEditor: React.FC<AdminVisualCatalogEditorProps> =
                     value={resolvedTexts.authStaffTitle || ''}
                     onChange={(e) => updateSiteText('authStaffTitle', e.target.value)}
                     className="w-full px-2.5 py-1.5 text-xs bg-white border border-[#DCD4C9] rounded-xs"
-                    placeholder="ADMINISTRACIÓN Y EMPLEADOS"
+                    placeholder="ADMINISTRACIÓN Y COLABORADORES"
                   />
                 </div>
               </div>
@@ -1846,7 +1846,7 @@ export const AdminVisualCatalogEditor: React.FC<AdminVisualCatalogEditorProps> =
                     Ingresar a mi Cuenta
                   </h3>
                   <p className="text-xs text-[#6F6860] mt-1">
-                    Clientes, Empresas y Empleados de Pampero
+                    Clientes, Empresas y Colaboradores de Pampero
                   </p>
                 </div>
 
@@ -1932,7 +1932,7 @@ export const AdminVisualCatalogEditor: React.FC<AdminVisualCatalogEditorProps> =
               </div>
             )}
 
-            {/* VISTA 7: HUB DE EMPLEADOS / ADMIN */}
+            {/* VISTA 7: HUB DE COLABORADORES / ADMIN */}
             {canvasView === 'hub' && (
               <div 
                 onClick={() => { if (isInspectorActive) setActiveSection('hub_admin'); }}

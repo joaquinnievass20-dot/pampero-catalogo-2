@@ -16,7 +16,7 @@ import {
   Tag,
   ClipboardList
 } from 'lucide-react';
-import { CRMTaskImportance, CRMTaskTag, CRMTaskTemplate } from '../../types';
+import { CRMTaskImportance, CRMTaskScheduleType, CRMTaskTag, CRMTaskTemplate } from '../../types';
 import { 
   saveKanbanColumns, 
   subscribeToKanbanColumns, 
@@ -68,6 +68,9 @@ export const AdminKanbanConfigTab: React.FC<AdminKanbanConfigTabProps> = ({ trig
   const [tplRequiredAdvance, setTplRequiredAdvance] = useState('');
   const [tplTargetProgress, setTplTargetProgress] = useState(100);
   const [tplBranch, setTplBranch] = useState('Todas');
+  const [tplScheduleType, setTplScheduleType] = useState<CRMTaskScheduleType>('immediate');
+  const [tplWeekdays, setTplWeekdays] = useState<number[]>([]);
+  const [tplRecurrenceDays, setTplRecurrenceDays] = useState<number>(7);
 
   // Sync from Cloud Firestore / localStorage
   useEffect(() => {
@@ -203,6 +206,9 @@ export const AdminKanbanConfigTab: React.FC<AdminKanbanConfigTabProps> = ({ trig
       defaultRequiredAdvance: tplRequiredAdvance.trim() || undefined,
       defaultTargetProgressPercent: Math.max(10, Math.min(100, Number(tplTargetProgress) || 100)),
       defaultBranch: tplBranch,
+      defaultScheduleType: tplScheduleType,
+      defaultRecurrenceWeekdays: tplScheduleType === 'weekdays' ? tplWeekdays : undefined,
+      defaultRecurrenceDays: tplScheduleType === 'periodic' ? Math.max(1, Number(tplRecurrenceDays) || 7) : undefined,
     };
     setTaskTemplates((prev) => [newTpl, ...prev]);
     setTplTitle('');
@@ -212,6 +218,9 @@ export const AdminKanbanConfigTab: React.FC<AdminKanbanConfigTabProps> = ({ trig
     setTplRequiredAdvance('');
     setTplTargetProgress(100);
     setTplBranch('Todas');
+    setTplScheduleType('immediate');
+    setTplWeekdays([]);
+    setTplRecurrenceDays(7);
     setShowTemplateForm(false);
     setFeedbackNotice({ type: 'success', message: `Tarea preestablecida "${clean}" agregada. Presioná "Guardar Configuración" para aplicar.` });
   };
@@ -724,6 +733,72 @@ export const AdminKanbanConfigTab: React.FC<AdminKanbanConfigTabProps> = ({ trig
                 </div>
               </div>
 
+              {/* Periodicidad / Días de la semana de la plantilla */}
+              <div className="p-3 bg-white border border-amber-200 rounded-xs space-y-2">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <label className="text-[11px] font-bold text-[#18231C]">Periodicidad Predeterminada</label>
+                  <select
+                    value={tplScheduleType}
+                    onChange={(e) => setTplScheduleType(e.target.value as CRMTaskScheduleType)}
+                    className="px-2.5 py-1 text-[11px] font-bold bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs outline-none"
+                  >
+                    <option value="immediate">Inmediata / Puntual</option>
+                    <option value="weekdays">Días de la semana</option>
+                    <option value="periodic">Cada X días</option>
+                    <option value="monthly">Mensual</option>
+                  </select>
+                </div>
+
+                {tplScheduleType === 'weekdays' && (
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {[
+                      { d: 1, label: 'Lun' },
+                      { d: 2, label: 'Mar' },
+                      { d: 3, label: 'Mié' },
+                      { d: 4, label: 'Jue' },
+                      { d: 5, label: 'Vie' },
+                      { d: 6, label: 'Sáb' },
+                      { d: 0, label: 'Dom' },
+                    ].map((day) => {
+                      const active = tplWeekdays.includes(day.d);
+                      return (
+                        <button
+                          key={day.d}
+                          type="button"
+                          onClick={() =>
+                            setTplWeekdays((prev) =>
+                              active ? prev.filter((x) => x !== day.d) : [...prev, day.d]
+                            )
+                          }
+                          className={`px-2.5 py-1 rounded-xs text-[11px] font-bold border cursor-pointer ${
+                            active
+                              ? 'bg-[#18231C] text-[#FDB813] border-[#18231C]'
+                              : 'bg-[#FAF8F5] text-[#18231C] border-[#DCD4C9]'
+                          }`}
+                        >
+                          {day.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {tplScheduleType === 'periodic' && (
+                  <div className="flex items-center gap-2 pt-1">
+                    <span className="text-[11px] text-[#6F6860]">Repetir cada</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={365}
+                      value={tplRecurrenceDays}
+                      onChange={(e) => setTplRecurrenceDays(Number(e.target.value) || 7)}
+                      className="w-16 px-2 py-1 text-xs font-bold border border-[#DCD4C9] rounded-xs"
+                    />
+                    <span className="text-[11px] text-[#6F6860]">días</span>
+                  </div>
+                )}
+              </div>
+
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="submit"
@@ -862,6 +937,91 @@ export const AdminKanbanConfigTab: React.FC<AdminKanbanConfigTabProps> = ({ trig
                       </button>
                     );
                   })}
+                </div>
+
+                {/* Periodicidad de esta plantilla */}
+                <div className="pt-2 border-t border-[#DCD4C9]/70 space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-bold uppercase text-[#6F6860]">Periodicidad:</span>
+                    <select
+                      value={tpl.defaultScheduleType || 'immediate'}
+                      onChange={(e) => {
+                        const val = e.target.value as CRMTaskScheduleType;
+                        setTaskTemplates((prev) =>
+                          prev.map((item, i) => (i === idx ? { ...item, defaultScheduleType: val } : item))
+                        );
+                      }}
+                      className="px-2 py-1 text-[10px] font-bold bg-white border border-[#DCD4C9] rounded-xs outline-none"
+                    >
+                      <option value="immediate">Inmediata</option>
+                      <option value="weekdays">Días de la semana</option>
+                      <option value="periodic">Cada X días</option>
+                      <option value="monthly">Mensual</option>
+                    </select>
+                  </div>
+
+                  {tpl.defaultScheduleType === 'weekdays' && (
+                    <div className="flex flex-wrap gap-1">
+                      {[
+                        { d: 1, label: 'Lun' },
+                        { d: 2, label: 'Mar' },
+                        { d: 3, label: 'Mié' },
+                        { d: 4, label: 'Jue' },
+                        { d: 5, label: 'Vie' },
+                        { d: 6, label: 'Sáb' },
+                        { d: 0, label: 'Dom' },
+                      ].map((day) => {
+                        const active = (tpl.defaultRecurrenceWeekdays || []).includes(day.d);
+                        return (
+                          <button
+                            key={day.d}
+                            type="button"
+                            onClick={() => {
+                              setTaskTemplates((prev) =>
+                                prev.map((item, i) => {
+                                  if (i !== idx) return item;
+                                  const curr = item.defaultRecurrenceWeekdays || [];
+                                  return {
+                                    ...item,
+                                    defaultRecurrenceWeekdays: active
+                                      ? curr.filter((x) => x !== day.d)
+                                      : [...curr, day.d],
+                                  };
+                                })
+                              );
+                            }}
+                            className={`px-2 py-0.5 rounded-xs text-[10px] font-bold border cursor-pointer ${
+                              active
+                                ? 'bg-[#18231C] text-[#FDB813] border-[#18231C]'
+                                : 'bg-white text-[#6F6860] border-[#DCD4C9]'
+                            }`}
+                          >
+                            {day.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {tpl.defaultScheduleType === 'periodic' && (
+                    <div className="flex items-center gap-1.5 text-[10px] text-[#6F6860]">
+                      <span>Cada</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={365}
+                        value={tpl.defaultRecurrenceDays || 7}
+                        onChange={(e) => {
+                          const val = Number(e.target.value) || 7;
+                          setTaskTemplates((prev) =>
+                            prev.map((item, i) => (i === idx ? { ...item, defaultRecurrenceDays: val } : item))
+                          );
+                        }}
+                        className="w-14 px-1.5 py-0.5 text-[11px] font-bold bg-white border border-[#DCD4C9] rounded-xs"
+                      />
+                      <span>días</span>
+                    </div>
+                  )}
                 </div>
               </div>
             ))}

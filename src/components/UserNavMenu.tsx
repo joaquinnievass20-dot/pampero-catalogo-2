@@ -478,7 +478,7 @@ export const UserNavMenu: React.FC<UserNavMenuProps> = ({
                   >
                     <div className="flex items-center gap-2">
                       <Shirt className="w-4 h-4 text-[#18231C]" />
-                      <span>Portal de Talles Empleados</span>
+                      <span>Portal de Talles Colaboradores</span>
                     </div>
                   </button>
                 )}

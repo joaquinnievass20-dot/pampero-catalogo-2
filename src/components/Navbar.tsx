@@ -503,7 +503,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   }}
                   className="w-full text-left py-2 px-3 rounded-lg text-xs font-bold text-neutral-800 hover:bg-neutral-100 flex items-center justify-between"
                 >
-                  <span>Portal de Talles para Empleados</span>
+                  <span>Portal de Talles para Colaboradores</span>
                   <ArrowRight className="w-3.5 h-3.5 text-neutral-400" />
                 </button>
               )}

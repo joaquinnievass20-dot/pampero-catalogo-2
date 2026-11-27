@@ -333,13 +333,13 @@ export const AdminSellersTab: React.FC<AdminSellersTabProps> = ({ branches, trig
           <div>
             <span className="font-bold uppercase tracking-wider block">
               {activeRole === 'admin' && 'Modo Administrador General (Acceso Total a Todos los Locales y Vendedores)'}
-              {activeRole === 'encargado' && 'Modo Encargado General · Rol Empleado (Ve todos los locales sin privilegios de Administrador)'}
+              {activeRole === 'encargado' && 'Modo Encargado General · Rol Colaborador (Ve todos los locales sin privilegios de Administrador)'}
               {activeRole === 'local' && `Modo Encargado de Sucursal · Local: ${currentBranchContext} (Solo puede ver y gestionar vendedores de su sucursal)`}
               {activeRole === 'vendedor' && 'Modo Vendedor (Solo podés ver y gestionar tu propio perfil de vendedor)'}
             </span>
             <span className="text-[11px] opacity-80">
               {activeRole === 'admin' && 'Podés crear, editar, reasignar locales y gestionar la totalidad de las sucursales.'}
-              {activeRole === 'encargado' && 'Visualizás las tres sucursales (Maipú, Ciudad y Luján) con permisos de empleado.'}
+              {activeRole === 'encargado' && 'Visualizás las tres sucursales (Maipú, Ciudad y Luján) con permisos de colaborador.'}
               {activeRole === 'local' && `Tenés acceso exclusivo a los operadores y vendedores asignados a ${currentBranchContext}.`}
               {activeRole === 'vendedor' && 'Tus permisos están restringidos a tu información de contacto y ventas asignadas.'}
             </span>
@@ -581,7 +581,7 @@ export const AdminSellersTab: React.FC<AdminSellersTabProps> = ({ branches, trig
                   >
                     <option value="vendedor">Vendedor (Solo ve y edita su propio perfil)</option>
                     <option value="local">Encargado de Sucursal (Ve y gestiona todo su local)</option>
-                    <option value="encargado">Encargado General (Ve todos los locales, rol Empleado)</option>
+                    <option value="encargado">Encargado General (Ve todos los locales, rol Colaborador)</option>
                     <option value="admin">Administrador (Control total de todos los locales)</option>
                   </select>
                 </div>

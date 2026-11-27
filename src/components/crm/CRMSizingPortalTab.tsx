@@ -146,7 +146,7 @@ export const CRMSizingPortalTab: React.FC<CRMSizingPortalTabProps> = ({
   const handleCopyReport = () => {
     let report = `PLANILLA DE TALLES CONSOLIDADA - PAMPERO GRAN MENDOZA\n`;
     report += `Empresa: ${activeCampaign.companyName}\n`;
-    report += `Total Empleados Registrados: ${campaignEntries.length}\n`;
+    report += `Total Colaboradores Registrados: ${campaignEntries.length}\n`;
     report += `Fecha: ${new Date().toLocaleDateString('es-AR')}\n\n`;
 
     report += `--- RESUMEN POR PRENDA ---\n`;
@@ -167,14 +167,14 @@ export const CRMSizingPortalTab: React.FC<CRMSizingPortalTabProps> = ({
 
   const handleExportExcel = () => {
     if (campaignEntries.length === 0) {
-      alert('No hay registros de empleados cargados para exportar.');
+      alert('No hay registros de colaboradores cargados para exportar.');
       return;
     }
 
     const rows = campaignEntries.map((e, idx) => ({
       'Nº': idx + 1,
       'Empresa': e.companyName,
-      'Empleado': e.employeeName,
+      'Colaborador': e.employeeName,
       'DNI': e.employeeDni,
       'Sector / Área': e.department,
       'Género': e.gender || 'Hombre',
@@ -188,7 +188,7 @@ export const CRMSizingPortalTab: React.FC<CRMSizingPortalTabProps> = ({
 
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Talles Empleados');
+    XLSX.utils.book_append_sheet(wb, ws, 'Talles Colaboradores');
     XLSX.writeFile(wb, `Planilla_Talles_${activeCampaign.companyName.replace(/\s+/g, '_')}.xlsx`);
   };
 
@@ -199,7 +199,7 @@ export const CRMSizingPortalTab: React.FC<CRMSizingPortalTabProps> = ({
         <div>
           <h3 className="font-bold text-base text-[#18231C] uppercase tracking-wider flex items-center gap-2">
             <Users className="w-5 h-5 text-[#B9522F]" />
-            Portal de Talles para Empleados (Fase 4)
+            Portal de Talles para Colaboradores (Fase 4)
           </h3>
           <p className="text-xs text-[#6F6860] mt-0.5">
             Generá un link único para que cada empresa cargue la nómina y talles de su personal. El sistema totaliza la curva para producción.
@@ -228,7 +228,7 @@ export const CRMSizingPortalTab: React.FC<CRMSizingPortalTabProps> = ({
           >
             {campaigns.map((c) => (
               <option key={c.id} value={c.id}>
-                {c.companyName} ({entries.filter((e) => e.campaignId === c.id).length} empleados)
+                {c.companyName} ({entries.filter((e) => e.campaignId === c.id).length} colaboradores)
               </option>
             ))}
           </select>
@@ -249,7 +249,7 @@ export const CRMSizingPortalTab: React.FC<CRMSizingPortalTabProps> = ({
             className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-[#18231C] text-xs font-bold rounded-xs flex items-center gap-1.5 cursor-pointer shadow-xs"
           >
             <Shirt className="w-3.5 h-3.5" />
-            Cargar Empleado Manual
+            Cargar Colaborador Manual
           </button>
 
           <button
@@ -353,7 +353,7 @@ export const CRMSizingPortalTab: React.FC<CRMSizingPortalTabProps> = ({
       <div className="bg-white rounded-xs border border-[#DCD4C9] shadow-2xs overflow-hidden">
         <div className="p-4 border-b border-[#DCD4C9] flex items-center justify-between">
           <h4 className="font-bold text-xs uppercase tracking-wider text-[#18231C]">
-            Nómina de Empleados Registrados ({campaignEntries.length})
+            Nómina de Colaboradores Registrados ({campaignEntries.length})
           </h4>
           <span className="text-[11px] text-[#6F6860]">
             Empresa: <strong>{activeCampaign.companyName}</strong>
@@ -364,7 +364,7 @@ export const CRMSizingPortalTab: React.FC<CRMSizingPortalTabProps> = ({
           <table className="w-full text-left text-xs">
             <thead className="bg-[#FAF8F5] text-[#18231C] uppercase font-bold tracking-wider border-b border-[#DCD4C9]">
               <tr>
-                <th className="p-3">Empleado</th>
+                <th className="p-3">Colaborador</th>
                 <th className="p-3">DNI</th>
                 <th className="p-3">Sector</th>
                 <th className="p-3 text-center">Camisa</th>
@@ -390,7 +390,7 @@ export const CRMSizingPortalTab: React.FC<CRMSizingPortalTabProps> = ({
               {campaignEntries.length === 0 && (
                 <tr>
                   <td colSpan={8} className="p-10 text-center text-[#6F6860]">
-                    No hay empleados cargados para esta campaña. Compartí el link con la empresa o cargalos manualmente con el botón "Cargar Empleado Manual".
+                    No hay colaboradores cargados para esta campaña. Compartí el link con la empresa o cargalos manualmente con el botón "Cargar Colaborador Manual".
                   </td>
                 </tr>
               )}
@@ -471,7 +471,7 @@ export const CRMSizingPortalTab: React.FC<CRMSizingPortalTabProps> = ({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fadeIn">
           <div className="bg-white rounded-xs border border-[#DCD4C9] shadow-2xl max-w-lg w-full overflow-hidden">
             <div className="bg-[#18231C] px-6 py-4 flex items-center justify-between text-white">
-              <h3 className="font-bold text-sm uppercase tracking-wider">Cargar Talle de Empleado ({activeCampaign.companyName})</h3>
+              <h3 className="font-bold text-sm uppercase tracking-wider">Cargar Talle de Colaborador ({activeCampaign.companyName})</h3>
               <button onClick={() => setShowEmployeeFormModal(false)} className="text-white/60 hover:text-white cursor-pointer">
                 <X className="w-5 h-5" />
               </button>

@@ -352,7 +352,7 @@ export const AdminPermissionsTab: React.FC<AdminPermissionsTabProps> = ({ trigge
       empId,
       updatedEmp,
       nextSellerRole === 'encargado'
-        ? `${updatedEmp.name} ahora es Encargado General (Rol Empleado · Ve todos los locales)`
+        ? `${updatedEmp.name} ahora es Encargado General (Rol Colaborador · Ve todos los locales)`
         : nextSellerRole === 'local'
           ? `${updatedEmp.name} asignado como Encargado de Local (${nextBranch})`
           : `${updatedEmp.name} asignado como Vendedor (${nextBranch})`
@@ -408,7 +408,7 @@ export const AdminPermissionsTab: React.FC<AdminPermissionsTabProps> = ({ trigge
               Permisos & Roles · CRM, RRHH y Panel de Control
             </h3>
             <p className="text-xs text-[#6F6860]">
-              Definí qué módulos ve cada empleado en el Hub (RRHH y Panel de Control solo aparecen si los autorizás acá) y elegí exactamente qué ventanas puede abrir.
+              Definí qué módulos ve cada colaborador en el Hub (RRHH y Panel de Control solo aparecen si los autorizás acá) y elegí exactamente qué ventanas puede abrir.
             </p>
           </div>
         </div>

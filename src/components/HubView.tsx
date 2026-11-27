@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { UserSession, ThemeConfig, InternalChatThread } from '../types';
-import { LayoutDashboard, Settings, ShoppingBag, LogOut, ShieldCheck, User, ArrowRight, Users, Wallet, MessageSquare } from 'lucide-react';
+import { LayoutDashboard, Settings, ShoppingBag, LogOut, ShieldCheck, User, ArrowRight, Users, Wallet, MessageSquare, Phone } from 'lucide-react';
 import { subscribeToFirestoreEmployees } from '../services/firebase';
 import { hasAdminPanelAccess, hasCRMAccess, hasRRHHAccess, hasCostsAccess } from '../utils/permissions';
 import { PamperoLogo } from './PamperoLogo';
@@ -12,6 +12,7 @@ interface HubViewProps {
   onOpenCRM: () => void;
   onOpenRRHH?: () => void;
   onOpenCosts?: () => void;
+  onOpenContacts?: () => void;
   onOpenAdmin: () => void;
   onOpenCatalog: () => void;
   onLogout: () => void;
@@ -27,6 +28,7 @@ export const HubView: React.FC<HubViewProps> = ({
   onOpenCRM,
   onOpenRRHH,
   onOpenCosts,
+  onOpenContacts,
   onOpenAdmin,
   onOpenCatalog,
   onLogout,
@@ -59,10 +61,13 @@ export const HubView: React.FC<HubViewProps> = ({
   const canSeeCosts = hasCostsAccess(userSession) && Boolean(onOpenCosts);
   const canSeeAdminPanel = hasAdminPanelAccess(userSession);
 
+  const canSeeContacts = Boolean(onOpenContacts);
+
   const visibleCardsCount =
     (canSeeCRM ? 1 : 0) +
     (canSeeRRHH ? 1 : 0) +
     (canSeeCosts ? 1 : 0) +
+    (canSeeContacts ? 1 : 0) +
     (canSeeAdminPanel ? 1 : 0) +
     (onOpenChat ? 1 : 0) +
     1; // Catálogo Público siempre visible
@@ -299,7 +304,31 @@ export const HubView: React.FC<HubViewProps> = ({
             </div>
           )}
 
-          {/* 2C. Chat Interno (Mensajería directa Administradores / Empleados / Clientes) */}
+          {/* 2C. Contactos (Base unificada: Colaboradores, Clientes, Proveedores, Cuentas Importantes) */}
+          {canSeeContacts && onOpenContacts && (
+            <div className="bg-white rounded-xs border-2 border-[#DCD4C9] hover:border-teal-700 shadow-sm hover:shadow-xl transition-all duration-200 flex flex-col p-6 text-center group relative">
+              <div className="w-16 h-16 rounded-xs bg-teal-50 text-teal-800 flex items-center justify-center mx-auto mb-5 group-hover:scale-105 transition-transform border border-teal-200">
+                <Phone className="w-8 h-8" />
+              </div>
+              <h2 className="text-lg font-black text-[#18231C] uppercase tracking-wider mb-2">
+                Contactos
+              </h2>
+              <p className="text-xs text-[#6F6860] leading-relaxed mb-6 flex-1">
+                Base unificada con filtros dinámicos para colaboradores, clientes, proveedores y cuentas importantes (ARCA, ATM, bancos y servicios).
+              </p>
+              <button
+                type="button"
+                id="btn-hub-contacts"
+                onClick={onOpenContacts}
+                className="w-full py-3.5 px-4 rounded-xs bg-teal-700 hover:bg-teal-800 text-white text-xs font-black uppercase tracking-[0.15em] transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer border border-teal-700"
+              >
+                <span>Ir a Contactos</span>
+                <ArrowRight className="w-4 h-4 shrink-0 text-white group-hover:translate-x-1 transition-transform" />
+              </button>
+            </div>
+          )}
+
+          {/* 2D. Chat Interno (Mensajería directa Administradores / Colaboradores / Clientes) */}
           {onOpenChat && (
             <div className="bg-white rounded-xs border-2 border-[#DCD4C9] hover:border-blue-700 shadow-sm hover:shadow-xl transition-all duration-200 flex flex-col p-6 text-center group relative">
               <div className="relative w-16 h-16 rounded-xs bg-blue-50 text-blue-700 flex items-center justify-center mx-auto mb-5 group-hover:scale-105 transition-transform border border-blue-200">
@@ -314,7 +343,7 @@ export const HubView: React.FC<HubViewProps> = ({
                 {st?.hubChatCardText || 'Chat Interno'}
               </h2>
               <p className="text-xs text-[#6F6860] leading-relaxed mb-6 flex-1">
-                {st?.hubChatCardDesc || 'Mensajería directa en tiempo real entre administradores, empleados de locales y clientes registrados.'}
+                {(st?.hubChatCardDesc || 'Mensajería directa en tiempo real entre administradores, colaboradores de locales y clientes registrados.').replace(/\bempleados\b/gi, 'colaboradores')}
               </p>
               <button
                 type="button"
@@ -328,7 +357,7 @@ export const HubView: React.FC<HubViewProps> = ({
             </div>
           )}
 
-          {/* 3. Panel de Control (Oculto para empleados sin ventanas habilitadas) */}
+          {/* 3. Panel de Control (Oculto para colaboradores sin ventanas habilitadas) */}
           {canSeeAdminPanel && (
             <div className="bg-white rounded-xs border-2 border-[#DCD4C9] hover:border-[#18231C] shadow-sm hover:shadow-xl transition-all duration-200 flex flex-col p-6 text-center group">
               <div className="w-16 h-16 rounded-xs bg-neutral-100 text-[#18231C] flex items-center justify-center mx-auto mb-5 group-hover:scale-105 transition-transform border border-neutral-300">

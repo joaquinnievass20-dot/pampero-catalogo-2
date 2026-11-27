@@ -181,7 +181,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           clientType: 'empresa',
           clientData: {
             fullName: matchedEmp.name,
-            companyName: 'Pampero Maipú - Empleado',
+            companyName: 'Pampero Maipú - Colaborador',
           },
           loggedAt: new Date().toISOString(),
         });
@@ -305,7 +305,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             }`}
           >
             <ShieldCheck className="w-4 h-4 text-slate-700" />
-            Admin / Empleados
+            Admin / Colaboradores
           </button>
         </div>
 
@@ -754,7 +754,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   Panel de Control Pampero Gran Mendoza
                 </div>
                 <p className="text-xs text-slate-600 leading-relaxed">
-                  Acceso restringido para el propietario/administrador y empleados autorizados.
+                  Acceso restringido para el propietario/administrador y colaboradores autorizados.
                 </p>
               </div>
 
@@ -767,7 +767,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <form onSubmit={handleAdminSubmit} className="space-y-4">
                 <div>
                   <label className="block text-xs font-bold text-neutral-700 uppercase tracking-wider mb-1">
-                    Usuario o Email (Admin / Empleado)
+                    Usuario o Email (Admin / Colaborador)
                   </label>
                   <div className="relative">
                     <User className="w-4 h-4 text-neutral-400 absolute left-3 top-3" />

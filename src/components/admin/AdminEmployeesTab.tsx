@@ -268,7 +268,7 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
       triggerSaveNotice();
       setShowCreateModal(false);
     } catch (err: any) {
-      setModalError(err?.message || 'Error al guardar la cuenta de empleado.');
+      setModalError(err?.message || 'Error al guardar la cuenta de colaborador.');
     } finally {
       setIsSaving(false);
     }
@@ -322,7 +322,7 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
               </span>
             </div>
             <p className="text-xs text-[#6F6860] mt-0.5">
-              Administración de operadores y empleados, asignación de locales/sucursales y configuración de permisos en tiempo real.
+              Administración de operadores y colaboradores, asignación de locales/sucursales y configuración de permisos en tiempo real.
             </p>
           </div>
         </div>
@@ -351,7 +351,7 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
             />
           </div>
           <span className="text-xs font-bold text-[#6F6860] uppercase">
-            {filtered.length} {filtered.length === 1 ? 'Empleado activo' : 'Empleados activos'}
+            {filtered.length} {filtered.length === 1 ? 'Colaborador activo' : 'Colaboradores activos'}
           </span>
         </div>
 
@@ -360,7 +360,7 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
           <table className="w-full text-left text-xs">
             <thead className="bg-[#FAF8F5] text-[#18231C] uppercase font-bold tracking-wider border-b border-[#DCD4C9]">
               <tr>
-                <th className="p-3">Empleado</th>
+                <th className="p-3">Colaborador</th>
                 <th className="p-3">Email de Acceso</th>
                 <th className="p-3">Permisos Habilitados</th>
                 <th className="p-3 text-center">Estado</th>
@@ -371,7 +371,7 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
               {filtered.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="p-8 text-center text-[#6F6860]">
-                    No se encontraron empleados registrados.
+                    No se encontraron colaboradores registrados.
                   </td>
                 </tr>
               ) : (
@@ -471,7 +471,7 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
           <div className="bg-white rounded-xs border border-[#DCD4C9] shadow-2xl max-w-lg w-full overflow-hidden flex flex-col max-h-[90vh]">
             <div className="bg-[#18231C] px-6 py-4 flex items-center justify-between text-white">
               <h4 className="font-display text-base uppercase tracking-wider font-bold">
-                {isEditing ? 'Editar Empleado y Permisos' : 'Crear Cuenta de Empleado'}
+                {isEditing ? 'Editar Colaborador y Permisos' : 'Crear Cuenta de Colaborador'}
               </h4>
               <button
                 type="button"
@@ -495,7 +495,7 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
 
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-[#18231C] mb-1">
-                  Nombre Completo del Empleado *
+                  Nombre Completo del Colaborador *
                 </label>
                 <div className="relative">
                   <User className="w-4 h-4 text-[#6F6860] absolute left-3 top-2.5" />
@@ -589,7 +589,7 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
                   >
                     <option value="vendedor">Usuario / Vendedor del Local</option>
                     <option value="local">Encargado del Local (Solo su sucursal)</option>
-                    <option value="encargado">Encargado General (Ve todos los locales, rol Empleado)</option>
+                    <option value="encargado">Encargado General (Ve todos los locales, rol Colaborador)</option>
                   </select>
                 </div>
 
@@ -631,7 +631,7 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
                   className="w-full px-3 py-2 text-xs bg-[#FAF8F5] rounded-xs border border-[#DCD4C9] outline-none cursor-pointer font-medium"
                 >
                   <option value="branch_only">
-                    Solo su Local y los empleados de su sucursal (Recomendado para locales)
+                    Solo su Local y los colaboradores de su sucursal (Recomendado para locales)
                   </option>
                   <option value="own_only">
                     Solo sus propios clientes y cotizaciones asignadas (Vendedor individual)
@@ -728,7 +728,7 @@ export const AdminEmployeesTab: React.FC<AdminEmployeesTabProps> = ({ triggerSav
                   className="px-5 py-2 bg-[#B9522F] hover:bg-[#A84323] text-white text-xs font-bold uppercase tracking-wider rounded-xs flex items-center gap-1.5 shadow-xs cursor-pointer"
                 >
                   <Check className="w-4 h-4" />
-                  Guardar Empleado
+                  Guardar Colaborador
                 </button>
               </div>
             </form>

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   CRMTask,
   CRMTaskAdvanceLog,
+  CRMTaskBranchProgress,
   CRMTaskComment,
   CRMTaskEvidencePhoto,
   CRMTaskImportance,
@@ -131,11 +132,22 @@ const MONTHS_ES = [
   { num: 12, short: 'Dic', full: 'Diciembre' },
 ];
 
+const WEEKDAYS_ES = [
+  { num: 1, short: 'Lun', full: 'Lunes' },
+  { num: 2, short: 'Mar', full: 'Martes' },
+  { num: 3, short: 'Mié', full: 'Miércoles' },
+  { num: 4, short: 'Jue', full: 'Jueves' },
+  { num: 5, short: 'Vie', full: 'Viernes' },
+  { num: 6, short: 'Sáb', full: 'Sábado' },
+  { num: 0, short: 'Dom', full: 'Domingo' },
+];
+
 export function isTaskActiveForDate(task: CRMTask, refDate: Date = new Date()): boolean {
   const sType = task.scheduleType || 'immediate';
   if (sType === 'immediate') return true;
   const todayStr = refDate.toISOString().split('T')[0];
   const currentMonth = refDate.getMonth() + 1;
+  const currentWeekday = refDate.getDay();
 
   if (sType === 'specific_date') {
     if (!task.activationDate) return true;
@@ -144,6 +156,12 @@ export function isTaskActiveForDate(task: CRMTask, refDate: Date = new Date()): 
   if (sType === 'periodic') {
     if (!task.activationDate) return true;
     return task.activationDate <= todayStr;
+  }
+  if (sType === 'weekdays') {
+    const days = Array.isArray(task.recurrenceWeekdays) ? task.recurrenceWeekdays : [];
+    if (days.length === 0) return true;
+    if (task.activationDate && task.activationDate > todayStr) return false;
+    return days.includes(currentWeekday);
   }
   if (sType === 'monthly') {
     const months = Array.isArray(task.activationMonths) ? task.activationMonths : [];
@@ -166,6 +184,13 @@ function getScheduleSummary(task: CRMTask): string | null {
     return task.activationDate
       ? `Cada ${days}d (desde ${task.activationDate.split('-').reverse().join('/')})`
       : `Periódica (c/${days}d)`;
+  }
+  if (sType === 'weekdays') {
+    const wds = (task.recurrenceWeekdays || [])
+      .map((d) => WEEKDAYS_ES.find((x) => x.num === d)?.short)
+      .filter(Boolean)
+      .join(', ');
+    return wds ? `Días: ${wds}` : 'Días de la semana';
   }
   if (sType === 'monthly') {
     const ms = (task.activationMonths || [])
@@ -400,11 +425,16 @@ export const CRMTasksTab: React.FC<CRMTasksTabProps> = ({
   const [progressPercent, setProgressPercent] = useState(0);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
 
-  // Programación / Activación
+  // Programación / Activación & Alcance / Multi-local
   const [scheduleType, setScheduleType] = useState<CRMTaskScheduleType>('immediate');
   const [activationDate, setActivationDate] = useState('');
   const [recurrenceDays, setRecurrenceDays] = useState(7);
+  const [recurrenceWeekdays, setRecurrenceWeekdays] = useState<number[]>([]);
   const [activationMonths, setActivationMonths] = useState<number[]>([]);
+  const [taskScope, setTaskScope] = useState<'local' | 'personal'>('local');
+  const [sendToMultiBranch, setSendToMultiBranch] = useState(false);
+  const [selectedBranches, setSelectedBranches] = useState<string[]>([]);
+  const [multiBranchMode, setMultiBranchMode] = useState<'duplicate' | 'shared'>('shared');
 
   // Avances, Comentarios Inmutables & Fotos de Respaldo
   const [newAdvanceNote, setNewAdvanceNote] = useState('');
@@ -428,9 +458,12 @@ export const CRMTasksTab: React.FC<CRMTasksTabProps> = ({
 
       const taskBranch = (t.branch || '').toLowerCase();
       const myBranch = (assignedBranch || '').toLowerCase();
+      const targetBranchesMatch = Array.isArray(t.targetBranches) && myBranch
+        ? t.targetBranches.some((tb) => branchMatches(tb, assignedBranch))
+        : false;
 
       if (isManager || hasControlPermission) {
-        if (!myBranch || myBranch === 'todas' || taskBranch === 'todas') return true;
+        if (!myBranch || myBranch === 'todas' || taskBranch === 'todas' || targetBranchesMatch) return true;
         return branchMatches(t.branch, assignedBranch);
       }
 
@@ -454,7 +487,7 @@ export const CRMTasksTab: React.FC<CRMTasksTabProps> = ({
 
       if (crmScope === 'own_only') return isMine;
 
-      if (!myBranch || myBranch === 'todas' || taskBranch === 'todas') return true;
+      if (!myBranch || myBranch === 'todas' || taskBranch === 'todas' || targetBranchesMatch) return true;
       return branchMatches(t.branch, assignedBranch) || isMine;
     });
   }, [tasks, userSession?.role, userSession?.email, isManager, hasControlPermission, assignedBranch, crmScope, currentUserLabel]);
@@ -532,10 +565,15 @@ export const CRMTasksTab: React.FC<CRMTasksTabProps> = ({
       const matchesAssignee =
         assigneeFilter === 'todos' || assignees.some((a) => a === assigneeFilter.toLowerCase());
       const matchesBranch =
-        branchFilter === 'todos' ||
-        (branchFilter.toLowerCase() === 'todas'
-          ? (t.branch || '').toLowerCase() === 'todas'
-          : branchMatches(t.branch, branchFilter));
+        branchFilter === 'todos'
+          ? true
+          : branchFilter.toLowerCase() === 'todas'
+            ? t.taskScope !== 'personal' &&
+              (Boolean((t.branch || '').trim()) ||
+                (Array.isArray(t.targetBranches) && t.targetBranches.length > 0))
+            : branchMatches(t.branch, branchFilter) ||
+              (Array.isArray(t.targetBranches) &&
+                t.targetBranches.some((tb) => branchMatches(tb, branchFilter)));
       const matchesImportance =
         importanceFilter === 'todas' || t.importance === importanceFilter;
       const matchesTag =
@@ -585,6 +623,15 @@ export const CRMTasksTab: React.FC<CRMTasksTabProps> = ({
     if (tpl.defaultBranch && (userSession?.role === 'admin' || !assignedBranch || assignedBranch === 'Todas')) {
       setBranch(resolveConfiguredBranch(tpl.defaultBranch, true));
     }
+    if (tpl.defaultScheduleType) {
+      setScheduleType(tpl.defaultScheduleType);
+    }
+    if (Array.isArray(tpl.defaultRecurrenceWeekdays)) {
+      setRecurrenceWeekdays(tpl.defaultRecurrenceWeekdays);
+    }
+    if (tpl.defaultRecurrenceDays) {
+      setRecurrenceDays(tpl.defaultRecurrenceDays);
+    }
   };
 
   const openNewModal = (defaultColId?: string) => {
@@ -599,8 +646,12 @@ export const CRMTasksTab: React.FC<CRMTasksTabProps> = ({
     setBranch(
       assignedBranch && assignedBranch.toLowerCase() !== 'todas'
         ? resolveConfiguredBranch(assignedBranch, true)
-        : configuredBranchNames[0] || 'Pampero Maipú'
+        : configuredBranchNames[0] || 'Pampero Ciudad de Mendoza'
     );
+    setTaskScope('local');
+    setSendToMultiBranch(false);
+    setSelectedBranches(configuredBranchNames);
+    setMultiBranchMode('shared');
     setDueDate('');
     setDueTime('');
     setRequiredAdvance('');
@@ -610,6 +661,7 @@ export const CRMTasksTab: React.FC<CRMTasksTabProps> = ({
     setScheduleType('immediate');
     setActivationDate('');
     setRecurrenceDays(7);
+    setRecurrenceWeekdays([]);
     setActivationMonths([]);
     setNewAdvanceNote('');
     setAdvanceLogs([]);
@@ -639,6 +691,11 @@ export const CRMTasksTab: React.FC<CRMTasksTabProps> = ({
     setAssignedToList(initialList.length > 0 ? initialList : [currentUserLabel]);
     setCustomAssigneeInput('');
     setBranch(resolveConfiguredBranch(task.branch || assignedBranch || '', true));
+    setTaskScope(task.taskScope || 'local');
+    const hasMulti = Array.isArray(task.targetBranches) && task.targetBranches.length > 1;
+    setSendToMultiBranch(hasMulti);
+    setSelectedBranches(hasMulti ? task.targetBranches! : configuredBranchNames);
+    setMultiBranchMode(task.multiBranchMode || 'shared');
     setDueDate(task.dueDate || '');
     setDueTime(task.dueTime || '');
     setRequiredAdvance(fixUtf8Encoding(task.requiredAdvance || ''));
@@ -648,6 +705,7 @@ export const CRMTasksTab: React.FC<CRMTasksTabProps> = ({
     setScheduleType(task.scheduleType || 'immediate');
     setActivationDate(task.activationDate || '');
     setRecurrenceDays(task.recurrenceDays || 7);
+    setRecurrenceWeekdays(Array.isArray(task.recurrenceWeekdays) ? task.recurrenceWeekdays : []);
     setActivationMonths(Array.isArray(task.activationMonths) ? task.activationMonths : []);
     setNewAdvanceNote('');
     setAdvanceLogs(Array.isArray(task.advanceLogs) ? task.advanceLogs : []);
@@ -805,6 +863,99 @@ export const CRMTasksTab: React.FC<CRMTasksTabProps> = ({
       : (editingTask?.targetProgressPercent ?? 100);
 
     const finalAssignees = assignedToList.length > 0 ? assignedToList : [currentUserLabel];
+    const basePct = Math.max(0, Math.min(100, Number(finalProgress) || 0));
+
+    // Caso 1: Nueva tarea enviada a múltiples locales en modo DUPLICAR por local
+    if (!editingTask && sendToMultiBranch && selectedBranches.length > 0 && multiBranchMode === 'duplicate') {
+      const createdList: CRMTask[] = selectedBranches.map((br, idx) => {
+        const resolvedBr = resolveConfiguredBranch(br, true);
+        const item: CRMTask = sanitizeObjectEncoding({
+          id: `TSK-${Date.now().toString().slice(-6)}-${idx + 1}`,
+          title: title.trim(),
+          description: description.trim() || undefined,
+          columnId: chosenCol,
+          importance,
+          assignedTo: finalAssignees[0],
+          assignedToList: finalAssignees,
+          createdBy: currentUserLabel,
+          createdByEmail: userSession?.email,
+          branch: resolvedBr,
+          taskScope,
+          multiBranchMode: 'duplicate',
+          dueDate: effectiveDueDate,
+          dueTime: effectiveDueTime,
+          requiredAdvance: effectiveRequiredAdvance,
+          targetProgressPercent: effectiveTargetPct,
+          progressPercent: basePct,
+          tags: selectedTags,
+          templateId: selectedTemplateId || undefined,
+          advanceLogs: nextLogs,
+          comments: finalComments,
+          evidencePhotos,
+          scheduleType,
+          activationDate:
+            scheduleType === 'specific_date' || scheduleType === 'periodic' || scheduleType === 'weekdays'
+              ? (activationDate || undefined)
+              : undefined,
+          recurrenceDays: scheduleType === 'periodic' ? Math.max(1, Number(recurrenceDays) || 7) : undefined,
+          recurrenceWeekdays: scheduleType === 'weekdays' ? recurrenceWeekdays : undefined,
+          activationMonths: scheduleType === 'monthly' ? activationMonths : [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+        item.isActivated = isTaskActiveForDate(item);
+        return item;
+      });
+
+      setTasks((prev) => [...createdList, ...prev]);
+      setShowModal(false);
+      try {
+        await Promise.all(createdList.map((item) => saveCRMTask(item)));
+        recordAuditLog({
+          module: 'CRM / Tareas',
+          action: 'Duplicar Tarea por Local',
+          details: `Tarea "${title.trim()}" duplicada para ${selectedBranches.join(', ')}`,
+          userEmail: userSession?.email,
+          userName: currentUserLabel,
+          userRole: userSession?.role || 'employee',
+        }).catch(() => {});
+      } catch (err) {
+        console.error('Error duplicando tareas por local:', err);
+      }
+      return;
+    }
+
+    // Caso 2: Misma tarea compartida con avance por local (o tarea simple)
+    const isSharedMulti = sendToMultiBranch && selectedBranches.length > 0;
+    const normalizedTargets = isSharedMulti
+      ? selectedBranches.map((b) => resolveConfiguredBranch(b, true))
+      : undefined;
+
+    let branchProgressMap: Record<string, CRMTaskBranchProgress> | undefined = editingTask?.branchProgress
+      ? { ...editingTask.branchProgress }
+      : undefined;
+    if (isSharedMulti && normalizedTargets) {
+      const nextMap: Record<string, CRMTaskBranchProgress> = { ...(branchProgressMap || {}) };
+      normalizedTargets.forEach((b) => {
+        if (!nextMap[b]) {
+          nextMap[b] = {
+            progressPercent: basePct,
+            completed: chosenCol === lastColId || basePct >= 100,
+            updatedBy: currentUserLabel,
+            updatedAt: new Date().toISOString(),
+          };
+        }
+      });
+      branchProgressMap = nextMap;
+    }
+
+    const avgSharedPct =
+      branchProgressMap && Object.keys(branchProgressMap).length > 0
+        ? Math.round(
+            Object.values(branchProgressMap).reduce((s, p) => s + (Number(p.progressPercent) || 0), 0) /
+              Object.keys(branchProgressMap).length
+          )
+        : basePct;
 
     const draftTask: CRMTask = sanitizeObjectEncoding({
       id: editingTask ? editingTask.id : `TSK-${Date.now().toString().slice(-6)}`,
@@ -816,20 +967,28 @@ export const CRMTasksTab: React.FC<CRMTasksTabProps> = ({
       assignedToList: finalAssignees,
       createdBy: editingTask ? editingTask.createdBy : currentUserLabel,
       createdByEmail: editingTask ? editingTask.createdByEmail : userSession?.email,
-      branch: resolveConfiguredBranch(branch, true),
+      branch: isSharedMulti ? 'Todas' : resolveConfiguredBranch(branch, true),
+      taskScope,
+      targetBranches: normalizedTargets,
+      multiBranchMode: isSharedMulti ? 'shared' : undefined,
+      branchProgress: branchProgressMap,
       dueDate: effectiveDueDate,
       dueTime: effectiveDueTime,
       requiredAdvance: effectiveRequiredAdvance,
       targetProgressPercent: effectiveTargetPct,
-      progressPercent: Math.max(0, Math.min(100, Number(finalProgress) || 0)),
+      progressPercent: isSharedMulti ? avgSharedPct : basePct,
       tags: selectedTags,
       templateId: selectedTemplateId || undefined,
       advanceLogs: nextLogs,
       comments: finalComments,
       evidencePhotos: hasControlPermission ? evidencePhotos : (editingTask?.evidencePhotos || evidencePhotos),
       scheduleType,
-      activationDate: scheduleType === 'specific_date' || scheduleType === 'periodic' ? (activationDate || undefined) : undefined,
+      activationDate:
+        scheduleType === 'specific_date' || scheduleType === 'periodic' || scheduleType === 'weekdays'
+          ? (activationDate || undefined)
+          : undefined,
       recurrenceDays: scheduleType === 'periodic' ? Math.max(1, Number(recurrenceDays) || 7) : undefined,
+      recurrenceWeekdays: scheduleType === 'weekdays' ? recurrenceWeekdays : undefined,
       activationMonths: scheduleType === 'monthly' ? activationMonths : [],
       createdAt: editingTask ? editingTask.createdAt : new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -852,6 +1011,38 @@ export const CRMTasksTab: React.FC<CRMTasksTabProps> = ({
     } catch (err) {
       console.error('Error guardando tarea:', err);
     }
+  };
+
+  const handleUpdateSharedBranchProgress = async (
+    task: CRMTask,
+    targetBranch: string,
+    pct: number,
+    note?: string
+  ) => {
+    const cleanPct = Math.max(0, Math.min(100, Number(pct) || 0));
+    const currentMap: Record<string, CRMTaskBranchProgress> = { ...(task.branchProgress || {}) };
+    currentMap[targetBranch] = {
+      progressPercent: cleanPct,
+      note: note ?? currentMap[targetBranch]?.note,
+      completed: cleanPct >= 100,
+      updatedBy: currentUserLabel,
+      updatedAt: new Date().toISOString(),
+    };
+    const branchesList = task.targetBranches && task.targetBranches.length > 0 ? task.targetBranches : Object.keys(currentMap);
+    const totalPct = branchesList.reduce((acc, b) => acc + (Number(currentMap[b]?.progressPercent) || 0), 0);
+    const avgPct = branchesList.length > 0 ? Math.round(totalPct / branchesList.length) : cleanPct;
+    const allCompleted = branchesList.length > 0 && branchesList.every((b) => (Number(currentMap[b]?.progressPercent) || 0) >= 100);
+
+    const updated: CRMTask = sanitizeObjectEncoding({
+      ...task,
+      branchProgress: currentMap,
+      progressPercent: avgPct,
+      columnId: allCompleted ? lastColId : task.columnId,
+      updatedAt: new Date().toISOString(),
+    });
+    setTasks((prev) => [updated, ...prev.filter((t) => t.id !== updated.id)]);
+    if (viewingTask?.id === updated.id) setViewingTask(updated);
+    await saveCRMTask(updated).catch(() => {});
   };
 
   const handleMoveTask = async (task: CRMTask, targetColId: string) => {
@@ -1080,8 +1271,9 @@ export const CRMTasksTab: React.FC<CRMTasksTabProps> = ({
               ? 'bg-neutral-100 cursor-not-allowed opacity-80'
               : 'bg-white cursor-pointer'
           }`}
+          title="'Local: Todos' muestra todas las tareas (locales + personales). 'Todos los locales' muestra solo tareas de locales."
         >
-          {userSession?.role === 'admin' && <option value="todos">Local: Todos</option>}
+          <option value="todos">Local: Todos</option>
           {configuredBranchNames.map((b) => (
             <option key={b} value={b}>
               {b}
@@ -1331,6 +1523,32 @@ export const CRMTasksTab: React.FC<CRMTasksTabProps> = ({
                               />
                             </div>
                           </div>
+
+                          {/* Avance compartido por local (cuando es multi-local compartida) */}
+                          {task.multiBranchMode === 'shared' && Array.isArray(task.targetBranches) && task.targetBranches.length > 0 && (
+                            <div className="p-2 bg-indigo-50/50 border border-indigo-200 rounded-xs space-y-1" onClick={(e) => e.stopPropagation()}>
+                              <span className="text-[9px] font-black uppercase text-indigo-900 block">
+                                Avance por local:
+                              </span>
+                              {task.targetBranches.map((tb) => {
+                                const bp = task.branchProgress?.[tb]?.progressPercent ?? 0;
+                                return (
+                                  <div key={tb} className="flex items-center justify-between gap-2 text-[10px]">
+                                    <span className="truncate font-semibold text-[#18231C]">{tb}</span>
+                                    <div className="flex items-center gap-1.5 shrink-0">
+                                      <div className="w-12 h-1.5 bg-white border border-indigo-200 rounded-full overflow-hidden">
+                                        <div
+                                          className={`h-full ${bp >= 100 ? 'bg-emerald-600' : 'bg-indigo-600'}`}
+                                          style={{ width: `${bp}%` }}
+                                        />
+                                      </div>
+                                      <span className="font-mono font-bold w-7 text-right tabular-nums">{bp}%</span>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
 
                           {/* Line 4: Quiet Single-Box Detail Block (Meta, Programación, Último avance, Comentarios/Fotos) */}
                           {hasQuietDetails && (
@@ -1585,8 +1803,8 @@ export const CRMTasksTab: React.FC<CRMTasksTabProps> = ({
                 </div>
               </div>
 
-              {/* Etapa & Sucursal */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* Etapa, Alcance & Local / Multi-local */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block font-bold text-neutral-700 mb-1">Etapa / Columna</label>
                   <select
@@ -1603,10 +1821,22 @@ export const CRMTasksTab: React.FC<CRMTasksTabProps> = ({
                 </div>
 
                 <div>
+                  <label className="block font-bold text-neutral-700 mb-1">Tipo / Alcance</label>
+                  <select
+                    value={taskScope}
+                    onChange={(e) => setTaskScope(e.target.value as 'local' | 'personal')}
+                    className="w-full px-2.5 py-2 border border-[#DCD4C9] rounded-xs bg-white outline-none font-bold text-[#18231C]"
+                  >
+                    <option value="local">De Local (Sucursal)</option>
+                    <option value="personal">Tarea Personal</option>
+                  </select>
+                </div>
+
+                <div>
                   <label className="block font-bold text-neutral-700 mb-1">Local / Sucursal</label>
                   <select
                     value={branch}
-                    disabled={!hasControlPermission && Boolean(assignedBranch) && assignedBranch !== 'Todas'}
+                    disabled={sendToMultiBranch || (!hasControlPermission && Boolean(assignedBranch) && assignedBranch !== 'Todas')}
                     onChange={(e) => setBranch(e.target.value)}
                     className="w-full px-2.5 py-2 border border-[#DCD4C9] rounded-xs bg-white outline-none disabled:bg-neutral-100"
                   >
@@ -1619,6 +1849,95 @@ export const CRMTasksTab: React.FC<CRMTasksTabProps> = ({
                   </select>
                 </div>
               </div>
+
+              {/* Envío a distintos locales: Duplicar por local o Compartida con avance por local */}
+              {taskScope === 'local' && (
+                <div className="p-3 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs space-y-2.5">
+                  <label className="flex items-center gap-2 cursor-pointer font-bold text-[#18231C] text-[11px]">
+                    <input
+                      type="checkbox"
+                      checked={sendToMultiBranch}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setSendToMultiBranch(checked);
+                        if (checked && selectedBranches.length === 0) {
+                          setSelectedBranches(configuredBranchNames);
+                        }
+                      }}
+                      className="accent-[#18231C] w-3.5 h-3.5 cursor-pointer"
+                    />
+                    <span>Enviar esta tarea a varios locales</span>
+                  </label>
+
+                  {sendToMultiBranch && (
+                    <div className="space-y-2.5 pt-1 border-t border-[#DCD4C9]/70">
+                      <div>
+                        <span className="text-[10px] font-bold uppercase text-[#6F6860] block mb-1">
+                          Seleccioná los locales destino:
+                        </span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {configuredBranchNames.map((b) => {
+                            const active = selectedBranches.includes(b);
+                            return (
+                              <button
+                                key={b}
+                                type="button"
+                                onClick={() =>
+                                  setSelectedBranches((prev) =>
+                                    active ? prev.filter((x) => x !== b) : [...prev, b]
+                                  )
+                                }
+                                className={`px-2.5 py-1 rounded-xs text-[11px] font-bold border cursor-pointer ${
+                                  active
+                                    ? 'bg-[#18231C] text-[#FDB813] border-[#18231C]'
+                                    : 'bg-white text-[#18231C] border-[#DCD4C9]'
+                                }`}
+                              >
+                                {active ? '✓ ' : '+ '}
+                                {b}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {!editingTask && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setMultiBranchMode('duplicate')}
+                            className={`p-2 rounded-xs border text-left cursor-pointer transition-colors ${
+                              multiBranchMode === 'duplicate'
+                                ? 'bg-[#18231C] text-white border-[#18231C]'
+                                : 'bg-white text-[#18231C] border-[#DCD4C9]'
+                            }`}
+                          >
+                            <span className="font-bold text-[11px] block">Duplicar por local</span>
+                            <span className={`text-[10px] ${multiBranchMode === 'duplicate' ? 'text-neutral-300' : 'text-[#6F6860]'}`}>
+                              Crea una tarea independiente para cada local elegido.
+                            </span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setMultiBranchMode('shared')}
+                            className={`p-2 rounded-xs border text-left cursor-pointer transition-colors ${
+                              multiBranchMode === 'shared'
+                                ? 'bg-[#18231C] text-white border-[#18231C]'
+                                : 'bg-white text-[#18231C] border-[#DCD4C9]'
+                            }`}
+                          >
+                            <span className="font-bold text-[11px] block">Misma tarea con avance por local</span>
+                            <span className={`text-[10px] ${multiBranchMode === 'shared' ? 'text-neutral-300' : 'text-[#6F6860]'}`}>
+                              Todos los locales ven en vivo cómo avanza cada sucursal.
+                            </span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Múltiples Responsables (cualquier responsable puede sumar otros responsables) */}
               <div className="p-3.5 bg-[#FAF8F5] border border-[#DCD4C9] rounded-xs space-y-2.5">
@@ -1693,10 +2012,11 @@ export const CRMTasksTab: React.FC<CRMTasksTabProps> = ({
                   </span>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                   {[
                     { id: 'immediate', label: 'Activar Ahora' },
                     { id: 'specific_date', label: 'Fecha Específica' },
+                    { id: 'weekdays', label: 'Días de la semana' },
                     { id: 'periodic', label: 'Período (c/ X días)' },
                     { id: 'monthly', label: 'Mes(es) del Año' },
                   ].map((opt) => (
@@ -1725,6 +2045,48 @@ export const CRMTasksTab: React.FC<CRMTasksTabProps> = ({
                         onChange={(e) => setActivationDate(e.target.value)}
                         className="w-full px-2.5 py-1.5 bg-white border border-indigo-200 rounded-xs outline-none"
                       />
+                    </div>
+                  </div>
+                )}
+
+                {scheduleType === 'weekdays' && (
+                  <div className="space-y-2 pt-1">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <label className="block text-[11px] font-bold text-indigo-950">
+                        Marcá en el calendario semanal qué días va esta tarea:
+                      </label>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] font-bold text-indigo-900">Desde:</span>
+                        <input
+                          type="date"
+                          value={activationDate}
+                          onChange={(e) => setActivationDate(e.target.value)}
+                          className="px-2 py-1 text-[11px] bg-white border border-indigo-200 rounded-xs outline-none"
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-7 gap-1.5">
+                      {WEEKDAYS_ES.map((day) => {
+                        const active = recurrenceWeekdays.includes(day.num);
+                        return (
+                          <button
+                            key={day.num}
+                            type="button"
+                            onClick={() =>
+                              setRecurrenceWeekdays((prev) =>
+                                active ? prev.filter((x) => x !== day.num) : [...prev, day.num]
+                              )
+                            }
+                            className={`py-2 px-1 rounded-xs text-[11px] font-bold border text-center cursor-pointer transition-colors ${
+                              active
+                                ? 'bg-indigo-700 text-white border-indigo-700 shadow-xs'
+                                : 'bg-white text-indigo-950 border-indigo-200 hover:bg-indigo-100'
+                            }`}
+                          >
+                            {day.short}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -2204,6 +2566,62 @@ export const CRMTasksTab: React.FC<CRMTasksTabProps> = ({
                     </p>
                   )}
                 </div>
+
+                {/* Avance individual por cada sucursal en tareas compartidas */}
+                {viewingTask.multiBranchMode === 'shared' &&
+                  Array.isArray(viewingTask.targetBranches) &&
+                  viewingTask.targetBranches.length > 0 && (
+                    <div className="p-3 bg-indigo-50/50 border border-indigo-200 rounded-xs space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black uppercase text-indigo-950">
+                          Avance por Local (Tarea Compartida)
+                        </span>
+                        <span className="text-[10px] text-indigo-800">
+                          Cada local actualiza su progreso en tiempo real
+                        </span>
+                      </div>
+                      <div className="space-y-2">
+                        {viewingTask.targetBranches.map((tb) => {
+                          const entry = viewingTask.branchProgress?.[tb];
+                          const bp = entry?.progressPercent ?? 0;
+                          const canEditThisBranch =
+                            userSession?.role === 'admin' ||
+                            hasControlPermission ||
+                            !assignedBranch ||
+                            assignedBranch.toLowerCase() === 'todas' ||
+                            branchMatches(tb, assignedBranch);
+
+                          return (
+                            <div key={tb} className="p-2 bg-white border border-indigo-200 rounded-xs space-y-1">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="font-bold text-xs text-[#18231C]">{tb}</span>
+                                <span className={`font-mono font-black text-xs ${bp >= 100 ? 'text-emerald-700' : 'text-indigo-800'}`}>
+                                  {bp}%
+                                </span>
+                              </div>
+                              <input
+                                type="range"
+                                min={0}
+                                max={100}
+                                step={5}
+                                disabled={!canEditThisBranch}
+                                value={bp}
+                                onChange={(e) =>
+                                  handleUpdateSharedBranchProgress(viewingTask, tb, Number(e.target.value))
+                                }
+                                className="w-full accent-indigo-700 cursor-pointer disabled:opacity-50"
+                              />
+                              {entry?.updatedBy && (
+                                <span className="text-[9px] text-[#6F6860] block">
+                                  Última act.: {entry.updatedBy}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
 
                 {/* Avances registrados */}
                 {taskAdvances.length > 0 && (

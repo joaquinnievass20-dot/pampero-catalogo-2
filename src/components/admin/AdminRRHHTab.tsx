@@ -1866,7 +1866,7 @@ export const AdminRRHHTab: React.FC<AdminRRHHTabProps> = ({
                     className="w-32 px-3 py-2 bg-white border border-[#DCD4C9] rounded-xs font-mono font-bold outline-none"
                   />
                   <span className="block text-[11px] text-[#6F6860] mt-1">
-                    Si el empleado registra su fichaje más allá de su hora de ingreso + esta tolerancia, se marca como "Tarde".
+                    Si el colaborador registra su fichaje más allá de su hora de ingreso + esta tolerancia, se marca como "Tarde".
                   </span>
                 </div>
 
@@ -1884,10 +1884,10 @@ export const AdminRRHHTab: React.FC<AdminRRHHTabProps> = ({
                   />
                   <div>
                     <span className="font-bold text-[#18231C] block">
-                      Permitir que cada empleado complete y edite sus datos en "Mi Legajo"
+                      Permitir que cada colaborador complete y edite sus datos en "Mi Legajo"
                     </span>
                     <span className="text-[11px] text-[#6F6860]">
-                      Solo podrá editar los campos que marques abajo como "Editable por empleado".
+                      Solo podrá editar los campos que marques abajo como "Editable por colaborador".
                     </span>
                   </div>
                 </label>
@@ -1916,7 +1916,7 @@ export const AdminRRHHTab: React.FC<AdminRRHHTabProps> = ({
                     Campos Configurables de "Mi Legajo" ({configDraft.customFields.length})
                   </h4>
                   <p className="text-[11px] text-[#6F6860]">
-                    Agregá, editá, ocultá o definí qué campos puede completar el empleado por su cuenta y cuáles son solo internos.
+                    Agregá, editá, ocultá o definí qué campos puede completar el colaborador por su cuenta y cuáles son solo internos.
                   </p>
                 </div>
                 <button
@@ -1995,7 +1995,7 @@ export const AdminRRHHTab: React.FC<AdminRRHHTabProps> = ({
                       onChange={(e) => setNewFieldEmployeeEditable(e.target.checked)}
                       className="accent-[#B9522F]"
                     />
-                    <span>Editable por empleado</span>
+                    <span>Editable por colaborador</span>
                   </label>
                   <label className="inline-flex items-center gap-1.5 cursor-pointer font-semibold text-[#18231C]">
                     <input
@@ -2124,7 +2124,7 @@ export const AdminRRHHTab: React.FC<AdminRRHHTabProps> = ({
                           <Lock className="w-3 h-3" />
                         )}
                         <span>
-                          {fld.employeeEditable ? 'Editable empleado' : 'Solo Admin RRHH'}
+                          {fld.employeeEditable ? 'Editable colaborador' : 'Solo Admin RRHH'}
                         </span>
                       </button>
 

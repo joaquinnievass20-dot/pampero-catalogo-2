@@ -166,7 +166,7 @@ export const ClientSizingPortalView: React.FC<ClientSizingPortalViewProps> = ({
             <div className="flex items-center gap-2">
               <Shirt className="w-4 h-4 text-[#FDB813]" />
               <span className="font-display font-bold uppercase tracking-wider text-sm sm:text-base">
-                Portal de Talles para Empleados · Pampero
+                Portal de Talles para Colaboradores · Pampero
               </span>
             </div>
           </div>
@@ -177,7 +177,7 @@ export const ClientSizingPortalView: React.FC<ClientSizingPortalViewProps> = ({
             className="px-3 py-1.5 bg-[#FAF8F5]/10 hover:bg-[#FAF8F5]/20 text-white rounded-xs text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-colors cursor-pointer"
           >
             {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Share2 className="w-3.5 h-3.5" />}
-            <span>{copiedLink ? '¡Link Copiado!' : 'Copiar Link para Empleados'}</span>
+            <span>{copiedLink ? '¡Link Copiado!' : 'Copiar Link para Colaboradores'}</span>
           </button>
         </div>
       </div>
@@ -236,7 +236,7 @@ export const ClientSizingPortalView: React.FC<ClientSizingPortalViewProps> = ({
             </div>
 
             <div className="text-xs text-[#6F6860]">
-              Total colaboradores registrados: <strong className="text-[#18231C]">{campaignEntries.length} empleados</strong>
+              Total colaboradores registrados: <strong className="text-[#18231C]">{campaignEntries.length} colaboradores</strong>
             </div>
           </div>
         </div>
@@ -248,7 +248,7 @@ export const ClientSizingPortalView: React.FC<ClientSizingPortalViewProps> = ({
             <div>
               <h4 className="font-bold text-sm">¡Talles registrados exitosamente!</h4>
               <p className="text-xs text-emerald-800 mt-0.5">
-                Tus medidas han sido guardadas y consolidadas para la empresa <strong>{activeCampaign?.companyName}</strong>. Si ingresa otro empleado en este dispositivo, puede completar el formulario a continuación.
+                Tus medidas han sido guardadas y consolidadas para la empresa <strong>{activeCampaign?.companyName}</strong>. Si ingresa otro colaborador en este dispositivo, puede completar el formulario a continuación.
               </p>
             </div>
           </div>

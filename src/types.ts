@@ -741,6 +741,13 @@ export interface CRMOrder {
   quotePdfName?: string;
   quotePdfUploadedAt?: string;
   quotePdfUploadedBy?: string;
+  invoicePdfUrl?: string;
+  invoicePdfName?: string;
+  invoicePdfUploadedAt?: string;
+  invoicePdfUploadedBy?: string;
+  totalInvoiced?: number;
+  billingStatus?: 'sin_facturar' | 'facturado_parcial' | 'facturado_total';
+  prepTags?: ('en_taller' | 'en_bordados' | 'esperando_pedido')[];
   clientApprovalStatus?: 'pendiente' | 'aprobada' | 'rechazada' | 'approved' | 'rejected';
   clientApprovalDate?: string;
   clientRejectionReason?: string;
@@ -982,7 +989,15 @@ export interface ExpenseInvoiceRecord {
 
 // --- CRM TASKS KANBAN (3. TAREAS DEL EQUIPO) ---
 export type CRMTaskImportance = 'urgente' | 'alta' | 'media' | 'baja';
-export type CRMTaskScheduleType = 'immediate' | 'specific_date' | 'periodic' | 'monthly';
+export type CRMTaskScheduleType = 'immediate' | 'specific_date' | 'periodic' | 'weekdays' | 'monthly';
+
+export interface CRMTaskBranchProgress {
+  progressPercent: number;
+  note?: string;
+  completed?: boolean;
+  updatedBy?: string;
+  updatedAt?: string;
+}
 
 export interface CRMTaskAdvanceLog {
   id: string;
@@ -1026,6 +1041,9 @@ export interface CRMTaskTemplate {
   defaultRequiredAdvance?: string;
   defaultTargetProgressPercent?: number;
   defaultBranch?: string;
+  defaultScheduleType?: CRMTaskScheduleType;
+  defaultRecurrenceWeekdays?: number[]; // 0=Dom, 1=Lun..6=Sab
+  defaultRecurrenceDays?: number;
 }
 
 export interface CRMTask {
@@ -1040,6 +1058,10 @@ export interface CRMTask {
   createdBy: string;
   createdByEmail?: string;
   branch: string;
+  taskScope?: 'local' | 'personal';
+  targetBranches?: string[];
+  multiBranchMode?: 'duplicate' | 'shared';
+  branchProgress?: Record<string, CRMTaskBranchProgress>;
   dueDate?: string; // YYYY-MM-DD
   dueTime?: string; // HH:mm
   requiredAdvance?: string; // Qué se necesita de avance (definido/editable por Encargado del Local o Admin)
@@ -1053,6 +1075,7 @@ export interface CRMTask {
   scheduleType?: CRMTaskScheduleType;
   activationDate?: string; // YYYY-MM-DD
   recurrenceDays?: number;
+  recurrenceWeekdays?: number[]; // 0=Dom, 1=Lun .. 6=Sab
   activationMonths?: number[]; // 1..12
   isActivated?: boolean;
   lastActivatedAt?: string;
@@ -1228,5 +1251,27 @@ export interface InternalChatMessage {
   text: string;
   createdAt: string;
 }
+
+// --- DIRECTORIO UNIFICADO DE CONTACTOS ---
+export type ContactCategory = 'colaborador' | 'cliente' | 'proveedor' | 'cuenta_importante';
+
+export interface CRMContactRecord {
+  id: string;
+  category: ContactCategory;
+  subCategory?: string; // Ej: 'ARCA', 'ATM', 'Proveedor del Estado', 'Banco', 'Servicios'
+  name: string;
+  companyOrOrg?: string;
+  phone?: string;
+  whatsapp?: string;
+  email?: string;
+  cuitOrDni?: string;
+  branch?: string;
+  address?: string;
+  notes?: string;
+  createdBy?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 
 
